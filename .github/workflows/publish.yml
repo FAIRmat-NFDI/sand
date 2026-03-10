@@ -1,0 +1,60 @@
+name: Upload Python Package
+
+on:
+  release:
+    types: [published]
+
+env:
+  PYTHON_VERSION: 3.12
+  IMAGE: "ghcr.io/fairmat-nfdi/sand-app"
+
+jobs:
+  build-docker-image:
+    uses: ./.github/workflows/publish_north.yml
+    secrets: inherit
+
+  build:
+    name: Build Package
+    runs-on: ubuntu-latest
+    needs: build-docker-image
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Install uv and set the Python version to ${{ env.PYTHON_VERSION }}
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Overwrite the image tag
+        run: |
+          IMAGE_TAG=$(grep -oP "${{ env.IMAGE }}:\K[^'\",]+" src/sand_app/north_tools/my_north_tool/__init__.py)
+
+          sed -i "s|${{ env.IMAGE }}:${IMAGE_TAG}|${{ env.IMAGE }}:${GITHUB_REF_NAME}|g" \
+          src/sand_app/north_tools/my_north_tool/__init__.py
+      
+      - name: build package
+        run: |
+          uv build
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts
+          path: dist/
+
+  # deploy:
+  #   name: Upload to PyPI
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   environment:
+  #     name: pypi
+  #     url: https://pypi.org/p/sand-app
+  #   permissions:
+  #     id-token: write
+  #   steps:
+  #     - name: Download dist artifacts
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: dist-artifacts
+  #         path: dist/
+  #     - name: Publish package distributions to PyPI
+  #       uses: pypa/gh-action-pypi-publish@release/v1

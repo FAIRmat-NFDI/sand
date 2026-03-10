@@ -1,0 +1,32 @@
+{
+  "template": "https://github.com/FAIRmat-NFDI/cookiecutter-nomad-plugin",
+  "commit": "89bf9fe1aa0a9a3fe74fd2af5ccc74d5ea974ced",
+  "checkout": null,
+  "context": {
+    "cookiecutter": {
+      "full_name": "Yaru Wang",
+      "email": "yaru.wang@physik.hu-berlin.de",
+      "github_username": "FAIRmat-NFDI",
+      "plugin_name": "sand-app",
+      "module_name": "sand_app",
+      "short_description": "Nomad example template",
+      "version": "0.1.0",
+      "license": "MIT",
+      "include_schema_package": true,
+      "include_normalizer": true,
+      "include_parser": true,
+      "include_app": true,
+      "include_example_uploads": true,
+      "include_action": true,
+      "include_north_tools": true,
+      "north_tool_name": "my_north_tool",
+      "_copy_without_render": [
+        "*.html",
+        "*.png"
+      ],
+      "_template": "https://github.com/FAIRmat-NFDI/cookiecutter-nomad-plugin",
+      "_commit": "89bf9fe1aa0a9a3fe74fd2af5ccc74d5ea974ced"
+    }
+  },
+  "directory": null
+}
