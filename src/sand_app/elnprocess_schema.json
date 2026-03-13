@@ -1,0 +1,138 @@
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "A short human readable and descriptive name."
+    },
+    "datetime": {
+      "type": "string",
+      "description": "The date and time when this activity was started.",
+      "format": "date-time"
+    },
+    "lab_id": {
+      "type": "string",
+      "description": "An ID string that is unique at least for the lab that produced this\ndata."
+    },
+    "description": {
+      "type": "string",
+      "description": "Any information that cannot be captured in the other fields."
+    },
+    "method": {
+      "type": "string",
+      "description": "A short consistent handle for the applied method."
+    },
+    "location": {
+      "type": "string",
+      "description": "location of the experiment."
+    },
+    "steps": {
+      "type": "array",
+      "description": "Any dependant step of a `Process`.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "A short and descriptive name for this step."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Optionally, the starting time of the activity step. If omitted, it is assumed to\nfollow directly after the previous step.",
+            "format": "date-time"
+          },
+          "comment": {
+            "type": "string",
+            "description": "Any additional information about the step not captured by the other fields."
+          },
+          "duration": {
+            "type": "number",
+            "description": "The duration time of the process step.",
+            "unit": "second"
+          }
+        }
+      }
+    },
+    "end_time": {
+      "type": "string",
+      "description": "The date and time when this process was finished.",
+      "format": "date-time"
+    },
+    "instruments": {
+      "type": "array",
+      "description": "A section used for referencing an Instrument.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "A short descriptive name for the role of this reference."
+          },
+          "reference": {
+            "type": "string",
+            "description": "A reference to a NOMAD `Instrument` entry."
+          },
+          "lab_id": {
+            "type": "string",
+            "description": "The readable identifier for the entity."
+          }
+        }
+      }
+    },
+    "samples": {
+      "type": "array",
+      "description": "A section used for referencing a CompositeSystem.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "A short descriptive name for the role of this reference."
+          },
+          "reference": {
+            "type": "string",
+            "description": "A reference to a NOMAD `CompositeSystem` entry."
+          },
+          "lab_id": {
+            "type": "string",
+            "description": "The readable identifier for the entity."
+          }
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "description": "Add a tag that can be used for search.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "process_identifiers": {
+      "type": "object",
+      "description": "A base section that can be used to generate readable IDs. If the `owner`, `short_name`, `institute`, and `datetime`\nquantities are provided, the lab_id will be automatically created as a combination\nof these four quantities.",
+      "properties": {
+        "institute": {
+          "type": "string",
+          "description": "Alias/short name of the home institute of the owner, i.e. *HZB*."
+        },
+        "owner": {
+          "type": "string",
+          "description": "Alias for the owner of the identified thing. This should be unique within the\ninstitute."
+        },
+        "datetime": {
+          "type": "string",
+          "description": "A datetime associated with the identified thing. In case of an `Activity`, this\nshould be the starting time and, in case of an `Entity`, the creation time.",
+          "format": "date-time"
+        },
+        "short_name": {
+          "type": "string",
+          "description": "A short name of the the identified thing (e.g. the identifier scribed on the\nsample, the process number, or machine name), e.g. 4001-8, YAG-2-34.\nThis is to be managed and decided internally by the labs, although we recommend\nto avoid the following characters in it: \"_\", \"/\", \"\\\" and \".\"."
+        },
+        "lab_id": {
+          "type": "string",
+          "description": "Full readable id. Ideally a human readable id convention, which is simple,\nunderstandable and still have chances of becoming unique.\nIf the `owner`, `short_name`, `\u00ecnstitute`, and `datetime` are provided, this will\nbe formed automatically by joining these components by an underscore (_).\nSpaces in any of the individual components will be replaced with hyphens (-).\nAn example would be hzb_oah_20200602_4001-08."
+        }
+      }
+    }
+  }
+}
