@@ -5,218 +5,265 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SAND</title>
   <script src="https://cdn.jsdelivr.net/npm/keycloak-js@25/dist/keycloak.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      max-width: 600px;
-      margin: 0 auto;
-      padding: 2rem 1rem;
-      color: #1a1a1a;
+      font-family: 'Titillium Web', sans-serif;
+      font-weight: 400;
       background: #fafafa;
+      color: #333;
     }
 
-    header {
+    /* App bar */
+    .app-bar {
+      background: #2A4CDF;
+      color: #fff;
+      padding: 0 24px;
+      height: 64px;
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      margin-bottom: 1.5rem;
+      justify-content: space-between;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.14), 0 3px 4px rgba(0,0,0,0.12);
     }
 
-    h1 {
-      font-size: 1.5rem;
+    .app-bar h1 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
     }
 
-    #auth-area {
-      font-size: 0.9rem;
+    .app-bar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 0.875rem;
+    }
+
+    /* MUI-style buttons */
+    .btn {
+      font-family: 'Titillium Web', sans-serif;
+      font-weight: 600;
+      font-size: 0.875rem;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      border: none;
+      border-radius: 4px;
+      padding: 8px 16px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.2s, box-shadow 0.2s;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: #2A4CDF;
+      color: #fff;
+      box-shadow: 0 2px 4px rgba(42,76,223,0.3);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #192E86;
+      box-shadow: 0 4px 8px rgba(42,76,223,0.3);
+    }
+
+    .btn-secondary {
+      background: #008A67;
+      color: #fff;
+      box-shadow: 0 2px 4px rgba(0,138,103,0.3);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: #00533e;
+    }
+
+    .btn-outlined {
+      background: transparent;
+      color: #2A4CDF;
+      border: 1px solid rgba(42,76,223,0.5);
+    }
+
+    .btn-outlined:hover:not(:disabled) {
+      background: #eaedfc;
+      border-color: #2A4CDF;
+    }
+
+    .btn-text {
+      background: transparent;
+      color: #fff;
+      padding: 6px 8px;
+    }
+
+    .btn-text:hover {
+      background: rgba(255,255,255,0.1);
+    }
+
+    .btn-danger {
+      background: #d32f2f;
+      color: #fff;
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: #b71c1c;
+    }
+
+    /* Material icon in button */
+    .btn .material-icons {
+      font-size: 18px;
+    }
+
+    /* Container */
+    .container {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 24px 16px;
+    }
+
+    /* Card */
+    .card {
+      background: #fff;
+      border-radius: 4px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.14);
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+
+    /* Text field */
+    .text-field {
+      width: 100%;
+      min-height: 120px;
+      padding: 12px;
+      font-family: 'Titillium Web', sans-serif;
+      font-size: 1rem;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+      resize: vertical;
+      transition: border-color 0.2s;
+    }
+
+    .text-field:focus {
+      outline: none;
+      border-color: #2A4CDF;
+      box-shadow: 0 0 0 1px #2A4CDF;
+    }
+
+    .text-field-label {
+      font-size: 0.75rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    /* Controls row */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 16px 0;
+      flex-wrap: wrap;
+    }
+
+    /* Status text */
+    .status-text {
+      font-size: 0.875rem;
       color: #666;
     }
 
-    #auth-area button {
-      padding: 0.3rem 0.8rem;
-      font-size: 0.85rem;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      cursor: pointer;
-      background: #fff;
-      margin-left: 0.5rem;
+    /* Error */
+    .error-text {
+      color: #d32f2f;
+      font-size: 0.875rem;
+      margin-top: 8px;
+      display: none;
     }
 
-    #auth-area button:hover {
-      background: #f0f0f0;
+    /* Recording state */
+    .btn-recording {
+      background: #d32f2f;
+      color: #fff;
+      box-shadow: 0 2px 4px rgba(211,47,47,0.3);
     }
 
+    .btn-recording:hover:not(:disabled) {
+      background: #b71c1c;
+    }
+
+    /* Login prompt */
     #login-prompt {
       text-align: center;
-      padding: 3rem 1rem;
+      padding: 48px 16px;
+    }
+
+    #login-prompt p {
       color: #666;
-    }
-
-    #login-prompt button {
-      padding: 0.6rem 1.5rem;
+      margin-bottom: 24px;
       font-size: 1rem;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      background: #1a1a1a;
-      color: #fff;
-      margin-top: 1rem;
-    }
-
-    #login-prompt button:hover {
-      background: #333;
     }
 
     #app-content {
       display: none;
     }
 
-    textarea {
-      width: 100%;
-      min-height: 120px;
-      padding: 0.75rem;
-      font-size: 1rem;
-      font-family: inherit;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      resize: vertical;
-    }
-
-    textarea:focus {
-      outline: none;
-      border-color: #555;
-    }
-
-    .controls {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      margin: 1rem 0;
-    }
-
-    #record-btn {
-      padding: 0.6rem 1.5rem;
-      font-size: 1rem;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      background: #1a1a1a;
-      color: #fff;
-      transition: background 0.15s;
-    }
-
-    #record-btn:hover {
-      background: #333;
-    }
-
-    #record-btn.recording {
-      background: #c0392b;
-    }
-
-    #record-btn.recording:hover {
-      background: #e74c3c;
-    }
-
-    #record-btn:disabled {
-      background: #999;
-      cursor: not-allowed;
-    }
-
-    #upload-btn {
-      padding: 0.6rem 1.5rem;
-      font-size: 1rem;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      background: #1a1a1a;
-      color: #fff;
-      transition: background 0.15s;
-    }
-
-    #upload-btn:hover {
-      background: #333;
-    }
-
-    #upload-btn:disabled {
-      background: #999;
-      cursor: not-allowed;
-    }
-
-    #status {
-      font-size: 0.9rem;
-      color: #666;
-    }
-
-    #error {
-      color: #c0392b;
-      font-size: 0.9rem;
-      margin-top: 0.5rem;
-      display: none;
-    }
-
-    #pipeline-btn {
-      padding: 0.6rem 1.5rem;
-      font-size: 1rem;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      background: #2c7a3a;
-      color: #fff;
-      transition: background 0.15s;
-      margin-top: 0.5rem;
-    }
-
-    #pipeline-btn:hover {
-      background: #35913f;
-    }
-
-    #pipeline-btn:disabled {
-      background: #999;
-      cursor: not-allowed;
-    }
-
+    /* Results */
     #results {
-      margin-top: 1.5rem;
       display: none;
     }
 
-    #results h2 {
-      font-size: 1.15rem;
-      margin-bottom: 0.75rem;
+    .results-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 12px;
     }
 
     .result-card {
+      border-left: 3px solid #008A67;
+      padding: 12px 16px;
+      margin-bottom: 12px;
       background: #fff;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      padding: 0.75rem 1rem;
-      margin-bottom: 0.75rem;
+      border-radius: 0 4px 4px 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     }
 
     .result-card .name {
       font-weight: 600;
-      margin-bottom: 0.25rem;
+      color: #333;
+      margin-bottom: 4px;
     }
 
     .result-card .upload-id {
-      font-size: 0.85rem;
-      color: #555;
+      font-size: 0.8rem;
+      color: #666;
       font-family: monospace;
-      margin-bottom: 0.25rem;
+      margin-bottom: 4px;
     }
 
     .result-card a {
-      font-size: 0.9rem;
-      color: #2c7a3a;
+      font-size: 0.875rem;
+      color: #2A4CDF;
+      text-decoration: none;
+    }
+
+    .result-card a:hover {
+      text-decoration: underline;
     }
 
     .result-card details {
-      margin-top: 0.5rem;
+      margin-top: 8px;
     }
 
     .result-card summary {
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       color: #666;
       cursor: pointer;
     }
@@ -224,48 +271,75 @@
     .result-card pre {
       font-size: 0.8rem;
       background: #f5f5f5;
-      padding: 0.5rem;
+      padding: 8px;
       border-radius: 4px;
       overflow-x: auto;
-      margin-top: 0.25rem;
+      margin-top: 4px;
+    }
+
+    /* Divider */
+    .divider {
+      border: none;
+      border-top: 1px solid #e0e0e0;
+      margin: 16px 0;
     }
   </style>
 </head>
 <body>
-  <header>
+  <div class="app-bar">
     <h1>SAND</h1>
-    <div id="auth-area"></div>
-  </header>
-
-  <div id="login-prompt">
-    <p>Please log in with your NOMAD account to use SAND.</p>
-    <button id="login-btn">Log in</button>
+    <div class="app-bar-right" id="auth-area"></div>
   </div>
 
-  <div id="app-content">
-    <textarea id="text" placeholder="Type or paste text here, or use the record button below..."></textarea>
-
-    <div class="controls">
-      <button id="record-btn" aria-label="Start recording">Record</button>
-      <button id="upload-btn" type="button" aria-label="Upload audio file">Upload file</button>
-      <input type="file" id="upload-input" accept="audio/wav,audio/mp3,audio/mpeg,audio/mp4,audio/x-m4a,audio/webm,audio/ogg,audio/flac" hidden>
-      <span id="status" aria-live="polite" aria-atomic="true"></span>
+  <div class="container">
+    <div id="login-prompt">
+      <p>Log in with your NOMAD account to use SAND.</p>
+      <button class="btn btn-primary" id="login-btn">
+        <span class="material-icons">login</span>
+        Log in
+      </button>
     </div>
 
-    <button id="pipeline-btn">Extract &amp; Upload</button>
+    <div id="app-content">
+      <div class="card">
+        <label class="text-field-label" for="text">Input text</label>
+        <textarea class="text-field" id="text" placeholder="Type or paste text here, or use the buttons below..."></textarea>
 
-    <p id="error" role="alert"></p>
+        <div class="controls">
+          <button class="btn btn-primary" id="record-btn">
+            <span class="material-icons">mic</span>
+            Record
+          </button>
+          <button class="btn btn-outlined" id="upload-btn" type="button">
+            <span class="material-icons">upload_file</span>
+            Upload file
+          </button>
+          <input type="file" id="upload-input" accept="audio/wav,audio/mp3,audio/mpeg,audio/mp4,audio/x-m4a,audio/webm,audio/ogg,audio/flac" hidden>
+          <span class="status-text" id="status"></span>
+        </div>
 
-    <div id="results">
-      <h2>Uploaded processes</h2>
-      <div id="results-list"></div>
+        <hr class="divider">
+
+        <button class="btn btn-secondary" id="pipeline-btn">
+          <span class="material-icons">science</span>
+          Extract &amp; Upload
+        </button>
+
+        <p class="error-text" id="error" role="alert"></p>
+      </div>
+
+      <div id="results">
+        <div class="card">
+          <div class="results-title">Uploaded processes</div>
+          <div id="results-list"></div>
+        </div>
+      </div>
     </div>
   </div>
 
   <script>
     let keycloak = null;
 
-    // Fetch Keycloak config from backend, then init
     async function initAuth() {
       const res = await fetch("auth/config");
       const cfg = await res.json();
@@ -287,7 +361,6 @@
         showLoginPrompt();
       }
 
-      // Auto-refresh token before it expires
       setInterval(() => {
         if (keycloak.authenticated) {
           keycloak.updateToken(30).catch(() => {
@@ -309,7 +382,8 @@
 
       const name = keycloak.tokenParsed.preferred_username || keycloak.tokenParsed.name || "";
       document.getElementById("auth-area").innerHTML =
-        name + '<button id="logout-btn">Log out</button>';
+        '<span>' + name + '</span>' +
+        '<button class="btn btn-text" id="logout-btn"><span class="material-icons">logout</span></button>';
       document.getElementById("logout-btn").addEventListener("click", () => {
         keycloak.logout({ redirectUri: window.location.href });
       });
@@ -319,7 +393,6 @@
       keycloak.login({ redirectUri: window.location.href });
     });
 
-    // Helper: get auth header with fresh token
     async function authFetch(url, options = {}) {
       if (keycloak.authenticated) {
         try { await keycloak.updateToken(5); } catch { /* ignore */ }
@@ -329,12 +402,13 @@
       return fetch(url, options);
     }
 
-    // --- App logic (same as before, but using authFetch) ---
+    // --- App logic ---
 
     const textArea = document.getElementById("text");
     const recordBtn = document.getElementById("record-btn");
-    const status = document.getElementById("status");
+    const statusEl = document.getElementById("status");
     const error = document.getElementById("error");
+    const uploadBtn = document.getElementById("upload-btn");
 
     let mediaRecorder = null;
     let chunks = [];
@@ -361,7 +435,7 @@
     function startTimer() {
       startTime = Date.now();
       timerInterval = setInterval(() => {
-        status.textContent = "Recording " + formatTime(Date.now() - startTime);
+        statusEl.textContent = "Recording " + formatTime(Date.now() - startTime);
       }, 200);
     }
 
@@ -389,22 +463,20 @@
 
       mediaRecorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
-
         const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
         if (blob.size === 0) {
           showError("No audio recorded.");
-          status.textContent = "";
+          statusEl.textContent = "";
           uploadBtn.disabled = false;
           return;
         }
-
         await transcribe(blob);
       };
 
       mediaRecorder.start();
-      recordBtn.textContent = "Stop";
-      recordBtn.setAttribute("aria-label", "Stop recording");
-      recordBtn.classList.add("recording");
+      recordBtn.innerHTML = '<span class="material-icons">stop</span> Stop';
+      recordBtn.classList.remove("btn-primary");
+      recordBtn.classList.add("btn-recording");
       uploadBtn.disabled = true;
       startTimer();
     }
@@ -414,9 +486,9 @@
         mediaRecorder.stop();
       }
       stopTimer();
-      recordBtn.textContent = "Record";
-      recordBtn.setAttribute("aria-label", "Start recording");
-      recordBtn.classList.remove("recording");
+      recordBtn.innerHTML = '<span class="material-icons">mic</span> Record';
+      recordBtn.classList.remove("btn-recording");
+      recordBtn.classList.add("btn-primary");
     }
 
     async function handleTranscriptionResponse(fetchPromise) {
@@ -437,8 +509,8 @@
     async function transcribe(blob) {
       recordBtn.disabled = true;
       uploadBtn.disabled = true;
-      recordBtn.textContent = "Transcribing...";
-      status.textContent = "";
+      recordBtn.innerHTML = '<span class="material-icons">hourglass_top</span> Transcribing...';
+      statusEl.textContent = "";
       clearError();
 
       const mimeSubtype = blob.type ? blob.type.split(";")[0].split("/")[1] : null;
@@ -453,14 +525,13 @@
       } catch (err) {
         showError("Network error: " + err.message);
       } finally {
-        recordBtn.textContent = "Record";
+        recordBtn.innerHTML = '<span class="material-icons">mic</span> Record';
         recordBtn.disabled = false;
         uploadBtn.disabled = false;
       }
     }
 
     const uploadInput = document.getElementById("upload-input");
-    const uploadBtn = document.getElementById("upload-btn");
 
     uploadBtn.addEventListener("click", () => {
       uploadInput.click();
@@ -479,7 +550,7 @@
       }
       recordBtn.disabled = true;
       uploadBtn.disabled = true;
-      status.textContent = "Transcribing uploaded file...";
+      statusEl.textContent = "Transcribing uploaded file...";
 
       const form = new FormData();
       form.append("file", file);
@@ -493,7 +564,7 @@
       } finally {
         recordBtn.disabled = false;
         uploadBtn.disabled = false;
-        status.textContent = "";
+        statusEl.textContent = "";
       }
     });
 
@@ -512,7 +583,7 @@
       resultsDiv.style.display = "none";
       resultsList.replaceChildren();
       pipelineBtn.disabled = true;
-      pipelineBtn.textContent = "Extracting & uploading...";
+      pipelineBtn.innerHTML = '<span class="material-icons">hourglass_top</span> Processing...';
 
       try {
         const res = await authFetch("api/pipeline", {
@@ -566,7 +637,7 @@
         showError("Network error: " + err.message);
       } finally {
         pipelineBtn.disabled = false;
-        pipelineBtn.textContent = "Extract & Upload";
+        pipelineBtn.innerHTML = '<span class="material-icons">science</span> Extract &amp; Upload';
       }
     }
 
@@ -586,7 +657,6 @@
       }
     });
 
-    // Start auth
     initAuth().catch((err) => {
       console.error("Auth init failed:", err);
       showLoginPrompt();
