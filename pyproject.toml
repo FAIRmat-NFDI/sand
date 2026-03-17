@@ -48,6 +48,13 @@ dev = [
     "mkdocs-click",
     "pytest-asyncio",
 ]
+cpu-action = [
+    "faster-whisper",
+    "mlx-whisper; sys_platform == 'darwin'",
+    "ollama",
+    "requests",
+    "groq",
+]
 [dependency-groups]
 north = [
     "jupyterlab",
@@ -58,7 +65,7 @@ north = [
 extra-index-url = [
   "https://gitlab.mpcdf.mpg.de/api/v4/projects/2187/packages/pypi/simple",
 ]
-    
+
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
 exclude = [
@@ -150,6 +157,9 @@ app_entry_point = "sand_app.apps:app_entry_point"
 example_upload_entry_point = "sand_app.example_uploads:example_upload_entry_point"
 action_entry_point = "sand_app.actions:simple_action_entry_point"
 north_tool_entry_point = "sand_app.north_tools.my_north_tool:north_tool_entry_point"
+remote_sand_action_entry_point = "sand_app.actions:remote_sand_action_entry_point"
+local_sand_action_entry_point = "sand_app.actions:local_sand_action_entry_point"
+
 [tool.cruft]
 # Avoid updating workflow files, this leads to permissions issues
 skip = [".github/*"]
