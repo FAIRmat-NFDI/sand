@@ -8,7 +8,7 @@ from nomad.auth.scopes import Scope as AuthScope
 from nomad.config import config
 
 require_login = Depends(
-    get_current_user({AuthScope.BASIC_READ}, allow_anonymous=False)
+    get_current_user({AuthScope.APPS_READ}, allow_anonymous=False)
 )
 
 from sand_app.apis.routers.extract import router as extract_router
