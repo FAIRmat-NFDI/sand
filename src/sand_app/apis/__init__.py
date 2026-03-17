@@ -7,7 +7,6 @@ class SandAPIEntryPoint(APIEntryPoint):
     anthropic_api_key: str = ''
     anthropic_model: str = 'claude-sonnet-4-20250514'
     nomad_base_url: str = 'https://nomad-lab.eu/prod/v1/api/v1'
-    nomad_api_token: str = ''
 
     def load(self):
         from sand_app.apis.sand_api import app

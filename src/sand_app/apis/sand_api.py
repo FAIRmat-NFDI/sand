@@ -7,9 +7,12 @@ from nomad.app.v1.routers.auth import get_current_user
 from nomad.auth.scopes import Scope as AuthScope
 from nomad.config import config
 
+
+# TODO: this need to be updated maybe to uplaod access when the api scope is supprted.
 require_login = Depends(
-    get_current_user({AuthScope.APPS_READ}, allow_anonymous=False)
+    get_current_user({}, allow_anonymous=False)
 )
+
 
 from sand_app.apis.routers.extract import router as extract_router
 from sand_app.apis.routers.pipeline import router as pipeline_router
@@ -39,7 +42,6 @@ app.state.extraction = ExtractionService(
 )
 app.state.nomad = NomadUploader(
     base_url=sand_api_entry_point.nomad_base_url,
-    token=sand_api_entry_point.nomad_api_token,
 )
 
 app.include_router(transcribe_router, prefix='/api', dependencies=[require_login])

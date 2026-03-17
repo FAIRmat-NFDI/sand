@@ -8,6 +8,14 @@ from sand_app.services.nomad_upload import NomadUploader
 router = APIRouter()
 
 
+def _get_bearer_token(request: Request) -> str:
+    """Extract the Bearer token from the Authorization header."""
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        return auth.removeprefix('Bearer ')
+    raise HTTPException(status_code=401, detail='Missing or invalid Authorization header')
+
+
 @router.post('/pipeline', response_model=PipelineResponse)
 async def pipeline(
     body: PipelineRequest,
@@ -16,6 +24,7 @@ async def pipeline(
     """Full pipeline: text -> extract processes -> build archives -> upload to NOMAD."""
     extraction: ExtractionService = request.app.state.extraction
     uploader: NomadUploader = request.app.state.nomad
+    token = _get_bearer_token(request)
 
     if not body.text.strip():
         raise HTTPException(status_code=400, detail='Text is empty')
@@ -31,7 +40,7 @@ async def pipeline(
     for process in processes:
         archive = build_archive(process)
         try:
-            upload = await uploader.upload(archive)
+            upload = await uploader.upload(archive, token=token)
         except Exception as exc:
             raise HTTPException(
                 status_code=502,
