@@ -8,4 +8,4 @@ class ExtractRequest(BaseModel):
 
 
 class ExtractResponse(BaseModel):
-    processes: list[dict[str, Any]]
+    cells: list[dict[str, Any]]

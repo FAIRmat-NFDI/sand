@@ -330,7 +330,7 @@
 
       <div id="results">
         <div class="card">
-          <div class="results-title">Uploaded processes</div>
+          <div class="results-title">Uploaded perovskite solar cells</div>
           <div id="results-list"></div>
         </div>
       </div>
@@ -598,12 +598,12 @@
           return;
         }
         const data = await res.json();
-        if (!data.processes || data.processes.length === 0) {
-          showError("No processes were extracted from the text.");
+        if (!data.cells || data.cells.length === 0) {
+          showError("No perovskite solar cells were extracted from the text.");
           return;
         }
 
-        for (const p of data.processes) {
+        for (const p of data.cells) {
           const card = document.createElement("div");
           card.className = "result-card";
 

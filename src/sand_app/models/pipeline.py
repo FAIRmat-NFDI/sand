@@ -7,7 +7,7 @@ class PipelineRequest(BaseModel):
     text: str
 
 
-class ProcessResult(BaseModel):
+class CellResult(BaseModel):
     name: str
     upload_id: str
     entry_url: str
@@ -15,4 +15,4 @@ class ProcessResult(BaseModel):
 
 
 class PipelineResponse(BaseModel):
-    processes: list[ProcessResult]
+    cells: list[CellResult]

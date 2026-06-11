@@ -17,8 +17,8 @@ async def extract(
         raise HTTPException(status_code=400, detail='Text is empty')
 
     try:
-        processes = await extraction.extract(body.text)
+        cells = await extraction.extract(body.text)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    return ExtractResponse(processes=processes)
+    return ExtractResponse(cells=cells)
