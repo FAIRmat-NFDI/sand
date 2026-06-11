@@ -1,127 +1,108 @@
 # sand-app
 
-Nomad example template
 
-This `nomad` plugin was generated with `Cookiecutter` along with `@nomad`'s [`cookiecutter-nomad-plugin`](https://github.com/FAIRmat-NFDI/cookiecutter-nomad-plugin) template.
+## Running the SAND app
 
-## Development
+`sand-app` is not a standalone application — it is a **NOMAD plugin**. It is mounted onto NOMAD's API server under the `sand/` prefix. To run it you
+start a NOMAD instance with this plugin installed and configured. The easiest way
+to do this for development is via the
+[`nomad-distro-dev`](https://github.com/FAIRmat-NFDI/nomad-distro-dev) repository.
 
-If you want to develop locally this plugin, clone the project and in the plugin folder, create a virtual environment (you can use Python 3.10, 3.11 or 3.12):
+### Prerequisites
+
+Before you can run the SAND app you need a few things in place:
+
+- A working [`nomad-distro-dev`](https://github.com/FAIRmat-NFDI/nomad-distro-dev)
+  checkout with its [basic infra prerequisites](https://github.com/FAIRmat-NFDI/nomad-distro-dev#basic-infra)
+
+- A **Groq API key** — used for speech-to-text (Whisper). Get one from
+  <https://console.groq.com/keys>.
+- 
+- An **Anthropic API key** — used for the AI extraction of structured data. Get
+  one from <https://console.anthropic.com/>.
+
+### 1. Add the plugin to a NOMAD dev distribution
+
+The SAND app is loaded as part of a NOMAD distribution, so the plugin first has
+to live inside your `nomad-distro-dev` checkout as a workspace package. From the
+root of `nomad-distro-dev`, add it under `packages/` (as a git submodule if you
+have a repo for it) and register it with `uv`:
+
 ```sh
-git clone https://github.com/FAIRmat-NFDI/sand-app.git
-cd sand-app
-python3.11 -m venv .pyenv
-. .pyenv/bin/activate
+# Add the plugin source under packages/ (submodule shown here; a plain copy works too)
+git submodule add https://github.com/FAIRmat-NFDI/sand-app.git packages/sand-app
+
+# Register it as an editable workspace dependency
+uv add packages/sand-app
 ```
 
-Make sure to have `pip` upgraded:
+This adds `sand-app` to `[project.dependencies]` and `[tool.uv.sources]` in the
+distribution's `pyproject.toml` (with `sand-app = { workspace = true }`).
+
+### 2. Configure the plugin in `nomad.yaml`
+
+The `uv run poe setup` step (below) creates a `nomad.yaml` in the root of your
+`nomad-distro-dev` checkout if one does not exist yet. You must edit it to
+**enable** the SAND API entry point and **provide your API keys**, otherwise the
+app will load but the AI features will not work:
+
+```yaml
+plugins:
+  entry_points:
+    include:
+      - sand_app.apis:sand_api
+    options:
+      sand_app.apis:sand_api:
+        groq_api_key: '<your-groq-api-key>'        # required: speech-to-text
+        whisper_model: 'whisper-large-v3-turbo'    # Groq Whisper model
+        anthropic_api_key: '<your-anthropic-api-key>'  # required: AI extraction
+        anthropic_model: 'claude-sonnet-4-20250514'    # Anthropic model
+        # Base URL of the NOMAD API the app uploads to. For a local instance:
+        nomad_base_url: 'http://localhost:8000/nomad-oasis/api/v1'
+```
+
+
+> [!WARNING]
+> Do not commit real API keys to `nomad.yaml`. Keep them out of version control
+
+### 3. Start NOMAD
+
+From the root of your `nomad-distro-dev` checkout:
+
 ```sh
-pip install --upgrade pip
+uv run poe setup
+
+docker compose up -d
+
+uv sync
+
+uv run poe start
+
+uv run poe gui start
 ```
 
-We recommend installing `uv` for fast pip installation of the packages:
-```sh
-pip install uv
+### 4. Open the app
+
+With the default `/nomad-oasis/api` base path, the SAND app is available at:
+
+The app is mounted at the base URL (**note the trailing slash**):
+
+```
+http://localhost:8000/nomad-oasis/sand/
 ```
 
-Install the `nomad-lab` package:
-```sh
-uv pip install -e '.[dev]'
-```
+The general form is `<api_base_path>/sand/`, i.e. NOMAD's API base path
+(`config.services.api_base_path`, default `/nomad-oasis`) with the plugin's `sand`
+prefix appended.
 
-### Run the tests
+| Method | URL | Description |
+|--------|-----|-------------|
+| `GET`  | `http://localhost:8000/nomad-oasis/sand/` | The SAND UI (`static/index.html`) |
+| `GET`  | `http://localhost:8000/nomad-oasis/sand/docs` | FastAPI Swagger / OpenAPI docs |
+| `GET`  | `http://localhost:8000/nomad-oasis/sand/auth/config` | Keycloak config for the frontend |
+| `POST` | `http://localhost:8000/nomad-oasis/sand/api/transcribe` | Speech-to-text (audio → text) |
+| `POST` | `http://localhost:8000/nomad-oasis/sand/api/extract` | AI extraction (text → structured data) |
+| `POST` | `http://localhost:8000/nomad-oasis/sand/api/pipeline` | Full pipeline (audio → structured data → NOMAD upload) |
 
-You can run locally the tests:
-```sh
-python -m pytest -sv tests
-```
-
-where the `-s` and `-v` options toggle the output verbosity.
-
-Our CI/CD pipeline produces a more comprehensive test report using the `pytest-cov` package. You can generate a local coverage report:
-```sh
-uv pip install pytest-cov
-python -m pytest --cov=src tests
-```
-
-### Run linting and auto-formatting
-
-We use [Ruff](https://docs.astral.sh/ruff/) for linting and formatting the code. Ruff auto-formatting is also a part of the GitHub workflow actions. You can run locally:
-```sh
-ruff check .
-ruff format . --check
-```
-
-### Debugging
-
-For interactive debugging of the tests, use `pytest` with the `--pdb` flag. We recommend using an IDE for debugging, e.g., _VSCode_. If that is the case, add the following snippet to your `.vscode/launch.json`:
-```json
-{
-  "configurations": [
-      {
-        "name": "<descriptive tag>",
-        "type": "debugpy",
-        "request": "launch",
-        "cwd": "${workspaceFolder}",
-        "program": "${workspaceFolder}/.pyenv/bin/pytest",
-        "justMyCode": true,
-        "env": {
-            "_PYTEST_RAISE": "1"
-        },
-        "args": [
-            "-sv",
-            "--pdb",
-            "<path-to-plugin-tests>",
-        ]
-    }
-  ]
-}
-```
-
-where `<path-to-plugin-tests>` must be changed to the local path to the test module to be debugged.
-
-The settings configuration file `.vscode/settings.json` automatically applies the linting and formatting upon saving the modified file.
-
-### Documentation on Github pages
-
-To view the documentation locally, install the related packages using:
-```sh
-uv pip install -r requirements_docs.txt
-```
-
-Run the documentation server:
-```sh
-mkdocs serve
-```
-
-## Adding this plugin to NOMAD
-
-Currently, NOMAD has two distinct flavors that are relevant depending on your role as an user:
-1. [A NOMAD Oasis](#adding-this-plugin-in-your-nomad-oasis): any user with a NOMAD Oasis instance.
-2. [Local NOMAD installation and the source code of NOMAD](#adding-this-plugin-in-your-local-nomad-installation-and-the-source-code-of-nomad): internal developers.
-
-### Adding this plugin in your NOMAD Oasis
-
-Read the [NOMAD plugin documentation](https://nomad-lab.eu/prod/v1/staging/docs/howto/oasis/plugins_install.html) for all details on how to deploy the plugin on your NOMAD instance.
-
-### Adding this plugin in your local NOMAD installation and the source code of NOMAD
-
-We now recommend using the dedicated [`nomad-distro-dev`](https://github.com/FAIRmat-NFDI/nomad-distro-dev) repository to simplify the process. Please refer to that repository for detailed instructions.
-
-## Publish note
-In the [GitHub actions workflow](./.github/workflows/publish.yml) for publishing the sand-app plugin to PyPI, we commented out the `deploy` job . If you want to publish the plugin to `PyPI`, you need to set up your project in `PyPI`. There are several online tutorials on publishing a Python package to PyPI, e.g., [How to Publish a Python Package to PyPI](https://realpython.com/pypi-publish-python-package/). After that, you can uncomment the `deploy` job in the workflow file and push the changes to GitHub. The workflow will be triggered and the package will be published to `PyPI` when you create a new release on GitHub.
-
-In our Python package publishing workflow, before building the package, we update the image tag in the [NORTHTool](./src/sand_app/north_tools/my_north_tool/__init__.py) entry point to the latest release version of the image (e.g., `v0.1.5`), and then publish the package to PyPI.
-
-However, the updated image tag in `NORTHTool` is not pushed back to the GitHub repository. Therefore, the image tag in the GitHub repository always remains set to `main`, even when you check out a specific release tag. For this reason, we recommend installing the plugin from [PyPI](https://pypi.org/), where the entry point always contains the correct image tag corresponding to the release.
-
-If you download a ZIP file of a specific release from GitHub, the image tag in the entry point will still be set to `main`, which is not correct. In that case, you can either manually update the image tag in the entry point to the correct release version (e.g., `v0.1.5`), or install the plugin directly from PyPI.
-
-### Template update
-
-We use [`cruft`](https://github.com/cruft/cruft) to update the project based on template changes. To run the check for updates locally, run `cruft update` in the root of the project. More details see the instructions on [`cruft` website](https://cruft.github.io/cruft/#updating-a-project).
-
-## Main contributors
-| Name | E-mail     |
-|------|------------|
-| Yaru Wang | [yaru.wang@physik.hu-berlin.de](mailto:yaru.wang@physik.hu-berlin.de)
+The `transcribe`, `extract`, and `pipeline` routes require a logged-in user, so
+you must authenticate through Keycloak before calling them.
