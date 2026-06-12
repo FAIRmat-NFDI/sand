@@ -32,6 +32,7 @@ dependencies = [
     "groq>=0.25",
     "httpx>=0.23.3",
     "python-multipart>=0.0.18",
+    "perla-extract",
 ]
 
 [project.urls]

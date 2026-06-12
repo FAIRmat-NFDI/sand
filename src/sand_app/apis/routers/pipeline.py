@@ -39,8 +39,13 @@ async def pipeline(
             status_code=502, detail=f'Extraction failed: {exc}'
         ) from exc
 
-    # Filter, transform, and split into one NOMAD archive entry per cell.
-    entries = convert_cells_to_nomad_entries(cells, source_text=body.text)
+    # Postprocess, validate, filter, and split into one NOMAD entry per cell.
+    try:
+        entries = convert_cells_to_nomad_entries(cells, source_text=body.text)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502, detail=f'Preparing NOMAD entries failed: {exc}'
+        ) from exc
 
     results: list[CellResult] = []
     for archive in entries:

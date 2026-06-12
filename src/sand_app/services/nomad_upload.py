@@ -3,6 +3,10 @@ from dataclasses import dataclass
 from urllib.parse import urlparse, urlunparse
 
 import httpx
+from nomad.utils import generate_entry_id
+
+# Mainfile name the archive is uploaded under (see NomadUploader.upload).
+ARCHIVE_FILENAME = 'entry.archive.json'
 
 
 class NomadAPIError(Exception):
@@ -54,7 +58,7 @@ class NomadUploader:
 
             response = await client.put(
                 f'/uploads/{upload_id}/raw/',
-                params={'file_name': 'entry.archive.json'}, # TODO: change name configurable?
+                params={'file_name': ARCHIVE_FILENAME},
                 content=json.dumps(archive).encode(),
                 headers={'Content-Type': 'application/json'},
             )
@@ -67,12 +71,14 @@ class NomadUploader:
                     path = path[: -len(suffix)]
                     break
 
-            netloc = parsed.netloc
-            # TODO: remove the localhost logic in production
-            if 'localhost' in parsed.hostname:
-                netloc = netloc.replace(':8000', ':3000')
-            gui_base = urlunparse((parsed.scheme, netloc, f'{path}/gui', '', '', ''))
-            entry_url = f'{gui_base}/user/uploads/upload/id/{upload_id}'
+            # NOMAD GUI v2 entry URL:
+            #   {base}/gui/v2/projects/{upload_id}/entries/{entry_id}
+            # entry_id is derived deterministically from the upload and mainfile.
+            gui_base = urlunparse(
+                (parsed.scheme, parsed.netloc, f'{path}/gui/v2', '', '', '')
+            )
+            entry_id = generate_entry_id(upload_id, ARCHIVE_FILENAME)
+            entry_url = f'{gui_base}/projects/{upload_id}/entries/{entry_id}'
             return UploadResult(upload_id=upload_id, entry_url=entry_url)
 
     def _check_response(self, response: httpx.Response, step: str) -> None:
