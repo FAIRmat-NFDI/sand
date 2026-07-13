@@ -24,7 +24,11 @@ class GroqSTTService:
         except Exception as exc:
             raise RuntimeError(f'Groq transcription failed: {exc}') from exc
 
-return (response if isinstance(response, str) else getattr(response, "text", str(response))).strip()
+        # response_format='text' yields a str, but the SDK may return an
+        # object with a .text attribute depending on the model.
+        if isinstance(response, str):
+            return response.strip()
+        return getattr(response, 'text', str(response)).strip()
 
     async def close(self) -> None:
         await self._client.close()
