@@ -4,6 +4,6 @@ if ! command -v rsync >/dev/null 2>&1; then
   echo "rsync required, but not installed!"
   exit 1
 else
-  rsync -avh sand-app/ .
-  rm -rfv sand-app
+  rsync -avh sand/ .
+  rm -rfv sand
 fi

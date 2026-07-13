@@ -11,7 +11,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_TAG: main
-  NORTH_TOOL_DIR: src/sand_app/north_tools/my_north_tool
+  NORTH_TOOL_DIR: src/sand/north_tools/my_north_tool
 
 permissions:
   packages: write

@@ -1,3 +1,3 @@
-graft src/sand_app/example_uploads
-graft src/sand_app/apis/static
-include src/sand_app/solar_cell_schema.json
+graft src/sand/example_uploads
+graft src/sand/apis/static
+include src/sand/solar_cell_schema.json
