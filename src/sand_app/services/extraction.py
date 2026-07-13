@@ -2,10 +2,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from anthropic import AsyncAnthropic, APIStatusError
+from anthropic import APIStatusError, AsyncAnthropic
 
-
-SCHEMA_PATH = Path(__file__).parent.parent / 'sollar_cell_schema.json'
+SCHEMA_PATH = Path(__file__).parent.parent / 'solar_cell_schema.json'
 
 # Prompts adapted from lamalab-org/perla-extract
 # (src/perla_extract/constants.py)

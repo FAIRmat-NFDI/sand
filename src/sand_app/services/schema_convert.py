@@ -1,7 +1,8 @@
 """Resolve NOMAD JSON Schema exports to flat extraction schemas.
 
 NOMAD API exports use JSON Schema $ref / allOf inheritance. This module
-resolves that inheritance chain and produces a flat.
+resolves that inheritance chain and produces a flat, self-contained schema
+suitable for use as an LLM extraction tool definition.
 """
 
 

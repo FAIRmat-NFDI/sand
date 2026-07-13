@@ -17,7 +17,6 @@ Before you can run the SAND app you need a few things in place:
 
 - A **Groq API key** — used for speech-to-text (Whisper). Get one from
   <https://console.groq.com/keys>.
-- 
 - An **Anthropic API key** — used for the AI extraction of structured data. Get
   one from <https://console.anthropic.com/>.
 

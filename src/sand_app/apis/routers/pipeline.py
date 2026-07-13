@@ -39,7 +39,7 @@ async def pipeline(
             status_code=502, detail=f'Extraction failed: {exc}'
         ) from exc
 
-    # Postprocess, validate, filter, and split into one NOMAD entry per cell.
+    # Postprocess, validate, filter, and split into one NOMAD perovskite solar cell entry per cell.
     try:
         entries = convert_cells_to_nomad_entries(cells, source_text=body.text)
     except Exception as exc:
@@ -48,23 +48,25 @@ async def pipeline(
         ) from exc
 
     results: list[CellResult] = []
-    for archive in entries:
-        name = cell_display_name(archive['data'])
-        try:
-            upload = await uploader.upload(archive, token=token)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=502,
-                detail=f"NOMAD upload failed for '{name}': {exc}",
-            ) from exc
+    # One client for all cells, so the connection pool is reused across uploads.
+    async with uploader.build_client(token) as client:
+        for archive in entries:
+            name = cell_display_name(archive['data'])
+            try:
+                upload = await uploader.upload_with_client(client, archive)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"NOMAD upload failed for '{name}': {exc}",
+                ) from exc
 
-        results.append(
-            CellResult(
-                name=name,
-                upload_id=upload.upload_id,
-                entry_url=upload.entry_url,
-                archive=archive,
+            results.append(
+                CellResult(
+                    name=name,
+                    upload_id=upload.upload_id,
+                    entry_url=upload.entry_url,
+                    archive=archive,
+                )
             )
-        )
 
     return PipelineResponse(cells=results)

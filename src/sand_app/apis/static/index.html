@@ -381,12 +381,22 @@
       document.getElementById("app-content").style.display = "block";
 
       const name = keycloak.tokenParsed.preferred_username || keycloak.tokenParsed.name || "";
-      document.getElementById("auth-area").innerHTML =
-        '<span>' + name + '</span>' +
-        '<button class="btn btn-text" id="logout-btn"><span class="material-icons">logout</span></button>';
-      document.getElementById("logout-btn").addEventListener("click", () => {
+      const nameEl = document.createElement("span");
+      nameEl.textContent = name;
+
+      const icon = document.createElement("span");
+      icon.className = "material-icons";
+      icon.textContent = "logout";
+
+      const logoutBtn = document.createElement("button");
+      logoutBtn.className = "btn btn-text";
+      logoutBtn.id = "logout-btn";
+      logoutBtn.appendChild(icon);
+      logoutBtn.addEventListener("click", () => {
         keycloak.logout({ redirectUri: window.location.href });
       });
+
+      document.getElementById("auth-area").replaceChildren(nameEl, logoutBtn);
     }
 
     document.getElementById("login-btn").addEventListener("click", () => {

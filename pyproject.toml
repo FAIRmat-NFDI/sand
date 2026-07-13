@@ -140,7 +140,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-sand_app = ["apis/static/*", "elnprocess_schema.json"]
+sand_app = ["apis/static/*", "solar_cell_schema.json"]
 
 [project.entry-points.'nomad.plugin']
 sand_api = "sand_app.apis:sand_api"

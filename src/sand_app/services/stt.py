@@ -1,4 +1,4 @@
-from groq import AsyncGroq, APIError, APIConnectionError
+from groq import APIConnectionError, APIError, AsyncGroq
 
 
 class GroqSTTService:

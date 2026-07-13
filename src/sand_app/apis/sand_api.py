@@ -4,15 +4,7 @@ from fastapi import Depends, FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from nomad.app.v1.routers.auth import get_current_user
-from nomad.auth.scopes import Scope as AuthScope
 from nomad.config import config
-
-
-# TODO: this need to be updated maybe to uplaod access when the api scope is supprted.
-require_login = Depends(
-    get_current_user({}, allow_anonymous=False)
-)
-
 
 from sand_app.apis.routers.extract import router as extract_router
 from sand_app.apis.routers.pipeline import router as pipeline_router
@@ -20,6 +12,9 @@ from sand_app.apis.routers.transcribe import router as transcribe_router
 from sand_app.services.extraction import ExtractionService
 from sand_app.services.nomad_upload import NomadUploader
 from sand_app.services.stt import GroqSTTService
+
+# TODO: this need to be updated maybe to uplaod access when the api scope is supprted.
+require_login = Depends(get_current_user({}, allow_anonymous=False))
 
 STATIC_DIR = Path(__file__).parent / 'static'
 
