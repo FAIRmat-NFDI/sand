@@ -2,7 +2,7 @@ import logging
 
 from nomad.datamodel import EntryArchive
 
-from sand_app.parsers.parser import NewParser
+from sand.parsers.parser import NewParser
 
 
 def test_parse_file():

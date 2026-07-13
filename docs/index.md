@@ -1,4 +1,4 @@
-# Welcome to the `sand-app` documentation
+# Welcome to the `sand` documentation
 
 Nomad example template
 

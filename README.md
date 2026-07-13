@@ -1,9 +1,9 @@
-# sand-app
+# sand
 
 
 ## Running the SAND app
 
-`sand-app` is not a standalone application — it is a **NOMAD plugin**. It is mounted onto NOMAD's API server under the `sand/` prefix. To run it you
+SAND is not a standalone application — it is a **NOMAD plugin**. It is mounted onto NOMAD's API server under the `sand/` prefix. To run it you
 start a NOMAD instance with this plugin installed and configured. The easiest way
 to do this for development is via the
 [`nomad-distro-dev`](https://github.com/FAIRmat-NFDI/nomad-distro-dev) repository.
@@ -29,14 +29,19 @@ have a repo for it) and register it with `uv`:
 
 ```sh
 # Add the plugin source under packages/ (submodule shown here; a plain copy works too)
-git submodule add https://github.com/FAIRmat-NFDI/sand-app.git packages/sand-app
+git submodule add https://github.com/FAIRmat-NFDI/sand.git packages/sand
 
 # Register it as an editable workspace dependency
-uv add packages/sand-app
+uv add packages/sand
 ```
 
-This adds `sand-app` to `[project.dependencies]` and `[tool.uv.sources]` in the
-distribution's `pyproject.toml` (with `sand-app = { workspace = true }`).
+This adds `nomad-sand` to `[project.dependencies]` and `[tool.uv.sources]` in the
+distribution's `pyproject.toml` (with `nomad-sand = { workspace = true }`).
+
+> [!NOTE]
+> The distribution is named `nomad-sand`, while the Python module it installs is
+> `sand` — so it is `pip install nomad-sand` but `import sand`. The plain `sand`
+> name is already taken on PyPI by an unrelated project.
 
 ### 2. Configure the plugin in `nomad.yaml`
 
@@ -49,9 +54,9 @@ app will load but the AI features will not work:
 plugins:
   entry_points:
     include:
-      - sand_app.apis:sand_api
+      - sand.apis:sand_api
     options:
-      sand_app.apis:sand_api:
+      sand.apis:sand_api:
         groq_api_key: '<your-groq-api-key>'        # required: speech-to-text
         whisper_model: 'whisper-large-v3-turbo'    # Groq Whisper model
         anthropic_api_key: '<your-anthropic-api-key>'  # required: AI extraction

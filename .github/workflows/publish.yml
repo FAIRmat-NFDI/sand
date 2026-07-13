@@ -6,7 +6,7 @@ on:
 
 env:
   PYTHON_VERSION: 3.12
-  IMAGE: "ghcr.io/fairmat-nfdi/sand-app"
+  IMAGE: "ghcr.io/fairmat-nfdi/sand"
 
 jobs:
   build-docker-image:
@@ -27,10 +27,10 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Overwrite the image tag
         run: |
-          IMAGE_TAG=$(grep -oP "${{ env.IMAGE }}:\K[^'\",]+" src/sand_app/north_tools/my_north_tool/__init__.py)
+          IMAGE_TAG=$(grep -oP "${{ env.IMAGE }}:\K[^'\",]+" src/sand/north_tools/my_north_tool/__init__.py)
 
           sed -i "s|${{ env.IMAGE }}:${IMAGE_TAG}|${{ env.IMAGE }}:${GITHUB_REF_NAME}|g" \
-          src/sand_app/north_tools/my_north_tool/__init__.py
+          src/sand/north_tools/my_north_tool/__init__.py
       
       - name: build package
         run: |
@@ -47,7 +47,7 @@ jobs:
   #   runs-on: ubuntu-latest
   #   environment:
   #     name: pypi
-  #     url: https://pypi.org/p/sand-app
+  #     url: https://pypi.org/p/nomad-sand
   #   permissions:
   #     id-token: write
   #   steps:

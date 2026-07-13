@@ -1,8 +1,8 @@
-site_name: sand-app
+site_name: sand
 site_description: Nomad example template
 site_author: Yaru Wang
 
-repo_url: https://github.com/FAIRmat-NFDI/sand-app
+repo_url: https://github.com/FAIRmat-NFDI/sand
 edit_uri: ""
 
 nav:
