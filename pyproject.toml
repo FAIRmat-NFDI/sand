@@ -31,7 +31,6 @@ dependencies = [
     "groq>=0.25",
     "httpx>=0.23.3",
     "python-multipart>=0.0.18",
-    "perla-extract",
 ]
 
 [project.urls]
@@ -139,7 +138,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-sand = ["apis/static/*", "solar_cell_schema.json"]
+sand = ["apis/static/*", "flatten_HySprint_SlotDieCoating.json"]
 
 [project.entry-points.'nomad.plugin']
 sand_api = "sand.apis:sand_api"

@@ -1,0 +1,1751 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HySprint_SlotDieCoating",
+  "type": "object",
+  "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad_hysprint.schema_packages.hysprint_package.HySprint_SlotDieCoating@721157f80129ef3bb46658ac6dec1e6ae43f6f1f",
+  "allOf": [
+    {
+      "$comment": "SlotDieCoating :Spin Coating",
+      "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.slot_die_coating.SlotDieCoating@d18424dfda1280e9e2f17385d18d503ff4308ded"
+    },
+    {
+      "$comment": "EntryData :An empty base section definition. This can be used to add new top-level sections to an entry.",
+      "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.EntryData@486f476f18785f5f4bcbac10db7304d7de35636b"
+    }
+  ],
+  "properties": {
+    "location": {
+      "description": "location of the experiment.",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad_hysprint.schema_packages.hysprint_package.HySprint_SlotDieCoating.location@e54e68c5e0552ff59f245ff04c7feaba37fb2644",
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "baseclasses.wet_chemical_deposition.slot_die_coating.SlotDieCoating": {
+      "title": "SlotDieCoating",
+      "description": "Spin Coating",
+      "links": [
+        "https://purl.archive.org/tfsco/TFSCO_00000075"
+      ],
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.slot_die_coating.SlotDieCoating@d18424dfda1280e9e2f17385d18d503ff4308ded",
+      "allOf": [
+        {
+          "$comment": "WetChemicalDeposition :Wet Chemical Deposition",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.wet_chemical_deposition.WetChemicalDeposition@43051d39a703b6d46733280e1d6a108b2d0abb41"
+        }
+      ],
+      "properties": {
+        "properties": {
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.slot_die_coating.SlotDieCoatingProperties@a94c4f81fbda5b4d239a8815559b45c6172cf949",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.slot_die_coating.SlotDieCoating.properties@800b7534ea3cf9c9ac22c1a4bd5ce8a1c0969610"
+        }
+      }
+    },
+    "baseclasses.wet_chemical_deposition.slot_die_coating.SlotDieCoatingProperties": {
+      "title": "SlotDieCoatingProperties",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.slot_die_coating.SlotDieCoatingProperties@a94c4f81fbda5b4d239a8815559b45c6172cf949",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "flow_rate": {
+          "links": [
+            "https://purl.archive.org/tfsco/TFSCO_00005039",
+            "https://purl.archive.org/tfsco/TFSCO_00005048"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.slot_die_coating.SlotDieCoatingProperties.flow_rate@d9bf11f3848ace0cf3fb13bee2a04c9b3e123c34",
+          "type": "number",
+          "unit": "milliliter / minute",
+          "minimum": 0
+        },
+        "slot_die_head_width": {
+          "links": [
+            "https://purl.archive.org/tfsco/TFSCO_00005038",
+            "https://purl.archive.org/tfsco/TFSCO_00005047"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.slot_die_coating.SlotDieCoatingProperties.slot_die_head_width@06b2f18e96bb5358f4288bd4f20ea80e0be31968",
+          "type": "number",
+          "unit": "millimeter",
+          "minimum": 0
+        },
+        "slot_die_shim_width": {
+          "links": [
+            "https://purl.archive.org/tfsco/TFSCO_00005035",
+            "https://purl.archive.org/tfsco/TFSCO_00005045"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.slot_die_coating.SlotDieCoatingProperties.slot_die_shim_width@d7877387cb57c2aa3e939ab53cc10bdaba57bde6",
+          "type": "number",
+          "unit": "millimeter",
+          "minimum": 0
+        },
+        "slot_die_shim_thickness": {
+          "links": [
+            "https://purl.archive.org/tfsco/TFSCO_00005036",
+            "https://purl.archive.org/tfsco/TFSCO_00005046"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.slot_die_coating.SlotDieCoatingProperties.slot_die_shim_thickness@9b967e7f6ecc90e1341a64e77de6720cc2fa5d3b",
+          "type": "number",
+          "unit": "millimeter",
+          "minimum": 0
+        },
+        "slot_die_head_distance_to_thinfilm": {
+          "links": [
+            "https://purl.archive.org/tfsco/TFSCO_00005034",
+            "https://purl.archive.org/tfsco/TFSCO_00005044"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.slot_die_coating.SlotDieCoatingProperties.slot_die_head_distance_to_thinfilm@a89a106f80d44850583712b6a490d4e76c5bbf81",
+          "type": "number",
+          "unit": "millimeter",
+          "minimum": 0
+        },
+        "slot_die_head_speed": {
+          "links": [
+            "https://purl.archive.org/tfsco/TFSCO_00005033",
+            "https://purl.archive.org/tfsco/TFSCO_00005033"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.slot_die_coating.SlotDieCoatingProperties.slot_die_head_speed@42b2a51a9f0981f92c743951d23d9dc5b2f3bf1a",
+          "type": "number",
+          "unit": "millimeter / second",
+          "minimum": 0
+        },
+        "temperature": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000146",
+            "https://purl.archive.org/tfsco/TFSCO_00002111"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.slot_die_coating.SlotDieCoatingProperties.temperature@1a65d546f7517181edddc21a93136b271a0160be",
+          "type": "number",
+          "unit": "degree_Celsius",
+          "minimum": 0
+        },
+        "coating_run": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.slot_die_coating.SlotDieCoatingProperties.coating_run@b419b6b857435abe04beac33d3287020ed95b3da",
+          "type": "string"
+        },
+        "coated_area": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.slot_die_coating.SlotDieCoatingProperties.coated_area@9541e88d21e24ef209f24629e2730d3035887620",
+          "type": "number",
+          "unit": "millimeter ** 2",
+          "minimum": 0
+        }
+      }
+    },
+    "nomad.datamodel.data.ArchiveSection": {
+      "title": "ArchiveSection",
+      "description": "Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+    },
+    "baseclasses.wet_chemical_deposition.wet_chemical_deposition.WetChemicalDeposition": {
+      "title": "WetChemicalDeposition",
+      "description": "Wet Chemical Deposition",
+      "links": [
+        "https://purl.archive.org/tfsco/TFSCO_00002051"
+      ],
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.wet_chemical_deposition.WetChemicalDeposition@43051d39a703b6d46733280e1d6a108b2d0abb41",
+      "allOf": [
+        {
+          "$comment": "LayerDeposition :A material processing which deposits thin layers onto an material entity.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.LayerDeposition@e0585ef769f1e6aadc1e69b0ec229f7da189d26e"
+        }
+      ],
+      "properties": {
+        "solution": {
+          "type": "array",
+          "items": {
+            "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.wet_chemical_deposition.PrecursorSolution@70420c09dd48bf5be5fb08f268feb74ba39ac979"
+          },
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.wet_chemical_deposition.WetChemicalDeposition.solution@c63b55cae3bbeceecbc105df2c3558a4e22722f4"
+        },
+        "annealing": {
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.material_processes_misc.annealing.Annealing@17bc3dd6df94f426baa1a080e53c9d77d1198825",
+          "description": "Base class for annealing of a sample",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.wet_chemical_deposition.WetChemicalDeposition.annealing@30675c27b5c061b568a1054104d90be215b5fef1"
+        },
+        "quenching": {
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.material_processes_misc.quenching.Quenching@fd66eb870f8e060be2509b52cd66ca76eaef2d65",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.wet_chemical_deposition.WetChemicalDeposition.quenching@081587e35be33234b3a50fd42e11053712f5e2a0"
+        },
+        "sintering": {
+          "type": "array",
+          "items": {
+            "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.material_processes_misc.sintering.Sintering@52fab746c7beed4f03d1e2b00ba7f4612e012e04"
+          },
+          "description": "Base class for sintering of a sample",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.wet_chemical_deposition.WetChemicalDeposition.sintering@5e992809bfd02bee81f0edfcdf55fd555cc797a4"
+        }
+      }
+    },
+    "baseclasses.wet_chemical_deposition.wet_chemical_deposition.PrecursorSolution": {
+      "title": "PrecursorSolution",
+      "links": [
+        "https://purl.archive.org/tfsco/TFSCO_00001081"
+      ],
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.wet_chemical_deposition.PrecursorSolution@70420c09dd48bf5be5fb08f268feb74ba39ac979",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "name": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.wet_chemical_deposition.PrecursorSolution.name@96c065737139d152724f00732f72cac3c4773c9b",
+          "type": "string"
+        },
+        "reload_referenced_solution": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.wet_chemical_deposition.PrecursorSolution.reload_referenced_solution@48b8465ea4e427d63d88712e508fce43e15fc065",
+          "type": "boolean",
+          "default": false
+        },
+        "solution": {
+          "links": [
+            "http://purl.obolibrary.org/obo/CHEBI_75958"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.wet_chemical_deposition.PrecursorSolution.solution@d45da1a4527f21dd52dfd34ecb2548017ef69cc0",
+          "type": "string"
+        },
+        "solution_volume": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000918",
+            "https://purl.archive.org/tfsco/TFSCO_00002158"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.wet_chemical_deposition.PrecursorSolution.solution_volume@0a50f13e014d09d3a1ee6b85d06e7580f696a6cb",
+          "type": "number",
+          "unit": "milliliter",
+          "minimum": 0
+        },
+        "solution_viscosity": {
+          "description": "Viscosity of the ink solution, critical for printability in inkjet printing",
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000992"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.wet_chemical_deposition.PrecursorSolution.solution_viscosity@573bffc66529983d45ef61af02c6933403580a73",
+          "type": "number",
+          "unit": "pascal * second",
+          "minimum": 0
+        },
+        "solution_contact_angle": {
+          "description": "The angle formed between the solution and the underlying layer.",
+          "links": [
+            "http://www.ontology-of-units-of-measure.org/resource/om-2/ContactAngle"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.wet_chemical_deposition.PrecursorSolution.solution_contact_angle@cd3f09b563c50877f3f73f955fa725e532098ff5",
+          "type": "number",
+          "unit": "degree",
+          "minimum": 0,
+          "maximum": 180
+        },
+        "solution_density": {
+          "description": "The density of the solution.",
+          "links": [
+            "http://www.ontology-of-units-of-measure.org/resource/om-2/Density"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.wet_chemical_deposition.PrecursorSolution.solution_density@167195ad63d17521b9b3a3f616d83af86e6e3d44",
+          "type": "number",
+          "unit": "gram / centimeter ** 3",
+          "minimum": 0
+        },
+        "solution_surface_tension": {
+          "description": "The surface tension of the solution.",
+          "links": [
+            "http://www.ontology-of-units-of-measure.org/resource/om-2/SurfaceTension"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.wet_chemical_deposition.PrecursorSolution.solution_surface_tension@7394aad22d07a323d8528b287ebde4eee7f39b7f",
+          "type": "number",
+          "unit": "millinewton / meter",
+          "minimum": 0
+        },
+        "solution_details": {
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.Solution@aafc7332066dbb76e8e1cfcd46fdb8ec35f0d708",
+          "description": "Base class for a solution",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.wet_chemical_deposition.wet_chemical_deposition.PrecursorSolution.solution_details@fc5b277a6acb81770a0572d07761659cc9b1b28c"
+        }
+      }
+    },
+    "baseclasses.solution.Solution": {
+      "title": "Solution",
+      "description": "Base class for a solution",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.Solution@aafc7332066dbb76e8e1cfcd46fdb8ec35f0d708",
+      "allOf": [
+        {
+          "$comment": "CompositeSystem :A base section for a material systems composed of components. Each component of the composite system is of a (sub)type of `System`.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.CompositeSystem@6d8d36a0c7a590926a7f0997071c6233a8d80509"
+        }
+      ],
+      "properties": {
+        "method": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.Solution.method@7d92eaee2e1e46f0870317f0be913c68bbb8d680",
+          "type": "string",
+          "enum": [
+            "Shaker",
+            "Stirring",
+            "Ultrasoncic",
+            "Waiting"
+          ]
+        },
+        "solvent_ratio": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.Solution.solvent_ratio@413d1198c8611b3ac45be2468d41a5b45d3485e4",
+          "type": "string"
+        },
+        "temperature": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000146",
+            "https://purl.archive.org/tfsco/TFSCO_00002111"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.Solution.temperature@1a65d546f7517181edddc21a93136b271a0160be",
+          "type": "number",
+          "unit": "degree_Celsius"
+        },
+        "time": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000165",
+            "https://purl.archive.org/tfsco/TFSCO_00005085"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.Solution.time@fbf0489b4f89e48c32acb15344ac6abf744157b9",
+          "type": "number",
+          "unit": "minute"
+        },
+        "speed": {
+          "links": [
+            "https://purl.archive.org/tfsco/TFSCO_00002026",
+            "https://purl.archive.org/tfsco/TFSCO_00002005"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.Solution.speed@80eb3a92ab567ce07248a208395206b44a8dd46c",
+          "type": "number",
+          "unit": "hertz"
+        },
+        "solute": {
+          "type": "array",
+          "items": {
+            "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionChemical@23b0700e60e7e9ff1feaef0ec7c9c5a416fb539e"
+          },
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.Solution.solute@13f66d26df65e57b5d633c49e3fd2c772872c1dd"
+        },
+        "additive": {
+          "type": "array",
+          "items": {
+            "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionChemical@23b0700e60e7e9ff1feaef0ec7c9c5a416fb539e"
+          },
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.Solution.additive@deb4d47ab1bfa08108f193892f75e227d2aaf387"
+        },
+        "solvent": {
+          "type": "array",
+          "items": {
+            "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionChemical@23b0700e60e7e9ff1feaef0ec7c9c5a416fb539e"
+          },
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.Solution.solvent@c651061debbf46abc228482d7ffdddd7c90147e2"
+        },
+        "other_solution": {
+          "type": "array",
+          "items": {
+            "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.OtherSolution@54ec2be8d3c19bdab240ff8e55921ea44aa9443e"
+          },
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.Solution.other_solution@614e3d38431092cb0b9a13a15d6d00605b347375"
+        },
+        "preparation": {
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionPreparation@8a9cbefd6e0ea92ff1efccdd6faa78a619cf4d82",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.Solution.preparation@6fd8de7001915013f1368d5429fa49b84259952c"
+        },
+        "properties": {
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionProperties@67b0248fa700976eae2ae5ca86eed36b4d433b59",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.Solution.properties@ee93a06bccc91dafb27f2487af8053d9b67470a3"
+        },
+        "filtration": {
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionWaschingFiltration@ef132e628168a02fc1dbb8c5355c74a5d07d09d9",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.Solution.filtration@d3bb93ad1d8f10af7c0c66baa1b3b9ebfc3007dd"
+        },
+        "storage": {
+          "type": "array",
+          "items": {
+            "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionStorage@5350411df759f6113ae5f9b01efe0429f9c180a7"
+          },
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.Solution.storage@ad27ad61bf0ced305790b5b91ee1a460e4e65a23"
+        },
+        "solution_id": {
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.customreadable_identifier.ReadableIdentifiersCustom@3482b17c6d416a8e7d9fd375ccd9c19e851162d6",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.Solution.solution_id@981cf4cce8aced199cd2d617b2d35ae616c844c0"
+        }
+      }
+    },
+    "baseclasses.solution.SolutionChemical": {
+      "title": "SolutionChemical",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionChemical@23b0700e60e7e9ff1feaef0ec7c9c5a416fb539e",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "name": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionChemical.name@96c065737139d152724f00732f72cac3c4773c9b",
+          "type": "string"
+        },
+        "chemical": {
+          "links": [
+            "http://purl.obolibrary.org/obo/CHEBI_59999"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionChemical.chemical@ee64bb9d361fc8fe4a48a8a4e4d1ff471fe3611d",
+          "type": "string"
+        },
+        "chemical_volume": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000918",
+            "https://purl.archive.org/tfsco/TFSCO_00002158"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionChemical.chemical_volume@bdfe5c323ebacff6716b8fa85d991f5509631b98",
+          "type": "number",
+          "unit": "milliliter"
+        },
+        "chemical_mass": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000125",
+            "https://purl.archive.org/tfsco/TFSCO_00005020"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionChemical.chemical_mass@e7cd534173fcc7486aad55859a84b0a2655bb1af",
+          "type": "number",
+          "unit": "milligram"
+        },
+        "concentration_mass": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000033"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionChemical.concentration_mass@2a910ceb632c16a83eee89be0e0239f3bc5987b7",
+          "type": "number",
+          "unit": "milligram / milliliter"
+        },
+        "concentration_mol": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000033"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionChemical.concentration_mol@44cdba5e8efe77363ff393746edef14f334b69b1",
+          "type": "number",
+          "unit": "mole / milliliter"
+        },
+        "concentration_vol": {
+          "description": "Volume-to-volume concentration (v/v), e.g. for liquid additives or solvents.",
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000033"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionChemical.concentration_vol@a61fec573a3a00e9d169124c7b2d156f3e5a3fbe",
+          "type": "number",
+          "unit": "microliter / milliliter"
+        },
+        "amount_mol": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionChemical.amount_mol@4c0b1a308c8221bacca93b1590072bb23539ac17",
+          "type": "number",
+          "unit": "mole"
+        },
+        "amount_relative": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionChemical.amount_relative@19954f5550191b69e43d3a99b4da0fcea13a60ec",
+          "type": "number"
+        },
+        "chemical_id": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionChemical.chemical_id@adc8c2106d1ddf8d00dc3882754eb399917e6436",
+          "type": "string"
+        },
+        "chemical_2": {
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.PubChemPureSubstanceSectionCustom@f97d48271ac82fd1e1b610d1b32f0fe6f7a150d7",
+          "description": "A section for pure substances existing as \"compounds\" in the PubChem database and for tracking substances provided by suppliers",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionChemical.chemical_2@5938eabb15047a2bce66fb24c571c228558474eb"
+        }
+      }
+    },
+    "baseclasses.PubChemPureSubstanceSectionCustom": {
+      "title": "PubChemPureSubstanceSectionCustom",
+      "description": "A section for pure substances existing as \"compounds\" in the PubChem database and for tracking substances provided by suppliers",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.PubChemPureSubstanceSectionCustom@f97d48271ac82fd1e1b610d1b32f0fe6f7a150d7",
+      "allOf": [
+        {
+          "$comment": "PubChemPureSubstanceSection :A section for pure substances existing as \"compounds\" in the PubChem database.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.PubChemPureSubstanceSection@c791a67f2948054b5b24584fdd865478c0024779"
+        }
+      ],
+      "properties": {
+        "load_data": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.PubChemPureSubstanceSectionCustom.load_data@2d42f420885da4b2aae1b4a7e1105ed5596119dd",
+          "type": "boolean",
+          "default": true
+        },
+        "product_info": {
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.product_info.ProductInfo@068e83c8ec275fd96e7fa861735eea96fd6bdb62",
+          "description": "Product information",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.PubChemPureSubstanceSectionCustom.product_info@78c73d50d5027987f1254a43d032e9a1de274fa3"
+        }
+      }
+    },
+    "baseclasses.product_info.ProductInfo": {
+      "title": "ProductInfo",
+      "description": "A section for tracking product information and chemical identifiers",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.product_info.ProductInfo@068e83c8ec275fd96e7fa861735eea96fd6bdb62",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "product_number": {
+          "description": "Product Number, as defined by materials sent by the suppliers",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.product_info.ProductInfo.product_number@dc0496732b903f2959a3c587b5801986abe4df4a",
+          "type": "string"
+        },
+        "lot_number": {
+          "description": "LOT, Experiment or Batch Number, as defined by suppliers",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.product_info.ProductInfo.lot_number@65b8db093989e3dcc890fa22a50cc4f38516fd4b",
+          "type": "string"
+        },
+        "product_volume": {
+          "description": "Delivered Product Volume",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.product_info.ProductInfo.product_volume@14e25208729546b0c51fba6ea46817873505fee0",
+          "type": "number",
+          "unit": "milliliter"
+        },
+        "product_weight": {
+          "description": "Delivered Product Weight",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.product_info.ProductInfo.product_weight@26a4086308fe45ca0b19a7f8c4d18f475e4ffa7a",
+          "type": "number",
+          "unit": "gram"
+        },
+        "shipping_date": {
+          "description": "Date when product was shipped",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.product_info.ProductInfo.shipping_date@64c883a131d7fb9cc14c3f28c1f30f065c7460f9",
+          "type": "string",
+          "format": "date-time"
+        },
+        "opening_date": {
+          "description": "Date when product was opened",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.product_info.ProductInfo.opening_date@8852875a6694c3a3ebae410b21e74d5e4f346a5f",
+          "type": "string",
+          "format": "date-time"
+        },
+        "supplier": {
+          "description": "Partner/Company that supplies the product to the end user",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.product_info.ProductInfo.supplier@de1f1ad92d6133a814612972fa9c663891ae37c8",
+          "type": "string"
+        },
+        "product_description": {
+          "description": "Product description",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.product_info.ProductInfo.product_description@705987876cf37314f5a5fb77392f13187be683a5",
+          "type": "string"
+        },
+        "cost": {
+          "description": "Cost of product (in EUR).",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.product_info.ProductInfo.cost@860877084482d499a02b3c9580a207cb9b276f99",
+          "type": "number"
+        }
+      }
+    },
+    "nomad.datamodel.metainfo.basesections.v1.PubChemPureSubstanceSection": {
+      "title": "PubChemPureSubstanceSection",
+      "label": "PubChem Pure Substance Section",
+      "description": "A section for pure substances existing as \"compounds\" in the PubChem database.",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.PubChemPureSubstanceSection@c791a67f2948054b5b24584fdd865478c0024779",
+      "allOf": [
+        {
+          "$comment": "PureSubstanceSection :A sub section for describing any elemental, molecular or single phase pure substance.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.PureSubstanceSection@e9fb3fead711de859f8643a84cc5b054eb55a583"
+        }
+      ],
+      "properties": {
+        "pub_chem_cid": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.PubChemPureSubstanceSection.pub_chem_cid@3e6fea790cbe2ba09cc540be515c184e307693ca",
+          "type": "integer"
+        },
+        "pub_chem_link": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.PubChemPureSubstanceSection.pub_chem_link@d1284b4ac20595fa1a78d7a3684e3c8a1c1f8546",
+          "type": "string"
+        }
+      }
+    },
+    "nomad.datamodel.metainfo.basesections.v1.PureSubstanceSection": {
+      "title": "PureSubstanceSection",
+      "description": "A sub section for describing any elemental, molecular or single phase pure substance.",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.PureSubstanceSection@e9fb3fead711de859f8643a84cc5b054eb55a583",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "name": {
+          "description": "A short name for the substance.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.PureSubstanceSection.name@96c065737139d152724f00732f72cac3c4773c9b",
+          "type": "string"
+        },
+        "iupac_name": {
+          "description": "IUPAC name.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.PureSubstanceSection.iupac_name@da9131a9f003f7b56372c5c1fd1858045c0826ec",
+          "type": "string"
+        },
+        "molecular_formula": {
+          "description": "Molecular formula.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.PureSubstanceSection.molecular_formula@e8db8408050c7eb89fdd11ebae687ed965b77b61",
+          "type": "string"
+        },
+        "molecular_mass": {
+          "description": "The mass of the most likely isotopic composition for a single molecule,\ncorresponding to the most intense ion/molecule peak in a mass spectrum.",
+          "links": [
+            "https://en.wikipedia.org/wiki/Molecular_mass"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.PureSubstanceSection.molecular_mass@782e059a8d3b682e3e1b7630e59465f9b4b04a6e",
+          "type": "number",
+          "unit": "dalton"
+        },
+        "molar_mass": {
+          "description": "The molar mass is the sum of all atomic masses of the constituent atoms in a\ncompound, measured in g/mol. In the absence of explicit isotope labelling,\naveraged natural abundance is assumed. If an atom bears an explicit isotope label,\n100%% isotopic purity is assumed at this location.",
+          "links": [
+            "https://en.wikipedia.org/wiki/Molar_mass"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.PureSubstanceSection.molar_mass@feba930905238d310ed1c18adbdc2beb9a6459ec",
+          "type": "number",
+          "unit": "gram / mole"
+        },
+        "monoisotopic_mass": {
+          "description": "The mass of a molecule, calculated using the mass of the most abundant isotope of\neach element.",
+          "links": [
+            "https://en.wikipedia.org/wiki/Monoisotopic_mass"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.PureSubstanceSection.monoisotopic_mass@39ca64d569872d32c49f722b8e6fd06b3bb5fd0e",
+          "type": "number",
+          "unit": "dalton"
+        },
+        "inchi": {
+          "description": "Inchi.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.PureSubstanceSection.inchi@97464c193c4a433b1fc9f2dfef0d2a7fcbde0eb1",
+          "type": "string"
+        },
+        "inchi_key": {
+          "description": "Inchi key.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.PureSubstanceSection.inchi_key@c17dc7faf4948d17506ec13895890de16002c969",
+          "type": "string"
+        },
+        "smile": {
+          "description": "Smile.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.PureSubstanceSection.smile@06d59ec4b14bd7f169babd47d8125addbb30aead",
+          "type": "string"
+        },
+        "canonical_smile": {
+          "description": "Canonical smile.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.PureSubstanceSection.canonical_smile@15cc82bf325eeade2e45dbce0efdc79442eebf44",
+          "type": "string"
+        },
+        "cas_number": {
+          "description": "CAS number.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.PureSubstanceSection.cas_number@a92c57b9e26df41f55a12ae84c360870d5849625",
+          "type": "string"
+        }
+      }
+    },
+    "baseclasses.solution.OtherSolution": {
+      "title": "OtherSolution",
+      "links": [
+        "http://purl.obolibrary.org/obo/CHEBI_75958"
+      ],
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.OtherSolution@54ec2be8d3c19bdab240ff8e55921ea44aa9443e",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "reload_referenced_solution": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.OtherSolution.reload_referenced_solution@48b8465ea4e427d63d88712e508fce43e15fc065",
+          "type": "boolean",
+          "default": false
+        },
+        "name": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.OtherSolution.name@96c065737139d152724f00732f72cac3c4773c9b",
+          "type": "string"
+        },
+        "solution": {
+          "links": [
+            "http://purl.obolibrary.org/obo/CHEBI_75958"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.OtherSolution.solution@7521cb3b274a03bff3efc9d46dadcfa58b830646",
+          "type": "string"
+        },
+        "solution_volume": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000918",
+            "https://purl.archive.org/tfsco/TFSCO_00002158"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.OtherSolution.solution_volume@0a50f13e014d09d3a1ee6b85d06e7580f696a6cb",
+          "type": "number",
+          "unit": "milliliter"
+        },
+        "amount_relative": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.OtherSolution.amount_relative@19954f5550191b69e43d3a99b4da0fcea13a60ec",
+          "type": "number"
+        },
+        "solution_details": {
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.Solution@aafc7332066dbb76e8e1cfcd46fdb8ec35f0d708",
+          "description": "Base class for a solution",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.OtherSolution.solution_details@5360e5a96820a4f1205c3c788db49c8b1533264e"
+        }
+      }
+    },
+    "baseclasses.solution.SolutionPreparation": {
+      "title": "SolutionPreparation",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionPreparation@8a9cbefd6e0ea92ff1efccdd6faa78a619cf4d82",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "atmosphere": {
+          "links": [
+            "https://purl.archive.org/tfsco/TFSCO_00001012"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionPreparation.atmosphere@872d9cc67991269d50a2061e5cc57b73bf56f99f",
+          "type": "string"
+        }
+      }
+    },
+    "baseclasses.solution.SolutionProperties": {
+      "title": "SolutionProperties",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionProperties@67b0248fa700976eae2ae5ca86eed36b4d433b59",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "ph_value": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionProperties.ph_value@ad25ab44d8833c0bb0a34ec4f3e26c277e072d47",
+          "type": "number"
+        },
+        "final_volume": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000918",
+            "https://purl.archive.org/tfsco/TFSCO_00003000"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionProperties.final_volume@68bef16051c965266c2d1f27c10d30def42fae3f",
+          "type": "number",
+          "unit": "milliliter"
+        },
+        "final_concentration": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000033"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionProperties.final_concentration@133ae44e68fb190e5b520703a31c3fc29515bdf5",
+          "type": "number",
+          "unit": "milligram / milliliter"
+        }
+      }
+    },
+    "baseclasses.solution.SolutionWaschingFiltration": {
+      "title": "SolutionWaschingFiltration",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionWaschingFiltration@ef132e628168a02fc1dbb8c5355c74a5d07d09d9",
+      "allOf": [
+        {
+          "$comment": "SolutionWasching ",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionWasching@d1b413f3c6e45685701c7ea08765ef7f38e33447"
+        }
+      ],
+      "properties": {
+        "filter_material": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionWaschingFiltration.filter_material@add953707fae7f7b8f23f3a72b486a38d4d85560",
+          "type": "string"
+        },
+        "filter_pore_size": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionWaschingFiltration.filter_pore_size@fccc6da87eca0aae90717bea10ca2e4d312376aa",
+          "type": "number",
+          "unit": "micrometer"
+        }
+      }
+    },
+    "baseclasses.solution.SolutionWasching": {
+      "title": "SolutionWasching",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionWasching@d1b413f3c6e45685701c7ea08765ef7f38e33447",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "washing_technique": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionWasching.washing_technique@dc2551803f5cebe2c2f2cbd9106c7d64ad06ff11",
+          "type": "string"
+        },
+        "number_of_washes": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionWasching.number_of_washes@740d8e9ad34bee4dfec12547f2958eb08afbc6f8",
+          "type": "integer"
+        },
+        "washing_solvent": {
+          "type": "array",
+          "items": {
+            "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.WaschingSolvents@0e2bcf75f355a0125657efaf97f049359752b29b"
+          },
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionWasching.washing_solvent@57fb06949b818833e7ea2b30d3d79a60c28db8d9"
+        }
+      }
+    },
+    "baseclasses.solution.WaschingSolvents": {
+      "title": "WaschingSolvents",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.WaschingSolvents@0e2bcf75f355a0125657efaf97f049359752b29b",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "solvent_name": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.WaschingSolvents.solvent_name@15b5054cf13e25a93a6f8a78bd2f6d4b3f21453c",
+          "type": "string"
+        },
+        "volume": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000918",
+            "https://purl.archive.org/tfsco/TFSCO_00002158"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.WaschingSolvents.volume@3403200f59308661fdd1f3c440f515bc9b3830f4",
+          "type": "number",
+          "unit": "milliliter"
+        },
+        "concentration_mol": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000033"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.WaschingSolvents.concentration_mol@4247a4a021876d6317aef583e6e54109c4889581",
+          "type": "number",
+          "unit": "mole / liter"
+        }
+      }
+    },
+    "baseclasses.solution.SolutionStorage": {
+      "title": "SolutionStorage",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionStorage@5350411df759f6113ae5f9b01efe0429f9c180a7",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "start_date": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionStorage.start_date@9e5a63753d9808183ccbe31bf90fe0f1347f8b3f",
+          "type": "string",
+          "format": "date-time"
+        },
+        "end_date": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionStorage.end_date@711553e8ba4d28f4f4e3f7811d3c2358fd3e6267",
+          "type": "string",
+          "format": "date-time"
+        },
+        "storage_condition": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionStorage.storage_condition@8077385de4f532924dda3efd4cd75757bd17318b",
+          "type": "string"
+        },
+        "temperature": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000146",
+            "https://purl.archive.org/tfsco/TFSCO_00002111"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionStorage.temperature@1a65d546f7517181edddc21a93136b271a0160be",
+          "type": "number",
+          "unit": "degree_Celsius"
+        },
+        "atmosphere": {
+          "links": [
+            "https://purl.archive.org/tfsco/TFSCO_00001012"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionStorage.atmosphere@872d9cc67991269d50a2061e5cc57b73bf56f99f",
+          "type": "string"
+        },
+        "comments": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.solution.SolutionStorage.comments@2d9da4304e21f57e9e13ed1cd62d73f17a3e3b90",
+          "type": "string"
+        }
+      }
+    },
+    "baseclasses.customreadable_identifier.ReadableIdentifiersCustom": {
+      "title": "ReadableIdentifiersCustom",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.customreadable_identifier.ReadableIdentifiersCustom@3482b17c6d416a8e7d9fd375ccd9c19e851162d6",
+      "allOf": [
+        {
+          "$comment": "ReadableIdentifiers :A base section that can be used to generate readable IDs. If the `owner`, `short_name`, `institute`, and `datetime`\nquantities are provided, the lab_id will be automatically created as a combination\nof these four quantities.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ReadableIdentifiers@803c932fb7a28fce1a292da96a00d232414f19bf"
+        }
+      ],
+      "properties": {
+        "sample_owner": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.customreadable_identifier.ReadableIdentifiersCustom.sample_owner@9faaf68bf13acf6c2a9fa3bb2e5f0d3a6fc44cfe",
+          "type": "string"
+        },
+        "sample_short_name": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.customreadable_identifier.ReadableIdentifiersCustom.sample_short_name@aa1931fba79991bbaef8d80d35b1576a8864f1a1",
+          "type": "string"
+        },
+        "sample_id": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.customreadable_identifier.ReadableIdentifiersCustom.sample_id@6341e63c1958a78ad426e96c5be1ceab86a82c2d",
+          "type": "string"
+        }
+      }
+    },
+    "nomad.datamodel.metainfo.basesections.v1.ReadableIdentifiers": {
+      "title": "ReadableIdentifiers",
+      "description": "A base section that can be used to generate readable IDs. If the `owner`, `short_name`, `institute`, and `datetime`\nquantities are provided, the lab_id will be automatically created as a combination\nof these four quantities.",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ReadableIdentifiers@803c932fb7a28fce1a292da96a00d232414f19bf",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "institute": {
+          "description": "Alias/short name of the home institute of the owner, i.e. *HZB*.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ReadableIdentifiers.institute@1e7d96a1e13852feb46c6fd5928b2008adb8b0e1",
+          "type": "string"
+        },
+        "owner": {
+          "description": "Alias for the owner of the identified thing. This should be unique within the\ninstitute.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ReadableIdentifiers.owner@13f2c0af3f3990d05b43788e65bff5dc0b47931d",
+          "type": "string"
+        },
+        "datetime": {
+          "description": "A datetime associated with the identified thing. In case of an `Activity`, this\nshould be the starting time and, in case of an `Entity`, the creation time.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ReadableIdentifiers.datetime@d1e887112613b666181181f7b6b328ba0727d975",
+          "type": "string",
+          "format": "date-time"
+        },
+        "short_name": {
+          "description": "A short name of the the identified thing (e.g. the identifier scribed on the\nsample, the process number, or machine name), e.g. 4001-8, YAG-2-34.\nThis is to be managed and decided internally by the labs, although we recommend\nto avoid the following characters in it: \"_\", \"/\", \"\\\" and \".\".",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ReadableIdentifiers.short_name@3de5580620d88a61255cd0743fe72b35809cac2f",
+          "type": "string"
+        },
+        "lab_id": {
+          "description": "Full readable id. Ideally a human readable id convention, which is simple,\nunderstandable and still have chances of becoming unique.\nIf the `owner`, `short_name`, `\u00ecnstitute`, and `datetime` are provided, this will\nbe formed automatically by joining these components by an underscore (_).\nSpaces in any of the individual components will be replaced with hyphens (-).\nAn example would be hzb_oah_20200602_4001-08.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ReadableIdentifiers.lab_id@6374c17c84c2d2a5ae212dc67cef622464407045",
+          "type": "string"
+        }
+      }
+    },
+    "nomad.datamodel.metainfo.basesections.v1.CompositeSystem": {
+      "title": "CompositeSystem",
+      "description": "A base section for a material systems composed of components. Each component of the composite system is of a (sub)type of `System`.",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.CompositeSystem@6d8d36a0c7a590926a7f0997071c6233a8d80509",
+      "allOf": [
+        {
+          "$comment": "System :A base section for any system of materials which is investigated or used to construct other systems.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.System@fdcc68e25e8040c37010786214dfb35afcb0455f"
+        }
+      ],
+      "properties": {
+        "components": {
+          "type": "array",
+          "items": {
+            "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Component@195f811d0a47aada33bde2a2c91625dca18b4b7d"
+          },
+          "description": "A list of all the components of the composite system containing a name, reference\nto the system section and mass of that component.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.CompositeSystem.components@6ecf7f0263841307ab0e4b1ef104c2b1e22faf34"
+        }
+      }
+    },
+    "nomad.datamodel.metainfo.basesections.v1.Component": {
+      "title": "Component",
+      "description": "A section for describing a component and its role in a composite system.",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Component@195f811d0a47aada33bde2a2c91625dca18b4b7d",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "name": {
+          "description": "A short name for the component.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Component.name@96c065737139d152724f00732f72cac3c4773c9b",
+          "type": "string"
+        },
+        "mass": {
+          "description": "The mass of the component.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Component.mass@c3ef1985cba14cb80e8d01d872eaad6fd54710ee",
+          "type": "number",
+          "unit": "kilogram"
+        },
+        "mass_fraction": {
+          "description": "The mass fraction of the component in the composite system.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Component.mass_fraction@232b3ef5df21b411f08adfa41a4699747db2ab89",
+          "type": "number"
+        }
+      }
+    },
+    "nomad.datamodel.metainfo.basesections.v1.System": {
+      "title": "System",
+      "description": "A base section for any system of materials which is investigated or used to construct other systems.",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.System@fdcc68e25e8040c37010786214dfb35afcb0455f",
+      "allOf": [
+        {
+          "$comment": "Entity :An object that persists, endures, or continues to exist through time while maintaining its identity.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Entity@025a4251d57bd18212759fc61dbfd8b4b5bce371"
+        }
+      ],
+      "properties": {
+        "elemental_composition": {
+          "type": "array",
+          "items": {
+            "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ElementalComposition@0ec9d81aae47245ccbc4df61bcd97fbad50bf961"
+          },
+          "description": "A list of all the elements found in the system together and their respective\natomic fraction within the system.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.System.elemental_composition@1e2c26b81f5c411a905b031221d70a2eb1edcb4a"
+        }
+      }
+    },
+    "nomad.datamodel.metainfo.basesections.v1.ElementalComposition": {
+      "title": "ElementalComposition",
+      "description": "A section for describing the elemental composition of a system, i.e. the element and its atomic fraction.",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ElementalComposition@0ec9d81aae47245ccbc4df61bcd97fbad50bf961",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "element": {
+          "description": "The symbol of the element, e.g. 'Pb'.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ElementalComposition.element@c001f9b67857f08bd6793fc63dc28c23f4f07356",
+          "type": "string",
+          "enum": [
+            "Ac",
+            "Ag",
+            "Al",
+            "Am",
+            "Ar",
+            "As",
+            "At",
+            "Au",
+            "B",
+            "Ba",
+            "Be",
+            "Bh",
+            "Bi",
+            "Bk",
+            "Br",
+            "C",
+            "Ca",
+            "Cd",
+            "Ce",
+            "Cf",
+            "Cl",
+            "Cm",
+            "Cn",
+            "Co",
+            "Cr",
+            "Cs",
+            "Cu",
+            "Db",
+            "Ds",
+            "Dy",
+            "Er",
+            "Es",
+            "Eu",
+            "F",
+            "Fe",
+            "Fl",
+            "Fm",
+            "Fr",
+            "Ga",
+            "Gd",
+            "Ge",
+            "H",
+            "He",
+            "Hf",
+            "Hg",
+            "Ho",
+            "Hs",
+            "I",
+            "In",
+            "Ir",
+            "K",
+            "Kr",
+            "La",
+            "Li",
+            "Lr",
+            "Lu",
+            "Lv",
+            "Mc",
+            "Md",
+            "Mg",
+            "Mn",
+            "Mo",
+            "Mt",
+            "N",
+            "Na",
+            "Nb",
+            "Nd",
+            "Ne",
+            "Nh",
+            "Ni",
+            "No",
+            "Np",
+            "O",
+            "Og",
+            "Os",
+            "P",
+            "Pa",
+            "Pb",
+            "Pd",
+            "Pm",
+            "Po",
+            "Pr",
+            "Pt",
+            "Pu",
+            "Ra",
+            "Rb",
+            "Re",
+            "Rf",
+            "Rg",
+            "Rh",
+            "Rn",
+            "Ru",
+            "S",
+            "Sb",
+            "Sc",
+            "Se",
+            "Sg",
+            "Si",
+            "Sm",
+            "Sn",
+            "Sr",
+            "Ta",
+            "Tb",
+            "Tc",
+            "Te",
+            "Th",
+            "Ti",
+            "Tl",
+            "Tm",
+            "Ts",
+            "U",
+            "V",
+            "W",
+            "Xe",
+            "Y",
+            "Yb",
+            "Zn",
+            "Zr"
+          ]
+        },
+        "atomic_fraction": {
+          "description": "The atomic fraction of the element in the system it is contained within.\nPer definition a positive value less than or equal to 1.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ElementalComposition.atomic_fraction@efff5f14eff02ecda05e2ebde97530b9adcddb23",
+          "type": "number"
+        },
+        "mass_fraction": {
+          "description": "The mass fraction of the element in the system it is contained within.\nPer definition a positive value less than or equal to 1.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ElementalComposition.mass_fraction@232b3ef5df21b411f08adfa41a4699747db2ab89",
+          "type": "number"
+        }
+      }
+    },
+    "nomad.datamodel.metainfo.basesections.v1.Entity": {
+      "title": "Entity",
+      "description": "An object that persists, endures, or continues to exist through time while maintaining its identity.",
+      "links": [
+        "http://purl.obolibrary.org/obo/BFO_0000002"
+      ],
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Entity@025a4251d57bd18212759fc61dbfd8b4b5bce371",
+      "allOf": [
+        {
+          "$comment": "BaseSection :A generic abstract base section that provides a few commonly used properties. If you inherit from this section, but do not need some quantities, list those\nquantities in the `eln.hide` annotation of your inheriting section definition.\n\nBesides predefining some quantities, these base sections will add some metadata\nto NOMAD's search. A particular example are `tags`, if you define a string\nor enum quantity in your sections named `tags`, its values will be searchable.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.BaseSection@d543328c56c9ed17b5f40cc9fbb383293e51b9ac"
+        }
+      ]
+    },
+    "nomad.datamodel.metainfo.basesections.v1.BaseSection": {
+      "title": "BaseSection",
+      "description": "A generic abstract base section that provides a few commonly used properties. If you inherit from this section, but do not need some quantities, list those\nquantities in the `eln.hide` annotation of your inheriting section definition.\n\nBesides predefining some quantities, these base sections will add some metadata\nto NOMAD's search. A particular example are `tags`, if you define a string\nor enum quantity in your sections named `tags`, its values will be searchable.",
+      "links": [
+        "http://purl.obolibrary.org/obo/BFO_0000001"
+      ],
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.BaseSection@d543328c56c9ed17b5f40cc9fbb383293e51b9ac",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "name": {
+          "description": "A short human readable and descriptive name.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.BaseSection.name@96c065737139d152724f00732f72cac3c4773c9b",
+          "type": "string"
+        },
+        "datetime": {
+          "description": "The date and time associated with this section.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.BaseSection.datetime@d1e887112613b666181181f7b6b328ba0727d975",
+          "type": "string",
+          "format": "date-time"
+        },
+        "lab_id": {
+          "description": "An ID string that is unique at least for the lab that produced this\ndata.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.BaseSection.lab_id@6374c17c84c2d2a5ae212dc67cef622464407045",
+          "type": "string"
+        },
+        "description": {
+          "description": "Any information that cannot be captured in the other fields.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.BaseSection.description@00a156285e9d8b3703c20d180aa63d3643b6f29e",
+          "type": "string"
+        }
+      }
+    },
+    "baseclasses.material_processes_misc.annealing.Annealing": {
+      "title": "Annealing",
+      "description": "Base class for annealing of a sample",
+      "links": [
+        "https://purl.archive.org/tfsco/TFSCO_00001033"
+      ],
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.material_processes_misc.annealing.Annealing@17bc3dd6df94f426baa1a080e53c9d77d1198825",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "temperature": {
+          "links": [
+            "https://purl.archive.org/tfsco/TFSCO_00002001",
+            "https://purl.archive.org/tfsco/TFSCO_00002073"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.material_processes_misc.annealing.Annealing.temperature@1a65d546f7517181edddc21a93136b271a0160be",
+          "type": "number",
+          "unit": "degree_Celsius"
+        },
+        "time": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000165",
+            "https://purl.archive.org/tfsco/TFSCO_00005085"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.material_processes_misc.annealing.Annealing.time@c1a6155111cb5d8aaa866009e2dd56259f952249",
+          "type": "number",
+          "unit": "second",
+          "minimum": 0
+        },
+        "atmosphere": {
+          "links": [
+            "https://purl.archive.org/tfsco/TFSCO_00001012"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.material_processes_misc.annealing.Annealing.atmosphere@872d9cc67991269d50a2061e5cc57b73bf56f99f",
+          "type": "string"
+        },
+        "ramp": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.material_processes_misc.annealing.Annealing.ramp@ba4c4c21e9020d6590d7dcea6b332e4d0fdad410",
+          "type": "number",
+          "unit": "kelvin / minute",
+          "minimum": 0
+        }
+      }
+    },
+    "baseclasses.material_processes_misc.quenching.Quenching": {
+      "title": "Quenching",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.material_processes_misc.quenching.Quenching@fd66eb870f8e060be2509b52cd66ca76eaef2d65",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "comment": {
+          "description": "Comments regarding the drying/quenching procedures.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.material_processes_misc.quenching.Quenching.comment@47f23ce23fad672f8fbec5fac0fa75984974018b",
+          "type": "string"
+        }
+      }
+    },
+    "baseclasses.material_processes_misc.sintering.Sintering": {
+      "title": "Sintering",
+      "description": "Base class for sintering of a sample",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.material_processes_misc.sintering.Sintering@52fab746c7beed4f03d1e2b00ba7f4612e012e04",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "temperature": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000146",
+            "https://purl.archive.org/tfsco/TFSCO_00002111"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.material_processes_misc.sintering.Sintering.temperature@1a65d546f7517181edddc21a93136b271a0160be",
+          "type": "number",
+          "unit": "degree_Celsius"
+        },
+        "time": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000165",
+            "https://purl.archive.org/tfsco/TFSCO_00005085"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.material_processes_misc.sintering.Sintering.time@c1a6155111cb5d8aaa866009e2dd56259f952249",
+          "type": "number",
+          "unit": "second",
+          "minimum": 0
+        },
+        "ramp": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.material_processes_misc.sintering.Sintering.ramp@9184125180de1c105f051996eab6e3a129d317b4",
+          "type": "number",
+          "unit": "second",
+          "minimum": 0
+        }
+      }
+    },
+    "baseclasses.LayerDeposition": {
+      "title": "LayerDeposition",
+      "description": "A material processing which deposits thin layers onto an material entity.",
+      "links": [
+        "https://purl.archive.org/tfsco/TFSCO_00000067"
+      ],
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.LayerDeposition@e0585ef769f1e6aadc1e69b0ec229f7da189d26e",
+      "allOf": [
+        {
+          "$comment": "BaseProcess :P is a process = Def. p is an occurrent that has temporal proper parts and for some time t, p s-depends_on some material entity at t. (axiom label in BFO2 Reference: [083-003])",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.BaseProcess@713752e2e2311cf625e4c959e5d53d87ba577afc"
+        }
+      ],
+      "properties": {
+        "layer": {
+          "type": "array",
+          "items": {
+            "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.LayerProperties@4abc100c8dffeed3fddc00aa22b298a4d1b9c254"
+          },
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.LayerDeposition.layer@9c88d2c9d271685cb3ca98afb863ea31225afd30"
+        }
+      }
+    },
+    "baseclasses.LayerProperties": {
+      "title": "LayerProperties",
+      "links": [
+        "https://purl.archive.org/tfsco/TFSCO_00000007"
+      ],
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.LayerProperties@4abc100c8dffeed3fddc00aa22b298a4d1b9c254",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "layer_type": {
+          "links": [
+            "https://purl.archive.org/tfsco/TFSCO_00000007"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.LayerProperties.layer_type@c154349e9e6c7b5ab8f045474cd440fec5419206",
+          "type": "string"
+        },
+        "layer_material_name": {
+          "description": "The chemical formula using common abreviations. This will be used to set layer material, if not set, e.g. MAPbI3.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.LayerProperties.layer_material_name@44351f4d9de856b57e14302fd0da513d698f8bf4",
+          "type": "string"
+        },
+        "layer_material": {
+          "description": "The chemical formula of the layer. This will be used directly and indirectly in the search. The formula will be used itself as well as the extracted chemical elements.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.LayerProperties.layer_material@0d40abd4107a4027c5a295094bc6a302a45d8171",
+          "type": "string"
+        },
+        "layer_thickness": {
+          "description": "The thickness of the sample, either measured or assumed.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.LayerProperties.layer_thickness@25b17a9ed813ea09d4f6192e0a4f8f73e97f7af6",
+          "type": "number",
+          "unit": "nanometer"
+        },
+        "layer_transmission": {
+          "description": "Percentage of light that gets transmitted through the layer.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.LayerProperties.layer_transmission@23341bbdb109b24cecd803b40912f0f11ac6e9da",
+          "type": "number",
+          "minimum": 0
+        },
+        "layer_morphology": {
+          "description": "A description of the morphology of the film",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.LayerProperties.layer_morphology@5e8b14722aab83d98740b71eb271cbc7a677ad26",
+          "type": "string"
+        },
+        "layer_sheet_resistance": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.LayerProperties.layer_sheet_resistance@7abeb888d52c65e6d201ad4b3942ebc3380afca2",
+          "type": "number",
+          "unit": "ohm",
+          "minimum": 0
+        },
+        "layer_chemical_id": {
+          "description": "Identifier of the product used for creating the layerin case it is purchased from supplier",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.LayerProperties.layer_chemical_id@ec37d0478be64c7ab6853e44681c27c090d635a3",
+          "type": "string"
+        },
+        "product_info": {
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.product_info.ProductInfo@068e83c8ec275fd96e7fa861735eea96fd6bdb62",
+          "description": "Product information",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.LayerProperties.product_info@78c73d50d5027987f1254a43d032e9a1de274fa3"
+        }
+      }
+    },
+    "baseclasses.BaseProcess": {
+      "title": "BaseProcess",
+      "description": "P is a process = Def. p is an occurrent that has temporal proper parts and for some time t, p s-depends_on some material entity at t. (axiom label in BFO2 Reference: [083-003])",
+      "links": [
+        "http://purl.obolibrary.org/obo/BFO_0000015"
+      ],
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.BaseProcess@713752e2e2311cf625e4c959e5d53d87ba577afc",
+      "allOf": [
+        {
+          "$comment": "Process :A planned process which results in physical changes in a specified input material. [ obi : prs obi : mc obi : fg obi : jf obi : bp ]\n\nSynonyms:\n - preparative method\n - sample preparation\n - sample preparative method\n - material transformations",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Process@a7bf38697254ea05eb4d2f17b4278b8fc8195c47"
+        }
+      ],
+      "properties": {
+        "present": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.BaseProcess.present@e3eaae0fac362fc02d6090e4ade5129bb0cdb11f",
+          "type": "boolean",
+          "default": true
+        },
+        "batch": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.BaseProcess.batch@1c2922decf458d2c182ae4f1b7d711b689eb2a77",
+          "type": "string"
+        },
+        "positon_in_experimental_plan": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.BaseProcess.positon_in_experimental_plan@01b886a5d9925c0d86e344072b90e478a3ad3135",
+          "type": "number"
+        },
+        "operator": {
+          "description": "Name of process operator",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.BaseProcess.operator@e2997d125d0b1373426594905f30b9c01d11fa1f",
+          "type": "string"
+        },
+        "atmosphere": {
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.atmosphere.Atmosphere@d10c33f0cfaa4e318c67979918338a9aadce4fab",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.BaseProcess.atmosphere@562add8ed279710564ec398453dce29b18241236"
+        }
+      }
+    },
+    "baseclasses.atmosphere.Atmosphere": {
+      "title": "Atmosphere",
+      "links": [
+        "https://purl.archive.org/tfsco/TFSCO_00001012"
+      ],
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.atmosphere.Atmosphere@d10c33f0cfaa4e318c67979918338a9aadce4fab",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "datetime": {
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.atmosphere.Atmosphere.datetime@d1e887112613b666181181f7b6b328ba0727d975",
+          "type": "string",
+          "format": "date-time"
+        },
+        "temperature": {
+          "description": "Temperature of the room",
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0000146",
+            "https://purl.archive.org/tfsco/TFSCO_00002111"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.atmosphere.Atmosphere.temperature@1a65d546f7517181edddc21a93136b271a0160be",
+          "type": "number",
+          "unit": "degree_Celsius"
+        },
+        "ambient_pressure": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0001025",
+            "https://purl.archive.org/tfsco/TFSCO_00005040"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.atmosphere.Atmosphere.ambient_pressure@d6fc0d72298aa7f16eee9cb506e763e3916250b4",
+          "type": "number",
+          "unit": "bar",
+          "minimum": 0
+        },
+        "relative_humidity": {
+          "links": [
+            "http://purl.obolibrary.org/obo/PATO_0015009"
+          ],
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/baseclasses.atmosphere.Atmosphere.relative_humidity@9661eedc150c728acf54749e1b9453388240645f",
+          "type": "number"
+        }
+      }
+    },
+    "nomad.datamodel.metainfo.basesections.v1.Process": {
+      "title": "Process",
+      "description": "A planned process which results in physical changes in a specified input material. [ obi : prs obi : mc obi : fg obi : jf obi : bp ]\n\nSynonyms:\n - preparative method\n - sample preparation\n - sample preparative method\n - material transformations",
+      "links": [
+        "http://purl.obolibrary.org/obo/OBI_0000094"
+      ],
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Process@a7bf38697254ea05eb4d2f17b4278b8fc8195c47",
+      "allOf": [
+        {
+          "$comment": "Activity :An action that has a temporal extension and for some time depends on some entity.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Activity@26ae54d13c750e9326f8e0fca1129c36bb0d07b8"
+        }
+      ],
+      "properties": {
+        "end_time": {
+          "description": "The date and time when this process was finished.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Process.end_time@35abdd207826e945a57e2088af0e95fb85093603",
+          "type": "string",
+          "format": "date-time"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ProcessStep@b1e43fdda69e5d9b2abd9b196f31887005fbe92a"
+          },
+          "description": "An ordered list of all the dependant steps that make up this activity.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Process.steps@970886414088b3fbc0e37a12ed86eadd38973229"
+        },
+        "instruments": {
+          "type": "array",
+          "items": {
+            "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.InstrumentReference@91b9fd975d7449da431850783dd427fb440b13bc"
+          },
+          "description": "A list of all the instruments and their role in this process.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Process.instruments@9077ef9b2a97e50a1dd4b5d1d331c13664fd3b71"
+        },
+        "samples": {
+          "type": "array",
+          "items": {
+            "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.CompositeSystemReference@b1c71d0baced832ed1d7002092f1b2fc7dfd2515"
+          },
+          "description": "The samples as that have undergone the process.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Process.samples@1a41692761fbf1d7b88d0be6f200b0dd2cab3d19"
+        }
+      }
+    },
+    "nomad.datamodel.metainfo.basesections.v1.ProcessStep": {
+      "title": "ProcessStep",
+      "description": "Any dependant step of a `Process`.",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ProcessStep@b1e43fdda69e5d9b2abd9b196f31887005fbe92a",
+      "allOf": [
+        {
+          "$comment": "ActivityStep :Any dependant step of an `Activity`.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ActivityStep@e0a6427de58e6274b151cdb377e218d1df89153d"
+        }
+      ],
+      "properties": {
+        "duration": {
+          "description": "The duration time of the process step.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ProcessStep.duration@d00ba88906cf904fb4cdee26cbfb75e2be265944",
+          "type": "number",
+          "unit": "second"
+        }
+      }
+    },
+    "nomad.datamodel.metainfo.basesections.v1.ActivityStep": {
+      "title": "ActivityStep",
+      "description": "Any dependant step of an `Activity`.",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ActivityStep@e0a6427de58e6274b151cdb377e218d1df89153d",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "name": {
+          "description": "A short and descriptive name for this step.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ActivityStep.name@96c065737139d152724f00732f72cac3c4773c9b",
+          "type": "string"
+        },
+        "start_time": {
+          "description": "Optionally, the starting time of the activity step. If omitted, it is assumed to\nfollow directly after the previous step.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ActivityStep.start_time@b9b19be0c09b6f3b0d80b5c17f6e7c36d40ce0b6",
+          "type": "string",
+          "format": "date-time"
+        },
+        "comment": {
+          "description": "Any additional information about the step not captured by the other fields.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ActivityStep.comment@47f23ce23fad672f8fbec5fac0fa75984974018b",
+          "type": "string"
+        }
+      }
+    },
+    "nomad.datamodel.metainfo.basesections.v1.InstrumentReference": {
+      "title": "InstrumentReference",
+      "description": "A section used for referencing an Instrument.",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.InstrumentReference@91b9fd975d7449da431850783dd427fb440b13bc",
+      "allOf": [
+        {
+          "$comment": "EntityReference :A section used for referencing an Entity.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.EntityReference@61d1764e4cc999d5272791ab5943014b744f746d"
+        }
+      ],
+      "properties": {
+        "reference": {
+          "description": "A reference to a NOMAD `Instrument` entry.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.InstrumentReference.reference@7b857d9d4c770df7e2d9c9c6eb7747b48ed2fb3a",
+          "type": "string"
+        }
+      }
+    },
+    "nomad.datamodel.metainfo.basesections.v1.EntityReference": {
+      "title": "EntityReference",
+      "description": "A section used for referencing an Entity.",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.EntityReference@61d1764e4cc999d5272791ab5943014b744f746d",
+      "allOf": [
+        {
+          "$comment": "SectionReference :A section used for referencing another section.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.SectionReference@ea786b3fd589602b100e8f9be08787c64339d40f"
+        }
+      ],
+      "properties": {
+        "reference": {
+          "description": "A reference to a NOMAD `Entity` entry.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.EntityReference.reference@08c959d6a9a8f72b6d310d096ed7a7bc4b80b6ab",
+          "type": "string"
+        },
+        "lab_id": {
+          "description": "The readable identifier for the entity.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.EntityReference.lab_id@6374c17c84c2d2a5ae212dc67cef622464407045",
+          "type": "string"
+        }
+      }
+    },
+    "nomad.datamodel.metainfo.basesections.v1.SectionReference": {
+      "title": "SectionReference",
+      "description": "A section used for referencing another section.",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.SectionReference@ea786b3fd589602b100e8f9be08787c64339d40f",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ],
+      "properties": {
+        "name": {
+          "description": "A short descriptive name for the role of this reference.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.SectionReference.name@96c065737139d152724f00732f72cac3c4773c9b",
+          "type": "string"
+        },
+        "reference": {
+          "description": "A reference to a NOMAD archive section.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.SectionReference.reference@1a795e3ccb64e0c51a3cb9401a29a9c4e4e21541",
+          "type": "string"
+        }
+      }
+    },
+    "nomad.datamodel.metainfo.basesections.v1.CompositeSystemReference": {
+      "title": "CompositeSystemReference",
+      "description": "A section used for referencing a CompositeSystem.",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.CompositeSystemReference@b1c71d0baced832ed1d7002092f1b2fc7dfd2515",
+      "allOf": [
+        {
+          "$comment": "EntityReference :A section used for referencing an Entity.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.EntityReference@61d1764e4cc999d5272791ab5943014b744f746d"
+        }
+      ],
+      "properties": {
+        "reference": {
+          "description": "A reference to a NOMAD `CompositeSystem` entry.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.CompositeSystemReference.reference@10b6a6a10212e052c26294f537035543d4fa025c",
+          "type": "string"
+        }
+      }
+    },
+    "nomad.datamodel.metainfo.basesections.v1.Activity": {
+      "title": "Activity",
+      "description": "An action that has a temporal extension and for some time depends on some entity.",
+      "links": [
+        "http://purl.obolibrary.org/obo/BFO_0000015"
+      ],
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Activity@26ae54d13c750e9326f8e0fca1129c36bb0d07b8",
+      "allOf": [
+        {
+          "$comment": "BaseSection :A generic abstract base section that provides a few commonly used properties. If you inherit from this section, but do not need some quantities, list those\nquantities in the `eln.hide` annotation of your inheriting section definition.\n\nBesides predefining some quantities, these base sections will add some metadata\nto NOMAD's search. A particular example are `tags`, if you define a string\nor enum quantity in your sections named `tags`, its values will be searchable.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.BaseSection@d543328c56c9ed17b5f40cc9fbb383293e51b9ac"
+        }
+      ],
+      "properties": {
+        "datetime": {
+          "description": "The date and time when this activity was started.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Activity.datetime@d1e887112613b666181181f7b6b328ba0727d975",
+          "type": "string",
+          "format": "date-time"
+        },
+        "method": {
+          "description": "A short consistent handle for the applied method.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Activity.method@c557c23529187a324925c17f0e5985bb958963db",
+          "type": "string"
+        },
+        "location": {
+          "description": "location of the experiment.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Activity.location@e54e68c5e0552ff59f245ff04c7feaba37fb2644",
+          "type": "string"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.ActivityStep@e0a6427de58e6274b151cdb377e218d1df89153d"
+          },
+          "description": "An ordered list of all the dependant steps that make up this activity.",
+          "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.metainfo.basesections.v1.Activity.steps@677bd8fde17023aa444e98c559d679389dfe5bf3"
+        }
+      }
+    },
+    "nomad.datamodel.data.EntryData": {
+      "title": "EntryData",
+      "description": "An empty base section definition. This can be used to add new top-level sections to an entry.",
+      "type": "object",
+      "$id": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.EntryData@486f476f18785f5f4bcbac10db7304d7de35636b",
+      "allOf": [
+        {
+          "$comment": "ArchiveSection :Base class for sections in a NOMAD archive. Provides a framework for custom section normalization via the `normalize` function.",
+          "$ref": "https://nomad-lab.eu/prod/v1/api/v1/schemas/nomad.datamodel.data.ArchiveSection@a4fc26727b8b3b1711ff8cea9896ac1910987509"
+        }
+      ]
+    }
+  }
+}

@@ -8,4 +8,4 @@ class ExtractRequest(BaseModel):
 
 
 class ExtractResponse(BaseModel):
-    cells: list[dict[str, Any]]
+    data: dict[str, Any]

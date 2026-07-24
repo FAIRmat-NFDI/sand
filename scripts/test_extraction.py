@@ -29,26 +29,19 @@ async def main() -> None:
 
     service = ExtractionService(api_key=key)
     try:
-        cells = await service.extract(text)
+        data = await service.extract(text)
     finally:
         await service.close()
 
-    print(json.dumps(cells, indent=1))
-    print(f'--> extraction returned {len(cells)} cell(s)', file=sys.stderr)
-
-    if not cells:
-        return
-    try:
-        from sand.services.perovskite_export import (
-            convert_cells_to_nomad_entries,
-        )
-    except ImportError:
-        print('--> perla-extract not installed, skipping conversion',
-              file=sys.stderr)
-        return
-    entries = convert_cells_to_nomad_entries(cells, source_text=text)
-    print(f'--> {len(entries)} entry(ies) survive the NOMAD conversion',
+    print(json.dumps(data, indent=1))
+    print(f'--> extraction returned {len(data)} top-level field(s)',
           file=sys.stderr)
+
+    from sand.services.hysprint_export import build_archive
+
+    archive = build_archive(data)
+    print(f'--> archive data has {len(archive["data"])} field(s) after '
+          'pruning (incl. m_def)', file=sys.stderr)
 
 
 if __name__ == '__main__':
