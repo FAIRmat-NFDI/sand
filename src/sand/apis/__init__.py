@@ -4,8 +4,7 @@ from nomad.config.models.plugins import APIEntryPoint
 class SandAPIEntryPoint(APIEntryPoint):
     groq_api_key: str = ''
     whisper_model: str = 'whisper-large-v3-turbo'
-    anthropic_api_key: str = ''
-    anthropic_model: str = 'claude-sonnet-4-20250514'
+    extraction_model: str = 'openai/gpt-oss-120b'
     nomad_base_url: str = 'https://nomad-lab.eu/prod/v1/api/v1'
 
     def load(self):

@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from anthropic import APIStatusError, AsyncAnthropic
+from groq import APIConnectionError, APIError, AsyncGroq
 
 SCHEMA_PATH = Path(__file__).parent.parent / 'solar_cell_schema.json'
 
@@ -46,19 +46,23 @@ def _load_schema(path: Path = SCHEMA_PATH) -> dict[str, Any]:
 
 
 def _build_tool(cell_schema: dict[str, Any]) -> dict[str, Any]:
-    """Build the Anthropic tool from the PerovskiteSolarCells JSON Schema.
+    """Build the tool definition from the PerovskiteSolarCells JSON Schema.
 
     The schema is already an object with a ``cells`` array of
     ``PerovskiteSolarCell`` entries, so it is used directly as the tool's
-    ``input_schema``.
+    ``parameters``.
     """
     return {
-        'name': 'record_perovskite_solar_cells',
-        'description': (
-            'Record every single-junction perovskite solar cell extracted from '
-            'the text. Each device becomes a separate entry in the cells array.'
-        ),
-        'input_schema': cell_schema,
+        'type': 'function',
+        'function': {
+            'name': 'record_perovskite_solar_cells',
+            'description': (
+                'Record every single-junction perovskite solar cell extracted '
+                'from the text. Each device becomes a separate entry in the '
+                'cells array.'
+            ),
+            'parameters': cell_schema,
+        },
     }
 
 
@@ -66,44 +70,49 @@ class ExtractionService:
     def __init__(
         self,
         api_key: str,
-        model: str = 'claude-sonnet-4-20250514',
+        model: str = 'openai/gpt-oss-120b',
     ) -> None:
-        self._client = AsyncAnthropic(api_key=api_key)
+        self._client = AsyncGroq(api_key=api_key)
         self._model = model
         schema = _load_schema()
         self._tool = _build_tool(schema)
 
     async def extract(self, text: str) -> list[dict[str, Any]]:
         try:
-            response = await self._client.messages.create(
+            response = await self._client.chat.completions.create(
                 model=self._model,
-                max_tokens=16384,
-                system=SYSTEM_PROMPT,
+                max_completion_tokens=16384,
                 tools=[self._tool],
                 tool_choice={
-                    'type': 'tool',
-                    'name': 'record_perovskite_solar_cells',
+                    'type': 'function',
+                    'function': {'name': 'record_perovskite_solar_cells'},
                 },
                 messages=[
-                    {'role': 'user', 'content': f'{INSTRUCTION_TEXT}\n\n{text}'}
+                    {'role': 'system', 'content': SYSTEM_PROMPT},
+                    {'role': 'user', 'content': f'{INSTRUCTION_TEXT}\n\n{text}'},
                 ],
             )
-        except APIStatusError as exc:
+        except APIConnectionError as exc:
+            raise RuntimeError(f'Groq connection failed: {exc}') from exc
+        except APIError as exc:
             raise RuntimeError(
-                f'Anthropic API error ({exc.status_code}): {exc.message}'
+                f'Groq API error ({exc.status_code}): {exc.message}'
             ) from exc
         except Exception as exc:
-            raise RuntimeError(f'Anthropic API call failed: {exc}') from exc
+            raise RuntimeError(f'Groq API call failed: {exc}') from exc
 
-        for block in response.content:
-            if (
-                block.type == 'tool_use'
-                and block.name == 'record_perovskite_solar_cells'
-            ):
-                return block.input.get('cells') or []
+        for call in response.choices[0].message.tool_calls or []:
+            if call.function.name == 'record_perovskite_solar_cells':
+                try:
+                    arguments = json.loads(call.function.arguments)
+                except json.JSONDecodeError as exc:
+                    raise RuntimeError(
+                        f'Groq tool call returned invalid JSON: {exc}'
+                    ) from exc
+                return arguments.get('cells') or []
 
         raise RuntimeError(
-            'Anthropic response did not contain expected tool_use block'
+            'Groq response did not contain expected tool call'
         )
 
     async def close(self) -> None:

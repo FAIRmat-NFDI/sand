@@ -32,8 +32,8 @@ app.state.stt = GroqSTTService(
     model=sand_api_entry_point.whisper_model,
 )
 app.state.extraction = ExtractionService(
-    api_key=sand_api_entry_point.anthropic_api_key,
-    model=sand_api_entry_point.anthropic_model,
+    api_key=sand_api_entry_point.groq_api_key,
+    model=sand_api_entry_point.extraction_model,
 )
 app.state.nomad = NomadUploader(
     base_url=sand_api_entry_point.nomad_base_url,
