@@ -32,7 +32,7 @@ app.state.stt = GroqSTTService(
     model=sand_api_entry_point.whisper_model,
 )
 app.state.extraction = ExtractionService(
-    api_key=sand_api_entry_point.gemini_api_key,
+    api_key=sand_api_entry_point.blablador_api_key,
     model=sand_api_entry_point.extraction_model,
 )
 app.state.nomad = NomadUploader(

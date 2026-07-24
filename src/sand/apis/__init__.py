@@ -4,8 +4,8 @@ from nomad.config.models.plugins import APIEntryPoint
 class SandAPIEntryPoint(APIEntryPoint):
     groq_api_key: str = ''
     whisper_model: str = 'whisper-large-v3-turbo'
-    gemini_api_key: str = ''
-    extraction_model: str = 'gemini-2.5-flash'
+    blablador_api_key: str = ''
+    extraction_model: str = 'alias-large'
     nomad_base_url: str = 'https://nomad-lab.eu/prod/v1/api/v1'
 
     def load(self):

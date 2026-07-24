@@ -17,9 +17,9 @@ Before you can run the SAND app you need a few things in place:
 
 - A **Groq API key** — used for speech-to-text (Whisper). Get one from
   <https://console.groq.com/keys>.
-- A **Gemini API key** — used for the AI extraction of structured data
-  (`gemini-2.5-flash`, available on the free tier). Get one from
-  <https://aistudio.google.com/apikey>.
+- A **Blablador API key** — used for the AI extraction of structured data
+  (`alias-large`, free for Helmholtz users). Get one following
+  <https://sdlaml.pages.jsc.fz-juelich.de/ai/guides/blablador_api_access/>.
 
 ### 1. Add the plugin to a NOMAD dev distribution
 
@@ -60,8 +60,8 @@ plugins:
       sand.apis:sand_api:
         groq_api_key: '<your-groq-api-key>'        # required: speech-to-text
         whisper_model: 'whisper-large-v3-turbo'    # Groq Whisper model
-        gemini_api_key: '<your-gemini-api-key>'    # required: AI extraction
-        extraction_model: 'gemini-2.5-flash'       # Gemini model for AI extraction
+        blablador_api_key: '<your-blablador-api-key>'  # required: AI extraction
+        extraction_model: 'alias-large'            # Blablador model for AI extraction
         # Base URL of the NOMAD API the app uploads to. For a local instance:
         nomad_base_url: 'http://localhost:8000/nomad-oasis/api/v1'
 ```
