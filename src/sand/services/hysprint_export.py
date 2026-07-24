@@ -11,29 +11,15 @@ from typing import Any
 
 M_DEF = 'nomad_hysprint.schema_packages.hysprint_package.HySprint_SlotDieCoating'
 
-# Entry-reference quantities are proxy strings that NOMAD normalizers try to
-# resolve; an LLM-invented value there ("PbI2") crashes entry processing.
-# They are stripped from the extraction schema too, but the model is only
-# prompt-constrained and can still emit them. 'solution' is a reference only
-# when it holds a string (the solution subsection list must pass through).
-REFERENCE_KEYS = frozenset(
-    {'samples', 'instruments', 'steps', 'batch', 'chemical', 'reference'}
-)
-
 
 def prune_empty(value: Any) -> Any:
-    """Recursively drop None values, empty dicts/lists, and reference keys.
+    """Recursively drop None values, empty dicts, and empty lists.
 
     The LLM fills unstated schema fields with nulls; NOMAD expects absent
     quantities to be absent from the archive, not null.
     """
     if isinstance(value, dict):
-        pruned = {
-            k: prune_empty(v)
-            for k, v in value.items()
-            if k not in REFERENCE_KEYS
-            and not (k == 'solution' and isinstance(v, str))
-        }
+        pruned = {k: prune_empty(v) for k, v in value.items()}
         return {k: v for k, v in pruned.items() if v not in (None, {}, [])}
     if isinstance(value, list):
         pruned = [prune_empty(v) for v in value]

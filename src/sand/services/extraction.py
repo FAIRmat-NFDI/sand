@@ -26,8 +26,12 @@ SYSTEM_PROMPT = (
     'Describe the coating parameters, quenching, annealing, and deposited '
     'layers in their dedicated sections, and keep data of separate solutions '
     'and steps apart. Only use the allowed types and literal values provided '
-    'in the schema; if there are options, choose one. Keep to the given '
-    'schema.'
+    'in the schema; if there are options, choose one. Some fields are marked '
+    '"ENTRY REFERENCE" in their schema description (e.g. chemical, batch, '
+    'samples): these hold references to other NOMAD database entries, so '
+    'never put a chemical name or any other free text in them — omit them '
+    'unless the text explicitly provides such a reference. Chemical names '
+    'belong in the respective name fields. Keep to the given schema.'
 )
 
 INSTRUCTION_TEXT = (
