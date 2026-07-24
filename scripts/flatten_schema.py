@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""Regenerate the flattened extraction schema from the NOMAD API export.
+
+Usage: python scripts/flatten_schema.py
+"""
+
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT / 'src'))
+
+from sand.services.schema_convert import flatten_schema  # noqa: E402
+
+RAW_PATH = ROOT / 'src' / 'HySprint_SlotDieCoating.json'
+OUT_PATH = ROOT / 'src' / 'sand' / 'flatten_HySprint_SlotDieCoating.json'
+
+# The API export only contains the base Quenching class, but HZB entries use
+# the AirKnifeQuenching / GasQuenching subclasses — their fields are patched
+# in here (unit notation matches the export's pint long names).
+QUENCHING_EXTRA_PROPS = {
+    'gas': {
+        'type': 'string',
+        'description': 'The gas used for gas quenching, e.g. nitrogen.',
+    },
+    'air_knife_angle': {
+        'type': 'number',
+        'description': 'The angle of the air knife.',
+        'unit': 'degree',
+    },
+    'air_knife_distance_to_thin_film': {
+        'type': 'number',
+        'description': 'The distance of the air knife to the thin film.',
+        'unit': 'micrometer',
+    },
+}
+
+
+# The export's SolutionPreparation base class is likewise empty; HZB entries
+# use a subclass with these quantities (types/units copied from the export's
+# Solution class, which declares the same quantities).
+PREPARATION_EXTRA_PROPS = {
+    'method': {
+        'type': 'string',
+        'description': 'How the solution was prepared.',
+        'enum': ['Shaker', 'Stirring', 'Ultrasoncic', 'Waiting'],
+    },
+    'solvent_ratio': {
+        'type': 'string',
+        'description': 'The ratio of the solvents, as stated (e.g. "1:6").',
+    },
+    'temperature': {
+        'type': 'number',
+        'description': 'The temperature during preparation.',
+        'unit': 'degree_Celsius',
+    },
+    'time': {
+        'type': 'number',
+        'description': 'The duration of the preparation.',
+        'unit': 'minute',
+    },
+    'speed': {
+        'type': 'number',
+        'description': 'The shaking/stirring speed during preparation.',
+        'unit': 'hertz',
+    },
+}
+
+
+def _patch_preparation(node: dict) -> None:
+    """Add the preparation subclass fields to every Solution occurrence."""
+    props = node.get('properties')
+    if isinstance(props, dict):
+        preparation = props.get('preparation')
+        if isinstance(preparation, dict):
+            preparation.setdefault('properties', {}).update(
+                PREPARATION_EXTRA_PROPS
+            )
+        for value in props.values():
+            _patch_preparation(value.get('items', value))
+
+
+def main() -> None:
+    with open(RAW_PATH) as f:
+        raw = json.load(f)
+    flat = flatten_schema(raw)
+    flat['properties']['quenching']['properties'].update(QUENCHING_EXTRA_PROPS)
+    _patch_preparation(flat)
+    with open(OUT_PATH, 'w') as f:
+        json.dump(flat, f, indent=1)
+    print(f'wrote {OUT_PATH}')
+
+
+if __name__ == '__main__':
+    main()

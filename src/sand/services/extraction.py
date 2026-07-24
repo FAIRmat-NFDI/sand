@@ -4,43 +4,42 @@ from typing import Any
 
 import httpx
 
-SCHEMA_PATH = Path(__file__).parent.parent / 'solar_cell_schema.json'
+SCHEMA_PATH = Path(__file__).parent.parent / 'flatten_HySprint_SlotDieCoating.json'
 
 # Helmholtz Blablador, an OpenAI-compatible API:
 # https://sdlaml.pages.jsc.fz-juelich.de/ai/guides/blablador_api_access/
 BLABLADOR_BASE_URL = 'https://api.blablador.fz-juelich.de/v1'
 
-# Prompts adapted from lamalab-org/perla-extract
-# (src/perla_extract/constants.py)
 SYSTEM_PROMPT = (
-    'You are a world class AI that excels at extracting data about perovskite '
-    'solar cells from papers. You only report single junction solar cells and no '
-    'other types of solar cells. You never come up with data and only state data '
-    'that have been measured and written in the paper and which you can '
-    'confidently extract. It is better for you to skip than to report data you '
-    'are uncertain in. Take care to separate devices. Do not extract data people '
-    'took from other papers but only data reported for the first time in this '
-    'paper. Do not convert units yourself and stick to the units reported in the '
-    'paper. Be careful with decimal points. Do not try to come up with a value by '
-    'doing maths or any inference. Stick to what is explicitly written. Be careful '
-    'that the data you put together really belongs to the same device. Do not '
-    'forget to get all the different cells/devices. There can be many. You can '
-    'make a guess for dimensionality. Make sure to only use the allowed types and '
-    'literal values provided in the schema. If there are options, choose one. The '
-    'device stack has to be listed separately in the layers section of the schema '
-    'with layer names as the names of the parts of the stack. Do not miss the '
-    'stack/layers. Make sure to separate deposition steps like thermal annealing '
-    'and spin coating, etc. Keep to the given schema.'
+    'You are a world class AI that excels at extracting structured data about '
+    'slot-die coating processes for thin-film samples (e.g. perovskite '
+    'absorber layers) from lab notes and spoken process descriptions. You '
+    'never come up with data: only report values that are explicitly stated '
+    'in the text. It is better to leave a field out than to report data you '
+    'are uncertain about. Do not derive values by doing maths or inference; '
+    'stick to what is written. The one exception is units: schema fields '
+    'carry a "unit" annotation, and every numeric value must be converted to '
+    'that unit before reporting (e.g. for a field with unit "mm", 100 '
+    'micrometers is reported as 0.1). Be careful with decimal points. Put '
+    'each chemical of the coating solution in the correct list (solute, '
+    'solvent, or additive) with its stated amount, volume, or concentration. '
+    'Describe the coating parameters, quenching, annealing, and deposited '
+    'layers in their dedicated sections, and keep data of separate solutions '
+    'and steps apart. Only use the allowed types and literal values provided '
+    'in the schema; if there are options, choose one. Keep to the given '
+    'schema.'
 )
 
 INSTRUCTION_TEXT = (
-    'Extract the data from the text of the paper. Only report data about devices '
-    'for which you are certain that the extraction you provide is correct. Do not '
-    'convert any value or unit. Do not forget to fill in the bandgap. Make sure it '
-    'is correct for the cell to the best of your abilities. If you\'re not '
-    'confident, skip it. Always fill the ions section and coefficients for the '
-    'perovskite material. If it\'s not stated, you can infer it from the formula. '
-    'For example, for MAPbI3 you get coefficients 1 for MA, 1 for Pb, and 3 for I.'
+    'Extract the slot-die coating process data from the following '
+    'description. Fill only fields whose values are explicitly stated, and '
+    'convert each numeric value to the unit specified for that field in the '
+    'schema. Report the coating solution formulation (solutes, solvents, and '
+    'additives with their names and amounts), the coating parameters (flow '
+    'rate, head distance, coating speed, temperatures), any quenching step '
+    '(e.g. air knife settings), the annealing conditions (temperature, time, '
+    'atmosphere), and the deposited layer (type and material). If a name for '
+    'the process or sample is stated, use it as the name.'
 )
 
 
@@ -76,15 +75,14 @@ class ExtractionService:
         self._model = model
         self._schema = _load_schema()
 
-    async def extract(self, text: str) -> list[dict[str, Any]]:
+    async def extract(self, text: str) -> dict[str, Any]:
         user_message = (
             f'{INSTRUCTION_TEXT}\n\n'
             'Return the extracted data as a single JSON object that validates '
-            'against the following JSON Schema (a top-level object with a '
-            '"cells" array, one entry per device). Output only the JSON '
-            'object — no markdown, no explanations.\n\n'
+            'against the following JSON Schema. Output only the JSON object '
+            '— no markdown, no explanations.\n\n'
             f'JSON Schema:\n{json.dumps(self._schema)}\n\n'
-            f'Paper text:\n{text}'
+            f'Process description:\n{text}'
         )
         payload = {
             'model': self._model,
@@ -139,7 +137,7 @@ class ExtractionService:
                 f'Blablador reply was not valid JSON: {exc}'
             ) from exc
 
-        return data.get('cells') or []
+        return data if isinstance(data, dict) else {}
 
     async def _stream_completion(self, payload: dict[str, Any]) -> str:
         """Run a streaming chat completion and return the joined content."""

@@ -1,0 +1,2271 @@
+{
+ "type": "object",
+ "properties": {
+  "name": {
+   "type": "string",
+   "description": "A short human readable and descriptive name."
+  },
+  "datetime": {
+   "type": "string",
+   "description": "The date and time when this activity was started.",
+   "format": "date-time"
+  },
+  "lab_id": {
+   "type": "string",
+   "description": "An ID string that is unique at least for the lab that produced this\ndata."
+  },
+  "description": {
+   "type": "string",
+   "description": "Any information that cannot be captured in the other fields."
+  },
+  "method": {
+   "type": "string",
+   "description": "A short consistent handle for the applied method."
+  },
+  "location": {
+   "type": "string",
+   "description": "location of the experiment."
+  },
+  "steps": {
+   "type": "array",
+   "description": "An ordered list of all the dependant steps that make up this activity.",
+   "items": {
+    "type": "object",
+    "description": "Any dependant step of a `Process`.",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "A short and descriptive name for this step."
+     },
+     "start_time": {
+      "type": "string",
+      "description": "Optionally, the starting time of the activity step. If omitted, it is assumed to\nfollow directly after the previous step.",
+      "format": "date-time"
+     },
+     "comment": {
+      "type": "string",
+      "description": "Any additional information about the step not captured by the other fields."
+     },
+     "duration": {
+      "type": "number",
+      "description": "The duration time of the process step.",
+      "unit": "second"
+     }
+    }
+   }
+  },
+  "end_time": {
+   "type": "string",
+   "description": "The date and time when this process was finished.",
+   "format": "date-time"
+  },
+  "instruments": {
+   "type": "array",
+   "description": "A list of all the instruments and their role in this process.",
+   "items": {
+    "type": "object",
+    "description": "A section used for referencing an Instrument.",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "A short descriptive name for the role of this reference."
+     },
+     "reference": {
+      "type": "string",
+      "description": "A reference to a NOMAD `Instrument` entry."
+     },
+     "lab_id": {
+      "type": "string",
+      "description": "The readable identifier for the entity."
+     }
+    }
+   }
+  },
+  "samples": {
+   "type": "array",
+   "description": "The samples as that have undergone the process.",
+   "items": {
+    "type": "object",
+    "description": "A section used for referencing a CompositeSystem.",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "A short descriptive name for the role of this reference."
+     },
+     "reference": {
+      "type": "string",
+      "description": "A reference to a NOMAD `CompositeSystem` entry."
+     },
+     "lab_id": {
+      "type": "string",
+      "description": "The readable identifier for the entity."
+     }
+    }
+   }
+  },
+  "present": {
+   "type": "boolean",
+   "description": ""
+  },
+  "batch": {
+   "type": "string",
+   "description": ""
+  },
+  "positon_in_experimental_plan": {
+   "type": "number",
+   "description": ""
+  },
+  "operator": {
+   "type": "string",
+   "description": "Name of process operator"
+  },
+  "atmosphere": {
+   "type": "object",
+   "description": "",
+   "properties": {
+    "datetime": {
+     "type": "string",
+     "description": "",
+     "format": "date-time"
+    },
+    "temperature": {
+     "type": "number",
+     "description": "Temperature of the room",
+     "unit": "degree_Celsius"
+    },
+    "ambient_pressure": {
+     "type": "number",
+     "description": "",
+     "unit": "bar"
+    },
+    "relative_humidity": {
+     "type": "number",
+     "description": ""
+    }
+   }
+  },
+  "layer": {
+   "type": "array",
+   "description": "",
+   "items": {
+    "type": "object",
+    "description": "",
+    "properties": {
+     "layer_type": {
+      "type": "string",
+      "description": ""
+     },
+     "layer_material_name": {
+      "type": "string",
+      "description": "The chemical formula using common abreviations. This will be used to set layer material, if not set, e.g. MAPbI3."
+     },
+     "layer_material": {
+      "type": "string",
+      "description": "The chemical formula of the layer. This will be used directly and indirectly in the search. The formula will be used itself as well as the extracted chemical elements."
+     },
+     "layer_thickness": {
+      "type": "number",
+      "description": "The thickness of the sample, either measured or assumed.",
+      "unit": "nanometer"
+     },
+     "layer_transmission": {
+      "type": "number",
+      "description": "Percentage of light that gets transmitted through the layer."
+     },
+     "layer_morphology": {
+      "type": "string",
+      "description": "A description of the morphology of the film"
+     },
+     "layer_sheet_resistance": {
+      "type": "number",
+      "description": "",
+      "unit": "ohm"
+     },
+     "layer_chemical_id": {
+      "type": "string",
+      "description": "Identifier of the product used for creating the layerin case it is purchased from supplier"
+     },
+     "product_info": {
+      "type": "object",
+      "description": "Product information",
+      "properties": {
+       "product_number": {
+        "type": "string",
+        "description": "Product Number, as defined by materials sent by the suppliers"
+       },
+       "lot_number": {
+        "type": "string",
+        "description": "LOT, Experiment or Batch Number, as defined by suppliers"
+       },
+       "product_volume": {
+        "type": "number",
+        "description": "Delivered Product Volume",
+        "unit": "milliliter"
+       },
+       "product_weight": {
+        "type": "number",
+        "description": "Delivered Product Weight",
+        "unit": "gram"
+       },
+       "shipping_date": {
+        "type": "string",
+        "description": "Date when product was shipped",
+        "format": "date-time"
+       },
+       "opening_date": {
+        "type": "string",
+        "description": "Date when product was opened",
+        "format": "date-time"
+       },
+       "supplier": {
+        "type": "string",
+        "description": "Partner/Company that supplies the product to the end user"
+       },
+       "product_description": {
+        "type": "string",
+        "description": "Product description"
+       },
+       "cost": {
+        "type": "number",
+        "description": "Cost of product (in EUR)."
+       }
+      }
+     }
+    }
+   }
+  },
+  "solution": {
+   "type": "array",
+   "description": "",
+   "items": {
+    "type": "object",
+    "description": "",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": ""
+     },
+     "reload_referenced_solution": {
+      "type": "boolean",
+      "description": ""
+     },
+     "solution": {
+      "type": "string",
+      "description": ""
+     },
+     "solution_volume": {
+      "type": "number",
+      "description": "",
+      "unit": "milliliter"
+     },
+     "solution_viscosity": {
+      "type": "number",
+      "description": "Viscosity of the ink solution, critical for printability in inkjet printing",
+      "unit": "pascal * second"
+     },
+     "solution_contact_angle": {
+      "type": "number",
+      "description": "The angle formed between the solution and the underlying layer.",
+      "unit": "degree"
+     },
+     "solution_density": {
+      "type": "number",
+      "description": "The density of the solution.",
+      "unit": "gram / centimeter ** 3"
+     },
+     "solution_surface_tension": {
+      "type": "number",
+      "description": "The surface tension of the solution.",
+      "unit": "millinewton / meter"
+     },
+     "solution_details": {
+      "type": "object",
+      "description": "Base class for a solution",
+      "properties": {
+       "name": {
+        "type": "string",
+        "description": "A short human readable and descriptive name."
+       },
+       "datetime": {
+        "type": "string",
+        "description": "The date and time associated with this section.",
+        "format": "date-time"
+       },
+       "lab_id": {
+        "type": "string",
+        "description": "An ID string that is unique at least for the lab that produced this\ndata."
+       },
+       "description": {
+        "type": "string",
+        "description": "Any information that cannot be captured in the other fields."
+       },
+       "elemental_composition": {
+        "type": "array",
+        "description": "A list of all the elements found in the system together and their respective\natomic fraction within the system.",
+        "items": {
+         "type": "object",
+         "description": "A section for describing the elemental composition of a system, i.e. the element and its atomic fraction.",
+         "properties": {
+          "element": {
+           "type": "string",
+           "description": "The symbol of the element, e.g. 'Pb'.",
+           "enum": [
+            "Ac",
+            "Ag",
+            "Al",
+            "Am",
+            "Ar",
+            "As",
+            "At",
+            "Au",
+            "B",
+            "Ba",
+            "Be",
+            "Bh",
+            "Bi",
+            "Bk",
+            "Br",
+            "C",
+            "Ca",
+            "Cd",
+            "Ce",
+            "Cf",
+            "Cl",
+            "Cm",
+            "Cn",
+            "Co",
+            "Cr",
+            "Cs",
+            "Cu",
+            "Db",
+            "Ds",
+            "Dy",
+            "Er",
+            "Es",
+            "Eu",
+            "F",
+            "Fe",
+            "Fl",
+            "Fm",
+            "Fr",
+            "Ga",
+            "Gd",
+            "Ge",
+            "H",
+            "He",
+            "Hf",
+            "Hg",
+            "Ho",
+            "Hs",
+            "I",
+            "In",
+            "Ir",
+            "K",
+            "Kr",
+            "La",
+            "Li",
+            "Lr",
+            "Lu",
+            "Lv",
+            "Mc",
+            "Md",
+            "Mg",
+            "Mn",
+            "Mo",
+            "Mt",
+            "N",
+            "Na",
+            "Nb",
+            "Nd",
+            "Ne",
+            "Nh",
+            "Ni",
+            "No",
+            "Np",
+            "O",
+            "Og",
+            "Os",
+            "P",
+            "Pa",
+            "Pb",
+            "Pd",
+            "Pm",
+            "Po",
+            "Pr",
+            "Pt",
+            "Pu",
+            "Ra",
+            "Rb",
+            "Re",
+            "Rf",
+            "Rg",
+            "Rh",
+            "Rn",
+            "Ru",
+            "S",
+            "Sb",
+            "Sc",
+            "Se",
+            "Sg",
+            "Si",
+            "Sm",
+            "Sn",
+            "Sr",
+            "Ta",
+            "Tb",
+            "Tc",
+            "Te",
+            "Th",
+            "Ti",
+            "Tl",
+            "Tm",
+            "Ts",
+            "U",
+            "V",
+            "W",
+            "Xe",
+            "Y",
+            "Yb",
+            "Zn",
+            "Zr"
+           ]
+          },
+          "atomic_fraction": {
+           "type": "number",
+           "description": "The atomic fraction of the element in the system it is contained within.\nPer definition a positive value less than or equal to 1."
+          },
+          "mass_fraction": {
+           "type": "number",
+           "description": "The mass fraction of the element in the system it is contained within.\nPer definition a positive value less than or equal to 1."
+          }
+         }
+        }
+       },
+       "components": {
+        "type": "array",
+        "description": "A list of all the components of the composite system containing a name, reference\nto the system section and mass of that component.",
+        "items": {
+         "type": "object",
+         "description": "A section for describing a component and its role in a composite system.",
+         "properties": {
+          "name": {
+           "type": "string",
+           "description": "A short name for the component."
+          },
+          "mass": {
+           "type": "number",
+           "description": "The mass of the component.",
+           "unit": "kilogram"
+          },
+          "mass_fraction": {
+           "type": "number",
+           "description": "The mass fraction of the component in the composite system."
+          }
+         }
+        }
+       },
+       "method": {
+        "type": "string",
+        "description": "",
+        "enum": [
+         "Shaker",
+         "Stirring",
+         "Ultrasoncic",
+         "Waiting"
+        ]
+       },
+       "solvent_ratio": {
+        "type": "string",
+        "description": ""
+       },
+       "temperature": {
+        "type": "number",
+        "description": "",
+        "unit": "degree_Celsius"
+       },
+       "time": {
+        "type": "number",
+        "description": "",
+        "unit": "minute"
+       },
+       "speed": {
+        "type": "number",
+        "description": "",
+        "unit": "hertz"
+       },
+       "solute": {
+        "type": "array",
+        "description": "",
+        "items": {
+         "type": "object",
+         "description": "",
+         "properties": {
+          "name": {
+           "type": "string",
+           "description": ""
+          },
+          "chemical": {
+           "type": "string",
+           "description": ""
+          },
+          "chemical_volume": {
+           "type": "number",
+           "description": "",
+           "unit": "milliliter"
+          },
+          "chemical_mass": {
+           "type": "number",
+           "description": "",
+           "unit": "milligram"
+          },
+          "concentration_mass": {
+           "type": "number",
+           "description": "",
+           "unit": "milligram / milliliter"
+          },
+          "concentration_mol": {
+           "type": "number",
+           "description": "",
+           "unit": "mole / milliliter"
+          },
+          "concentration_vol": {
+           "type": "number",
+           "description": "Volume-to-volume concentration (v/v), e.g. for liquid additives or solvents.",
+           "unit": "microliter / milliliter"
+          },
+          "amount_mol": {
+           "type": "number",
+           "description": "",
+           "unit": "mole"
+          },
+          "amount_relative": {
+           "type": "number",
+           "description": ""
+          },
+          "chemical_id": {
+           "type": "string",
+           "description": ""
+          },
+          "chemical_2": {
+           "type": "object",
+           "description": "A section for pure substances existing as \"compounds\" in the PubChem database and for tracking substances provided by suppliers",
+           "properties": {
+            "name": {
+             "type": "string",
+             "description": "A short name for the substance."
+            },
+            "iupac_name": {
+             "type": "string",
+             "description": "IUPAC name."
+            },
+            "molecular_formula": {
+             "type": "string",
+             "description": "Molecular formula."
+            },
+            "molecular_mass": {
+             "type": "number",
+             "description": "The mass of the most likely isotopic composition for a single molecule,\ncorresponding to the most intense ion/molecule peak in a mass spectrum.",
+             "unit": "dalton"
+            },
+            "molar_mass": {
+             "type": "number",
+             "description": "The molar mass is the sum of all atomic masses of the constituent atoms in a\ncompound, measured in g/mol. In the absence of explicit isotope labelling,\naveraged natural abundance is assumed. If an atom bears an explicit isotope label,\n100%% isotopic purity is assumed at this location.",
+             "unit": "gram / mole"
+            },
+            "monoisotopic_mass": {
+             "type": "number",
+             "description": "The mass of a molecule, calculated using the mass of the most abundant isotope of\neach element.",
+             "unit": "dalton"
+            },
+            "inchi": {
+             "type": "string",
+             "description": "Inchi."
+            },
+            "inchi_key": {
+             "type": "string",
+             "description": "Inchi key."
+            },
+            "smile": {
+             "type": "string",
+             "description": "Smile."
+            },
+            "canonical_smile": {
+             "type": "string",
+             "description": "Canonical smile."
+            },
+            "cas_number": {
+             "type": "string",
+             "description": "CAS number."
+            },
+            "pub_chem_cid": {
+             "type": "integer",
+             "description": ""
+            },
+            "pub_chem_link": {
+             "type": "string",
+             "description": ""
+            },
+            "load_data": {
+             "type": "boolean",
+             "description": ""
+            },
+            "product_info": {
+             "type": "object",
+             "description": "Product information",
+             "properties": {
+              "product_number": {
+               "type": "string",
+               "description": "Product Number, as defined by materials sent by the suppliers"
+              },
+              "lot_number": {
+               "type": "string",
+               "description": "LOT, Experiment or Batch Number, as defined by suppliers"
+              },
+              "product_volume": {
+               "type": "number",
+               "description": "Delivered Product Volume",
+               "unit": "milliliter"
+              },
+              "product_weight": {
+               "type": "number",
+               "description": "Delivered Product Weight",
+               "unit": "gram"
+              },
+              "shipping_date": {
+               "type": "string",
+               "description": "Date when product was shipped",
+               "format": "date-time"
+              },
+              "opening_date": {
+               "type": "string",
+               "description": "Date when product was opened",
+               "format": "date-time"
+              },
+              "supplier": {
+               "type": "string",
+               "description": "Partner/Company that supplies the product to the end user"
+              },
+              "product_description": {
+               "type": "string",
+               "description": "Product description"
+              },
+              "cost": {
+               "type": "number",
+               "description": "Cost of product (in EUR)."
+              }
+             }
+            }
+           }
+          }
+         }
+        }
+       },
+       "additive": {
+        "type": "array",
+        "description": "",
+        "items": {
+         "type": "object",
+         "description": "",
+         "properties": {
+          "name": {
+           "type": "string",
+           "description": ""
+          },
+          "chemical": {
+           "type": "string",
+           "description": ""
+          },
+          "chemical_volume": {
+           "type": "number",
+           "description": "",
+           "unit": "milliliter"
+          },
+          "chemical_mass": {
+           "type": "number",
+           "description": "",
+           "unit": "milligram"
+          },
+          "concentration_mass": {
+           "type": "number",
+           "description": "",
+           "unit": "milligram / milliliter"
+          },
+          "concentration_mol": {
+           "type": "number",
+           "description": "",
+           "unit": "mole / milliliter"
+          },
+          "concentration_vol": {
+           "type": "number",
+           "description": "Volume-to-volume concentration (v/v), e.g. for liquid additives or solvents.",
+           "unit": "microliter / milliliter"
+          },
+          "amount_mol": {
+           "type": "number",
+           "description": "",
+           "unit": "mole"
+          },
+          "amount_relative": {
+           "type": "number",
+           "description": ""
+          },
+          "chemical_id": {
+           "type": "string",
+           "description": ""
+          },
+          "chemical_2": {
+           "type": "object",
+           "description": "A section for pure substances existing as \"compounds\" in the PubChem database and for tracking substances provided by suppliers",
+           "properties": {
+            "name": {
+             "type": "string",
+             "description": "A short name for the substance."
+            },
+            "iupac_name": {
+             "type": "string",
+             "description": "IUPAC name."
+            },
+            "molecular_formula": {
+             "type": "string",
+             "description": "Molecular formula."
+            },
+            "molecular_mass": {
+             "type": "number",
+             "description": "The mass of the most likely isotopic composition for a single molecule,\ncorresponding to the most intense ion/molecule peak in a mass spectrum.",
+             "unit": "dalton"
+            },
+            "molar_mass": {
+             "type": "number",
+             "description": "The molar mass is the sum of all atomic masses of the constituent atoms in a\ncompound, measured in g/mol. In the absence of explicit isotope labelling,\naveraged natural abundance is assumed. If an atom bears an explicit isotope label,\n100%% isotopic purity is assumed at this location.",
+             "unit": "gram / mole"
+            },
+            "monoisotopic_mass": {
+             "type": "number",
+             "description": "The mass of a molecule, calculated using the mass of the most abundant isotope of\neach element.",
+             "unit": "dalton"
+            },
+            "inchi": {
+             "type": "string",
+             "description": "Inchi."
+            },
+            "inchi_key": {
+             "type": "string",
+             "description": "Inchi key."
+            },
+            "smile": {
+             "type": "string",
+             "description": "Smile."
+            },
+            "canonical_smile": {
+             "type": "string",
+             "description": "Canonical smile."
+            },
+            "cas_number": {
+             "type": "string",
+             "description": "CAS number."
+            },
+            "pub_chem_cid": {
+             "type": "integer",
+             "description": ""
+            },
+            "pub_chem_link": {
+             "type": "string",
+             "description": ""
+            },
+            "load_data": {
+             "type": "boolean",
+             "description": ""
+            },
+            "product_info": {
+             "type": "object",
+             "description": "Product information",
+             "properties": {
+              "product_number": {
+               "type": "string",
+               "description": "Product Number, as defined by materials sent by the suppliers"
+              },
+              "lot_number": {
+               "type": "string",
+               "description": "LOT, Experiment or Batch Number, as defined by suppliers"
+              },
+              "product_volume": {
+               "type": "number",
+               "description": "Delivered Product Volume",
+               "unit": "milliliter"
+              },
+              "product_weight": {
+               "type": "number",
+               "description": "Delivered Product Weight",
+               "unit": "gram"
+              },
+              "shipping_date": {
+               "type": "string",
+               "description": "Date when product was shipped",
+               "format": "date-time"
+              },
+              "opening_date": {
+               "type": "string",
+               "description": "Date when product was opened",
+               "format": "date-time"
+              },
+              "supplier": {
+               "type": "string",
+               "description": "Partner/Company that supplies the product to the end user"
+              },
+              "product_description": {
+               "type": "string",
+               "description": "Product description"
+              },
+              "cost": {
+               "type": "number",
+               "description": "Cost of product (in EUR)."
+              }
+             }
+            }
+           }
+          }
+         }
+        }
+       },
+       "solvent": {
+        "type": "array",
+        "description": "",
+        "items": {
+         "type": "object",
+         "description": "",
+         "properties": {
+          "name": {
+           "type": "string",
+           "description": ""
+          },
+          "chemical": {
+           "type": "string",
+           "description": ""
+          },
+          "chemical_volume": {
+           "type": "number",
+           "description": "",
+           "unit": "milliliter"
+          },
+          "chemical_mass": {
+           "type": "number",
+           "description": "",
+           "unit": "milligram"
+          },
+          "concentration_mass": {
+           "type": "number",
+           "description": "",
+           "unit": "milligram / milliliter"
+          },
+          "concentration_mol": {
+           "type": "number",
+           "description": "",
+           "unit": "mole / milliliter"
+          },
+          "concentration_vol": {
+           "type": "number",
+           "description": "Volume-to-volume concentration (v/v), e.g. for liquid additives or solvents.",
+           "unit": "microliter / milliliter"
+          },
+          "amount_mol": {
+           "type": "number",
+           "description": "",
+           "unit": "mole"
+          },
+          "amount_relative": {
+           "type": "number",
+           "description": ""
+          },
+          "chemical_id": {
+           "type": "string",
+           "description": ""
+          },
+          "chemical_2": {
+           "type": "object",
+           "description": "A section for pure substances existing as \"compounds\" in the PubChem database and for tracking substances provided by suppliers",
+           "properties": {
+            "name": {
+             "type": "string",
+             "description": "A short name for the substance."
+            },
+            "iupac_name": {
+             "type": "string",
+             "description": "IUPAC name."
+            },
+            "molecular_formula": {
+             "type": "string",
+             "description": "Molecular formula."
+            },
+            "molecular_mass": {
+             "type": "number",
+             "description": "The mass of the most likely isotopic composition for a single molecule,\ncorresponding to the most intense ion/molecule peak in a mass spectrum.",
+             "unit": "dalton"
+            },
+            "molar_mass": {
+             "type": "number",
+             "description": "The molar mass is the sum of all atomic masses of the constituent atoms in a\ncompound, measured in g/mol. In the absence of explicit isotope labelling,\naveraged natural abundance is assumed. If an atom bears an explicit isotope label,\n100%% isotopic purity is assumed at this location.",
+             "unit": "gram / mole"
+            },
+            "monoisotopic_mass": {
+             "type": "number",
+             "description": "The mass of a molecule, calculated using the mass of the most abundant isotope of\neach element.",
+             "unit": "dalton"
+            },
+            "inchi": {
+             "type": "string",
+             "description": "Inchi."
+            },
+            "inchi_key": {
+             "type": "string",
+             "description": "Inchi key."
+            },
+            "smile": {
+             "type": "string",
+             "description": "Smile."
+            },
+            "canonical_smile": {
+             "type": "string",
+             "description": "Canonical smile."
+            },
+            "cas_number": {
+             "type": "string",
+             "description": "CAS number."
+            },
+            "pub_chem_cid": {
+             "type": "integer",
+             "description": ""
+            },
+            "pub_chem_link": {
+             "type": "string",
+             "description": ""
+            },
+            "load_data": {
+             "type": "boolean",
+             "description": ""
+            },
+            "product_info": {
+             "type": "object",
+             "description": "Product information",
+             "properties": {
+              "product_number": {
+               "type": "string",
+               "description": "Product Number, as defined by materials sent by the suppliers"
+              },
+              "lot_number": {
+               "type": "string",
+               "description": "LOT, Experiment or Batch Number, as defined by suppliers"
+              },
+              "product_volume": {
+               "type": "number",
+               "description": "Delivered Product Volume",
+               "unit": "milliliter"
+              },
+              "product_weight": {
+               "type": "number",
+               "description": "Delivered Product Weight",
+               "unit": "gram"
+              },
+              "shipping_date": {
+               "type": "string",
+               "description": "Date when product was shipped",
+               "format": "date-time"
+              },
+              "opening_date": {
+               "type": "string",
+               "description": "Date when product was opened",
+               "format": "date-time"
+              },
+              "supplier": {
+               "type": "string",
+               "description": "Partner/Company that supplies the product to the end user"
+              },
+              "product_description": {
+               "type": "string",
+               "description": "Product description"
+              },
+              "cost": {
+               "type": "number",
+               "description": "Cost of product (in EUR)."
+              }
+             }
+            }
+           }
+          }
+         }
+        }
+       },
+       "other_solution": {
+        "type": "array",
+        "description": "",
+        "items": {
+         "type": "object",
+         "description": "",
+         "properties": {
+          "reload_referenced_solution": {
+           "type": "boolean",
+           "description": ""
+          },
+          "name": {
+           "type": "string",
+           "description": ""
+          },
+          "solution": {
+           "type": "string",
+           "description": ""
+          },
+          "solution_volume": {
+           "type": "number",
+           "description": "",
+           "unit": "milliliter"
+          },
+          "amount_relative": {
+           "type": "number",
+           "description": ""
+          },
+          "solution_details": {
+           "type": "object",
+           "description": "Base class for a solution",
+           "properties": {
+            "name": {
+             "type": "string",
+             "description": "A short human readable and descriptive name."
+            },
+            "datetime": {
+             "type": "string",
+             "description": "The date and time associated with this section.",
+             "format": "date-time"
+            },
+            "lab_id": {
+             "type": "string",
+             "description": "An ID string that is unique at least for the lab that produced this\ndata."
+            },
+            "description": {
+             "type": "string",
+             "description": "Any information that cannot be captured in the other fields."
+            },
+            "elemental_composition": {
+             "type": "array",
+             "description": "A list of all the elements found in the system together and their respective\natomic fraction within the system.",
+             "items": {
+              "type": "object",
+              "description": "A section for describing the elemental composition of a system, i.e. the element and its atomic fraction.",
+              "properties": {
+               "element": {
+                "type": "string",
+                "description": "The symbol of the element, e.g. 'Pb'.",
+                "enum": [
+                 "Ac",
+                 "Ag",
+                 "Al",
+                 "Am",
+                 "Ar",
+                 "As",
+                 "At",
+                 "Au",
+                 "B",
+                 "Ba",
+                 "Be",
+                 "Bh",
+                 "Bi",
+                 "Bk",
+                 "Br",
+                 "C",
+                 "Ca",
+                 "Cd",
+                 "Ce",
+                 "Cf",
+                 "Cl",
+                 "Cm",
+                 "Cn",
+                 "Co",
+                 "Cr",
+                 "Cs",
+                 "Cu",
+                 "Db",
+                 "Ds",
+                 "Dy",
+                 "Er",
+                 "Es",
+                 "Eu",
+                 "F",
+                 "Fe",
+                 "Fl",
+                 "Fm",
+                 "Fr",
+                 "Ga",
+                 "Gd",
+                 "Ge",
+                 "H",
+                 "He",
+                 "Hf",
+                 "Hg",
+                 "Ho",
+                 "Hs",
+                 "I",
+                 "In",
+                 "Ir",
+                 "K",
+                 "Kr",
+                 "La",
+                 "Li",
+                 "Lr",
+                 "Lu",
+                 "Lv",
+                 "Mc",
+                 "Md",
+                 "Mg",
+                 "Mn",
+                 "Mo",
+                 "Mt",
+                 "N",
+                 "Na",
+                 "Nb",
+                 "Nd",
+                 "Ne",
+                 "Nh",
+                 "Ni",
+                 "No",
+                 "Np",
+                 "O",
+                 "Og",
+                 "Os",
+                 "P",
+                 "Pa",
+                 "Pb",
+                 "Pd",
+                 "Pm",
+                 "Po",
+                 "Pr",
+                 "Pt",
+                 "Pu",
+                 "Ra",
+                 "Rb",
+                 "Re",
+                 "Rf",
+                 "Rg",
+                 "Rh",
+                 "Rn",
+                 "Ru",
+                 "S",
+                 "Sb",
+                 "Sc",
+                 "Se",
+                 "Sg",
+                 "Si",
+                 "Sm",
+                 "Sn",
+                 "Sr",
+                 "Ta",
+                 "Tb",
+                 "Tc",
+                 "Te",
+                 "Th",
+                 "Ti",
+                 "Tl",
+                 "Tm",
+                 "Ts",
+                 "U",
+                 "V",
+                 "W",
+                 "Xe",
+                 "Y",
+                 "Yb",
+                 "Zn",
+                 "Zr"
+                ]
+               },
+               "atomic_fraction": {
+                "type": "number",
+                "description": "The atomic fraction of the element in the system it is contained within.\nPer definition a positive value less than or equal to 1."
+               },
+               "mass_fraction": {
+                "type": "number",
+                "description": "The mass fraction of the element in the system it is contained within.\nPer definition a positive value less than or equal to 1."
+               }
+              }
+             }
+            },
+            "components": {
+             "type": "array",
+             "description": "A list of all the components of the composite system containing a name, reference\nto the system section and mass of that component.",
+             "items": {
+              "type": "object",
+              "description": "A section for describing a component and its role in a composite system.",
+              "properties": {
+               "name": {
+                "type": "string",
+                "description": "A short name for the component."
+               },
+               "mass": {
+                "type": "number",
+                "description": "The mass of the component.",
+                "unit": "kilogram"
+               },
+               "mass_fraction": {
+                "type": "number",
+                "description": "The mass fraction of the component in the composite system."
+               }
+              }
+             }
+            },
+            "method": {
+             "type": "string",
+             "description": "",
+             "enum": [
+              "Shaker",
+              "Stirring",
+              "Ultrasoncic",
+              "Waiting"
+             ]
+            },
+            "solvent_ratio": {
+             "type": "string",
+             "description": ""
+            },
+            "temperature": {
+             "type": "number",
+             "description": "",
+             "unit": "degree_Celsius"
+            },
+            "time": {
+             "type": "number",
+             "description": "",
+             "unit": "minute"
+            },
+            "speed": {
+             "type": "number",
+             "description": "",
+             "unit": "hertz"
+            },
+            "solute": {
+             "type": "array",
+             "description": "",
+             "items": {
+              "type": "object",
+              "description": "",
+              "properties": {
+               "name": {
+                "type": "string",
+                "description": ""
+               },
+               "chemical": {
+                "type": "string",
+                "description": ""
+               },
+               "chemical_volume": {
+                "type": "number",
+                "description": "",
+                "unit": "milliliter"
+               },
+               "chemical_mass": {
+                "type": "number",
+                "description": "",
+                "unit": "milligram"
+               },
+               "concentration_mass": {
+                "type": "number",
+                "description": "",
+                "unit": "milligram / milliliter"
+               },
+               "concentration_mol": {
+                "type": "number",
+                "description": "",
+                "unit": "mole / milliliter"
+               },
+               "concentration_vol": {
+                "type": "number",
+                "description": "Volume-to-volume concentration (v/v), e.g. for liquid additives or solvents.",
+                "unit": "microliter / milliliter"
+               },
+               "amount_mol": {
+                "type": "number",
+                "description": "",
+                "unit": "mole"
+               },
+               "amount_relative": {
+                "type": "number",
+                "description": ""
+               },
+               "chemical_id": {
+                "type": "string",
+                "description": ""
+               },
+               "chemical_2": {
+                "type": "object",
+                "description": "A section for pure substances existing as \"compounds\" in the PubChem database and for tracking substances provided by suppliers",
+                "properties": {
+                 "name": {
+                  "type": "string",
+                  "description": "A short name for the substance."
+                 },
+                 "iupac_name": {
+                  "type": "string",
+                  "description": "IUPAC name."
+                 },
+                 "molecular_formula": {
+                  "type": "string",
+                  "description": "Molecular formula."
+                 },
+                 "molecular_mass": {
+                  "type": "number",
+                  "description": "The mass of the most likely isotopic composition for a single molecule,\ncorresponding to the most intense ion/molecule peak in a mass spectrum.",
+                  "unit": "dalton"
+                 },
+                 "molar_mass": {
+                  "type": "number",
+                  "description": "The molar mass is the sum of all atomic masses of the constituent atoms in a\ncompound, measured in g/mol. In the absence of explicit isotope labelling,\naveraged natural abundance is assumed. If an atom bears an explicit isotope label,\n100%% isotopic purity is assumed at this location.",
+                  "unit": "gram / mole"
+                 },
+                 "monoisotopic_mass": {
+                  "type": "number",
+                  "description": "The mass of a molecule, calculated using the mass of the most abundant isotope of\neach element.",
+                  "unit": "dalton"
+                 },
+                 "inchi": {
+                  "type": "string",
+                  "description": "Inchi."
+                 },
+                 "inchi_key": {
+                  "type": "string",
+                  "description": "Inchi key."
+                 },
+                 "smile": {
+                  "type": "string",
+                  "description": "Smile."
+                 },
+                 "canonical_smile": {
+                  "type": "string",
+                  "description": "Canonical smile."
+                 },
+                 "cas_number": {
+                  "type": "string",
+                  "description": "CAS number."
+                 },
+                 "pub_chem_cid": {
+                  "type": "integer",
+                  "description": ""
+                 },
+                 "pub_chem_link": {
+                  "type": "string",
+                  "description": ""
+                 },
+                 "load_data": {
+                  "type": "boolean",
+                  "description": ""
+                 },
+                 "product_info": {
+                  "type": "object",
+                  "description": "Product information",
+                  "properties": {
+                   "product_number": {
+                    "type": "string",
+                    "description": "Product Number, as defined by materials sent by the suppliers"
+                   },
+                   "lot_number": {
+                    "type": "string",
+                    "description": "LOT, Experiment or Batch Number, as defined by suppliers"
+                   },
+                   "product_volume": {
+                    "type": "number",
+                    "description": "Delivered Product Volume",
+                    "unit": "milliliter"
+                   },
+                   "product_weight": {
+                    "type": "number",
+                    "description": "Delivered Product Weight",
+                    "unit": "gram"
+                   },
+                   "shipping_date": {
+                    "type": "string",
+                    "description": "Date when product was shipped",
+                    "format": "date-time"
+                   },
+                   "opening_date": {
+                    "type": "string",
+                    "description": "Date when product was opened",
+                    "format": "date-time"
+                   },
+                   "supplier": {
+                    "type": "string",
+                    "description": "Partner/Company that supplies the product to the end user"
+                   },
+                   "product_description": {
+                    "type": "string",
+                    "description": "Product description"
+                   },
+                   "cost": {
+                    "type": "number",
+                    "description": "Cost of product (in EUR)."
+                   }
+                  }
+                 }
+                }
+               }
+              }
+             }
+            },
+            "additive": {
+             "type": "array",
+             "description": "",
+             "items": {
+              "type": "object",
+              "description": "",
+              "properties": {
+               "name": {
+                "type": "string",
+                "description": ""
+               },
+               "chemical": {
+                "type": "string",
+                "description": ""
+               },
+               "chemical_volume": {
+                "type": "number",
+                "description": "",
+                "unit": "milliliter"
+               },
+               "chemical_mass": {
+                "type": "number",
+                "description": "",
+                "unit": "milligram"
+               },
+               "concentration_mass": {
+                "type": "number",
+                "description": "",
+                "unit": "milligram / milliliter"
+               },
+               "concentration_mol": {
+                "type": "number",
+                "description": "",
+                "unit": "mole / milliliter"
+               },
+               "concentration_vol": {
+                "type": "number",
+                "description": "Volume-to-volume concentration (v/v), e.g. for liquid additives or solvents.",
+                "unit": "microliter / milliliter"
+               },
+               "amount_mol": {
+                "type": "number",
+                "description": "",
+                "unit": "mole"
+               },
+               "amount_relative": {
+                "type": "number",
+                "description": ""
+               },
+               "chemical_id": {
+                "type": "string",
+                "description": ""
+               },
+               "chemical_2": {
+                "type": "object",
+                "description": "A section for pure substances existing as \"compounds\" in the PubChem database and for tracking substances provided by suppliers",
+                "properties": {
+                 "name": {
+                  "type": "string",
+                  "description": "A short name for the substance."
+                 },
+                 "iupac_name": {
+                  "type": "string",
+                  "description": "IUPAC name."
+                 },
+                 "molecular_formula": {
+                  "type": "string",
+                  "description": "Molecular formula."
+                 },
+                 "molecular_mass": {
+                  "type": "number",
+                  "description": "The mass of the most likely isotopic composition for a single molecule,\ncorresponding to the most intense ion/molecule peak in a mass spectrum.",
+                  "unit": "dalton"
+                 },
+                 "molar_mass": {
+                  "type": "number",
+                  "description": "The molar mass is the sum of all atomic masses of the constituent atoms in a\ncompound, measured in g/mol. In the absence of explicit isotope labelling,\naveraged natural abundance is assumed. If an atom bears an explicit isotope label,\n100%% isotopic purity is assumed at this location.",
+                  "unit": "gram / mole"
+                 },
+                 "monoisotopic_mass": {
+                  "type": "number",
+                  "description": "The mass of a molecule, calculated using the mass of the most abundant isotope of\neach element.",
+                  "unit": "dalton"
+                 },
+                 "inchi": {
+                  "type": "string",
+                  "description": "Inchi."
+                 },
+                 "inchi_key": {
+                  "type": "string",
+                  "description": "Inchi key."
+                 },
+                 "smile": {
+                  "type": "string",
+                  "description": "Smile."
+                 },
+                 "canonical_smile": {
+                  "type": "string",
+                  "description": "Canonical smile."
+                 },
+                 "cas_number": {
+                  "type": "string",
+                  "description": "CAS number."
+                 },
+                 "pub_chem_cid": {
+                  "type": "integer",
+                  "description": ""
+                 },
+                 "pub_chem_link": {
+                  "type": "string",
+                  "description": ""
+                 },
+                 "load_data": {
+                  "type": "boolean",
+                  "description": ""
+                 },
+                 "product_info": {
+                  "type": "object",
+                  "description": "Product information",
+                  "properties": {
+                   "product_number": {
+                    "type": "string",
+                    "description": "Product Number, as defined by materials sent by the suppliers"
+                   },
+                   "lot_number": {
+                    "type": "string",
+                    "description": "LOT, Experiment or Batch Number, as defined by suppliers"
+                   },
+                   "product_volume": {
+                    "type": "number",
+                    "description": "Delivered Product Volume",
+                    "unit": "milliliter"
+                   },
+                   "product_weight": {
+                    "type": "number",
+                    "description": "Delivered Product Weight",
+                    "unit": "gram"
+                   },
+                   "shipping_date": {
+                    "type": "string",
+                    "description": "Date when product was shipped",
+                    "format": "date-time"
+                   },
+                   "opening_date": {
+                    "type": "string",
+                    "description": "Date when product was opened",
+                    "format": "date-time"
+                   },
+                   "supplier": {
+                    "type": "string",
+                    "description": "Partner/Company that supplies the product to the end user"
+                   },
+                   "product_description": {
+                    "type": "string",
+                    "description": "Product description"
+                   },
+                   "cost": {
+                    "type": "number",
+                    "description": "Cost of product (in EUR)."
+                   }
+                  }
+                 }
+                }
+               }
+              }
+             }
+            },
+            "solvent": {
+             "type": "array",
+             "description": "",
+             "items": {
+              "type": "object",
+              "description": "",
+              "properties": {
+               "name": {
+                "type": "string",
+                "description": ""
+               },
+               "chemical": {
+                "type": "string",
+                "description": ""
+               },
+               "chemical_volume": {
+                "type": "number",
+                "description": "",
+                "unit": "milliliter"
+               },
+               "chemical_mass": {
+                "type": "number",
+                "description": "",
+                "unit": "milligram"
+               },
+               "concentration_mass": {
+                "type": "number",
+                "description": "",
+                "unit": "milligram / milliliter"
+               },
+               "concentration_mol": {
+                "type": "number",
+                "description": "",
+                "unit": "mole / milliliter"
+               },
+               "concentration_vol": {
+                "type": "number",
+                "description": "Volume-to-volume concentration (v/v), e.g. for liquid additives or solvents.",
+                "unit": "microliter / milliliter"
+               },
+               "amount_mol": {
+                "type": "number",
+                "description": "",
+                "unit": "mole"
+               },
+               "amount_relative": {
+                "type": "number",
+                "description": ""
+               },
+               "chemical_id": {
+                "type": "string",
+                "description": ""
+               },
+               "chemical_2": {
+                "type": "object",
+                "description": "A section for pure substances existing as \"compounds\" in the PubChem database and for tracking substances provided by suppliers",
+                "properties": {
+                 "name": {
+                  "type": "string",
+                  "description": "A short name for the substance."
+                 },
+                 "iupac_name": {
+                  "type": "string",
+                  "description": "IUPAC name."
+                 },
+                 "molecular_formula": {
+                  "type": "string",
+                  "description": "Molecular formula."
+                 },
+                 "molecular_mass": {
+                  "type": "number",
+                  "description": "The mass of the most likely isotopic composition for a single molecule,\ncorresponding to the most intense ion/molecule peak in a mass spectrum.",
+                  "unit": "dalton"
+                 },
+                 "molar_mass": {
+                  "type": "number",
+                  "description": "The molar mass is the sum of all atomic masses of the constituent atoms in a\ncompound, measured in g/mol. In the absence of explicit isotope labelling,\naveraged natural abundance is assumed. If an atom bears an explicit isotope label,\n100%% isotopic purity is assumed at this location.",
+                  "unit": "gram / mole"
+                 },
+                 "monoisotopic_mass": {
+                  "type": "number",
+                  "description": "The mass of a molecule, calculated using the mass of the most abundant isotope of\neach element.",
+                  "unit": "dalton"
+                 },
+                 "inchi": {
+                  "type": "string",
+                  "description": "Inchi."
+                 },
+                 "inchi_key": {
+                  "type": "string",
+                  "description": "Inchi key."
+                 },
+                 "smile": {
+                  "type": "string",
+                  "description": "Smile."
+                 },
+                 "canonical_smile": {
+                  "type": "string",
+                  "description": "Canonical smile."
+                 },
+                 "cas_number": {
+                  "type": "string",
+                  "description": "CAS number."
+                 },
+                 "pub_chem_cid": {
+                  "type": "integer",
+                  "description": ""
+                 },
+                 "pub_chem_link": {
+                  "type": "string",
+                  "description": ""
+                 },
+                 "load_data": {
+                  "type": "boolean",
+                  "description": ""
+                 },
+                 "product_info": {
+                  "type": "object",
+                  "description": "Product information",
+                  "properties": {
+                   "product_number": {
+                    "type": "string",
+                    "description": "Product Number, as defined by materials sent by the suppliers"
+                   },
+                   "lot_number": {
+                    "type": "string",
+                    "description": "LOT, Experiment or Batch Number, as defined by suppliers"
+                   },
+                   "product_volume": {
+                    "type": "number",
+                    "description": "Delivered Product Volume",
+                    "unit": "milliliter"
+                   },
+                   "product_weight": {
+                    "type": "number",
+                    "description": "Delivered Product Weight",
+                    "unit": "gram"
+                   },
+                   "shipping_date": {
+                    "type": "string",
+                    "description": "Date when product was shipped",
+                    "format": "date-time"
+                   },
+                   "opening_date": {
+                    "type": "string",
+                    "description": "Date when product was opened",
+                    "format": "date-time"
+                   },
+                   "supplier": {
+                    "type": "string",
+                    "description": "Partner/Company that supplies the product to the end user"
+                   },
+                   "product_description": {
+                    "type": "string",
+                    "description": "Product description"
+                   },
+                   "cost": {
+                    "type": "number",
+                    "description": "Cost of product (in EUR)."
+                   }
+                  }
+                 }
+                }
+               }
+              }
+             }
+            },
+            "other_solution": {
+             "type": "array",
+             "description": "",
+             "items": {
+              "type": "object",
+              "description": "",
+              "properties": {
+               "reload_referenced_solution": {
+                "type": "boolean",
+                "description": ""
+               },
+               "name": {
+                "type": "string",
+                "description": ""
+               },
+               "solution": {
+                "type": "string",
+                "description": ""
+               },
+               "solution_volume": {
+                "type": "number",
+                "description": "",
+                "unit": "milliliter"
+               },
+               "amount_relative": {
+                "type": "number",
+                "description": ""
+               }
+              }
+             }
+            },
+            "preparation": {
+             "type": "object",
+             "description": "",
+             "properties": {
+              "atmosphere": {
+               "type": "string",
+               "description": ""
+              },
+              "method": {
+               "type": "string",
+               "description": "How the solution was prepared.",
+               "enum": [
+                "Shaker",
+                "Stirring",
+                "Ultrasoncic",
+                "Waiting"
+               ]
+              },
+              "solvent_ratio": {
+               "type": "string",
+               "description": "The ratio of the solvents, as stated (e.g. \"1:6\")."
+              },
+              "temperature": {
+               "type": "number",
+               "description": "The temperature during preparation.",
+               "unit": "degree_Celsius"
+              },
+              "time": {
+               "type": "number",
+               "description": "The duration of the preparation.",
+               "unit": "minute"
+              },
+              "speed": {
+               "type": "number",
+               "description": "The shaking/stirring speed during preparation.",
+               "unit": "hertz"
+              }
+             }
+            },
+            "properties": {
+             "type": "object",
+             "description": "",
+             "properties": {
+              "ph_value": {
+               "type": "number",
+               "description": ""
+              },
+              "final_volume": {
+               "type": "number",
+               "description": "",
+               "unit": "milliliter"
+              },
+              "final_concentration": {
+               "type": "number",
+               "description": "",
+               "unit": "milligram / milliliter"
+              }
+             }
+            },
+            "filtration": {
+             "type": "object",
+             "description": "",
+             "properties": {
+              "washing_technique": {
+               "type": "string",
+               "description": ""
+              },
+              "number_of_washes": {
+               "type": "integer",
+               "description": ""
+              },
+              "washing_solvent": {
+               "type": "array",
+               "description": "",
+               "items": {
+                "type": "object",
+                "description": "",
+                "properties": {
+                 "solvent_name": {
+                  "type": "string",
+                  "description": ""
+                 },
+                 "volume": {
+                  "type": "number",
+                  "description": "",
+                  "unit": "milliliter"
+                 },
+                 "concentration_mol": {
+                  "type": "number",
+                  "description": "",
+                  "unit": "mole / liter"
+                 }
+                }
+               }
+              },
+              "filter_material": {
+               "type": "string",
+               "description": ""
+              },
+              "filter_pore_size": {
+               "type": "number",
+               "description": "",
+               "unit": "micrometer"
+              }
+             }
+            },
+            "storage": {
+             "type": "array",
+             "description": "",
+             "items": {
+              "type": "object",
+              "description": "",
+              "properties": {
+               "start_date": {
+                "type": "string",
+                "description": "",
+                "format": "date-time"
+               },
+               "end_date": {
+                "type": "string",
+                "description": "",
+                "format": "date-time"
+               },
+               "storage_condition": {
+                "type": "string",
+                "description": ""
+               },
+               "temperature": {
+                "type": "number",
+                "description": "",
+                "unit": "degree_Celsius"
+               },
+               "atmosphere": {
+                "type": "string",
+                "description": ""
+               },
+               "comments": {
+                "type": "string",
+                "description": ""
+               }
+              }
+             }
+            },
+            "solution_id": {
+             "type": "object",
+             "description": "",
+             "properties": {
+              "institute": {
+               "type": "string",
+               "description": "Alias/short name of the home institute of the owner, i.e. *HZB*."
+              },
+              "owner": {
+               "type": "string",
+               "description": "Alias for the owner of the identified thing. This should be unique within the\ninstitute."
+              },
+              "datetime": {
+               "type": "string",
+               "description": "A datetime associated with the identified thing. In case of an `Activity`, this\nshould be the starting time and, in case of an `Entity`, the creation time.",
+               "format": "date-time"
+              },
+              "short_name": {
+               "type": "string",
+               "description": "A short name of the the identified thing (e.g. the identifier scribed on the\nsample, the process number, or machine name), e.g. 4001-8, YAG-2-34.\nThis is to be managed and decided internally by the labs, although we recommend\nto avoid the following characters in it: \"_\", \"/\", \"\\\" and \".\"."
+              },
+              "lab_id": {
+               "type": "string",
+               "description": "Full readable id. Ideally a human readable id convention, which is simple,\nunderstandable and still have chances of becoming unique.\nIf the `owner`, `short_name`, `\u00ecnstitute`, and `datetime` are provided, this will\nbe formed automatically by joining these components by an underscore (_).\nSpaces in any of the individual components will be replaced with hyphens (-).\nAn example would be hzb_oah_20200602_4001-08."
+              },
+              "sample_owner": {
+               "type": "string",
+               "description": ""
+              },
+              "sample_short_name": {
+               "type": "string",
+               "description": ""
+              },
+              "sample_id": {
+               "type": "string",
+               "description": ""
+              }
+             }
+            }
+           }
+          }
+         }
+        }
+       },
+       "preparation": {
+        "type": "object",
+        "description": "",
+        "properties": {
+         "atmosphere": {
+          "type": "string",
+          "description": ""
+         },
+         "method": {
+          "type": "string",
+          "description": "How the solution was prepared.",
+          "enum": [
+           "Shaker",
+           "Stirring",
+           "Ultrasoncic",
+           "Waiting"
+          ]
+         },
+         "solvent_ratio": {
+          "type": "string",
+          "description": "The ratio of the solvents, as stated (e.g. \"1:6\")."
+         },
+         "temperature": {
+          "type": "number",
+          "description": "The temperature during preparation.",
+          "unit": "degree_Celsius"
+         },
+         "time": {
+          "type": "number",
+          "description": "The duration of the preparation.",
+          "unit": "minute"
+         },
+         "speed": {
+          "type": "number",
+          "description": "The shaking/stirring speed during preparation.",
+          "unit": "hertz"
+         }
+        }
+       },
+       "properties": {
+        "type": "object",
+        "description": "",
+        "properties": {
+         "ph_value": {
+          "type": "number",
+          "description": ""
+         },
+         "final_volume": {
+          "type": "number",
+          "description": "",
+          "unit": "milliliter"
+         },
+         "final_concentration": {
+          "type": "number",
+          "description": "",
+          "unit": "milligram / milliliter"
+         }
+        }
+       },
+       "filtration": {
+        "type": "object",
+        "description": "",
+        "properties": {
+         "washing_technique": {
+          "type": "string",
+          "description": ""
+         },
+         "number_of_washes": {
+          "type": "integer",
+          "description": ""
+         },
+         "washing_solvent": {
+          "type": "array",
+          "description": "",
+          "items": {
+           "type": "object",
+           "description": "",
+           "properties": {
+            "solvent_name": {
+             "type": "string",
+             "description": ""
+            },
+            "volume": {
+             "type": "number",
+             "description": "",
+             "unit": "milliliter"
+            },
+            "concentration_mol": {
+             "type": "number",
+             "description": "",
+             "unit": "mole / liter"
+            }
+           }
+          }
+         },
+         "filter_material": {
+          "type": "string",
+          "description": ""
+         },
+         "filter_pore_size": {
+          "type": "number",
+          "description": "",
+          "unit": "micrometer"
+         }
+        }
+       },
+       "storage": {
+        "type": "array",
+        "description": "",
+        "items": {
+         "type": "object",
+         "description": "",
+         "properties": {
+          "start_date": {
+           "type": "string",
+           "description": "",
+           "format": "date-time"
+          },
+          "end_date": {
+           "type": "string",
+           "description": "",
+           "format": "date-time"
+          },
+          "storage_condition": {
+           "type": "string",
+           "description": ""
+          },
+          "temperature": {
+           "type": "number",
+           "description": "",
+           "unit": "degree_Celsius"
+          },
+          "atmosphere": {
+           "type": "string",
+           "description": ""
+          },
+          "comments": {
+           "type": "string",
+           "description": ""
+          }
+         }
+        }
+       },
+       "solution_id": {
+        "type": "object",
+        "description": "",
+        "properties": {
+         "institute": {
+          "type": "string",
+          "description": "Alias/short name of the home institute of the owner, i.e. *HZB*."
+         },
+         "owner": {
+          "type": "string",
+          "description": "Alias for the owner of the identified thing. This should be unique within the\ninstitute."
+         },
+         "datetime": {
+          "type": "string",
+          "description": "A datetime associated with the identified thing. In case of an `Activity`, this\nshould be the starting time and, in case of an `Entity`, the creation time.",
+          "format": "date-time"
+         },
+         "short_name": {
+          "type": "string",
+          "description": "A short name of the the identified thing (e.g. the identifier scribed on the\nsample, the process number, or machine name), e.g. 4001-8, YAG-2-34.\nThis is to be managed and decided internally by the labs, although we recommend\nto avoid the following characters in it: \"_\", \"/\", \"\\\" and \".\"."
+         },
+         "lab_id": {
+          "type": "string",
+          "description": "Full readable id. Ideally a human readable id convention, which is simple,\nunderstandable and still have chances of becoming unique.\nIf the `owner`, `short_name`, `\u00ecnstitute`, and `datetime` are provided, this will\nbe formed automatically by joining these components by an underscore (_).\nSpaces in any of the individual components will be replaced with hyphens (-).\nAn example would be hzb_oah_20200602_4001-08."
+         },
+         "sample_owner": {
+          "type": "string",
+          "description": ""
+         },
+         "sample_short_name": {
+          "type": "string",
+          "description": ""
+         },
+         "sample_id": {
+          "type": "string",
+          "description": ""
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "annealing": {
+   "type": "object",
+   "description": "Base class for annealing of a sample",
+   "properties": {
+    "temperature": {
+     "type": "number",
+     "description": "",
+     "unit": "degree_Celsius"
+    },
+    "time": {
+     "type": "number",
+     "description": "",
+     "unit": "second"
+    },
+    "atmosphere": {
+     "type": "string",
+     "description": ""
+    },
+    "ramp": {
+     "type": "number",
+     "description": "",
+     "unit": "kelvin / minute"
+    }
+   }
+  },
+  "quenching": {
+   "type": "object",
+   "description": "",
+   "properties": {
+    "comment": {
+     "type": "string",
+     "description": "Comments regarding the drying/quenching procedures."
+    },
+    "gas": {
+     "type": "string",
+     "description": "The gas used for gas quenching, e.g. nitrogen."
+    },
+    "air_knife_angle": {
+     "type": "number",
+     "description": "The angle of the air knife.",
+     "unit": "degree"
+    },
+    "air_knife_distance_to_thin_film": {
+     "type": "number",
+     "description": "The distance of the air knife to the thin film.",
+     "unit": "micrometer"
+    }
+   }
+  },
+  "sintering": {
+   "type": "array",
+   "description": "Base class for sintering of a sample",
+   "items": {
+    "type": "object",
+    "description": "Base class for sintering of a sample",
+    "properties": {
+     "temperature": {
+      "type": "number",
+      "description": "",
+      "unit": "degree_Celsius"
+     },
+     "time": {
+      "type": "number",
+      "description": "",
+      "unit": "second"
+     },
+     "ramp": {
+      "type": "number",
+      "description": "",
+      "unit": "second"
+     }
+    }
+   }
+  },
+  "properties": {
+   "type": "object",
+   "description": "",
+   "properties": {
+    "flow_rate": {
+     "type": "number",
+     "description": "",
+     "unit": "milliliter / minute"
+    },
+    "slot_die_head_width": {
+     "type": "number",
+     "description": "",
+     "unit": "millimeter"
+    },
+    "slot_die_shim_width": {
+     "type": "number",
+     "description": "",
+     "unit": "millimeter"
+    },
+    "slot_die_shim_thickness": {
+     "type": "number",
+     "description": "",
+     "unit": "millimeter"
+    },
+    "slot_die_head_distance_to_thinfilm": {
+     "type": "number",
+     "description": "",
+     "unit": "millimeter"
+    },
+    "slot_die_head_speed": {
+     "type": "number",
+     "description": "",
+     "unit": "millimeter / second"
+    },
+    "temperature": {
+     "type": "number",
+     "description": "",
+     "unit": "degree_Celsius"
+    },
+    "coating_run": {
+     "type": "string",
+     "description": ""
+    },
+    "coated_area": {
+     "type": "number",
+     "description": "",
+     "unit": "millimeter ** 2"
+    }
+   }
+  }
+ }
+}
