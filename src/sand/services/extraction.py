@@ -2,10 +2,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-from google import genai
-from google.genai import errors, types
+import httpx
 
 SCHEMA_PATH = Path(__file__).parent.parent / 'solar_cell_schema.json'
+
+# The google-genai SDK requires httpx>=0.28.1 while nomad-lab pins
+# httpx<0.28, so the Gemini REST API is called directly via httpx.
+GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
 
 # Prompts adapted from lamalab-org/perla-extract
 # (src/perla_extract/constants.py)
@@ -52,39 +55,50 @@ class ExtractionService:
         api_key: str,
         model: str = 'gemini-2.5-flash',
     ) -> None:
-        self._client = genai.Client(api_key=api_key)
+        self._client = httpx.AsyncClient(
+            base_url=GEMINI_BASE_URL,
+            headers={'x-goog-api-key': api_key},
+            timeout=httpx.Timeout(600.0, connect=10.0),
+        )
         self._model = model
         self._schema = _load_schema()
 
     async def extract(self, text: str) -> list[dict[str, Any]]:
+        payload = {
+            'systemInstruction': {'parts': [{'text': SYSTEM_PROMPT}]},
+            'contents': [
+                {
+                    'role': 'user',
+                    'parts': [{'text': f'{INSTRUCTION_TEXT}\n\n{text}'}],
+                }
+            ],
+            'generationConfig': {
+                'responseMimeType': 'application/json',
+                'responseJsonSchema': self._schema,
+            },
+        }
         try:
-            response = await self._client.aio.models.generate_content(
-                model=self._model,
-                contents=f'{INSTRUCTION_TEXT}\n\n{text}',
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
-                    response_mime_type='application/json',
-                    response_json_schema=self._schema,
-                ),
+            response = await self._client.post(
+                f'/models/{self._model}:generateContent', json=payload
             )
-        except errors.APIError as exc:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
             raise RuntimeError(
-                f'Gemini API error ({exc.code}): {exc.message}'
+                f'Gemini API error ({exc.response.status_code}): '
+                f'{exc.response.text}'
             ) from exc
         except Exception as exc:
             raise RuntimeError(f'Gemini API call failed: {exc}') from exc
 
         try:
-            data = json.loads(response.text or '')
-        except json.JSONDecodeError as exc:
+            parts = response.json()['candidates'][0]['content']['parts']
+            data = json.loads(''.join(part.get('text', '') for part in parts))
+        except (KeyError, IndexError, json.JSONDecodeError) as exc:
             raise RuntimeError(
-                f'Gemini response was not valid JSON: {exc}'
+                f'Unexpected Gemini response: {exc}'
             ) from exc
 
         return data.get('cells') or []
 
     async def close(self) -> None:
-        # Older google-genai releases have no async close.
-        aclose = getattr(self._client.aio, 'aclose', None)
-        if aclose is not None:
-            await aclose()
+        await self._client.aclose()
