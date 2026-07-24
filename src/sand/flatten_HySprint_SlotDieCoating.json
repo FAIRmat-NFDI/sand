@@ -26,89 +26,13 @@
    "type": "string",
    "description": "location of the experiment."
   },
-  "steps": {
-   "type": "array",
-   "description": "An ordered list of all the dependant steps that make up this activity.",
-   "items": {
-    "type": "object",
-    "description": "Any dependant step of a `Process`.",
-    "properties": {
-     "name": {
-      "type": "string",
-      "description": "A short and descriptive name for this step."
-     },
-     "start_time": {
-      "type": "string",
-      "description": "Optionally, the starting time of the activity step. If omitted, it is assumed to\nfollow directly after the previous step.",
-      "format": "date-time"
-     },
-     "comment": {
-      "type": "string",
-      "description": "Any additional information about the step not captured by the other fields."
-     },
-     "duration": {
-      "type": "number",
-      "description": "The duration time of the process step.",
-      "unit": "second"
-     }
-    }
-   }
-  },
   "end_time": {
    "type": "string",
    "description": "The date and time when this process was finished.",
    "format": "date-time"
   },
-  "instruments": {
-   "type": "array",
-   "description": "A list of all the instruments and their role in this process.",
-   "items": {
-    "type": "object",
-    "description": "A section used for referencing an Instrument.",
-    "properties": {
-     "name": {
-      "type": "string",
-      "description": "A short descriptive name for the role of this reference."
-     },
-     "reference": {
-      "type": "string",
-      "description": "A reference to a NOMAD `Instrument` entry."
-     },
-     "lab_id": {
-      "type": "string",
-      "description": "The readable identifier for the entity."
-     }
-    }
-   }
-  },
-  "samples": {
-   "type": "array",
-   "description": "The samples as that have undergone the process.",
-   "items": {
-    "type": "object",
-    "description": "A section used for referencing a CompositeSystem.",
-    "properties": {
-     "name": {
-      "type": "string",
-      "description": "A short descriptive name for the role of this reference."
-     },
-     "reference": {
-      "type": "string",
-      "description": "A reference to a NOMAD `CompositeSystem` entry."
-     },
-     "lab_id": {
-      "type": "string",
-      "description": "The readable identifier for the entity."
-     }
-    }
-   }
-  },
   "present": {
    "type": "boolean",
-   "description": ""
-  },
-  "batch": {
-   "type": "string",
    "description": ""
   },
   "positon_in_experimental_plan": {
@@ -247,10 +171,6 @@
      },
      "reload_referenced_solution": {
       "type": "boolean",
-      "description": ""
-     },
-     "solution": {
-      "type": "string",
       "description": ""
      },
      "solution_volume": {
@@ -504,10 +424,6 @@
            "type": "string",
            "description": ""
           },
-          "chemical": {
-           "type": "string",
-           "description": ""
-          },
           "chemical_volume": {
            "type": "number",
            "description": "",
@@ -671,10 +587,6 @@
            "type": "string",
            "description": ""
           },
-          "chemical": {
-           "type": "string",
-           "description": ""
-          },
           "chemical_volume": {
            "type": "number",
            "description": "",
@@ -835,10 +747,6 @@
          "description": "",
          "properties": {
           "name": {
-           "type": "string",
-           "description": ""
-          },
-          "chemical": {
            "type": "string",
            "description": ""
           },
@@ -1006,10 +914,6 @@
            "description": ""
           },
           "name": {
-           "type": "string",
-           "description": ""
-          },
-          "solution": {
            "type": "string",
            "description": ""
           },
@@ -1248,10 +1152,6 @@
                 "type": "string",
                 "description": ""
                },
-               "chemical": {
-                "type": "string",
-                "description": ""
-               },
                "chemical_volume": {
                 "type": "number",
                 "description": "",
@@ -1415,10 +1315,6 @@
                 "type": "string",
                 "description": ""
                },
-               "chemical": {
-                "type": "string",
-                "description": ""
-               },
                "chemical_volume": {
                 "type": "number",
                 "description": "",
@@ -1579,10 +1475,6 @@
               "description": "",
               "properties": {
                "name": {
-                "type": "string",
-                "description": ""
-               },
-               "chemical": {
                 "type": "string",
                 "description": ""
                },
@@ -1750,10 +1642,6 @@
                 "description": ""
                },
                "name": {
-                "type": "string",
-                "description": ""
-               },
-               "solution": {
                 "type": "string",
                 "description": ""
                },

@@ -68,6 +68,30 @@ PREPARATION_EXTRA_PROPS = {
 }
 
 
+# Entry-reference quantities: NOMAD stores these as proxy strings and its
+# normalizers try to resolve them, so an LLM-invented value like "PbI2"
+# crashes processing ("Could not resolve PbI2"). They point at other NOMAD
+# entries and are not extractable from text, so they are removed from the
+# extraction schema. 'solution' is only a reference when string-typed (the
+# top-level solution list of subsections must stay).
+STRIP_PROPS = {'samples', 'instruments', 'steps', 'batch', 'chemical', 'reference'}
+STRIP_IF_STRING = {'solution'}
+
+
+def _strip_references(node: dict) -> None:
+    props = node.get('properties')
+    if not isinstance(props, dict):
+        return
+    for name in list(props):
+        prop = props[name]
+        if name in STRIP_PROPS or (
+            name in STRIP_IF_STRING and prop.get('type') == 'string'
+        ):
+            del props[name]
+            continue
+        _strip_references(prop.get('items', prop))
+
+
 def _patch_preparation(node: dict) -> None:
     """Add the preparation subclass fields to every Solution occurrence."""
     props = node.get('properties')
@@ -87,6 +111,7 @@ def main() -> None:
     flat = flatten_schema(raw)
     flat['properties']['quenching']['properties'].update(QUENCHING_EXTRA_PROPS)
     _patch_preparation(flat)
+    _strip_references(flat)
     with open(OUT_PATH, 'w') as f:
         json.dump(flat, f, indent=1)
     print(f'wrote {OUT_PATH}')
