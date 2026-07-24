@@ -90,31 +90,79 @@ class ExtractionService:
             'model': self._model,
             'max_tokens': 16384,
             'temperature': 0,
+            # Stream so the connection is never silent for minutes (proxies
+            # in front of Blablador drop quiet long-running requests).
+            'stream': True,
+            # alias-large (Qwen) is a reasoning model whose thinking eats the
+            # token budget while message.content stays null; turn it off.
+            'chat_template_kwargs': {'enable_thinking': False},
             'messages': [
                 {'role': 'system', 'content': SYSTEM_PROMPT},
                 {'role': 'user', 'content': user_message},
             ],
         }
         try:
-            response = await self._client.post('/chat/completions', json=payload)
-            response.raise_for_status()
+            content = await self._stream_completion(payload)
         except httpx.HTTPStatusError as exc:
-            raise RuntimeError(
-                f'Blablador API error ({exc.response.status_code}): '
-                f'{exc.response.text}'
-            ) from exc
+            if exc.response.status_code == 400:
+                # Deployment may not accept chat_template_kwargs; retry once
+                # without it.
+                retry = {
+                    k: v for k, v in payload.items()
+                    if k != 'chat_template_kwargs'
+                }
+                try:
+                    content = await self._stream_completion(retry)
+                except httpx.HTTPStatusError as retry_exc:
+                    raise RuntimeError(
+                        f'Blablador API error '
+                        f'({retry_exc.response.status_code}): '
+                        f'{retry_exc.response.text}'
+                    ) from retry_exc
+            else:
+                raise RuntimeError(
+                    f'Blablador API error ({exc.response.status_code}): '
+                    f'{exc.response.text}'
+                ) from exc
         except Exception as exc:
             raise RuntimeError(f'Blablador API call failed: {exc}') from exc
 
-        try:
-            content = response.json()['choices'][0]['message']['content']
-            data = _parse_json_reply(content)
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+        if not content.strip():
             raise RuntimeError(
-                f'Unexpected Blablador response: {exc}'
+                'Blablador returned no content (the model may have spent the '
+                'whole token budget on reasoning)'
+            )
+        try:
+            data = _parse_json_reply(content)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f'Blablador reply was not valid JSON: {exc}'
             ) from exc
 
         return data.get('cells') or []
+
+    async def _stream_completion(self, payload: dict[str, Any]) -> str:
+        """Run a streaming chat completion and return the joined content."""
+        parts: list[str] = []
+        async with self._client.stream(
+            'POST', '/chat/completions', json=payload
+        ) as response:
+            if response.status_code >= 400:
+                await response.aread()
+                response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.startswith('data:'):
+                    continue
+                chunk = line[len('data:'):].strip()
+                if chunk == '[DONE]':
+                    break
+                choices = json.loads(chunk).get('choices') or []
+                if not choices:
+                    continue
+                piece = (choices[0].get('delta') or {}).get('content')
+                if piece:
+                    parts.append(piece)
+        return ''.join(parts)
 
     async def close(self) -> None:
         await self._client.aclose()
