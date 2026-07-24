@@ -2,7 +2,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from groq import APIConnectionError, APIError, AsyncGroq
+from google import genai
+from google.genai import errors, types
 
 SCHEMA_PATH = Path(__file__).parent.parent / 'solar_cell_schema.json'
 
@@ -45,75 +46,45 @@ def _load_schema(path: Path = SCHEMA_PATH) -> dict[str, Any]:
         return json.load(f)
 
 
-def _build_tool(cell_schema: dict[str, Any]) -> dict[str, Any]:
-    """Build the tool definition from the PerovskiteSolarCells JSON Schema.
-
-    The schema is already an object with a ``cells`` array of
-    ``PerovskiteSolarCell`` entries, so it is used directly as the tool's
-    ``parameters``.
-    """
-    return {
-        'type': 'function',
-        'function': {
-            'name': 'record_perovskite_solar_cells',
-            'description': (
-                'Record every single-junction perovskite solar cell extracted '
-                'from the text. Each device becomes a separate entry in the '
-                'cells array.'
-            ),
-            'parameters': cell_schema,
-        },
-    }
-
-
 class ExtractionService:
     def __init__(
         self,
         api_key: str,
-        model: str = 'openai/gpt-oss-120b',
+        model: str = 'gemini-2.5-flash',
     ) -> None:
-        self._client = AsyncGroq(api_key=api_key)
+        self._client = genai.Client(api_key=api_key)
         self._model = model
-        schema = _load_schema()
-        self._tool = _build_tool(schema)
+        self._schema = _load_schema()
 
     async def extract(self, text: str) -> list[dict[str, Any]]:
         try:
-            response = await self._client.chat.completions.create(
+            response = await self._client.aio.models.generate_content(
                 model=self._model,
-                max_completion_tokens=16384,
-                tools=[self._tool],
-                tool_choice={
-                    'type': 'function',
-                    'function': {'name': 'record_perovskite_solar_cells'},
-                },
-                messages=[
-                    {'role': 'system', 'content': SYSTEM_PROMPT},
-                    {'role': 'user', 'content': f'{INSTRUCTION_TEXT}\n\n{text}'},
-                ],
+                contents=f'{INSTRUCTION_TEXT}\n\n{text}',
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    response_mime_type='application/json',
+                    response_json_schema=self._schema,
+                ),
             )
-        except APIConnectionError as exc:
-            raise RuntimeError(f'Groq connection failed: {exc}') from exc
-        except APIError as exc:
+        except errors.APIError as exc:
             raise RuntimeError(
-                f'Groq API error ({exc.status_code}): {exc.message}'
+                f'Gemini API error ({exc.code}): {exc.message}'
             ) from exc
         except Exception as exc:
-            raise RuntimeError(f'Groq API call failed: {exc}') from exc
+            raise RuntimeError(f'Gemini API call failed: {exc}') from exc
 
-        for call in response.choices[0].message.tool_calls or []:
-            if call.function.name == 'record_perovskite_solar_cells':
-                try:
-                    arguments = json.loads(call.function.arguments)
-                except json.JSONDecodeError as exc:
-                    raise RuntimeError(
-                        f'Groq tool call returned invalid JSON: {exc}'
-                    ) from exc
-                return arguments.get('cells') or []
+        try:
+            data = json.loads(response.text or '')
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f'Gemini response was not valid JSON: {exc}'
+            ) from exc
 
-        raise RuntimeError(
-            'Groq response did not contain expected tool call'
-        )
+        return data.get('cells') or []
 
     async def close(self) -> None:
-        await self._client.close()
+        # Older google-genai releases have no async close.
+        aclose = getattr(self._client.aio, 'aclose', None)
+        if aclose is not None:
+            await aclose()

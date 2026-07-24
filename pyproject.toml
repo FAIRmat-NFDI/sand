@@ -28,6 +28,7 @@ dependencies = [
     "nomad-lab>=1.4.1",
     "pydantic",
     "temporalio",
+    "google-genai>=1.21",
     "groq>=0.25",
     "httpx>=0.23.3",
     "python-multipart>=0.0.18",

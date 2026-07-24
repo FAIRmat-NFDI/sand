@@ -15,9 +15,11 @@ Before you can run the SAND app you need a few things in place:
 - A working [`nomad-distro-dev`](https://github.com/FAIRmat-NFDI/nomad-distro-dev)
   checkout with its [basic infra prerequisites](https://github.com/FAIRmat-NFDI/nomad-distro-dev#basic-infra)
 
-- A **Groq API key** — used for speech-to-text (Whisper) and for the AI
-  extraction of structured data (`openai/gpt-oss-120b`, available on the free
-  tier). Get one from <https://console.groq.com/keys>.
+- A **Groq API key** — used for speech-to-text (Whisper). Get one from
+  <https://console.groq.com/keys>.
+- A **Gemini API key** — used for the AI extraction of structured data
+  (`gemini-2.5-flash`, available on the free tier). Get one from
+  <https://aistudio.google.com/apikey>.
 
 ### 1. Add the plugin to a NOMAD dev distribution
 
@@ -56,9 +58,10 @@ plugins:
       - sand.apis:sand_api
     options:
       sand.apis:sand_api:
-        groq_api_key: '<your-groq-api-key>'        # required: STT + AI extraction
+        groq_api_key: '<your-groq-api-key>'        # required: speech-to-text
         whisper_model: 'whisper-large-v3-turbo'    # Groq Whisper model
-        extraction_model: 'openai/gpt-oss-120b'    # Groq model for AI extraction
+        gemini_api_key: '<your-gemini-api-key>'    # required: AI extraction
+        extraction_model: 'gemini-2.5-flash'       # Gemini model for AI extraction
         # Base URL of the NOMAD API the app uploads to. For a local instance:
         nomad_base_url: 'http://localhost:8000/nomad-oasis/api/v1'
 ```
