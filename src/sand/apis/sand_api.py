@@ -11,7 +11,7 @@ from sand.apis.routers.pipeline import router as pipeline_router
 from sand.apis.routers.transcribe import router as transcribe_router
 from sand.services.extraction import ExtractionService
 from sand.services.nomad_upload import NomadUploader
-from sand.services.stt import GroqSTTService
+from sand.services.voice_eln import VoiceElnService
 
 # TODO: this need to be updated maybe to uplaod access when the api scope is supprted.
 require_login = Depends(get_current_user({}, allow_anonymous=False))
@@ -27,9 +27,11 @@ app = FastAPI(
 )
 
 # Read config from the entry point (configured in nomad.yaml)
-app.state.stt = GroqSTTService(
-    api_key=sand_api_entry_point.groq_api_key,
-    model=sand_api_entry_point.whisper_model,
+# Transcription happens inside NOMAD (voice-eln plugin); sand only creates the
+# AudioInput entry and reads the transcript back.
+app.state.voice_eln = VoiceElnService(
+    base_url=sand_api_entry_point.nomad_base_url,
+    timeout_s=sand_api_entry_point.transcript_timeout_s,
 )
 app.state.extraction = ExtractionService(
     api_key=sand_api_entry_point.anthropic_api_key,

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
 
+from sand.apis.deps import get_bearer_token
 from sand.models.pipeline import CellResult, PipelineRequest, PipelineResponse
 from sand.services.extraction import ExtractionService
 from sand.services.nomad_upload import NomadUploader
@@ -11,14 +12,6 @@ from sand.services.perovskite_export import (
 router = APIRouter()
 
 
-def _get_bearer_token(request: Request) -> str:
-    """Extract the Bearer token from the Authorization header."""
-    auth = request.headers.get('Authorization', '')
-    if auth.startswith('Bearer '):
-        return auth.removeprefix('Bearer ')
-    raise HTTPException(status_code=401, detail='Missing or invalid Authorization header')
-
-
 @router.post('/pipeline', response_model=PipelineResponse)
 async def pipeline(
     body: PipelineRequest,
@@ -27,7 +20,7 @@ async def pipeline(
     """Full pipeline: text -> extract cells -> build archives -> upload to NOMAD."""
     extraction: ExtractionService = request.app.state.extraction
     uploader: NomadUploader = request.app.state.nomad
-    token = _get_bearer_token(request)
+    token = get_bearer_token(request)
 
     if not body.text.strip():
         raise HTTPException(status_code=400, detail='Text is empty')
