@@ -523,6 +523,11 @@
 
     const audioEntryEl = document.getElementById("audio-entry");
 
+    function clearAudioEntryLink() {
+      audioEntryEl.replaceChildren();
+      audioEntryEl.style.display = "none";
+    }
+
     function showAudioEntryLink(entryUrl) {
       const link = document.createElement("a");
       link.href = entryUrl;
@@ -553,6 +558,7 @@
       recordBtn.innerHTML = '<span class="material-icons">hourglass_top</span> Uploading...';
       statusEl.textContent = "";
       clearError();
+      clearAudioEntryLink();
 
       const mimeSubtype = blob.type ? blob.type.split(";")[0].split("/")[1] : null;
       const ext = mimeSubtype || "wav";
@@ -591,6 +597,7 @@
       }
       recordBtn.disabled = true;
       uploadBtn.disabled = true;
+      clearAudioEntryLink();
       statusEl.textContent = "Uploading audio to NOMAD...";
 
       const form = new FormData();
