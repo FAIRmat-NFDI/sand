@@ -179,6 +179,24 @@
       color: #666;
     }
 
+    /* Link to the created AudioInput entry in NOMAD */
+    .audio-entry-text {
+      font-size: 0.875rem;
+      color: #333;
+      margin: 8px 0;
+      display: none;
+    }
+
+    .audio-entry-text a {
+      color: #2A4CDF;
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .audio-entry-text a:hover {
+      text-decoration: underline;
+    }
+
     /* Error */
     .error-text {
       color: #d32f2f;
@@ -303,7 +321,7 @@
     <div id="app-content">
       <div class="card">
         <label class="text-field-label" for="text">Input text</label>
-        <textarea class="text-field" id="text" placeholder="Type or paste text here, or use the buttons below..."></textarea>
+        <textarea class="text-field" id="text" placeholder="Type or paste process text here for extraction. Recorded audio goes to NOMAD as a voice-eln entry (link shown below)."></textarea>
 
         <div class="controls">
           <button class="btn btn-primary" id="record-btn">
@@ -317,6 +335,8 @@
           <input type="file" id="upload-input" accept="audio/wav,audio/mp3,audio/mpeg,audio/mp4,audio/x-m4a,audio/webm,audio/ogg,audio/flac" hidden>
           <span class="status-text" id="status"></span>
         </div>
+
+        <p class="audio-entry-text" id="audio-entry"></p>
 
         <hr class="divider">
 
@@ -480,7 +500,7 @@
           uploadBtn.disabled = false;
           return;
         }
-        await transcribe(blob);
+        await uploadAudio(blob);
       };
 
       mediaRecorder.start();
@@ -501,27 +521,44 @@
       recordBtn.classList.add("btn-primary");
     }
 
-    async function handleTranscriptionResponse(fetchPromise) {
+    const audioEntryEl = document.getElementById("audio-entry");
+
+    function clearAudioEntryLink() {
+      audioEntryEl.replaceChildren();
+      audioEntryEl.style.display = "none";
+    }
+
+    function showAudioEntryLink(entryUrl) {
+      const link = document.createElement("a");
+      link.href = entryUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "View audio entry on NOMAD";
+      audioEntryEl.replaceChildren(
+        document.createTextNode("Audio uploaded. "), link
+      );
+      audioEntryEl.style.display = "block";
+    }
+
+    async function handleAudioUploadResponse(fetchPromise) {
       const res = await fetchPromise;
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         const detail = body && body.detail ? body.detail : res.statusText;
-        showError("Transcription failed: " + detail);
+        showError("Audio upload failed: " + detail);
         return;
       }
       const data = await res.json();
-      if (textArea.value && !textArea.value.endsWith("\n")) {
-        textArea.value += "\n";
-      }
-      textArea.value += data.text;
+      showAudioEntryLink(data.entry_url);
     }
 
-    async function transcribe(blob) {
+    async function uploadAudio(blob) {
       recordBtn.disabled = true;
       uploadBtn.disabled = true;
-      recordBtn.innerHTML = '<span class="material-icons">hourglass_top</span> Transcribing...';
+      recordBtn.innerHTML = '<span class="material-icons">hourglass_top</span> Uploading...';
       statusEl.textContent = "";
       clearError();
+      clearAudioEntryLink();
 
       const mimeSubtype = blob.type ? blob.type.split(";")[0].split("/")[1] : null;
       const ext = mimeSubtype || "wav";
@@ -529,8 +566,8 @@
       form.append("file", blob, "recording." + ext);
 
       try {
-        await handleTranscriptionResponse(
-          authFetch("api/transcribe", { method: "POST", body: form })
+        await handleAudioUploadResponse(
+          authFetch("api/audio", { method: "POST", body: form })
         );
       } catch (err) {
         showError("Network error: " + err.message);
@@ -560,14 +597,15 @@
       }
       recordBtn.disabled = true;
       uploadBtn.disabled = true;
-      statusEl.textContent = "Transcribing uploaded file...";
+      clearAudioEntryLink();
+      statusEl.textContent = "Uploading audio to NOMAD...";
 
       const form = new FormData();
       form.append("file", file);
 
       try {
-        await handleTranscriptionResponse(
-          authFetch("api/transcribe", { method: "POST", body: form })
+        await handleAudioUploadResponse(
+          authFetch("api/audio", { method: "POST", body: form })
         );
       } catch (err) {
         showError("Network error: " + err.message);

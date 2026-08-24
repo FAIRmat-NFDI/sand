@@ -11,6 +11,26 @@ ARCHIVE_FILENAME = 'entry.archive.json'
 HTTP_ERROR_STATUS = 400
 
 
+def gui_upload_url(base_url: str, upload_id: str) -> str:
+    """Build the NOMAD GUI URL for an upload from the API base URL."""
+    parsed = urlparse(base_url)
+    path = parsed.path.rstrip('/')
+    for suffix in ('/api/v1', '/api'):
+        if path.endswith(suffix):
+            path = path[: -len(suffix)]
+            break
+
+    netloc = parsed.netloc
+    # TODO: remove the localhost logic in production
+    # hostname is None when base_url has no scheme; treat that as non-local.
+    if 'localhost' in (parsed.hostname or ''):
+        netloc = netloc.replace(':8000', ':3000')
+    # NOMAD GUI v1 (classic) upload URL:
+    #   {base}/gui/user/uploads/upload/id/{upload_id}
+    gui_base = urlunparse((parsed.scheme, netloc, f'{path}/gui', '', '', ''))
+    return f'{gui_base}/user/uploads/upload/id/{upload_id}'
+
+
 class NomadAPIError(Exception):
     def __init__(self, status_code: int, detail: str, step: str) -> None:
         self.status_code = status_code
@@ -75,32 +95,13 @@ class NomadUploader:
         )
         self._check_response(response, step='write_archive')
 
-        return UploadResult(
-            upload_id=upload_id, entry_url=self._entry_url(upload_id)
-        )
+        return UploadResult(upload_id=upload_id, entry_url=self._entry_url(upload_id))
 
     def _entry_url(self, upload_id: str) -> str:
-        """Build the NOMAD GUI URL for an upload from the configured API base URL."""
-        parsed = urlparse(self._base_url)
-        path = parsed.path.rstrip('/')
-        for suffix in ('/api/v1', '/api'):
-            if path.endswith(suffix):
-                path = path[: -len(suffix)]
-                break
-
-        netloc = parsed.netloc
-        # TODO: remove the localhost logic in production
-        # hostname is None when base_url has no scheme; treat that as non-local.
-        if 'localhost' in (parsed.hostname or ''):
-            netloc = netloc.replace(':8000', ':3000')
-        # NOMAD GUI v1 (classic) upload URL:
-        #   {base}/gui/user/uploads/upload/id/{upload_id}
-        gui_base = urlunparse((parsed.scheme, netloc, f'{path}/gui', '', '', ''))
-        return f'{gui_base}/user/uploads/upload/id/{upload_id}'
+        return gui_upload_url(self._base_url, upload_id)
 
     def _check_response(self, response: httpx.Response, step: str) -> None:
         if response.status_code in (401, 403):
             raise NomadAuthError(response.status_code, response.text, step=step)
         if response.status_code >= HTTP_ERROR_STATUS:
             raise NomadAPIError(response.status_code, response.text, step=step)
-

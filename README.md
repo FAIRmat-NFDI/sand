@@ -1,5 +1,26 @@
 # sand
 
+Voice/text AI assistant for extracting structured lab process data into NOMAD.
+
+## How it works
+
+```
+record audio in the SAND UI
+  -> SAND uploads the audio file to NOMAD
+       -> the voice-eln plugin creates an AudioInput entry
+          and transcribes it (Whisper, inside NOMAD)
+  -> SAND shows a clickable link to the created entry
+
+type/paste process text in the SAND UI
+  -> LLM extraction (Anthropic) turns the text into solar cell entries
+  -> entries are uploaded to NOMAD
+```
+
+SAND does **not** transcribe audio itself. Every recording becomes a durable
+[`nomad-voice-eln`](https://github.com/FAIRmat-NFDI/nomad-voice-eln) `AudioInput`
+entry — raw audio, machine transcript, and human corrections live there. SAND
+only creates that entry and shows a link to it; the `/audio` response contains
+`upload_id`, `entry_id`, and `entry_url` pointing at the created entry.
 
 ## Running the SAND app
 
@@ -14,9 +35,10 @@ Before you can run the SAND app you need a few things in place:
 
 - A working [`nomad-distro-dev`](https://github.com/FAIRmat-NFDI/nomad-distro-dev)
   checkout with its [basic infra prerequisites](https://github.com/FAIRmat-NFDI/nomad-distro-dev#basic-infra)
-
-- A **Groq API key** — used for speech-to-text (Whisper). Get one from
-  <https://console.groq.com/keys>.
+- The [`nomad-voice-eln`](https://github.com/FAIRmat-NFDI/nomad-voice-eln) plugin
+  **installed and enabled in the same NOMAD** — it owns audio entries and
+  transcription. Follow its README for setup, including `GROQ_API_KEY` in the
+  **action worker's environment** (speech-to-text runs there, not in SAND).
 - An **Anthropic API key** — used for the AI extraction of structured data. Get
   one from <https://console.anthropic.com/>.
 
@@ -55,15 +77,18 @@ plugins:
   entry_points:
     include:
       - sand.apis:sand_api
+      # plus the voice-eln entry points, see the nomad-voice-eln README
     options:
       sand.apis:sand_api:
-        groq_api_key: '<your-groq-api-key>'        # required: speech-to-text
-        whisper_model: 'whisper-large-v3-turbo'    # Groq Whisper model
         anthropic_api_key: '<your-anthropic-api-key>'  # required: AI extraction
         anthropic_model: 'claude-sonnet-4-20250514'    # Anthropic model
         # Base URL of the NOMAD API the app uploads to. For a local instance:
         nomad_base_url: 'http://localhost:8000/nomad-oasis/api/v1'
 ```
+
+There is no Groq/Whisper configuration in SAND anymore: speech-to-text is done
+by the voice-eln transcription action, and its `GROQ_API_KEY` lives in the
+action worker's environment.
 
 
 > [!WARNING]
@@ -104,9 +129,9 @@ prefix appended.
 | `GET`  | `http://localhost:8000/nomad-oasis/sand/` | The SAND UI (`static/index.html`) |
 | `GET`  | `http://localhost:8000/nomad-oasis/sand/docs` | FastAPI Swagger / OpenAPI docs |
 | `GET`  | `http://localhost:8000/nomad-oasis/sand/auth/config` | Keycloak config for the frontend |
-| `POST` | `http://localhost:8000/nomad-oasis/sand/api/transcribe` | Speech-to-text (audio → text) |
+| `POST` | `http://localhost:8000/nomad-oasis/sand/api/audio` | Audio → AudioInput entry in NOMAD (returns the entry link) |
 | `POST` | `http://localhost:8000/nomad-oasis/sand/api/extract` | AI extraction (text → structured data) |
-| `POST` | `http://localhost:8000/nomad-oasis/sand/api/pipeline` | Full pipeline (audio → structured data → NOMAD upload) |
+| `POST` | `http://localhost:8000/nomad-oasis/sand/api/pipeline` | Full pipeline (text → structured data → NOMAD upload) |
 
-The `transcribe`, `extract`, and `pipeline` routes require a logged-in user, so
+The `audio`, `extract`, and `pipeline` routes require a logged-in user, so
 you must authenticate through Keycloak before calling them.
