@@ -19,12 +19,7 @@ class AudioEntryResult:
 
 
 class VoiceElnService:
-    """Create AudioInput entries owned by the voice-eln plugin.
-
-    sand uploads only the audio file; the voice-eln parser turns it into an
-    AudioInput entry and transcribes it inside NOMAD. sand does not read the
-    transcript back - it returns the entry URL so the user can follow the
-    processing in the NOMAD GUI.
+    """Create AudioInput entries owned by the nomad-voice-eln plugin.
     """
 
     def __init__(self, base_url: str) -> None:

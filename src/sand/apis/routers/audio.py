@@ -17,9 +17,8 @@ async def create_audio_entry(
 ) -> AudioEntryResponse:
     """Upload the audio to NOMAD and return the resulting AudioInput entry.
 
-    The audio is not transcribed here: the voice-eln plugin creates an
-    AudioInput entry from the uploaded file and transcribes it inside NOMAD.
-    This endpoint only returns the link to that entry.
+    Creates an AudioInput entry from the uploaded file and transcribes it inside NOMAD.
+    return the link to that AudioInput entry.
     """
     voice: VoiceElnService = request.app.state.voice_eln
     token = get_bearer_token(request)
