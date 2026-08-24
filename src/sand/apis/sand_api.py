@@ -6,9 +6,9 @@ from fastapi.staticfiles import StaticFiles
 from nomad.app.v1.routers.auth import get_current_user
 from nomad.config import config
 
+from sand.apis.routers.audio import router as audio_router
 from sand.apis.routers.extract import router as extract_router
 from sand.apis.routers.pipeline import router as pipeline_router
-from sand.apis.routers.transcribe import router as transcribe_router
 from sand.services.extraction import ExtractionService
 from sand.services.nomad_upload import NomadUploader
 from sand.services.voice_eln import VoiceElnService
@@ -28,10 +28,9 @@ app = FastAPI(
 
 # Read config from the entry point (configured in nomad.yaml)
 # Transcription happens inside NOMAD (voice-eln plugin); sand only creates the
-# AudioInput entry and reads the transcript back.
+# AudioInput entry and links the user to it.
 app.state.voice_eln = VoiceElnService(
     base_url=sand_api_entry_point.nomad_base_url,
-    timeout_s=sand_api_entry_point.transcript_timeout_s,
 )
 app.state.extraction = ExtractionService(
     api_key=sand_api_entry_point.anthropic_api_key,
@@ -41,7 +40,7 @@ app.state.nomad = NomadUploader(
     base_url=sand_api_entry_point.nomad_base_url,
 )
 
-app.include_router(transcribe_router, prefix='/api', dependencies=[require_login])
+app.include_router(audio_router, prefix='/api', dependencies=[require_login])
 app.include_router(extract_router, prefix='/api', dependencies=[require_login])
 app.include_router(pipeline_router, prefix='/api', dependencies=[require_login])
 

@@ -1,29 +1,25 @@
 from fastapi import APIRouter, HTTPException, Request, UploadFile
 
 from sand.apis.deps import get_bearer_token
-from sand.models.transcribe import TranscribeResponse
+from sand.models.audio import AudioEntryResponse
 from sand.services.nomad_upload import NomadAPIError, NomadAuthError
-from sand.services.voice_eln import (
-    TranscriptionFailedError,
-    TranscriptionTimeoutError,
-    VoiceElnService,
-)
+from sand.services.voice_eln import VoiceElnService
 
 router = APIRouter()
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
-@router.post('/transcribe', response_model=TranscribeResponse)
-async def transcribe(
+@router.post('/audio', response_model=AudioEntryResponse)
+async def create_audio_entry(
     file: UploadFile,
     request: Request,
-) -> TranscribeResponse:
-    """Create an AudioInput entry in NOMAD and return its machine transcript.
+) -> AudioEntryResponse:
+    """Upload the audio to NOMAD and return the resulting AudioInput entry.
 
-    The audio is not transcribed here: it is uploaded to NOMAD, where the
-    voice-eln plugin creates an AudioInput entry and transcribes it; this
-    endpoint waits for the transcript and returns it together with the entry.
+    The audio is not transcribed here: the voice-eln plugin creates an
+    AudioInput entry from the uploaded file and transcribes it inside NOMAD.
+    This endpoint only returns the link to that entry.
     """
     voice: VoiceElnService = request.app.state.voice_eln
     token = get_bearer_token(request)
@@ -45,18 +41,14 @@ async def transcribe(
 
     try:
         async with voice.build_client(token) as client:
-            result = await voice.transcribe_via_entry(client, audio, filename)
+            result = await voice.create_audio_entry(client, audio, filename)
     except NomadAuthError as exc:
         raise HTTPException(status_code=401, detail=exc.detail) from exc
-    except TranscriptionFailedError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    except TranscriptionTimeoutError as exc:
-        raise HTTPException(status_code=504, detail=str(exc)) from exc
     except NomadAPIError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    return TranscribeResponse(
-        text=result.text,
-        audio_upload_id=result.upload_id,
-        audio_entry_url=result.entry_url,
+    return AudioEntryResponse(
+        upload_id=result.upload_id,
+        entry_id=result.entry_id,
+        entry_url=result.entry_url,
     )

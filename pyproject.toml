@@ -29,7 +29,6 @@ dependencies = [
     "pydantic",
     "temporalio",
     "anthropic>=0.40.0",
-    "groq>=0.25",
     "httpx>=0.23.3",
     "python-multipart>=0.0.18",
     "perla-extract",

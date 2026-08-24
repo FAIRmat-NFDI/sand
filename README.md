@@ -9,17 +9,18 @@ record audio in the SAND UI
   -> SAND uploads the audio file to NOMAD
        -> the voice-eln plugin creates an AudioInput entry
           and transcribes it (Whisper, inside NOMAD)
-  -> SAND polls the entry and shows the transcript for review
+  -> SAND shows a clickable link to the created entry
+
+type/paste process text in the SAND UI
   -> LLM extraction (Anthropic) turns the text into solar cell entries
   -> entries are uploaded to NOMAD
 ```
 
 SAND does **not** transcribe audio itself. Every recording becomes a durable
 [`nomad-voice-eln`](https://github.com/FAIRmat-NFDI/nomad-voice-eln) `AudioInput`
-entry — raw audio, machine transcript, and human corrections live there — and
-SAND reads the machine transcript (`whisper_transcript`) back from that entry.
-The `/transcribe` response includes `audio_upload_id` and `audio_entry_url`
-pointing at the created entry.
+entry — raw audio, machine transcript, and human corrections live there. SAND
+only creates that entry and shows a link to it; the `/audio` response contains
+`upload_id`, `entry_id`, and `entry_url` pointing at the created entry.
 
 ## Running the SAND app
 
@@ -83,8 +84,6 @@ plugins:
         anthropic_model: 'claude-sonnet-4-20250514'    # Anthropic model
         # Base URL of the NOMAD API the app uploads to. For a local instance:
         nomad_base_url: 'http://localhost:8000/nomad-oasis/api/v1'
-        # How long /transcribe waits for the voice-eln transcript (seconds):
-        transcript_timeout_s: 120
 ```
 
 There is no Groq/Whisper configuration in SAND anymore: speech-to-text is done
@@ -130,9 +129,9 @@ prefix appended.
 | `GET`  | `http://localhost:8000/nomad-oasis/sand/` | The SAND UI (`static/index.html`) |
 | `GET`  | `http://localhost:8000/nomad-oasis/sand/docs` | FastAPI Swagger / OpenAPI docs |
 | `GET`  | `http://localhost:8000/nomad-oasis/sand/auth/config` | Keycloak config for the frontend |
-| `POST` | `http://localhost:8000/nomad-oasis/sand/api/transcribe` | Audio → AudioInput entry in NOMAD → machine transcript |
+| `POST` | `http://localhost:8000/nomad-oasis/sand/api/audio` | Audio → AudioInput entry in NOMAD (returns the entry link) |
 | `POST` | `http://localhost:8000/nomad-oasis/sand/api/extract` | AI extraction (text → structured data) |
-| `POST` | `http://localhost:8000/nomad-oasis/sand/api/pipeline` | Full pipeline (audio → structured data → NOMAD upload) |
+| `POST` | `http://localhost:8000/nomad-oasis/sand/api/pipeline` | Full pipeline (text → structured data → NOMAD upload) |
 
-The `transcribe`, `extract`, and `pipeline` routes require a logged-in user, so
+The `audio`, `extract`, and `pipeline` routes require a logged-in user, so
 you must authenticate through Keycloak before calling them.
