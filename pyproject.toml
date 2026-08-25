@@ -12,7 +12,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
 ]
-name = "sand"
+name = "nomad-sand"
 description = "Structured Audio NOMAD Data - extracting lab process data into NOMAD"
 version = "0.1.0"
 readme = "README.md"
