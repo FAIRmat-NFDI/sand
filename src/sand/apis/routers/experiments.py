@@ -1,0 +1,155 @@
+from fastapi import APIRouter, HTTPException, Request, UploadFile
+
+from sand.apis.deps import get_bearer_token
+from sand.models.experiments import (
+    CreateExperimentRequest,
+    CreateNoteRequest,
+    ExperimentListResponse,
+    ExperimentResponse,
+    ExperimentSummaryModel,
+)
+from sand.services.nomad_upload import NomadAPIError, NomadAuthError
+from sand.services.voice_eln import VoiceElnService
+
+router = APIRouter()
+
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+
+def _voice(request: Request) -> VoiceElnService:
+    return request.app.state.voice_eln
+
+
+def _http_error(exc: NomadAPIError) -> HTTPException:
+    if isinstance(exc, NomadAuthError):
+        return HTTPException(status_code=401, detail=exc.detail)
+    return HTTPException(status_code=502, detail=str(exc))
+
+
+@router.get('/experiments', response_model=ExperimentListResponse)
+async def list_experiments(request: Request) -> ExperimentListResponse:
+    """The user's unpublished experiments (InputCollection entries)."""
+    voice = _voice(request)
+    token = get_bearer_token(request)
+
+    try:
+        async with voice.build_client(token) as client:
+            experiments = await voice.list_experiments(client)
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return ExperimentListResponse(
+        experiments=[
+            ExperimentSummaryModel(
+                upload_id=e.upload_id,
+                entry_id=e.entry_id,
+                name=e.name,
+                entry_url=voice.entry_url(e.upload_id, e.entry_id),
+            )
+            for e in experiments
+        ]
+    )
+
+
+@router.post('/experiments', response_model=ExperimentResponse)
+async def create_experiment(
+    body: CreateExperimentRequest,
+    request: Request,
+) -> ExperimentResponse:
+    """Create an experiment: a NOMAD upload with an InputCollection entry.
+
+    With `info`, the experiment-info form is stored alongside as a
+    WrittenNote labeled 'experiment_info' and referenced by the collection.
+    """
+    voice = _voice(request)
+    token = get_bearer_token(request)
+
+    info = body.info.model_dump(exclude_none=True) if body.info else None
+    name = body.name
+    if not name and info:
+        name = f'{info["project_name"]}_{info["batch"]}_{info["subbatch"]}'
+    if not name:
+        raise HTTPException(
+            status_code=400, detail='Provide a name or the experiment info'
+        )
+
+    try:
+        async with voice.build_client(token) as client:
+            result = await voice.create_experiment(client, name, info)
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return ExperimentResponse(
+        upload_id=result.upload_id,
+        entry_id=result.entry_id,
+        entry_url=voice.entry_url(result.upload_id, result.entry_id),
+    )
+
+
+@router.post('/experiments/{upload_id}/audio', response_model=ExperimentResponse)
+async def add_audio(
+    upload_id: str,
+    file: UploadFile,
+    request: Request,
+) -> ExperimentResponse:
+    """Add a recording to the experiment.
+
+    The audio goes into the experiment upload, where the voice-eln plugin
+    creates an AudioInput entry and transcribes it; the entry is referenced
+    from the experiment's InputCollection. Returns the link to the entry.
+    """
+    voice = _voice(request)
+    token = get_bearer_token(request)
+
+    buf = bytearray()
+    while True:
+        chunk = await file.read(64 * 1024)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail='File too large (max 25 MB)')
+
+    audio = bytes(buf)
+    if not audio:
+        raise HTTPException(status_code=400, detail='Uploaded file is empty')
+
+    filename = file.filename or 'audio.m4a'
+
+    try:
+        async with voice.build_client(token) as client:
+            result = await voice.add_audio(client, upload_id, audio, filename)
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return ExperimentResponse(
+        upload_id=result.upload_id,
+        entry_id=result.entry_id,
+        entry_url=voice.entry_url(result.upload_id, result.entry_id),
+    )
+
+
+@router.post('/experiments/{upload_id}/notes', response_model=ExperimentResponse)
+async def add_note(
+    upload_id: str,
+    body: CreateNoteRequest,
+    request: Request,
+) -> ExperimentResponse:
+    """Add a typed step note (WrittenNote labeled 'step') to the experiment."""
+    voice = _voice(request)
+    token = get_bearer_token(request)
+
+    if not body.text.strip():
+        raise HTTPException(status_code=400, detail='Note text is empty')
+
+    try:
+        async with voice.build_client(token) as client:
+            result = await voice.add_note(client, upload_id, body.text)
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return ExperimentResponse(
+        upload_id=result.upload_id,
+        entry_id=result.entry_id,
+        entry_url=voice.entry_url(result.upload_id, result.entry_id),
+    )

@@ -179,6 +179,63 @@
       color: #666;
     }
 
+    /* Experiment selector + new-experiment form */
+    .select-field {
+      font-family: 'Titillium Web', sans-serif;
+      font-size: 0.9rem;
+      padding: 8px 12px;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+      background: #fff;
+      min-width: 220px;
+      max-width: 100%;
+    }
+
+    .select-field:focus {
+      outline: none;
+      border-color: #2A4CDF;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin: 12px 0;
+    }
+
+    .form-grid label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 0.75rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .form-input {
+      font-family: 'Titillium Web', sans-serif;
+      font-size: 0.9rem;
+      padding: 8px 12px;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: #2A4CDF;
+    }
+
+    #experiment-link {
+      font-size: 0.875rem;
+      color: #2A4CDF;
+      text-decoration: none;
+    }
+
+    #experiment-link:hover {
+      text-decoration: underline;
+    }
+
     /* Link to the created AudioInput entry in NOMAD */
     .audio-entry-text {
       font-size: 0.875rem;
@@ -320,8 +377,37 @@
 
     <div id="app-content">
       <div class="card">
+        <label class="text-field-label" for="experiment-select">Experiment</label>
+        <div class="controls" style="margin-top: 0;">
+          <select class="select-field" id="experiment-select">
+            <option value="">— select an experiment —</option>
+          </select>
+          <button class="btn btn-outlined" id="new-experiment-btn" type="button">
+            <span class="material-icons">add</span>
+            New experiment
+          </button>
+          <a id="experiment-link" target="_blank" rel="noopener noreferrer" hidden>View in NOMAD</a>
+        </div>
+
+        <div id="new-experiment-form" hidden>
+          <hr class="divider">
+          <div class="form-grid">
+            <label>Project name <input class="form-input" id="exp-project"></label>
+            <label>Batch <input class="form-input" id="exp-batch"></label>
+            <label>Subbatch <input class="form-input" id="exp-subbatch"></label>
+            <label>First sample <input class="form-input" id="exp-first-sample"></label>
+            <label>Number of samples <input class="form-input" id="exp-n-samples" type="number" min="1"></label>
+          </div>
+          <div class="controls">
+            <button class="btn btn-primary" id="create-experiment-btn" type="button">Create</button>
+            <button class="btn btn-outlined" id="cancel-experiment-btn" type="button">Cancel</button>
+          </div>
+        </div>
+
+        <hr class="divider">
+
         <label class="text-field-label" for="text">Input text</label>
-        <textarea class="text-field" id="text" placeholder="Type or paste process text here for extraction. Recorded audio goes to NOMAD as a voice-eln entry (link shown below)."></textarea>
+        <textarea class="text-field" id="text" placeholder="Type a step note here and save it, or record audio. Everything goes to the selected experiment in NOMAD."></textarea>
 
         <div class="controls">
           <button class="btn btn-primary" id="record-btn">
@@ -331,6 +417,10 @@
           <button class="btn btn-outlined" id="upload-btn" type="button">
             <span class="material-icons">upload_file</span>
             Upload audio file
+          </button>
+          <button class="btn btn-outlined" id="save-note-btn" type="button">
+            <span class="material-icons">note_add</span>
+            Save note
           </button>
           <input type="file" id="upload-input" accept="audio/wav,audio/mp3,audio/mpeg,audio/mp4,audio/x-m4a,audio/webm,audio/ogg,audio/flac" hidden>
           <span class="status-text" id="status"></span>
@@ -417,6 +507,10 @@
       });
 
       document.getElementById("auth-area").replaceChildren(nameEl, logoutBtn);
+
+      loadExperiments().catch((err) => {
+        showError("Could not load experiments: " + err.message);
+      });
     }
 
     document.getElementById("login-btn").addEventListener("click", () => {
@@ -439,6 +533,126 @@
     const statusEl = document.getElementById("status");
     const error = document.getElementById("error");
     const uploadBtn = document.getElementById("upload-btn");
+    const saveNoteBtn = document.getElementById("save-note-btn");
+
+    // --- Experiments ---
+
+    const experimentSelect = document.getElementById("experiment-select");
+    const experimentLink = document.getElementById("experiment-link");
+    const newExperimentBtn = document.getElementById("new-experiment-btn");
+    const newExperimentForm = document.getElementById("new-experiment-form");
+    const SELECTED_EXPERIMENT_KEY = "sand.selectedExperiment";
+
+    let experimentsById = {};
+
+    function selectedExperiment() {
+      return experimentsById[experimentSelect.value] || null;
+    }
+
+    function requireExperiment() {
+      const experiment = selectedExperiment();
+      if (!experiment) {
+        showError("Select an experiment first (or create a new one).");
+        return null;
+      }
+      return experiment;
+    }
+
+    function updateExperimentLink() {
+      const experiment = selectedExperiment();
+      if (experiment) {
+        experimentLink.href = experiment.entry_url;
+        experimentLink.hidden = false;
+      } else {
+        experimentLink.hidden = true;
+      }
+    }
+
+    async function loadExperiments(selectUploadId) {
+      const res = await authFetch("api/experiments");
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        const detail = body && body.detail ? body.detail : res.statusText;
+        showError("Could not load experiments: " + detail);
+        return;
+      }
+      const data = await res.json();
+      experimentsById = {};
+      experimentSelect.replaceChildren();
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "— select an experiment —";
+      experimentSelect.appendChild(placeholder);
+      for (const experiment of data.experiments) {
+        experimentsById[experiment.upload_id] = experiment;
+        const option = document.createElement("option");
+        option.value = experiment.upload_id;
+        option.textContent = experiment.name;
+        experimentSelect.appendChild(option);
+      }
+      let remembered = null;
+      try { remembered = localStorage.getItem(SELECTED_EXPERIMENT_KEY); } catch { /* ignore */ }
+      const wanted = selectUploadId || remembered;
+      if (wanted && experimentsById[wanted]) {
+        experimentSelect.value = wanted;
+      }
+      updateExperimentLink();
+    }
+
+    experimentSelect.addEventListener("change", () => {
+      try {
+        localStorage.setItem(SELECTED_EXPERIMENT_KEY, experimentSelect.value);
+      } catch { /* ignore */ }
+      updateExperimentLink();
+    });
+
+    newExperimentBtn.addEventListener("click", () => {
+      newExperimentForm.hidden = !newExperimentForm.hidden;
+    });
+
+    document.getElementById("cancel-experiment-btn").addEventListener("click", () => {
+      newExperimentForm.hidden = true;
+    });
+
+    document.getElementById("create-experiment-btn").addEventListener("click", async () => {
+      clearError();
+      const fields = {
+        project_name: document.getElementById("exp-project").value.trim(),
+        batch: document.getElementById("exp-batch").value.trim(),
+        subbatch: document.getElementById("exp-subbatch").value.trim(),
+        first_sample: document.getElementById("exp-first-sample").value.trim(),
+        n_samples: document.getElementById("exp-n-samples").value.trim(),
+      };
+      if (Object.values(fields).some((value) => !value)) {
+        showError("Fill in all experiment info fields.");
+        return;
+      }
+      const body = { info: { ...fields, n_samples: parseInt(fields.n_samples, 10) } };
+      try {
+        const res = await authFetch("api/experiments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const resBody = await res.json().catch(() => null);
+          const detail = resBody && resBody.detail ? resBody.detail : res.statusText;
+          showError("Could not create experiment: " + detail);
+          return;
+        }
+        const created = await res.json();
+        newExperimentForm.hidden = true;
+        for (const input of newExperimentForm.querySelectorAll("input")) {
+          input.value = "";
+        }
+        try {
+          localStorage.setItem(SELECTED_EXPERIMENT_KEY, created.upload_id);
+        } catch { /* ignore */ }
+        await loadExperiments(created.upload_id);
+      } catch (err) {
+        showError("Network error: " + err.message);
+      }
+    });
 
     let mediaRecorder = null;
     let chunks = [];
@@ -476,6 +690,7 @@
 
     async function startRecording() {
       clearError();
+      if (!requireExperiment()) return;
       let stream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -528,31 +743,32 @@
       audioEntryEl.style.display = "none";
     }
 
-    function showAudioEntryLink(entryUrl) {
+    function showEntryLink(message, entryUrl, linkText) {
       const link = document.createElement("a");
       link.href = entryUrl;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
-      link.textContent = "View audio entry on NOMAD";
-      audioEntryEl.replaceChildren(
-        document.createTextNode("Audio uploaded. "), link
-      );
+      link.textContent = linkText;
+      audioEntryEl.replaceChildren(document.createTextNode(message + " "), link);
       audioEntryEl.style.display = "block";
     }
 
-    async function handleAudioUploadResponse(fetchPromise) {
+    async function handleEntryResponse(fetchPromise, failPrefix, message, linkText) {
       const res = await fetchPromise;
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         const detail = body && body.detail ? body.detail : res.statusText;
-        showError("Audio upload failed: " + detail);
-        return;
+        showError(failPrefix + ": " + detail);
+        return false;
       }
       const data = await res.json();
-      showAudioEntryLink(data.entry_url);
+      showEntryLink(message, data.entry_url, linkText);
+      return true;
     }
 
     async function uploadAudio(blob) {
+      const experiment = requireExperiment();
+      if (!experiment) return;
       recordBtn.disabled = true;
       uploadBtn.disabled = true;
       recordBtn.innerHTML = '<span class="material-icons">hourglass_top</span> Uploading...';
@@ -566,8 +782,11 @@
       form.append("file", blob, "recording." + ext);
 
       try {
-        await handleAudioUploadResponse(
-          authFetch("api/audio", { method: "POST", body: form })
+        await handleEntryResponse(
+          authFetch("api/experiments/" + experiment.upload_id + "/audio", { method: "POST", body: form }),
+          "Audio upload failed",
+          "Audio added to " + experiment.name + ".",
+          "View audio entry on NOMAD"
         );
       } catch (err) {
         showError("Network error: " + err.message);
@@ -577,6 +796,36 @@
         uploadBtn.disabled = false;
       }
     }
+
+    saveNoteBtn.addEventListener("click", async () => {
+      clearError();
+      const experiment = requireExperiment();
+      if (!experiment) return;
+      const text = textArea.value.trim();
+      if (!text) {
+        showError("Nothing to save. Type a step note first.");
+        return;
+      }
+      saveNoteBtn.disabled = true;
+      clearAudioEntryLink();
+      try {
+        const saved = await handleEntryResponse(
+          authFetch("api/experiments/" + experiment.upload_id + "/notes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text }),
+          }),
+          "Saving the note failed",
+          "Note added to " + experiment.name + ".",
+          "View note on NOMAD"
+        );
+        if (saved) textArea.value = "";
+      } catch (err) {
+        showError("Network error: " + err.message);
+      } finally {
+        saveNoteBtn.disabled = false;
+      }
+    });
 
     const uploadInput = document.getElementById("upload-input");
 
@@ -590,6 +839,8 @@
       if (!file) return;
 
       clearError();
+      const experiment = requireExperiment();
+      if (!experiment) return;
       const MAX_SIZE = 25 * 1024 * 1024;
       if (file.size > MAX_SIZE) {
         showError("File too large (max 25 MB).");
@@ -604,8 +855,11 @@
       form.append("file", file);
 
       try {
-        await handleAudioUploadResponse(
-          authFetch("api/audio", { method: "POST", body: form })
+        await handleEntryResponse(
+          authFetch("api/experiments/" + experiment.upload_id + "/audio", { method: "POST", body: form }),
+          "Audio upload failed",
+          "Audio added to " + experiment.name + ".",
+          "View audio entry on NOMAD"
         );
       } catch (err) {
         showError("Network error: " + err.message);

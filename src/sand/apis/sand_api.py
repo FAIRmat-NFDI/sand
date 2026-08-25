@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from nomad.app.v1.routers.auth import get_current_user
 from nomad.config import config
 
-from sand.apis.routers.audio import router as audio_router
+from sand.apis.routers.experiments import router as experiments_router
 from sand.apis.routers.extract import router as extract_router
 from sand.apis.routers.pipeline import router as pipeline_router
 from sand.services.extraction import ExtractionService
@@ -40,7 +40,7 @@ app.state.nomad = NomadUploader(
     base_url=sand_api_entry_point.nomad_base_url,
 )
 
-app.include_router(audio_router, prefix='/api', dependencies=[require_login])
+app.include_router(experiments_router, prefix='/api', dependencies=[require_login])
 app.include_router(extract_router, prefix='/api', dependencies=[require_login])
 app.include_router(pipeline_router, prefix='/api', dependencies=[require_login])
 
