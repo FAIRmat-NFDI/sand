@@ -569,7 +569,7 @@
     }
 
     async function loadExperiments(selectUploadId) {
-      const res = await authFetch("api/experiments");
+      const res = await authFetch("api/input-collections");
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         const detail = body && body.detail ? body.detail : res.statusText;
@@ -629,7 +629,7 @@
       }
       const body = { info: { ...fields, n_samples: parseInt(fields.n_samples, 10) } };
       try {
-        const res = await authFetch("api/experiments", {
+        const res = await authFetch("api/input-collections", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -783,7 +783,7 @@
 
       try {
         await handleEntryResponse(
-          authFetch("api/experiments/" + experiment.upload_id + "/audio", { method: "POST", body: form }),
+          authFetch("api/input-collections/" + experiment.upload_id + "/audio", { method: "POST", body: form }),
           "Audio upload failed",
           "Audio added to " + experiment.name + ".",
           "View audio entry on NOMAD"
@@ -810,7 +810,7 @@
       clearAudioEntryLink();
       try {
         const saved = await handleEntryResponse(
-          authFetch("api/experiments/" + experiment.upload_id + "/notes", {
+          authFetch("api/input-collections/" + experiment.upload_id + "/notes", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text }),
@@ -856,7 +856,7 @@
 
       try {
         await handleEntryResponse(
-          authFetch("api/experiments/" + experiment.upload_id + "/audio", { method: "POST", body: form }),
+          authFetch("api/input-collections/" + experiment.upload_id + "/audio", { method: "POST", body: form }),
           "Audio upload failed",
           "Audio added to " + experiment.name + ".",
           "View audio entry on NOMAD"

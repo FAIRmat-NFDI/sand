@@ -128,12 +128,12 @@ prefix appended.
 | `GET`  | `http://localhost:8000/nomad-oasis/sand/` | The SAND UI (`static/index.html`) |
 | `GET`  | `http://localhost:8000/nomad-oasis/sand/docs` | FastAPI Swagger / OpenAPI docs |
 | `GET`  | `http://localhost:8000/nomad-oasis/sand/auth/config` | Keycloak config for the frontend |
-| `GET`  | `http://localhost:8000/nomad-oasis/sand/api/experiments` | The user's unpublished experiments |
-| `POST` | `http://localhost:8000/nomad-oasis/sand/api/experiments` | Create an experiment (optionally with the info form) |
-| `POST` | `http://localhost:8000/nomad-oasis/sand/api/experiments/{upload_id}/audio` | Add a recording (→ AudioInput entry) |
-| `POST` | `http://localhost:8000/nomad-oasis/sand/api/experiments/{upload_id}/notes` | Add a typed step note (→ WrittenNote entry) |
+| `GET`  | `http://localhost:8000/nomad-oasis/sand/api/input-collections` | The user's unpublished experiments |
+| `POST` | `http://localhost:8000/nomad-oasis/sand/api/input-collections` | Create an experiment (optionally with the info form) |
+| `POST` | `http://localhost:8000/nomad-oasis/sand/api/input-collections/{upload_id}/audio` | Add a recording (→ AudioInput entry) |
+| `POST` | `http://localhost:8000/nomad-oasis/sand/api/input-collections/{upload_id}/notes` | Add a typed step note (→ WrittenNote entry) |
 | `POST` | `http://localhost:8000/nomad-oasis/sand/api/extract` | AI extraction (text → structured data) |
 | `POST` | `http://localhost:8000/nomad-oasis/sand/api/pipeline` | Full pipeline (text → structured data → NOMAD upload) |
 
-The `experiments`, `extract`, and `pipeline` routes require a logged-in user,
-so you must authenticate through Keycloak before calling them.
+The `input-collections`, `extract`, and `pipeline` routes require a logged-in
+user, so you must authenticate through Keycloak before calling them.

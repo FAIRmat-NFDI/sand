@@ -26,8 +26,8 @@ def _http_error(exc: NomadAPIError) -> HTTPException:
     return HTTPException(status_code=502, detail=str(exc))
 
 
-@router.get('/experiments', response_model=ExperimentListResponse)
-async def list_experiments(request: Request) -> ExperimentListResponse:
+@router.get('/input-collections', response_model=ExperimentListResponse)
+async def list_input_collections(request: Request) -> ExperimentListResponse:
     """The user's unpublished experiments (InputCollection entries)."""
     voice = _voice(request)
     token = get_bearer_token(request)
@@ -51,7 +51,7 @@ async def list_experiments(request: Request) -> ExperimentListResponse:
     )
 
 
-@router.post('/experiments', response_model=ExperimentResponse)
+@router.post('/input-collections', response_model=ExperimentResponse)
 async def create_experiment(
     body: CreateExperimentRequest,
     request: Request,
@@ -86,7 +86,7 @@ async def create_experiment(
     )
 
 
-@router.post('/experiments/{upload_id}/audio', response_model=ExperimentResponse)
+@router.post('/input-collections/{upload_id}/audio', response_model=ExperimentResponse)
 async def add_audio(
     upload_id: str,
     file: UploadFile,
@@ -129,7 +129,7 @@ async def add_audio(
     )
 
 
-@router.post('/experiments/{upload_id}/notes', response_model=ExperimentResponse)
+@router.post('/input-collections/{upload_id}/notes', response_model=ExperimentResponse)
 async def add_note(
     upload_id: str,
     body: CreateNoteRequest,
