@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, HTTPException, Request, UploadFile
 
 from sand.apis.deps import get_bearer_token
@@ -9,7 +11,10 @@ from sand.models.experiments import (
     ExperimentSummaryModel,
 )
 from sand.services.nomad_upload import NomadAPIError, NomadAuthError
-from sand.services.voice_eln import VoiceElnService
+from sand.services.voice_eln import EXPERIMENT_INFO_LABEL, VoiceElnService
+
+# Hysprint-specific: where the experiment-info form note is stored.
+EXPERIMENT_INFO_MAINFILE = 'experiment_info.archive.json'
 
 router = APIRouter()
 
@@ -75,7 +80,13 @@ async def create_experiment(
 
     try:
         async with voice.build_client(token) as client:
-            result = await voice.create_hysprint_experiment(client, name, info)
+            result = await voice.create_written_note(
+                client,
+                name,
+                text=json.dumps(info) if info else None,
+                label=EXPERIMENT_INFO_LABEL,
+                note_mainfile=EXPERIMENT_INFO_MAINFILE,
+            )
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 

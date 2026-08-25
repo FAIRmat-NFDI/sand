@@ -115,36 +115,42 @@ class VoiceElnService:
             for entry in entries
         ]
 
-    async def create_hysprint_experiment(
-        self, client: httpx.AsyncClient, name: str, info: dict | None
+    async def create_written_note(
+        self,
+        client: httpx.AsyncClient,
+        name: str,
+        text: str | None = None,
+        label: str = STEP_LABEL,
+        note_mainfile: str = 'note.archive.json',
     ) -> EntryHandle:
-        """Create a hysprint experiment upload with its InputCollection entry.
+        """Create an input-collection upload, optionally seeded with a note.
 
-        hysprint experiment info is stored as a WrittenNote labeled 'experiment_info'
-        in the InputCollection.
+        If `text` is given, it is stored as a WrittenNote entry
+        (`note_mainfile`, labeled `label`) referenced from the collection.
+        Callers decide what the note means via the label - e.g. the hysprint
+        experiment-info form is passed as JSON with label 'experiment_info'.
         """
         upload_id = await self._create_upload(client, upload_name=name)
         now = _utc_now_iso()
 
         notes = []
-        if info is not None:
-            info_mainfile = 'experiment_info.archive.json'
+        if text is not None:
             await self._write_archive(
                 client,
                 upload_id,
-                info_mainfile,
+                note_mainfile,
                 {
                     'data': {
                         'm_def': WRITTEN_NOTE_M_DEF,
-                        'name': 'Experiment info',
+                        'name': label,
                         'datetime': now,
-                        'text': json.dumps(info),
-                        'label': EXPERIMENT_INFO_LABEL,
+                        'text': text,
+                        'label': label,
                     }
                 },
             )
             notes.append(
-                entry_ref(upload_id, generate_entry_id(upload_id, info_mainfile))
+                entry_ref(upload_id, generate_entry_id(upload_id, note_mainfile))
             )
 
         collection = {
@@ -320,7 +326,7 @@ class VoiceElnService:
 
         Queried so experiments created directly in NOMAD (any mainfile name)
         also work; falls back to sand's own EXPERIMENT_MAINFILE when the
-        entry is not indexed yet (right after create_hysprint_experiment).
+        entry is not indexed yet (right after create_written_note).
         """
         response = await client.post(
             '/entries/query',
