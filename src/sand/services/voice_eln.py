@@ -15,7 +15,6 @@ from sand.services.nomad_upload import (
 class AudioEntryResult:
     upload_id: str
     entry_id: str
-    entry_url: str
 
 
 class VoiceElnService:
@@ -38,7 +37,7 @@ class VoiceElnService:
     async def create_audio_entry(
         self, client: httpx.AsyncClient, audio: bytes, filename: str
     ) -> AudioEntryResult:
-        """Upload the audio to a new NOMAD upload and return the entry URL."""
+        """Upload the audio to a new NOMAD upload and return the entry ids."""
         upload_id = await self._create_upload(client)
         await self._upload_audio(client, upload_id, audio, filename)
 
@@ -46,12 +45,13 @@ class VoiceElnService:
         # companion mainfile, so the entry id is known before the entry exists.
         mainfile = f'{filename}.archive.json'
         entry_id = generate_entry_id(upload_id, mainfile)
-        upload_url = gui_upload_url(self._base_url, upload_id)
-        entry_url = f'{upload_url}/entry/id/{entry_id}'
 
-        return AudioEntryResult(
-            upload_id=upload_id, entry_id=entry_id, entry_url=entry_url
-        )
+        return AudioEntryResult(upload_id=upload_id, entry_id=entry_id)
+
+    def entry_url(self, upload_id: str, entry_id: str) -> str:
+        """Build the NOMAD GUI URL for an entry from its upload and entry ids."""
+        upload_url = gui_upload_url(self._base_url, upload_id)
+        return f'{upload_url}/entry/id/{entry_id}'
 
     async def _create_upload(self, client: httpx.AsyncClient) -> str:
         response = await client.post('/uploads')
