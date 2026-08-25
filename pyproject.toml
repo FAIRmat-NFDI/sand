@@ -12,7 +12,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
 ]
-name = "nomad-sand"
+name = "sand"
 description = "Structured Audio NOMAD Data - extracting lab process data into NOMAD"
 version = "0.1.0"
 readme = "README.md"
@@ -42,16 +42,7 @@ dev = [
     "ruff",
     "pytest",
     "structlog",
-    "mkdocs",
-    "mkdocs-material==8.1.1",
-    "pymdown-extensions",
-    "mkdocs-click",
     "pytest-asyncio",
-]
-[dependency-groups]
-north = [
-    "jupyterlab",
-    "ipywidgets",
 ]
 
 [tool.uv]
@@ -143,13 +134,3 @@ sand = ["apis/static/*", "solar_cell_schema.json"]
 
 [project.entry-points.'nomad.plugin']
 sand_api = "sand.apis:sand_api"
-parser_entry_point = "sand.parsers:parser_entry_point"
-schema_package_entry_point = "sand.schema_packages:schema_package_entry_point"
-normalizer_entry_point = "sand.normalizers:normalizer_entry_point"
-app_entry_point = "sand.apps:app_entry_point"
-example_upload_entry_point = "sand.example_uploads:example_upload_entry_point"
-action_entry_point = "sand.actions:simple_action_entry_point"
-north_tool_entry_point = "sand.north_tools.my_north_tool:north_tool_entry_point"
-[tool.cruft]
-# Avoid updating workflow files, this leads to permissions issues
-skip = [".github/*"]

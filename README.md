@@ -57,13 +57,14 @@ git submodule add https://github.com/FAIRmat-NFDI/sand.git packages/sand
 uv add packages/sand
 ```
 
-This adds `nomad-sand` to `[project.dependencies]` and `[tool.uv.sources]` in the
-distribution's `pyproject.toml` (with `nomad-sand = { workspace = true }`).
+This adds `sand` to `[project.dependencies]` and `[tool.uv.sources]` in the
+distribution's `pyproject.toml` (with `sand = { workspace = true }`).
 
 > [!NOTE]
-> The distribution is named `nomad-sand`, while the Python module it installs is
-> `sand` — so it is `pip install nomad-sand` but `import sand`. The plain `sand`
-> name is already taken on PyPI by an unrelated project.
+> The distribution, the Python module, and the repo are all named `sand`. The
+> package is installed from this repo as a workspace/editable dependency — it is
+> **not** on PyPI (the `sand` name there belongs to an unrelated project), so
+> never plain `pip install sand`.
 
 ### 2. Configure the plugin in `nomad.yaml`
 
