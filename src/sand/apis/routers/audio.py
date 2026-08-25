@@ -49,5 +49,5 @@ async def create_audio_entry(
     return AudioEntryResponse(
         upload_id=result.upload_id,
         entry_id=result.entry_id,
-        entry_url=result.entry_url,
+        entry_url=voice.entry_url(result.upload_id, result.entry_id),
     )
