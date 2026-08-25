@@ -162,7 +162,7 @@ async def test_append_uses_collection_mainfile_from_query():
 
 
 @pytest.mark.asyncio
-async def test_list_experiments_returns_summaries():
+async def test_list_input_collections_returns_summaries():
     fake = _FakeNomad(
         query_results=[
             {
@@ -175,7 +175,7 @@ async def test_list_experiments_returns_summaries():
     )
 
     async with _client(fake) as client:
-        experiments = await _service().list_experiments(client)
+        experiments = await _service().list_input_collections(client)
 
     assert len(experiments) == 1
     assert experiments[0].upload_id == UPLOAD_ID

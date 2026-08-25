@@ -34,7 +34,7 @@ async def list_experiments(request: Request) -> ExperimentListResponse:
 
     try:
         async with voice.build_client(token) as client:
-            experiments = await voice.list_experiments(client)
+            experiments = await voice.list_input_collections(client)
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 

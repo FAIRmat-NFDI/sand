@@ -81,10 +81,11 @@ class VoiceElnService:
         upload_url = gui_upload_url(self._base_url, upload_id)
         return f'{upload_url}/entry/id/{entry_id}'
 
-    async def list_experiments(
+    async def list_input_collections(
         self, client: httpx.AsyncClient
     ) -> list[ExperimentSummary]:
-        """The user's unpublished experiments (published ones are read-only)."""
+        """The user's unpublished InputCollection entries (published ones
+        are read-only)."""
         response = await client.post(
             '/entries/query',
             json={
@@ -103,7 +104,7 @@ class VoiceElnService:
                 },
             },
         )
-        self._check_response(response, step='list_experiments')
+        self._check_response(response, step='list_input_collections')
         entries = response.json().get('data', [])
         return [
             ExperimentSummary(
@@ -119,12 +120,8 @@ class VoiceElnService:
     ) -> EntryHandle:
         """Create a hysprint experiment upload with its InputCollection entry.
 
-        Hysprint-specific: `info` is the hysprint experiment-info form
-        (project_name, batch, subbatch, first_sample, n_samples). If given,
-        it is stored as a WrittenNote labeled 'experiment_info' and
-        referenced from the collection, so the Generate step can route it
-        to the form parser instead of the step extractor. The collection
-        and note plumbing itself is generic voice-eln.
+        hysprint experiment info is stored as a WrittenNote labeled 'experiment_info'
+        in the InputCollection.
         """
         upload_id = await self._create_upload(client, upload_name=name)
         now = _utc_now_iso()
