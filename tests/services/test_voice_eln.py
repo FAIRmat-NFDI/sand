@@ -16,7 +16,8 @@ UPLOAD_ID = 'up-123'
 
 
 def _service() -> VoiceElnService:
-    return VoiceElnService(BASE_URL)
+    # retry_interval_s=0: no sleeps in tests
+    return VoiceElnService(BASE_URL, retry_interval_s=0, write_timeout_s=5)
 
 
 def _client(handler) -> httpx.AsyncClient:
@@ -24,19 +25,33 @@ def _client(handler) -> httpx.AsyncClient:
 
 
 class _FakeNomad:
-    """Programmable NOMAD API: uploads, raw files, and entry queries."""
+    """Programmable NOMAD API: uploads, raw files, and entry queries.
 
-    def __init__(self, query_results=None):
+    `blocked_writes` rejects that many PUTs with NOMAD's processing-lock
+    error before accepting writes again.
+    """
+
+    def __init__(self, query_results=None, blocked_writes=0):
         self.raw_files: dict[str, bytes] = {}
         self.query_results = query_results or []
+        self.blocked_writes = blocked_writes
+
+    def _put_raw(self, request: httpx.Request) -> httpx.Response:
+        if self.blocked_writes > 0:
+            self.blocked_writes -= 1
+            return httpx.Response(
+                400,
+                json={'detail': 'The upload is currently blocked by another process.'},
+            )
+        self.raw_files[request.url.params['file_name']] = request.content
+        return httpx.Response(200, json={})
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
         if request.method == 'POST' and path.endswith('/uploads'):
             return httpx.Response(200, json={'upload_id': UPLOAD_ID})
         if request.method == 'PUT' and f'/uploads/{UPLOAD_ID}/raw/' in path:
-            self.raw_files[request.url.params['file_name']] = request.content
-            return httpx.Response(200, json={})
+            return self._put_raw(request)
         if request.method == 'GET' and f'/uploads/{UPLOAD_ID}/raw/' in path:
             name = path.split('/raw/', 1)[1]
             if name not in self.raw_files:
@@ -166,6 +181,20 @@ async def test_list_experiments_returns_summaries():
     assert experiments[0].upload_id == UPLOAD_ID
     assert experiments[0].entry_id == 'e-1'
     assert experiments[0].name == 'perov_B1_a'
+
+
+@pytest.mark.asyncio
+async def test_write_retries_while_upload_is_processing():
+    # the first PUT triggers processing; NOMAD rejects follow-up writes with
+    # 400 'blocked by another process' until it finishes
+    fake = _FakeNomad(blocked_writes=2)
+
+    async with _client(fake) as client:
+        result = await _service().create_experiment(client, 'perov_B1_a', INFO)
+
+    assert result.upload_id == UPLOAD_ID
+    assert 'experiment_info.archive.json' in fake.raw_files
+    assert EXPERIMENT_MAINFILE in fake.raw_files
 
 
 @pytest.mark.asyncio

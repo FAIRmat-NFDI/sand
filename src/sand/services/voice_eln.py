@@ -1,3 +1,4 @@
+import asyncio
 import json
 import posixpath
 from dataclasses import dataclass
@@ -57,8 +58,15 @@ class VoiceElnService:
     transcribes or reads transcripts.
     """
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        retry_interval_s: float = 1.0,
+        write_timeout_s: float = 60.0,
+    ) -> None:
         self._base_url = base_url
+        self._retry_interval_s = retry_interval_s
+        self._write_timeout_s = write_timeout_s
 
     def build_client(self, token: str) -> httpx.AsyncClient:
         return httpx.AsyncClient(
@@ -230,13 +238,38 @@ class VoiceElnService:
         content: bytes,
         content_type: str,
     ) -> None:
-        response = await client.put(
-            f'/uploads/{upload_id}/raw/',
-            params={'file_name': file_name},
-            content=content,
-            headers={'Content-Type': content_type},
-        )
-        self._check_response(response, step='upload_raw_file')
+        """PUT a raw file, retrying while the upload is busy processing.
+
+        Every raw-file write triggers processing, so a follow-up write to
+        the same upload (info note then collection; audio then collection
+        append) is rejected with 400 'blocked by another process' until
+        processing finishes. Retry until it does or the deadline passes.
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._write_timeout_s
+        while True:
+            response = await client.put(
+                f'/uploads/{upload_id}/raw/',
+                params={'file_name': file_name},
+                content=content,
+                headers={'Content-Type': content_type},
+            )
+            if (
+                response.status_code == HTTPStatus.BAD_REQUEST
+                and 'blocked by another process' in response.text
+            ):
+                if loop.time() >= deadline:
+                    raise NomadAPIError(
+                        response.status_code,
+                        f'Upload {upload_id} still processing after '
+                        f'{self._write_timeout_s:.0f}s; could not write '
+                        f'{file_name}',
+                        step='upload_raw_file',
+                    )
+                await asyncio.sleep(self._retry_interval_s)
+                continue
+            self._check_response(response, step='upload_raw_file')
+            return
 
     async def _write_archive(
         self, client: httpx.AsyncClient, upload_id: str, mainfile: str, archive: dict
