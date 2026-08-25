@@ -79,7 +79,7 @@ async def test_create_experiment_writes_collection_and_info_note():
     fake = _FakeNomad()
 
     async with _client(fake) as client:
-        result = await _service().create_experiment(client, 'perov_B1_a', INFO)
+        result = await _service().create_hysprint_experiment(client, 'perov_B1_a', INFO)
 
     assert result.upload_id == UPLOAD_ID
     assert result.entry_id == generate_entry_id(UPLOAD_ID, EXPERIMENT_MAINFILE)
@@ -100,7 +100,7 @@ async def test_create_experiment_without_info_has_no_notes():
     fake = _FakeNomad()
 
     async with _client(fake) as client:
-        await _service().create_experiment(client, 'scratch', None)
+        await _service().create_hysprint_experiment(client, 'scratch', None)
 
     collection = fake.archive(EXPERIMENT_MAINFILE)['data']
     assert 'notes' not in collection
@@ -113,7 +113,7 @@ async def test_add_audio_stores_file_and_references_it_from_collection():
 
     async with _client(fake) as client:
         service = _service()
-        await service.create_experiment(client, 'perov_B1_a', None)
+        await service.create_hysprint_experiment(client, 'perov_B1_a', None)
         result = await service.add_audio(client, UPLOAD_ID, b'AUDIO', 'rec.m4a')
 
     audio_files = [n for n in fake.raw_files if n.endswith('_rec.m4a')]
@@ -133,7 +133,7 @@ async def test_add_note_writes_step_note_and_references_it():
 
     async with _client(fake) as client:
         service = _service()
-        await service.create_experiment(client, 'perov_B1_a', None)
+        await service.create_hysprint_experiment(client, 'perov_B1_a', None)
         result = await service.add_note(client, UPLOAD_ID, 'spun coat at 2000 rpm')
 
     note_files = [n for n in fake.raw_files if n.startswith('note_')]
@@ -190,7 +190,7 @@ async def test_write_retries_while_upload_is_processing():
     fake = _FakeNomad(blocked_writes=2)
 
     async with _client(fake) as client:
-        result = await _service().create_experiment(client, 'perov_B1_a', INFO)
+        result = await _service().create_hysprint_experiment(client, 'perov_B1_a', INFO)
 
     assert result.upload_id == UPLOAD_ID
     assert 'experiment_info.archive.json' in fake.raw_files
@@ -204,7 +204,7 @@ async def test_invalid_token_raises_auth_error():
 
     async with _client(handler) as client:
         with pytest.raises(NomadAuthError):
-            await _service().create_experiment(client, 'x', None)
+            await _service().create_hysprint_experiment(client, 'x', None)
 
 
 def test_build_client_sends_bearer_token():

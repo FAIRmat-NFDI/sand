@@ -52,10 +52,9 @@ class VoiceElnService:
     """Manage voice-eln entries for sand experiments.
 
     One experiment = one NOMAD upload holding an InputCollection entry
-    (EXPERIMENT_MAINFILE) plus the WrittenNote entries and audio files that
-    belong to it. Audio files are turned into AudioInput entries by the
-    nomad-voice-eln parser and transcribed inside NOMAD; sand never
-    transcribes or reads transcripts.
+    (EXPERIMENT_MAINFILE) plus the WrittenNote entries and audio files.
+     Audio files are turned into AudioInput entries by the
+    nomad-voice-eln parser and transcribed inside NOMAD.
     """
 
     def __init__(
@@ -79,7 +78,6 @@ class VoiceElnService:
         )
 
     def entry_url(self, upload_id: str, entry_id: str) -> str:
-        """Build the NOMAD GUI URL for an entry from its upload and entry ids."""
         upload_url = gui_upload_url(self._base_url, upload_id)
         return f'{upload_url}/entry/id/{entry_id}'
 
@@ -116,15 +114,17 @@ class VoiceElnService:
             for entry in entries
         ]
 
-    async def create_experiment(
+    async def create_hysprint_experiment(
         self, client: httpx.AsyncClient, name: str, info: dict | None
     ) -> EntryHandle:
-        """Create an experiment upload with its InputCollection entry.
+        """Create a hysprint experiment upload with its InputCollection entry.
 
-        If `info` (the experiment-info form) is given, it is stored as a
-        WrittenNote labeled 'experiment_info' and referenced from the
-        collection, so the Generate step can route it to the form parser
-        instead of the step extractor.
+        Hysprint-specific: `info` is the hysprint experiment-info form
+        (project_name, batch, subbatch, first_sample, n_samples). If given,
+        it is stored as a WrittenNote labeled 'experiment_info' and
+        referenced from the collection, so the Generate step can route it
+        to the form parser instead of the step extractor. The collection
+        and note plumbing itself is generic voice-eln.
         """
         upload_id = await self._create_upload(client, upload_name=name)
         now = _utc_now_iso()
@@ -323,7 +323,7 @@ class VoiceElnService:
 
         Queried so experiments created directly in NOMAD (any mainfile name)
         also work; falls back to sand's own EXPERIMENT_MAINFILE when the
-        entry is not indexed yet (right after create_experiment).
+        entry is not indexed yet (right after create_hysprint_experiment).
         """
         response = await client.post(
             '/entries/query',

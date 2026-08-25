@@ -75,7 +75,7 @@ async def create_experiment(
 
     try:
         async with voice.build_client(token) as client:
-            result = await voice.create_experiment(client, name, info)
+            result = await voice.create_hysprint_experiment(client, name, info)
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
