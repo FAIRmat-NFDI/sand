@@ -6,9 +6,9 @@ from sand.apis.deps import get_bearer_token
 from sand.models.experiments import (
     CreateExperimentRequest,
     CreateNoteRequest,
-    ExperimentResponse,
     ExperimentSummaryModel,
     InputCollectionListResponse,
+    InputCollectionResponse,
 )
 from sand.services.nomad_upload import NomadAPIError, NomadAuthError
 from sand.services.voice_eln import EXPERIMENT_INFO_LABEL, VoiceElnService
@@ -56,11 +56,11 @@ async def list_input_collections(request: Request) -> InputCollectionListRespons
     )
 
 
-@router.post('/input-collections', response_model=ExperimentResponse)
+@router.post('/input-collections', response_model=InputCollectionResponse)
 async def create_experiment(
     body: CreateExperimentRequest,
     request: Request,
-) -> ExperimentResponse:
+) -> InputCollectionResponse:
     """Create an experiment: a NOMAD upload with an InputCollection entry.
 
     With `info`, the experiment-info form is stored alongside as a
@@ -90,19 +90,21 @@ async def create_experiment(
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
-    return ExperimentResponse(
+    return InputCollectionResponse(
         upload_id=result.upload_id,
         entry_id=result.entry_id,
         entry_url=voice.entry_url(result.upload_id, result.entry_id),
     )
 
 
-@router.post('/input-collections/{upload_id}/audio', response_model=ExperimentResponse)
+@router.post(
+    '/input-collections/{upload_id}/audio', response_model=InputCollectionResponse
+)
 async def add_audio(
     upload_id: str,
     file: UploadFile,
     request: Request,
-) -> ExperimentResponse:
+) -> InputCollectionResponse:
     """Add a recording to the experiment.
 
     The audio goes into the experiment upload, where the voice-eln plugin
@@ -133,19 +135,21 @@ async def add_audio(
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
-    return ExperimentResponse(
+    return InputCollectionResponse(
         upload_id=result.upload_id,
         entry_id=result.entry_id,
         entry_url=voice.entry_url(result.upload_id, result.entry_id),
     )
 
 
-@router.post('/input-collections/{upload_id}/notes', response_model=ExperimentResponse)
+@router.post(
+    '/input-collections/{upload_id}/notes', response_model=InputCollectionResponse
+)
 async def add_note(
     upload_id: str,
     body: CreateNoteRequest,
     request: Request,
-) -> ExperimentResponse:
+) -> InputCollectionResponse:
     """Add a typed step note (WrittenNote labeled 'step') to the experiment."""
     voice = _voice_service(request)
     token = get_bearer_token(request)
@@ -159,7 +163,7 @@ async def add_note(
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
-    return ExperimentResponse(
+    return InputCollectionResponse(
         upload_id=result.upload_id,
         entry_id=result.entry_id,
         entry_url=voice.entry_url(result.upload_id, result.entry_id),

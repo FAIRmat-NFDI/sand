@@ -21,7 +21,7 @@ class CreateExperimentRequest(BaseModel):
     info: ExperimentInfoForm | None = None
 
 
-class ExperimentResponse(BaseModel):
+class InputCollectionResponse(BaseModel):
     """An entry created in an experiment (collection, audio, or note)."""
 
     upload_id: str
