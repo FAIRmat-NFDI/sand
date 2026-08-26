@@ -12,17 +12,22 @@ from sand.models.experiments import (
 )
 from sand.services.nomad_upload import NomadAPIError, NomadAuthError
 from sand.services.voice_eln import (
+    AUDIO_EXTENSIONS,
     EXPERIMENT_INFO_LABEL,
+    EXPERIMENT_INFO_MAINFILE,
     EXPERIMENT_MAINFILE,
     VoiceElnService,
+    normalize_audio_filename,
 )
-
-# Hysprint-specific: where the experiment-info form note is stored.
-EXPERIMENT_INFO_MAINFILE = 'experiment_info.archive.json'
 
 router = APIRouter()
 
+# Keep in sync with MAX_SIZE in apis/static/index.html.
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+# NomadAPIError status codes that are the caller's fault, not NOMAD's:
+# pass them through instead of reporting a gateway failure.
+CLIENT_ERROR_STATUSES = (400, 404, 409)
 
 
 def _voice_service(request: Request) -> VoiceElnService:
@@ -31,8 +36,29 @@ def _voice_service(request: Request) -> VoiceElnService:
 
 def _http_error(exc: NomadAPIError) -> HTTPException:
     if isinstance(exc, NomadAuthError):
-        return HTTPException(status_code=401, detail=exc.detail)
+        return HTTPException(status_code=401, detail=_nomad_detail(exc))
+    if exc.status_code in CLIENT_ERROR_STATUSES:
+        return HTTPException(status_code=exc.status_code, detail=_nomad_detail(exc))
     return HTTPException(status_code=502, detail=str(exc))
+
+
+def _nomad_detail(exc: NomadAPIError) -> str:
+    """The human-readable message: NOMAD errors carry a raw JSON body."""
+    try:
+        body = json.loads(exc.detail)
+    except ValueError:
+        return exc.detail
+    if isinstance(body, dict) and isinstance(body.get('detail'), str):
+        return body['detail']
+    return exc.detail
+
+
+def _entry_response(voice: VoiceElnService, upload_id: str, entry_id: str) -> dict:
+    return {
+        'upload_id': upload_id,
+        'entry_id': entry_id,
+        'entry_url': voice.entry_url(upload_id, entry_id),
+    }
 
 
 @router.get('/input-collections', response_model=InputCollectionListResponse)
@@ -50,21 +76,18 @@ async def list_input_collections(request: Request) -> InputCollectionListRespons
     return InputCollectionListResponse(
         input_collections=[
             InputCollectionSummaryModel(
-                upload_id=e.upload_id,
-                entry_id=e.entry_id,
-                name=e.name,
-                entry_url=voice.entry_url(e.upload_id, e.entry_id),
+                name=e.name, **_entry_response(voice, e.upload_id, e.entry_id)
             )
             for e in input_collections
         ]
     )
 
 
-@router.post('/input-collections', response_model=InputCollectionResponse)
+@router.post('/input-collections', response_model=InputCollectionSummaryModel)
 async def create_hysprint_input_collection(
     body: CreateHysprintExperimentRequest,
     request: Request,
-) -> InputCollectionResponse:
+) -> InputCollectionSummaryModel:
     """Create an experiment: a NOMAD upload with an InputCollection entry.
 
     With `info`, the experiment-info form is stored alongside as a
@@ -98,10 +121,8 @@ async def create_hysprint_input_collection(
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
-    return InputCollectionResponse(
-        upload_id=result.upload_id,
-        entry_id=result.entry_id,
-        entry_url=voice.entry_url(result.upload_id, result.entry_id),
+    return InputCollectionSummaryModel(
+        name=name, **_entry_response(voice, result.upload_id, result.entry_id)
     )
 
 
@@ -117,6 +138,14 @@ async def add_audio(
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
+    filename = normalize_audio_filename(file.filename or 'audio.m4a')
+    if filename is None:
+        raise HTTPException(
+            status_code=415,
+            detail='Unsupported audio format; use one of: '
+            + ', '.join(sorted(AUDIO_EXTENSIONS)),
+        )
+
     buf = bytearray()
     while True:
         chunk = await file.read(64 * 1024)
@@ -130,8 +159,6 @@ async def add_audio(
     if not audio:
         raise HTTPException(status_code=400, detail='Uploaded file is empty')
 
-    filename = file.filename or 'audio.m4a'
-
     try:
         async with voice.build_client(token) as client:
             result = await voice.add_audio(client, upload_id, audio, filename)
@@ -139,9 +166,7 @@ async def add_audio(
         raise _http_error(exc) from exc
 
     return InputCollectionResponse(
-        upload_id=result.upload_id,
-        entry_id=result.entry_id,
-        entry_url=voice.entry_url(result.upload_id, result.entry_id),
+        **_entry_response(voice, result.upload_id, result.entry_id)
     )
 
 
@@ -167,7 +192,5 @@ async def add_note(
         raise _http_error(exc) from exc
 
     return InputCollectionResponse(
-        upload_id=result.upload_id,
-        entry_id=result.entry_id,
-        entry_url=voice.entry_url(result.upload_id, result.entry_id),
+        **_entry_response(voice, result.upload_id, result.entry_id)
     )

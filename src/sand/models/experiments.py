@@ -1,13 +1,12 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class HysprintExperimentInfoForm(BaseModel):
-    project_name: str
-    batch: str
-    subbatch: str
-    first_sample: str
-    n_samples: int
-    date: str | None = None
+    project_name: str = Field(min_length=1)
+    batch: str = Field(min_length=1)
+    subbatch: str = Field(min_length=1)
+    first_sample: str = Field(min_length=1)
+    n_samples: int = Field(ge=1)
 
 
 class CreateHysprintExperimentRequest(BaseModel):
@@ -21,11 +20,8 @@ class InputCollectionResponse(BaseModel):
     entry_url: str
 
 
-class InputCollectionSummaryModel(BaseModel):
-    upload_id: str
-    entry_id: str
+class InputCollectionSummaryModel(InputCollectionResponse):
     name: str
-    entry_url: str
 
 
 class InputCollectionListResponse(BaseModel):
