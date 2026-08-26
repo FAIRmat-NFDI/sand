@@ -1,14 +1,16 @@
 import json
+from http import HTTPStatus
 
 import httpx
 import pytest
 from nomad.utils import generate_entry_id
 
-from sand.services.nomad_upload import NomadAuthError
+from sand.services.nomad_upload import NomadAPIError, NomadAuthError
 from sand.services.voice_eln import (
     EXPERIMENT_MAINFILE,
     VoiceElnService,
     entry_ref,
+    normalize_audio_filename,
 )
 
 BASE_URL = 'http://localhost:8000/nomad-oasis/api/v1'
@@ -25,38 +27,77 @@ def _client(handler) -> httpx.AsyncClient:
 
 
 class _FakeNomad:
-    """Programmable NOMAD API: uploads, raw files, and entry queries.
+    """Programmable NOMAD API: upload status, raw files, and entry queries.
 
-    `blocked_writes` rejects that many PUTs with NOMAD's processing-lock
-    error before accepting writes again.
+    `processing_polls` makes that many status GETs report process_running
+    before the upload goes idle. `blocked_writes` rejects that many PUTs
+    with NOMAD's processing-lock error (the check-then-PUT race).
     """
 
-    def __init__(self, query_results=None, blocked_writes=0):
+    def __init__(
+        self,
+        query_results=None,
+        processing_polls=0,
+        blocked_writes=0,
+        published=False,
+        upload_exists=True,
+    ):
         self.raw_files: dict[str, bytes] = {}
         self.query_results = query_results or []
+        self.processing_polls = processing_polls
         self.blocked_writes = blocked_writes
+        self.published = published
+        self.upload_exists = upload_exists
+        self.put_attempts = 0
+
+    def _status(self) -> httpx.Response:
+        if not self.upload_exists:
+            return httpx.Response(404, json={'detail': 'upload not found'})
+        running = self.processing_polls > 0
+        if running:
+            self.processing_polls -= 1
+        return httpx.Response(
+            200,
+            json={'data': {'process_running': running, 'published': self.published}},
+        )
 
     def _put_raw(self, request: httpx.Request) -> httpx.Response:
+        self.put_attempts += 1
         if self.blocked_writes > 0:
             self.blocked_writes -= 1
+            # after a blocked PUT the service re-checks the status; report
+            # processing once so it retries instead of failing
+            self.processing_polls = max(self.processing_polls, 1)
             return httpx.Response(
                 400,
                 json={'detail': 'The upload is currently blocked by another process.'},
             )
-        self.raw_files[request.url.params['file_name']] = request.content
+        name = request.url.params['file_name']
+        if '/' in name:
+            return httpx.Response(400, json={'detail': 'Bad file name provided.'})
+        directory = request.url.path.split('/raw/', 1)[1].strip('/')
+        full_name = f'{directory}/{name}' if directory else name
+        self.raw_files[full_name] = request.content
         return httpx.Response(200, json={})
+
+    def _raw(self, request: httpx.Request) -> httpx.Response:
+        if request.method == 'PUT':
+            return self._put_raw(request)
+        name = request.url.path.split('/raw/', 1)[1]
+        if name not in self.raw_files:
+            return httpx.Response(404, json={'detail': 'not found'})
+        return httpx.Response(200, content=self.raw_files[name])
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
         if request.method == 'POST' and path.endswith('/uploads'):
             return httpx.Response(200, json={'upload_id': UPLOAD_ID})
-        if request.method == 'PUT' and f'/uploads/{UPLOAD_ID}/raw/' in path:
-            return self._put_raw(request)
-        if request.method == 'GET' and f'/uploads/{UPLOAD_ID}/raw/' in path:
-            name = path.split('/raw/', 1)[1]
-            if name not in self.raw_files:
-                return httpx.Response(404, json={'detail': 'not found'})
-            return httpx.Response(200, content=self.raw_files[name])
+        if f'/uploads/{UPLOAD_ID}/raw/' in path:
+            return self._raw(request)
+        if request.method == 'GET' and '/uploads/' in path:
+            if path.endswith('/uploads/' + UPLOAD_ID):
+                return self._status()
+            return httpx.Response(404, json={'detail': 'upload not found'})
         if request.method == 'POST' and path.endswith('/entries/query'):
             return httpx.Response(200, json={'data': self.query_results})
         return httpx.Response(404, json={'detail': f'unexpected {path}'})
@@ -138,6 +179,20 @@ async def test_add_audio_stores_file_and_references_it_from_collection():
 
 
 @pytest.mark.asyncio
+async def test_add_audio_without_collection_stores_no_file():
+    # fail before storing the audio: an orphaned file could never be
+    # referenced, and retries would deposit more copies
+    fake = _FakeNomad()
+
+    async with _client(fake) as client:
+        with pytest.raises(NomadAPIError) as excinfo:
+            await _service().add_audio(client, UPLOAD_ID, b'AUDIO', 'rec.m4a')
+
+    assert excinfo.value.status_code == HTTPStatus.NOT_FOUND
+    assert fake.raw_files == {}
+
+
+@pytest.mark.asyncio
 async def test_add_note_writes_step_note_and_references_it():
     fake = _FakeNomad()
 
@@ -174,6 +229,62 @@ async def test_append_uses_collection_mainfile_from_query():
 
 
 @pytest.mark.asyncio
+async def test_append_writes_back_nested_mainfile():
+    # PUT raw takes the directory in the URL and a bare basename in
+    # file_name; a nested mainfile must be split, not passed verbatim
+    fake = _FakeNomad(query_results=[{'mainfile': 'exp/my_collection.archive.json'}])
+    fake.raw_files['exp/my_collection.archive.json'] = json.dumps(
+        {'data': {'m_def': 'x', 'name': 'manual'}}
+    ).encode()
+
+    async with _client(fake) as client:
+        result = await _service().add_written_note(client, UPLOAD_ID, 'a step')
+
+    collection = fake.archive('exp/my_collection.archive.json')['data']
+    assert collection['notes'] == [entry_ref(UPLOAD_ID, result.entry_id)]
+
+
+@pytest.mark.asyncio
+async def test_append_refuses_ambiguous_foreign_collections():
+    fake = _FakeNomad(
+        query_results=[
+            {'mainfile': 'first.archive.json'},
+            {'mainfile': 'second.archive.json'},
+        ]
+    )
+
+    async with _client(fake) as client:
+        with pytest.raises(NomadAPIError, match='more than one InputCollection'):
+            await _service().add_written_note(client, UPLOAD_ID, 'a step')
+
+
+@pytest.mark.asyncio
+async def test_append_handles_null_refs_field():
+    # NOMAD deserializes explicit nulls (its "unset" value); appending to
+    # a collection with '"notes": null' must not crash with a TypeError
+    fake = _FakeNomad()
+    fake.raw_files[EXPERIMENT_MAINFILE] = json.dumps(
+        {'data': {'m_def': 'x', 'name': 'n', 'notes': None}}
+    ).encode()
+
+    async with _client(fake) as client:
+        result = await _service().add_written_note(client, UPLOAD_ID, 'a step')
+
+    collection = fake.archive(EXPERIMENT_MAINFILE)['data']
+    assert collection['notes'] == [entry_ref(UPLOAD_ID, result.entry_id)]
+
+
+@pytest.mark.asyncio
+async def test_append_rejects_collection_without_data_section():
+    fake = _FakeNomad()
+    fake.raw_files[EXPERIMENT_MAINFILE] = json.dumps({'data': [1, 2]}).encode()
+
+    async with _client(fake) as client:
+        with pytest.raises(NomadAPIError, match='no data section'):
+            await _service().add_written_note(client, UPLOAD_ID, 'a step')
+
+
+@pytest.mark.asyncio
 async def test_list_input_collections_returns_summaries():
     fake = _FakeNomad(
         query_results=[
@@ -181,7 +292,6 @@ async def test_list_input_collections_returns_summaries():
                 'upload_id': UPLOAD_ID,
                 'entry_id': 'e-1',
                 'entry_name': 'perov_B1_a',
-                'mainfile': EXPERIMENT_MAINFILE,
             }
         ]
     )
@@ -196,10 +306,11 @@ async def test_list_input_collections_returns_summaries():
 
 
 @pytest.mark.asyncio
-async def test_write_retries_while_upload_is_processing():
-    # the first PUT triggers processing; NOMAD rejects follow-up writes with
-    # 400 'blocked by another process' until it finishes
-    fake = _FakeNomad(blocked_writes=2)
+async def test_write_waits_for_processing_and_sends_body_once():
+    # the first PUT triggers processing; the service polls the upload's
+    # process_running state and PUTs each file exactly once (no re-sending
+    # the body against NOMAD's processing lock)
+    fake = _FakeNomad(processing_polls=2)
 
     async with _client(fake) as client:
         service = _service()
@@ -217,6 +328,45 @@ async def test_write_retries_while_upload_is_processing():
     assert result.upload_id == UPLOAD_ID
     assert 'experiment_info.archive.json' in fake.raw_files
     assert EXPERIMENT_MAINFILE in fake.raw_files
+    files_written = 3  # collection, note, collection append
+    assert fake.put_attempts == files_written
+
+
+@pytest.mark.asyncio
+async def test_write_retries_when_processing_starts_after_the_idle_check():
+    # the check-then-PUT race: NOMAD rejects the PUT although the upload
+    # looked idle; the service re-checks the status and retries
+    fake = _FakeNomad(blocked_writes=1)
+
+    async with _client(fake) as client:
+        await _service().create_input_collection(client, 'x', EXPERIMENT_MAINFILE)
+
+    assert EXPERIMENT_MAINFILE in fake.raw_files
+
+
+@pytest.mark.asyncio
+async def test_write_to_unknown_upload_raises_not_found():
+    fake = _FakeNomad(upload_exists=False)
+
+    async with _client(fake) as client:
+        with pytest.raises(NomadAPIError) as excinfo:
+            await _service().create_input_collection(
+                client, 'x', EXPERIMENT_MAINFILE, upload_id=UPLOAD_ID
+            )
+
+    assert excinfo.value.status_code == HTTPStatus.NOT_FOUND
+    assert fake.raw_files == {}
+
+
+@pytest.mark.asyncio
+async def test_write_to_published_upload_is_rejected():
+    fake = _FakeNomad(published=True)
+
+    async with _client(fake) as client:
+        with pytest.raises(NomadAPIError, match='published'):
+            await _service().add_written_note(client, UPLOAD_ID, 'a step')
+
+    assert fake.raw_files == {}
 
 
 @pytest.mark.asyncio
@@ -232,3 +382,13 @@ async def test_invalid_token_raises_auth_error():
 def test_build_client_sends_bearer_token():
     client = _service().build_client('tok-1')
     assert client.headers['Authorization'] == 'Bearer tok-1'
+
+
+def test_normalize_audio_filename():
+    # Safari's MediaRecorder output is MPEG-4 audio: store it as .m4a so
+    # the voice-eln parser matches it
+    assert normalize_audio_filename('recording.mp4') == 'recording.m4a'
+    assert normalize_audio_filename('REC.M4A') == 'REC.m4a'
+    assert normalize_audio_filename('a.webm') == 'a.webm'
+    assert normalize_audio_filename('notes.txt') is None
+    assert normalize_audio_filename('no_extension') is None
