@@ -4,11 +4,11 @@ from fastapi import APIRouter, HTTPException, Request, UploadFile
 
 from sand.apis.deps import get_bearer_token
 from sand.models.experiments import (
-    CreateExperimentRequest,
+    CreateHysprintExperimentRequest,
     CreateNoteRequest,
-    ExperimentSummaryModel,
     InputCollectionListResponse,
     InputCollectionResponse,
+    InputCollectionSummaryModel,
 )
 from sand.services.nomad_upload import NomadAPIError, NomadAuthError
 from sand.services.voice_eln import EXPERIMENT_INFO_LABEL, VoiceElnService
@@ -45,7 +45,7 @@ async def list_input_collections(request: Request) -> InputCollectionListRespons
 
     return InputCollectionListResponse(
         input_collections=[
-            ExperimentSummaryModel(
+            InputCollectionSummaryModel(
                 upload_id=e.upload_id,
                 entry_id=e.entry_id,
                 name=e.name,
@@ -58,7 +58,7 @@ async def list_input_collections(request: Request) -> InputCollectionListRespons
 
 @router.post('/input-collections', response_model=InputCollectionResponse)
 async def create_experiment(
-    body: CreateExperimentRequest,
+    body: CreateHysprintExperimentRequest,
     request: Request,
 ) -> InputCollectionResponse:
     """Create an experiment: a NOMAD upload with an InputCollection entry.

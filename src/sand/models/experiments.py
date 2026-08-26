@@ -1,13 +1,7 @@
 from pydantic import BaseModel
 
 
-class ExperimentInfoForm(BaseModel):
-    """The experiment-info form (docs/handover.md §8, 'option A').
-
-    Stored as JSON in a WrittenNote labeled 'experiment_info'; never parsed
-    out of prose because the ids are high-stakes (they generate the lab_ids).
-    """
-
+class HysprintExperimentInfoForm(BaseModel):
     project_name: str
     batch: str
     subbatch: str
@@ -16,20 +10,18 @@ class ExperimentInfoForm(BaseModel):
     date: str | None = None
 
 
-class CreateExperimentRequest(BaseModel):
+class CreateHysprintExperimentRequest(BaseModel):
     name: str | None = None
-    info: ExperimentInfoForm | None = None
+    info: HysprintExperimentInfoForm | None = None
 
 
 class InputCollectionResponse(BaseModel):
-    """An entry created in an experiment (collection, audio, or note)."""
-
     upload_id: str
     entry_id: str
     entry_url: str
 
 
-class ExperimentSummaryModel(BaseModel):
+class InputCollectionSummaryModel(BaseModel):
     upload_id: str
     entry_id: str
     name: str
@@ -37,7 +29,7 @@ class ExperimentSummaryModel(BaseModel):
 
 
 class InputCollectionListResponse(BaseModel):
-    input_collections: list[ExperimentSummaryModel]
+    input_collections: list[InputCollectionSummaryModel]
 
 
 class CreateNoteRequest(BaseModel):
