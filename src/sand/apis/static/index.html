@@ -407,7 +407,7 @@
         <hr class="divider">
 
         <label class="text-field-label" for="text">Input text</label>
-        <textarea class="text-field" id="text" placeholder="Type a step note here and save it, or record audio. Everything goes to the selected experiment in NOMAD."></textarea>
+        <textarea class="text-field" id="text" placeholder="Type a step note here and save it to the selected experiment, or record audio."></textarea>
 
         <div class="controls">
           <button class="btn btn-primary" id="record-btn">
@@ -434,6 +434,10 @@
           <span class="material-icons">science</span>
           Extract &amp; Upload
         </button>
+        <p class="status-text" style="display: block; margin-top: 4px;">
+          Extract &amp; Upload parses the text into solar-cell entries as
+          separate NOMAD uploads — they are not attached to the experiment.
+        </p>
 
         <p class="error-text" id="error" role="alert"></p>
       </div>
@@ -526,6 +530,12 @@
       return fetch(url, options);
     }
 
+    async function errorDetail(res) {
+      const body = await res.json().catch(() => null);
+      if (!body || body.detail == null) return res.statusText;
+      return typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+    }
+
     // --- App logic ---
 
     const textArea = document.getElementById("text");
@@ -568,12 +578,20 @@
       }
     }
 
-    async function loadExperiments(selectUploadId) {
+    // Options are keyed by entry_id: an upload can hold more than one
+    // InputCollection entry, so upload_id alone would collide.
+    function addExperimentOption(experiment) {
+      experimentsById[experiment.entry_id] = experiment;
+      const option = document.createElement("option");
+      option.value = experiment.entry_id;
+      option.textContent = experiment.name;
+      experimentSelect.appendChild(option);
+    }
+
+    async function loadExperiments(selectEntryId) {
       const res = await authFetch("api/input-collections");
       if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        const detail = body && body.detail ? body.detail : res.statusText;
-        showError("Could not load experiments: " + detail);
+        showError("Could not load experiments: " + await errorDetail(res));
         return;
       }
       const data = await res.json();
@@ -584,15 +602,11 @@
       placeholder.textContent = "— select an experiment —";
       experimentSelect.appendChild(placeholder);
       for (const experiment of data.input_collections) {
-        experimentsById[experiment.upload_id] = experiment;
-        const option = document.createElement("option");
-        option.value = experiment.upload_id;
-        option.textContent = experiment.name;
-        experimentSelect.appendChild(option);
+        addExperimentOption(experiment);
       }
       let remembered = null;
       try { remembered = localStorage.getItem(SELECTED_EXPERIMENT_KEY); } catch { /* ignore */ }
-      const wanted = selectUploadId || remembered;
+      const wanted = selectEntryId || remembered;
       if (wanted && experimentsById[wanted]) {
         experimentSelect.value = wanted;
       }
@@ -627,7 +641,12 @@
         showError("Fill in all experiment info fields.");
         return;
       }
-      const body = { info: { ...fields, n_samples: parseInt(fields.n_samples, 10) } };
+      const nSamples = Number(fields.n_samples);
+      if (!Number.isInteger(nSamples) || nSamples < 1) {
+        showError("Number of samples must be a whole number of at least 1.");
+        return;
+      }
+      const body = { info: { ...fields, n_samples: nSamples } };
       try {
         const res = await authFetch("api/input-collections", {
           method: "POST",
@@ -635,9 +654,7 @@
           body: JSON.stringify(body),
         });
         if (!res.ok) {
-          const resBody = await res.json().catch(() => null);
-          const detail = resBody && resBody.detail ? resBody.detail : res.statusText;
-          showError("Could not create experiment: " + detail);
+          showError("Could not create experiment: " + await errorDetail(res));
           return;
         }
         const created = await res.json();
@@ -645,10 +662,14 @@
         for (const input of newExperimentForm.querySelectorAll("input")) {
           input.value = "";
         }
+        // Insert the new experiment locally: NOMAD indexes the entry
+        // asynchronously, so an immediate list refetch would not have it.
+        addExperimentOption(created);
+        experimentSelect.value = created.entry_id;
         try {
-          localStorage.setItem(SELECTED_EXPERIMENT_KEY, created.upload_id);
+          localStorage.setItem(SELECTED_EXPERIMENT_KEY, created.entry_id);
         } catch { /* ignore */ }
-        await loadExperiments(created.upload_id);
+        updateExperimentLink();
       } catch (err) {
         showError("Network error: " + err.message);
       }
@@ -688,9 +709,14 @@
       timerInterval = null;
     }
 
+    // The experiment chosen when recording started: the upload must go
+    // there even if the dropdown changes while recording.
+    let recordingExperiment = null;
+
     async function startRecording() {
       clearError();
-      if (!requireExperiment()) return;
+      const experiment = requireExperiment();
+      if (!experiment) return;
       let stream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -699,6 +725,8 @@
         return;
       }
 
+      recordingExperiment = experiment;
+      experimentSelect.disabled = true;
       chunks = [];
       mediaRecorder = new MediaRecorder(stream);
 
@@ -708,6 +736,9 @@
 
       mediaRecorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
+        experimentSelect.disabled = false;
+        const experiment = recordingExperiment;
+        recordingExperiment = null;
         const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
         if (blob.size === 0) {
           showError("No audio recorded.");
@@ -715,7 +746,7 @@
           uploadBtn.disabled = false;
           return;
         }
-        await uploadAudio(blob);
+        await uploadAudio(blob, experiment);
       };
 
       mediaRecorder.start();
@@ -756,9 +787,7 @@
     async function handleEntryResponse(fetchPromise, failPrefix, message, linkText) {
       const res = await fetchPromise;
       if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        const detail = body && body.detail ? body.detail : res.statusText;
-        showError(failPrefix + ": " + detail);
+        showError(failPrefix + ": " + await errorDetail(res));
         return false;
       }
       const data = await res.json();
@@ -766,20 +795,22 @@
       return true;
     }
 
-    async function uploadAudio(blob) {
-      const experiment = requireExperiment();
+    async function uploadAudio(blobOrFile, experiment) {
       if (!experiment) return;
       recordBtn.disabled = true;
       uploadBtn.disabled = true;
-      recordBtn.innerHTML = '<span class="material-icons">hourglass_top</span> Uploading...';
-      statusEl.textContent = "";
+      statusEl.textContent = "Uploading audio to NOMAD...";
       clearError();
       clearAudioEntryLink();
 
-      const mimeSubtype = blob.type ? blob.type.split(";")[0].split("/")[1] : null;
-      const ext = mimeSubtype || "wav";
       const form = new FormData();
-      form.append("file", blob, "recording." + ext);
+      if (blobOrFile instanceof File) {
+        form.append("file", blobOrFile);
+      } else {
+        const mimeSubtype = blobOrFile.type ? blobOrFile.type.split(";")[0].split("/")[1] : null;
+        const ext = mimeSubtype || "wav";
+        form.append("file", blobOrFile, "recording." + ext);
+      }
 
       try {
         await handleEntryResponse(
@@ -791,9 +822,9 @@
       } catch (err) {
         showError("Network error: " + err.message);
       } finally {
-        recordBtn.innerHTML = '<span class="material-icons">mic</span> Record';
         recordBtn.disabled = false;
         uploadBtn.disabled = false;
+        statusEl.textContent = "";
       }
     }
 
@@ -841,33 +872,13 @@
       clearError();
       const experiment = requireExperiment();
       if (!experiment) return;
+      // Keep in sync with MAX_UPLOAD_BYTES in apis/routers/experiments.py.
       const MAX_SIZE = 25 * 1024 * 1024;
       if (file.size > MAX_SIZE) {
         showError("File too large (max 25 MB).");
         return;
       }
-      recordBtn.disabled = true;
-      uploadBtn.disabled = true;
-      clearAudioEntryLink();
-      statusEl.textContent = "Uploading audio to NOMAD...";
-
-      const form = new FormData();
-      form.append("file", file);
-
-      try {
-        await handleEntryResponse(
-          authFetch("api/input-collections/" + experiment.upload_id + "/audio", { method: "POST", body: form }),
-          "Audio upload failed",
-          "Audio added to " + experiment.name + ".",
-          "View audio entry on NOMAD"
-        );
-      } catch (err) {
-        showError("Network error: " + err.message);
-      } finally {
-        recordBtn.disabled = false;
-        uploadBtn.disabled = false;
-        statusEl.textContent = "";
-      }
+      await uploadAudio(file, experiment);
     });
 
     const pipelineBtn = document.getElementById("pipeline-btn");
@@ -894,9 +905,7 @@
           body: JSON.stringify({ text }),
         });
         if (!res.ok) {
-          const body = await res.json().catch(() => null);
-          const detail = body && body.detail ? body.detail : res.statusText;
-          showError("Pipeline failed: " + detail);
+          showError("Pipeline failed: " + await errorDetail(res));
           return;
         }
         const data = await res.json();
