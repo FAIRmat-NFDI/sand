@@ -11,7 +11,11 @@ from sand.models.experiments import (
     InputCollectionSummaryModel,
 )
 from sand.services.nomad_upload import NomadAPIError, NomadAuthError
-from sand.services.voice_eln import EXPERIMENT_INFO_LABEL, VoiceElnService
+from sand.services.voice_eln import (
+    EXPERIMENT_INFO_LABEL,
+    EXPERIMENT_MAINFILE,
+    VoiceElnService,
+)
 
 # Hysprint-specific: where the experiment-info form note is stored.
 EXPERIMENT_INFO_MAINFILE = 'experiment_info.archive.json'
@@ -80,7 +84,9 @@ async def create_hysprint_input_collection(
 
     try:
         async with voice.build_client(token) as client:
-            result = await voice.create_input_collection(client, name)
+            result = await voice.create_input_collection(
+                client, name, EXPERIMENT_MAINFILE
+            )
             if info:
                 await voice.add_written_note(
                     client,

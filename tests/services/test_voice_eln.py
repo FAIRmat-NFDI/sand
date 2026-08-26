@@ -80,7 +80,9 @@ async def test_create_experiment_writes_collection_and_info_note():
 
     async with _client(fake) as client:
         service = _service()
-        result = await service.create_input_collection(client, 'perov_B1_a')
+        result = await service.create_input_collection(
+            client, 'perov_B1_a', EXPERIMENT_MAINFILE
+        )
         await service.add_written_note(
             client,
             UPLOAD_ID,
@@ -108,7 +110,7 @@ async def test_create_experiment_without_info_has_no_notes():
     fake = _FakeNomad()
 
     async with _client(fake) as client:
-        await _service().create_input_collection(client, 'scratch')
+        await _service().create_input_collection(client, 'scratch', EXPERIMENT_MAINFILE)
 
     collection = fake.archive(EXPERIMENT_MAINFILE)['data']
     assert 'notes' not in collection
@@ -121,7 +123,7 @@ async def test_add_audio_stores_file_and_references_it_from_collection():
 
     async with _client(fake) as client:
         service = _service()
-        await service.create_input_collection(client, 'perov_B1_a')
+        await service.create_input_collection(client, 'perov_B1_a', EXPERIMENT_MAINFILE)
         result = await service.add_audio(client, UPLOAD_ID, b'AUDIO', 'rec.m4a')
 
     audio_files = [n for n in fake.raw_files if n.endswith('_rec.m4a')]
@@ -141,7 +143,7 @@ async def test_add_note_writes_step_note_and_references_it():
 
     async with _client(fake) as client:
         service = _service()
-        await service.create_input_collection(client, 'perov_B1_a')
+        await service.create_input_collection(client, 'perov_B1_a', EXPERIMENT_MAINFILE)
         result = await service.add_written_note(
             client, UPLOAD_ID, 'spun coat at 2000 rpm'
         )
@@ -201,7 +203,9 @@ async def test_write_retries_while_upload_is_processing():
 
     async with _client(fake) as client:
         service = _service()
-        result = await service.create_input_collection(client, 'perov_B1_a')
+        result = await service.create_input_collection(
+            client, 'perov_B1_a', EXPERIMENT_MAINFILE
+        )
         await service.add_written_note(
             client,
             UPLOAD_ID,
@@ -222,7 +226,7 @@ async def test_invalid_token_raises_auth_error():
 
     async with _client(handler) as client:
         with pytest.raises(NomadAuthError):
-            await _service().create_input_collection(client, 'x')
+            await _service().create_input_collection(client, 'x', EXPERIMENT_MAINFILE)
 
 
 def test_build_client_sends_bearer_token():

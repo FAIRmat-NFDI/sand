@@ -119,19 +119,15 @@ class VoiceElnService:
         self,
         client: httpx.AsyncClient,
         name: str,
+        collection_mainfile: str,
         upload_id: str | None = None,
     ) -> EntryHandle:
-        """Create an InputCollection entry.
-
-        Creates a new upload unless `upload_id` is given, in which case the
-        collection is created inside that existing upload.
-        """
         if upload_id is None:
             upload_id = await self._create_upload(client, upload_name=name)
         await self._write_archive(
             client,
             upload_id,
-            EXPERIMENT_MAINFILE,
+            collection_mainfile,
             {
                 'data': {
                     'm_def': INPUT_COLLECTION_M_DEF,
@@ -142,7 +138,7 @@ class VoiceElnService:
         )
         return EntryHandle(
             upload_id=upload_id,
-            entry_id=generate_entry_id(upload_id, EXPERIMENT_MAINFILE),
+            entry_id=generate_entry_id(upload_id, collection_mainfile),
         )
 
     async def create_written_note(
@@ -153,12 +149,6 @@ class VoiceElnService:
         label: str = STEP_LABEL,
         note_mainfile: str | None = None,
     ) -> EntryHandle:
-        """Create a WrittenNote entry in the upload.
-
-        Only the entry: it is NOT referenced from any collection - use
-        add_written_note for that. `note_mainfile` defaults to a
-        timestamped name so repeated notes never collide.
-        """
         mainfile = note_mainfile or f'note_{_utc_now_stamp()}.archive.json'
         await self._write_archive(
             client,
