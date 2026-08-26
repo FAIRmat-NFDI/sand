@@ -57,7 +57,7 @@ async def list_input_collections(request: Request) -> InputCollectionListRespons
 
 
 @router.post('/input-collections', response_model=InputCollectionResponse)
-async def create_experiment(
+async def create_hysprint_input_collection(
     body: CreateHysprintExperimentRequest,
     request: Request,
 ) -> InputCollectionResponse:
@@ -80,13 +80,15 @@ async def create_experiment(
 
     try:
         async with voice.build_client(token) as client:
-            result = await voice.create_written_note(
-                client,
-                name,
-                text=json.dumps(info) if info else None,
-                label=EXPERIMENT_INFO_LABEL,
-                note_mainfile=EXPERIMENT_INFO_MAINFILE,
-            )
+            result = await voice.create_input_collection(client, name)
+            if info:
+                await voice.add_written_note(
+                    client,
+                    result.upload_id,
+                    text=json.dumps(info),
+                    label=EXPERIMENT_INFO_LABEL,
+                    note_mainfile=EXPERIMENT_INFO_MAINFILE,
+                )
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
@@ -105,12 +107,7 @@ async def add_audio(
     file: UploadFile,
     request: Request,
 ) -> InputCollectionResponse:
-    """Add a recording to the experiment.
-
-    The audio goes into the experiment upload, where the voice-eln plugin
-    creates an AudioInput entry and transcribes it; the entry is referenced
-    from the experiment's InputCollection. Returns the link to the entry.
-    """
+    """Add audio to inputCollection entry."""
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
@@ -159,7 +156,7 @@ async def add_note(
 
     try:
         async with voice.build_client(token) as client:
-            result = await voice.add_note(client, upload_id, body.text)
+            result = await voice.add_written_note(client, upload_id, body.text)
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 

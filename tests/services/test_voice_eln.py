@@ -79,9 +79,11 @@ async def test_create_experiment_writes_collection_and_info_note():
     fake = _FakeNomad()
 
     async with _client(fake) as client:
-        result = await _service().create_written_note(
+        service = _service()
+        result = await service.create_input_collection(client, 'perov_B1_a')
+        await service.add_written_note(
             client,
-            'perov_B1_a',
+            UPLOAD_ID,
             text=json.dumps(INFO),
             label='experiment_info',
             note_mainfile='experiment_info.archive.json',
@@ -106,7 +108,7 @@ async def test_create_experiment_without_info_has_no_notes():
     fake = _FakeNomad()
 
     async with _client(fake) as client:
-        await _service().create_written_note(client, 'scratch')
+        await _service().create_input_collection(client, 'scratch')
 
     collection = fake.archive(EXPERIMENT_MAINFILE)['data']
     assert 'notes' not in collection
@@ -119,7 +121,7 @@ async def test_add_audio_stores_file_and_references_it_from_collection():
 
     async with _client(fake) as client:
         service = _service()
-        await service.create_written_note(client, 'perov_B1_a')
+        await service.create_input_collection(client, 'perov_B1_a')
         result = await service.add_audio(client, UPLOAD_ID, b'AUDIO', 'rec.m4a')
 
     audio_files = [n for n in fake.raw_files if n.endswith('_rec.m4a')]
@@ -139,8 +141,10 @@ async def test_add_note_writes_step_note_and_references_it():
 
     async with _client(fake) as client:
         service = _service()
-        await service.create_written_note(client, 'perov_B1_a')
-        result = await service.add_note(client, UPLOAD_ID, 'spun coat at 2000 rpm')
+        await service.create_input_collection(client, 'perov_B1_a')
+        result = await service.add_written_note(
+            client, UPLOAD_ID, 'spun coat at 2000 rpm'
+        )
 
     note_files = [n for n in fake.raw_files if n.startswith('note_')]
     assert len(note_files) == 1
@@ -161,7 +165,7 @@ async def test_append_uses_collection_mainfile_from_query():
     ).encode()
 
     async with _client(fake) as client:
-        result = await _service().add_note(client, UPLOAD_ID, 'a step')
+        result = await _service().add_written_note(client, UPLOAD_ID, 'a step')
 
     collection = fake.archive('my_collection.archive.json')['data']
     assert collection['notes'] == [entry_ref(UPLOAD_ID, result.entry_id)]
@@ -196,9 +200,11 @@ async def test_write_retries_while_upload_is_processing():
     fake = _FakeNomad(blocked_writes=2)
 
     async with _client(fake) as client:
-        result = await _service().create_written_note(
+        service = _service()
+        result = await service.create_input_collection(client, 'perov_B1_a')
+        await service.add_written_note(
             client,
-            'perov_B1_a',
+            UPLOAD_ID,
             text=json.dumps(INFO),
             label='experiment_info',
             note_mainfile='experiment_info.archive.json',
@@ -216,7 +222,7 @@ async def test_invalid_token_raises_auth_error():
 
     async with _client(handler) as client:
         with pytest.raises(NomadAuthError):
-            await _service().create_written_note(client, 'x')
+            await _service().create_input_collection(client, 'x')
 
 
 def test_build_client_sends_bearer_token():

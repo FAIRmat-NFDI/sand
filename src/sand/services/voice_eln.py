@@ -115,58 +115,84 @@ class VoiceElnService:
             for entry in entries
         ]
 
-    async def create_written_note(
+    async def create_input_collection(
         self,
         client: httpx.AsyncClient,
         name: str,
-        text: str | None = None,
-        label: str = STEP_LABEL,
-        note_mainfile: str = 'note.archive.json',
+        upload_id: str | None = None,
     ) -> EntryHandle:
-        """Create an input-collection upload, optionally seeded with a note.
+        """Create an InputCollection entry.
 
-        If `text` is given, it is stored as a WrittenNote entry
-        (`note_mainfile`, labeled `label`) referenced from the collection.
-        Callers decide what the note means via the label - e.g. the hysprint
-        experiment-info form is passed as JSON with label 'experiment_info'.
+        Creates a new upload unless `upload_id` is given, in which case the
+        collection is created inside that existing upload.
         """
-        upload_id = await self._create_upload(client, upload_name=name)
-        now = _utc_now_iso()
-
-        notes = []
-        if text is not None:
-            await self._write_archive(
-                client,
-                upload_id,
-                note_mainfile,
-                {
-                    'data': {
-                        'm_def': WRITTEN_NOTE_M_DEF,
-                        'name': label,
-                        'datetime': now,
-                        'text': text,
-                        'label': label,
-                    }
-                },
-            )
-            notes.append(
-                entry_ref(upload_id, generate_entry_id(upload_id, note_mainfile))
-            )
-
-        collection = {
-            'm_def': INPUT_COLLECTION_M_DEF,
-            'name': name,
-            'datetime': now,
-        }
-        if notes:
-            collection['notes'] = notes
+        if upload_id is None:
+            upload_id = await self._create_upload(client, upload_name=name)
         await self._write_archive(
-            client, upload_id, EXPERIMENT_MAINFILE, {'data': collection}
+            client,
+            upload_id,
+            EXPERIMENT_MAINFILE,
+            {
+                'data': {
+                    'm_def': INPUT_COLLECTION_M_DEF,
+                    'name': name,
+                    'datetime': _utc_now_iso(),
+                }
+            },
         )
         return EntryHandle(
             upload_id=upload_id,
             entry_id=generate_entry_id(upload_id, EXPERIMENT_MAINFILE),
         )
+
+    async def create_written_note(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        text: str,
+        label: str = STEP_LABEL,
+        note_mainfile: str | None = None,
+    ) -> EntryHandle:
+        """Create a WrittenNote entry in the upload.
+
+        Only the entry: it is NOT referenced from any collection - use
+        add_written_note for that. `note_mainfile` defaults to a
+        timestamped name so repeated notes never collide.
+        """
+        mainfile = note_mainfile or f'note_{_utc_now_stamp()}.archive.json'
+        await self._write_archive(
+            client,
+            upload_id,
+            mainfile,
+            {
+                'data': {
+                    'm_def': WRITTEN_NOTE_M_DEF,
+                    'name': label,
+                    'datetime': _utc_now_iso(),
+                    'text': text,
+                    'label': label,
+                }
+            },
+        )
+        return EntryHandle(
+            upload_id=upload_id,
+            entry_id=generate_entry_id(upload_id, mainfile),
+        )
+
+    async def add_written_note(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        text: str,
+        label: str = STEP_LABEL,
+        note_mainfile: str | None = None,
+    ) -> EntryHandle:
+        """Create a WrittenNote entry and reference it from the collection."""
+        note = await self.create_written_note(
+            client, upload_id, text, label, note_mainfile
+        )
+        await self._append_to_collection(client, upload_id, 'notes', note.entry_id)
+        return note
 
     async def add_audio(
         self, client: httpx.AsyncClient, upload_id: str, audio: bytes, filename: str
@@ -188,34 +214,6 @@ class VoiceElnService:
         # companion mainfile, so the entry id is known before the entry exists.
         entry_id = generate_entry_id(upload_id, f'{stored_name}.archive.json')
         await self._append_to_collection(client, upload_id, 'audios', entry_id)
-        return EntryHandle(upload_id=upload_id, entry_id=entry_id)
-
-    async def add_note(
-        self,
-        client: httpx.AsyncClient,
-        upload_id: str,
-        text: str,
-        label: str = STEP_LABEL,
-    ) -> EntryHandle:
-        """Add a written note to an experiment and reference it in the collection."""
-        now = _utc_now_iso()
-        mainfile = f'note_{_utc_now_stamp()}.archive.json'
-        await self._write_archive(
-            client,
-            upload_id,
-            mainfile,
-            {
-                'data': {
-                    'm_def': WRITTEN_NOTE_M_DEF,
-                    'name': f'Note {now}',
-                    'datetime': now,
-                    'text': text,
-                    'label': label,
-                }
-            },
-        )
-        entry_id = generate_entry_id(upload_id, mainfile)
-        await self._append_to_collection(client, upload_id, 'notes', entry_id)
         return EntryHandle(upload_id=upload_id, entry_id=entry_id)
 
     async def _create_upload(
