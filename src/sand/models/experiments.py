@@ -36,8 +36,8 @@ class ExperimentSummaryModel(BaseModel):
     entry_url: str
 
 
-class ExperimentListResponse(BaseModel):
-    experiments: list[ExperimentSummaryModel]
+class InputCollectionListResponse(BaseModel):
+    input_collections: list[ExperimentSummaryModel]
 
 
 class CreateNoteRequest(BaseModel):

@@ -583,7 +583,7 @@
       placeholder.value = "";
       placeholder.textContent = "— select an experiment —";
       experimentSelect.appendChild(placeholder);
-      for (const experiment of data.experiments) {
+      for (const experiment of data.input_collections) {
         experimentsById[experiment.upload_id] = experiment;
         const option = document.createElement("option");
         option.value = experiment.upload_id;

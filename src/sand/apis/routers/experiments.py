@@ -6,9 +6,9 @@ from sand.apis.deps import get_bearer_token
 from sand.models.experiments import (
     CreateExperimentRequest,
     CreateNoteRequest,
-    ExperimentListResponse,
     ExperimentResponse,
     ExperimentSummaryModel,
+    InputCollectionListResponse,
 )
 from sand.services.nomad_upload import NomadAPIError, NomadAuthError
 from sand.services.voice_eln import EXPERIMENT_INFO_LABEL, VoiceElnService
@@ -21,7 +21,7 @@ router = APIRouter()
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
-def _voice(request: Request) -> VoiceElnService:
+def _voice_service(request: Request) -> VoiceElnService:
     return request.app.state.voice_eln
 
 
@@ -31,27 +31,27 @@ def _http_error(exc: NomadAPIError) -> HTTPException:
     return HTTPException(status_code=502, detail=str(exc))
 
 
-@router.get('/input-collections', response_model=ExperimentListResponse)
-async def list_input_collections(request: Request) -> ExperimentListResponse:
+@router.get('/input-collections', response_model=InputCollectionListResponse)
+async def list_input_collections(request: Request) -> InputCollectionListResponse:
     """The user's unpublished experiments (InputCollection entries)."""
-    voice = _voice(request)
+    voice = _voice_service(request)
     token = get_bearer_token(request)
 
     try:
         async with voice.build_client(token) as client:
-            experiments = await voice.list_input_collections(client)
+            input_collections = await voice.list_input_collections(client)
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
-    return ExperimentListResponse(
-        experiments=[
+    return InputCollectionListResponse(
+        input_collections=[
             ExperimentSummaryModel(
                 upload_id=e.upload_id,
                 entry_id=e.entry_id,
                 name=e.name,
                 entry_url=voice.entry_url(e.upload_id, e.entry_id),
             )
-            for e in experiments
+            for e in input_collections
         ]
     )
 
@@ -66,7 +66,7 @@ async def create_experiment(
     With `info`, the experiment-info form is stored alongside as a
     WrittenNote labeled 'experiment_info' and referenced by the collection.
     """
-    voice = _voice(request)
+    voice = _voice_service(request)
     token = get_bearer_token(request)
 
     info = body.info.model_dump(exclude_none=True) if body.info else None
@@ -109,7 +109,7 @@ async def add_audio(
     creates an AudioInput entry and transcribes it; the entry is referenced
     from the experiment's InputCollection. Returns the link to the entry.
     """
-    voice = _voice(request)
+    voice = _voice_service(request)
     token = get_bearer_token(request)
 
     buf = bytearray()
@@ -147,7 +147,7 @@ async def add_note(
     request: Request,
 ) -> ExperimentResponse:
     """Add a typed step note (WrittenNote labeled 'step') to the experiment."""
-    voice = _voice(request)
+    voice = _voice_service(request)
     token = get_bearer_token(request)
 
     if not body.text.strip():
