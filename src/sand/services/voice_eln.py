@@ -9,9 +9,11 @@ import httpx
 from nomad.utils import generate_entry_id
 
 from sand.services.nomad_upload import (
-    HTTP_ERROR_STATUS,
     NomadAPIError,
-    NomadAuthError,
+    RawFileWriter,
+    build_client,
+    check_response,
+    create_upload,
     gui_upload_url,
 )
 
@@ -64,6 +66,13 @@ class EntryHandle:
     entry_id: str
 
 
+@dataclass(frozen=True)
+class _Note:
+    text: str
+    label: str
+    mainfile: str
+
+
 @dataclass
 class ExperimentSummary:
     upload_id: str
@@ -87,18 +96,10 @@ class VoiceElnService:
         write_timeout_s: float = 60.0,
     ) -> None:
         self._base_url = base_url
-        self._retry_interval_s = retry_interval_s
-        self._write_timeout_s = write_timeout_s
+        self._writer = RawFileWriter(retry_interval_s, write_timeout_s)
 
     def build_client(self, token: str) -> httpx.AsyncClient:
-        return httpx.AsyncClient(
-            base_url=self._base_url,
-            headers={
-                'Authorization': f'Bearer {token}',
-                'Accept': 'application/json',
-            },
-            timeout=httpx.Timeout(30.0),
-        )
+        return build_client(self._base_url, token)
 
     def entry_url(self, upload_id: str, entry_id: str) -> str:
         upload_url = gui_upload_url(self._base_url, upload_id)
@@ -133,7 +134,7 @@ class VoiceElnService:
                     'pagination': pagination,
                 },
             )
-            self._check_response(response, step='list_input_collections')
+            check_response(response, step='list_input_collections')
             body = response.json()
             page = body.get('data', [])
             entries.extend(page)
@@ -150,18 +151,13 @@ class VoiceElnService:
         ]
 
     async def create_input_collection(
-        self,
-        client: httpx.AsyncClient,
-        name: str,
-        collection_mainfile: str,
-        upload_id: str | None = None,
+        self, client: httpx.AsyncClient, name: str
     ) -> EntryHandle:
-        if upload_id is None:
-            upload_id = await self._create_upload(client, upload_name=name)
+        upload_id = await create_upload(client, upload_name=name)
         await self._write_archive(
             client,
             upload_id,
-            collection_mainfile,
+            EXPERIMENT_MAINFILE,
             {
                 'data': {
                     'm_def': INPUT_COLLECTION_M_DEF,
@@ -172,35 +168,7 @@ class VoiceElnService:
         )
         return EntryHandle(
             upload_id=upload_id,
-            entry_id=generate_entry_id(upload_id, collection_mainfile),
-        )
-
-    async def create_written_note(
-        self,
-        client: httpx.AsyncClient,
-        upload_id: str,
-        text: str,
-        label: str = STEP_LABEL,
-        note_mainfile: str | None = None,
-    ) -> EntryHandle:
-        mainfile = note_mainfile or f'note_{_utc_now_stamp()}.archive.json'
-        await self._write_archive(
-            client,
-            upload_id,
-            mainfile,
-            {
-                'data': {
-                    'm_def': WRITTEN_NOTE_M_DEF,
-                    'name': label,
-                    'datetime': _utc_now_iso(),
-                    'text': text,
-                    'label': label,
-                }
-            },
-        )
-        return EntryHandle(
-            upload_id=upload_id,
-            entry_id=generate_entry_id(upload_id, mainfile),
+            entry_id=generate_entry_id(upload_id, EXPERIMENT_MAINFILE),
         )
 
     async def add_written_note(
@@ -208,18 +176,75 @@ class VoiceElnService:
         client: httpx.AsyncClient,
         upload_id: str,
         text: str,
-        label: str = STEP_LABEL,
-        note_mainfile: str | None = None,
+        collection_entry_id: str | None = None,
     ) -> EntryHandle:
-        """Create a WrittenNote entry and reference it from the collection."""
-        note = await self.create_written_note(
-            client, upload_id, text, label, note_mainfile
+        """Add a typed step note (WrittenNote labeled 'step').
+
+        With collection_entry_id, the note is attached to exactly that
+        InputCollection entry; otherwise the upload's collection is
+        discovered (and must be unambiguous).
+        """
+        mainfile = f'note_{_utc_now_stamp()}.archive.json'
+        note = _Note(text=text, label=STEP_LABEL, mainfile=mainfile)
+        return await self._add_note(client, upload_id, note, collection_entry_id)
+
+    async def add_experiment_info(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        info_json: str,
+        collection_entry_id: str | None = None,
+    ) -> EntryHandle:
+        """Store the experiment-info form JSON as its dedicated
+        WrittenNote (label routing, see docs/handover.md §8)."""
+        note = _Note(
+            text=info_json,
+            label=EXPERIMENT_INFO_LABEL,
+            mainfile=EXPERIMENT_INFO_MAINFILE,
         )
-        await self._append_to_collection(client, upload_id, 'notes', note.entry_id)
-        return note
+        return await self._add_note(client, upload_id, note, collection_entry_id)
+
+    async def _add_note(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        note: '_Note',
+        collection_entry_id: str | None,
+    ) -> EntryHandle:
+        """Create the WrittenNote entry and reference it from the collection."""
+        collection_mainfile = await self._resolve_collection_mainfile(
+            client, upload_id, collection_entry_id
+        )
+        await self._write_archive(
+            client,
+            upload_id,
+            note.mainfile,
+            {
+                'data': {
+                    'm_def': WRITTEN_NOTE_M_DEF,
+                    'name': note.label,
+                    'datetime': _utc_now_iso(),
+                    'text': note.text,
+                    'label': note.label,
+                }
+            },
+        )
+        handle = EntryHandle(
+            upload_id=upload_id,
+            entry_id=generate_entry_id(upload_id, note.mainfile),
+        )
+        await self._append_to_collection(
+            client, upload_id, 'notes', handle.entry_id, collection_mainfile
+        )
+        return handle
 
     async def add_audio(
-        self, client: httpx.AsyncClient, upload_id: str, audio: bytes, filename: str
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        audio: bytes,
+        filename: str,
+        collection_entry_id: str | None = None,
     ) -> EntryHandle:
         """Add a recording to an experiment.
 
@@ -230,7 +255,9 @@ class VoiceElnService:
         # Fail before storing the audio if there is no collection to
         # reference it from; otherwise the file would sit orphaned in the
         # upload and every retry would deposit another copy.
-        mainfile = await self._find_collection_mainfile(client, upload_id)
+        mainfile = await self._resolve_collection_mainfile(
+            client, upload_id, collection_entry_id
+        )
         await self._read_collection(client, upload_id, mainfile)
 
         # Timestamp prefix: recordings all arrive as e.g. 'recording.webm',
@@ -244,24 +271,9 @@ class VoiceElnService:
         # companion mainfile, so the entry id is known before the entry exists.
         entry_id = generate_entry_id(upload_id, f'{stored_name}.archive.json')
         await self._append_to_collection(
-            client, upload_id, 'audios', entry_id, mainfile=mainfile
+            client, upload_id, 'audios', entry_id, mainfile
         )
         return EntryHandle(upload_id=upload_id, entry_id=entry_id)
-
-    async def _create_upload(
-        self, client: httpx.AsyncClient, upload_name: str | None = None
-    ) -> str:
-        params = {'upload_name': upload_name} if upload_name else None
-        response = await client.post('/uploads', params=params)
-        self._check_response(response, step='create_upload')
-        try:
-            return response.json()['upload_id']
-        except (ValueError, TypeError, KeyError):
-            raise NomadAPIError(
-                0,
-                f'Expected JSON with upload_id, got: {response.text[:500]}',
-                step='create_upload',
-            )
 
     async def _upload_raw_file(
         self,
@@ -271,90 +283,9 @@ class VoiceElnService:
         content: bytes,
         content_type: str,
     ) -> None:
-        """PUT a raw file once the upload is idle.
-
-        Every raw-file write triggers processing, so a follow-up write to
-        the same upload (info note then collection; audio then collection
-        append) is rejected until processing finishes. Poll the upload's
-        process_running state and send the body only when the upload is
-        idle — this avoids re-transmitting large files and does not depend
-        on the wording of NOMAD's rejection message. A 400 caused by
-        processing that started between the check and the PUT is retried.
-        """
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + self._write_timeout_s
-        # PUT raw only accepts a bare basename in file_name; the directory
-        # goes into the URL path (collections found in NOMAD-created
-        # uploads can live in subdirectories).
-        directory, _, base_name = file_name.rpartition('/')
-        while True:
-            await self._wait_until_writable(client, upload_id, deadline, file_name)
-            response = await client.put(
-                f'/uploads/{upload_id}/raw/{directory}',
-                params={'file_name': base_name},
-                content=content,
-                headers={'Content-Type': content_type},
-            )
-            if (
-                response.status_code == HTTPStatus.BAD_REQUEST
-                and loop.time() < deadline
-                and await self._upload_is_processing(client, upload_id)
-            ):
-                continue
-            self._check_response(response, step='upload_raw_file')
-            return
-
-    async def _wait_until_writable(
-        self,
-        client: httpx.AsyncClient,
-        upload_id: str,
-        deadline: float,
-        file_name: str,
-    ) -> None:
-        """Wait until the upload exists, is unpublished, and is not
-        processing; raise a NomadAPIError with the real cause otherwise."""
-        loop = asyncio.get_running_loop()
-        while True:
-            response = await client.get(f'/uploads/{upload_id}')
-            if response.status_code == HTTPStatus.NOT_FOUND:
-                raise NomadAPIError(
-                    HTTPStatus.NOT_FOUND,
-                    f'Upload {upload_id} does not exist',
-                    step='upload_status',
-                )
-            self._check_response(response, step='upload_status')
-            try:
-                data = response.json().get('data') or {}
-            except ValueError:
-                data = {}
-            if data.get('published'):
-                raise NomadAPIError(
-                    HTTPStatus.BAD_REQUEST,
-                    f'Upload {upload_id} is published and read-only',
-                    step='upload_status',
-                )
-            if not data.get('process_running'):
-                return
-            if loop.time() >= deadline:
-                raise NomadAPIError(
-                    HTTPStatus.BAD_REQUEST,
-                    f'Upload {upload_id} still processing after '
-                    f'{self._write_timeout_s:.0f}s; could not write {file_name}',
-                    step='upload_raw_file',
-                )
-            await asyncio.sleep(self._retry_interval_s)
-
-    async def _upload_is_processing(
-        self, client: httpx.AsyncClient, upload_id: str
-    ) -> bool:
-        response = await client.get(f'/uploads/{upload_id}')
-        if response.status_code != HTTPStatus.OK:
-            return False
-        try:
-            data = response.json().get('data') or {}
-        except ValueError:
-            return False
-        return bool(data.get('process_running'))
+        await self._writer.upload_raw_file(
+            client, upload_id, file_name, content, content_type
+        )
 
     async def _write_archive(
         self, client: httpx.AsyncClient, upload_id: str, mainfile: str, archive: dict
@@ -373,7 +304,7 @@ class VoiceElnService:
         upload_id: str,
         field: str,
         entry_id: str,
-        mainfile: str | None = None,
+        mainfile: str,
     ) -> None:
         """Reference a new entry from the experiment's InputCollection.
 
@@ -381,8 +312,6 @@ class VoiceElnService:
         the same experiment can race here (accepted for now, see the design
         discussion).
         """
-        if mainfile is None:
-            mainfile = await self._find_collection_mainfile(client, upload_id)
         archive = await self._read_collection(client, upload_id, mainfile)
         data = archive.get('data')
         if not isinstance(data, dict):
@@ -411,8 +340,11 @@ class VoiceElnService:
         write can 404 even though the write succeeded.
         """
         loop = asyncio.get_running_loop()
-        await self._wait_until_writable(
-            client, upload_id, loop.time() + self._write_timeout_s, mainfile
+        await self._writer.wait_until_writable(
+            client,
+            upload_id,
+            loop.time() + self._writer.write_timeout_s,
+            mainfile,
         )
         response = await client.get(f'/uploads/{upload_id}/raw/{mainfile}')
         if response.status_code == HTTPStatus.NOT_FOUND:
@@ -421,7 +353,7 @@ class VoiceElnService:
                 f'No experiment entry ({mainfile}) found in upload {upload_id}',
                 step='read_collection',
             )
-        self._check_response(response, step='read_collection')
+        check_response(response, step='read_collection')
         try:
             archive = response.json()
         except ValueError:
@@ -437,6 +369,43 @@ class VoiceElnService:
                 step='read_collection',
             )
         return archive
+
+    async def _resolve_collection_mainfile(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        collection_entry_id: str | None,
+    ) -> str:
+        """Mainfile of the collection the caller addressed.
+
+        With an entry id, the target is exact: sand's own experiments use
+        the deterministic EXPERIMENT_MAINFILE (resolvable without the
+        index, which lags right after creation), anything else is looked
+        up by entry id. Without one, fall back to discovering the
+        upload's collection.
+        """
+        if collection_entry_id is None:
+            return await self._find_collection_mainfile(client, upload_id)
+        if collection_entry_id == generate_entry_id(upload_id, EXPERIMENT_MAINFILE):
+            return EXPERIMENT_MAINFILE
+        response = await client.post(
+            '/entries/query',
+            json={
+                'owner': 'visible',
+                'query': {'entry_id': collection_entry_id, 'upload_id': upload_id},
+                'required': {'include': ['mainfile']},
+                'pagination': {'page_size': 1},
+            },
+        )
+        check_response(response, step='find_collection')
+        entries = response.json().get('data', [])
+        if not entries:
+            raise NomadAPIError(
+                HTTPStatus.NOT_FOUND,
+                f'No entry {collection_entry_id} found in upload {upload_id}',
+                step='find_collection',
+            )
+        return entries[0]['mainfile']
 
     async def _find_collection_mainfile(
         self, client: httpx.AsyncClient, upload_id: str
@@ -463,7 +432,7 @@ class VoiceElnService:
                 },
             },
         )
-        self._check_response(response, step='find_collection')
+        check_response(response, step='find_collection')
         entries = response.json().get('data', [])
         mainfiles = [entry['mainfile'] for entry in entries]
         if len(mainfiles) > 1:
@@ -480,12 +449,6 @@ class VoiceElnService:
         if mainfiles:
             return mainfiles[0]
         return EXPERIMENT_MAINFILE
-
-    def _check_response(self, response: httpx.Response, step: str) -> None:
-        if response.status_code in (401, 403):
-            raise NomadAuthError(response.status_code, response.text, step=step)
-        if response.status_code >= HTTP_ERROR_STATUS:
-            raise NomadAPIError(response.status_code, response.text, step=step)
 
 
 def _utc_now_iso() -> str:

@@ -812,9 +812,11 @@
         form.append("file", blobOrFile, "recording." + ext);
       }
 
+      const audioUrl = "api/input-collections/" + experiment.upload_id
+        + "/audio?collection_entry_id=" + encodeURIComponent(experiment.entry_id);
       try {
         await handleEntryResponse(
-          authFetch("api/input-collections/" + experiment.upload_id + "/audio", { method: "POST", body: form }),
+          authFetch(audioUrl, { method: "POST", body: form }),
           "Audio upload failed",
           "Audio added to " + experiment.name + ".",
           "View audio entry on NOMAD"
@@ -840,8 +842,10 @@
       saveNoteBtn.disabled = true;
       clearAudioEntryLink();
       try {
+        const notesUrl = "api/input-collections/" + experiment.upload_id
+          + "/notes?collection_entry_id=" + encodeURIComponent(experiment.entry_id);
         const saved = await handleEntryResponse(
-          authFetch("api/input-collections/" + experiment.upload_id + "/notes", {
+          authFetch(notesUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text }),

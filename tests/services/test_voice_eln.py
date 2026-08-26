@@ -121,16 +121,8 @@ async def test_create_experiment_writes_collection_and_info_note():
 
     async with _client(fake) as client:
         service = _service()
-        result = await service.create_input_collection(
-            client, 'perov_B1_a', EXPERIMENT_MAINFILE
-        )
-        await service.add_written_note(
-            client,
-            UPLOAD_ID,
-            text=json.dumps(INFO),
-            label='experiment_info',
-            note_mainfile='experiment_info.archive.json',
-        )
+        result = await service.create_input_collection(client, 'perov_B1_a')
+        await service.add_experiment_info(client, UPLOAD_ID, json.dumps(INFO))
 
     assert result.upload_id == UPLOAD_ID
     assert result.entry_id == generate_entry_id(UPLOAD_ID, EXPERIMENT_MAINFILE)
@@ -151,7 +143,7 @@ async def test_create_experiment_without_info_has_no_notes():
     fake = _FakeNomad()
 
     async with _client(fake) as client:
-        await _service().create_input_collection(client, 'scratch', EXPERIMENT_MAINFILE)
+        await _service().create_input_collection(client, 'scratch')
 
     collection = fake.archive(EXPERIMENT_MAINFILE)['data']
     assert 'notes' not in collection
@@ -164,7 +156,7 @@ async def test_add_audio_stores_file_and_references_it_from_collection():
 
     async with _client(fake) as client:
         service = _service()
-        await service.create_input_collection(client, 'perov_B1_a', EXPERIMENT_MAINFILE)
+        await service.create_input_collection(client, 'perov_B1_a')
         result = await service.add_audio(client, UPLOAD_ID, b'AUDIO', 'rec.m4a')
 
     audio_files = [n for n in fake.raw_files if n.endswith('_rec.m4a')]
@@ -198,7 +190,7 @@ async def test_add_note_writes_step_note_and_references_it():
 
     async with _client(fake) as client:
         service = _service()
-        await service.create_input_collection(client, 'perov_B1_a', EXPERIMENT_MAINFILE)
+        await service.create_input_collection(client, 'perov_B1_a')
         result = await service.add_written_note(
             client, UPLOAD_ID, 'spun coat at 2000 rpm'
         )
@@ -314,16 +306,8 @@ async def test_write_waits_for_processing_and_sends_body_once():
 
     async with _client(fake) as client:
         service = _service()
-        result = await service.create_input_collection(
-            client, 'perov_B1_a', EXPERIMENT_MAINFILE
-        )
-        await service.add_written_note(
-            client,
-            UPLOAD_ID,
-            text=json.dumps(INFO),
-            label='experiment_info',
-            note_mainfile='experiment_info.archive.json',
-        )
+        result = await service.create_input_collection(client, 'perov_B1_a')
+        await service.add_experiment_info(client, UPLOAD_ID, json.dumps(INFO))
 
     assert result.upload_id == UPLOAD_ID
     assert 'experiment_info.archive.json' in fake.raw_files
@@ -339,7 +323,7 @@ async def test_write_retries_when_processing_starts_after_the_idle_check():
     fake = _FakeNomad(blocked_writes=1)
 
     async with _client(fake) as client:
-        await _service().create_input_collection(client, 'x', EXPERIMENT_MAINFILE)
+        await _service().create_input_collection(client, 'x')
 
     assert EXPERIMENT_MAINFILE in fake.raw_files
 
@@ -350,8 +334,55 @@ async def test_write_to_unknown_upload_raises_not_found():
 
     async with _client(fake) as client:
         with pytest.raises(NomadAPIError) as excinfo:
-            await _service().create_input_collection(
-                client, 'x', EXPERIMENT_MAINFILE, upload_id=UPLOAD_ID
+            await _service().add_written_note(client, UPLOAD_ID, 'a step')
+
+    assert excinfo.value.status_code == HTTPStatus.NOT_FOUND
+    assert fake.raw_files == {}
+
+
+@pytest.mark.asyncio
+async def test_collection_entry_id_resolves_sand_mainfile_without_index():
+    # sand's own experiments resolve deterministically, so adding to a
+    # just-created (not yet indexed) experiment works with an entry id
+    fake = _FakeNomad()
+
+    async with _client(fake) as client:
+        service = _service()
+        created = await service.create_input_collection(client, 'perov_B1_a')
+        result = await service.add_written_note(
+            client, UPLOAD_ID, 'a step', collection_entry_id=created.entry_id
+        )
+
+    collection = fake.archive(EXPERIMENT_MAINFILE)['data']
+    assert collection['notes'] == [entry_ref(UPLOAD_ID, result.entry_id)]
+
+
+@pytest.mark.asyncio
+async def test_collection_entry_id_resolves_foreign_mainfile_by_query():
+    # two collections in one upload: the entry id pins the chosen one
+    # instead of falling back to the oldest
+    fake = _FakeNomad(query_results=[{'mainfile': 'second.archive.json'}])
+    fake.raw_files['second.archive.json'] = json.dumps(
+        {'data': {'m_def': 'x', 'name': 'second'}}
+    ).encode()
+
+    async with _client(fake) as client:
+        result = await _service().add_written_note(
+            client, UPLOAD_ID, 'a step', collection_entry_id='e-second'
+        )
+
+    collection = fake.archive('second.archive.json')['data']
+    assert collection['notes'] == [entry_ref(UPLOAD_ID, result.entry_id)]
+
+
+@pytest.mark.asyncio
+async def test_unknown_collection_entry_id_raises_not_found():
+    fake = _FakeNomad(query_results=[])
+
+    async with _client(fake) as client:
+        with pytest.raises(NomadAPIError) as excinfo:
+            await _service().add_audio(
+                client, UPLOAD_ID, b'AUDIO', 'rec.m4a', collection_entry_id='e-gone'
             )
 
     assert excinfo.value.status_code == HTTPStatus.NOT_FOUND
@@ -376,7 +407,7 @@ async def test_invalid_token_raises_auth_error():
 
     async with _client(handler) as client:
         with pytest.raises(NomadAuthError):
-            await _service().create_input_collection(client, 'x', EXPERIMENT_MAINFILE)
+            await _service().create_input_collection(client, 'x')
 
 
 def test_build_client_sends_bearer_token():

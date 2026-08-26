@@ -13,9 +13,6 @@ from sand.models.experiments import (
 from sand.services.nomad_upload import NomadAPIError, NomadAuthError
 from sand.services.voice_eln import (
     AUDIO_EXTENSIONS,
-    EXPERIMENT_INFO_LABEL,
-    EXPERIMENT_INFO_MAINFILE,
-    EXPERIMENT_MAINFILE,
     VoiceElnService,
     normalize_audio_filename,
 )
@@ -97,9 +94,7 @@ async def create_hysprint_input_collection(
     token = get_bearer_token(request)
 
     info = body.info.model_dump(exclude_none=True) if body.info else None
-    name = body.name
-    if not name and info:
-        name = f'{info["project_name"]}_{info["batch"]}_{info["subbatch"]}'
+    name = body.name or (body.info.default_name() if body.info else None)
     if not name:
         raise HTTPException(
             status_code=400, detail='Provide a name or the experiment info'
@@ -107,16 +102,13 @@ async def create_hysprint_input_collection(
 
     try:
         async with voice.build_client(token) as client:
-            result = await voice.create_input_collection(
-                client, name, EXPERIMENT_MAINFILE
-            )
+            result = await voice.create_input_collection(client, name)
             if info:
-                await voice.add_written_note(
+                await voice.add_experiment_info(
                     client,
                     result.upload_id,
-                    text=json.dumps(info),
-                    label=EXPERIMENT_INFO_LABEL,
-                    note_mainfile=EXPERIMENT_INFO_MAINFILE,
+                    json.dumps(info),
+                    collection_entry_id=result.entry_id,
                 )
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
@@ -133,8 +125,13 @@ async def add_audio(
     upload_id: str,
     file: UploadFile,
     request: Request,
+    collection_entry_id: str | None = None,
 ) -> InputCollectionResponse:
-    """Add audio to inputCollection entry."""
+    """Add audio to an InputCollection entry.
+
+    collection_entry_id pins the target collection exactly (an upload can
+    hold more than one); without it the upload's collection is discovered.
+    """
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
@@ -161,7 +158,13 @@ async def add_audio(
 
     try:
         async with voice.build_client(token) as client:
-            result = await voice.add_audio(client, upload_id, audio, filename)
+            result = await voice.add_audio(
+                client,
+                upload_id,
+                audio,
+                filename,
+                collection_entry_id=collection_entry_id,
+            )
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
@@ -177,8 +180,13 @@ async def add_note(
     upload_id: str,
     body: CreateNoteRequest,
     request: Request,
+    collection_entry_id: str | None = None,
 ) -> InputCollectionResponse:
-    """Add a typed step note (WrittenNote labeled 'step') to the experiment."""
+    """Add a typed step note (WrittenNote labeled 'step') to the experiment.
+
+    collection_entry_id pins the target collection exactly (an upload can
+    hold more than one); without it the upload's collection is discovered.
+    """
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
@@ -187,7 +195,12 @@ async def add_note(
 
     try:
         async with voice.build_client(token) as client:
-            result = await voice.add_written_note(client, upload_id, body.text)
+            result = await voice.add_written_note(
+                client,
+                upload_id,
+                body.text,
+                collection_entry_id=collection_entry_id,
+            )
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
