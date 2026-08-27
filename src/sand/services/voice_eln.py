@@ -107,7 +107,7 @@ class CollectedInput:
     kind: str  # 'audio' | 'note'
     text: str | None
     label: str
-    datetime: str | None  # as stored on the entry; user-editable in NOMAD
+    datetime: str | None
 
 
 _TRANSCRIPT_FIELDS = (
