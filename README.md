@@ -43,8 +43,13 @@ Before you can run the SAND app you need a few things in place:
   **installed and enabled in the same NOMAD** — it owns audio entries and
   transcription. Follow its README for setup, including `GROQ_API_KEY` in the
   **action worker's environment** (speech-to-text runs there, not in SAND).
-- An **Anthropic API key** — used for the AI extraction of structured data. Get
-  one from <https://console.anthropic.com/>.
+- The [`nomad-llm-extraction`](https://github.com/FAIRmat-NFDI/nomad-llm-extraction)
+  plugin **installed and enabled in the same NOMAD** — its action entry point
+  registers the extraction workflows on NOMAD's action worker; SAND only starts
+  them there.
+- An **LLM API key** for the extraction model (Gemini by default; any LiteLLM
+  model works). Configured in SAND's plugin options — it travels inside the
+  workflow input, not the worker's environment.
 
 ### 1. Add the plugin to a NOMAD dev distribution
 
@@ -79,8 +84,8 @@ plugins:
       # plus the voice-eln entry points, see the nomad-voice-eln README
     options:
       sand.apis:sand_api:
-        anthropic_api_key: '<your-anthropic-api-key>'  # required: AI extraction
-        anthropic_model: 'claude-sonnet-4-20250514'    # Anthropic model
+        llm_model_name: 'gemini/gemini-2.5-flash'  # LiteLLM notation
+        llm_api_key: '<your-llm-api-key>'          # required: step extraction
         # Base URL of the NOMAD API the app uploads to. For a local instance:
         nomad_base_url: 'http://localhost:8000/nomad-oasis/api/v1'
 ```

@@ -28,7 +28,7 @@ dependencies = [
     "nomad-lab>=1.4.1",
     "pydantic",
     "temporalio",
-    "anthropic>=0.40.0",
+    "nomad-llm-extraction",
     "httpx>=0.23.3",
     "python-multipart>=0.0.18",
 ]
