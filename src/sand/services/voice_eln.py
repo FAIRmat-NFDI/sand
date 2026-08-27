@@ -107,7 +107,8 @@ class CollectedInput:
     kind: str  # 'audio' | 'note'
     text: str | None
     label: str
-    datetime: str | None  # as stored on the entry
+    datetime: str | None  # as stored on the entry; clock source varies by kind
+    entry_create_time: str | None  # NOMAD's UTC clock; use this for ordering
 
 
 _TRANSCRIPT_FIELDS = (
@@ -318,12 +319,13 @@ class VoiceElnService:
         upload_id: str,
         collection_entry_id: str | None = None,
     ) -> list[CollectedInput]:
-        """All inputs of an experiment's collection, ordered by datetime.
+        """All inputs of an experiment's collection, as one ordered list.
 
-        Reads the InputCollection's `audios` and `notes` references, fetches
-        each referenced entry's archive, and normalizes both kinds to
-        CollectedInput. Ordering is by the entry's datetime (entries
-        without one sort last), ties broken by entry id.
+        Ordered by NOMAD's entry_create_time, not the stored data.datetime:
+        the latter mixes clocks (notes get sand's UTC, audios get the NOMAD
+        server's local time mislabeled as UTC), which would reorder
+        interleaved inputs by the server's UTC offset. Entries without a
+        create time sort last; ties break by entry id.
         """
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
@@ -352,7 +354,7 @@ class VoiceElnService:
         )
 
         def sort_key(item: CollectedInput):
-            parsed = _parse_input_datetime(item.datetime)
+            parsed = _parse_input_datetime(item.entry_create_time)
             return (
                 parsed is None,
                 parsed.timestamp() if parsed else 0.0,
@@ -367,14 +369,21 @@ class VoiceElnService:
         response = await client.get(f'/entries/{entry_id}/archive')
         if response.status_code == HTTPStatus.NOT_FOUND:
             return CollectedInput(
-                entry_id=entry_id, kind=kind, text=None, label='', datetime=None
+                entry_id=entry_id,
+                kind=kind,
+                text=None,
+                label='',
+                datetime=None,
+                entry_create_time=None,
             )
         check_response(response, step='collect_inputs')
         try:
             body = response.json()
         except ValueError:
             body = {}
-        section = (body.get('data') or {}).get('archive', {}).get('data') or {}
+        entry_archive = (body.get('data') or {}).get('archive') or {}
+        section = entry_archive.get('data') or {}
+        metadata = entry_archive.get('metadata') or {}
 
         if kind == 'audio':
             text = next(
@@ -395,6 +404,7 @@ class VoiceElnService:
             text=text,
             label=str(section.get('label') or ''),
             datetime=section.get('datetime'),
+            entry_create_time=metadata.get('entry_create_time'),
         )
 
     async def _upload_raw_file(
