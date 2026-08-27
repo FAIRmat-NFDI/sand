@@ -1,7 +1,7 @@
 """Hysprint per-step extraction ingredients: prompts and schema slices.
 
 Adapted from nomad-entry-data (src/extraction/single_step_extractor.py,
-src/hzb_pool/schema.py). The schema artifact schemas/hzb_experiment.schema.json
+src/hzb_pool/schema.py). The artifact sand/schemas/hzb_experiment.schema.json
 is that repo's generated output — update by copying the regenerated file.
 """
 
@@ -34,9 +34,7 @@ referenced group's values (they are in this same description) and apply the chan
 @lru_cache(maxsize=1)
 def full_schema() -> dict:
     """The full HZB batch-experiment schema (the canonical artifact)."""
-    schema_file = (
-        resources.files('sand.hysprint') / 'schemas/hzb_experiment.schema.json'
-    )
+    schema_file = resources.files('sand') / 'schemas/hzb_experiment.schema.json'
     return json.loads(schema_file.read_text())
 
 
