@@ -22,8 +22,6 @@ router = APIRouter()
 # Keep in sync with MAX_SIZE in apis/static/index.html.
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
-# NomadAPIError status codes that are the caller's fault, not NOMAD's:
-# pass them through instead of reporting a gateway failure.
 CLIENT_ERROR_STATUSES = (400, 404, 409)
 
 
