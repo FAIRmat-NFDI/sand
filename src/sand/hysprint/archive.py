@@ -10,9 +10,6 @@ from datetime import date
 # Bookkeeping keys that are not part of a step's identity.
 _NON_CONTENT = ('samples', 'position_in_experimental_plan')
 
-# The spreadsheet date epoch: archive `date` values are days since 1899-12-30.
-_EPOCH = date(1899, 12, 30)
-
 
 def _content_key(step: dict) -> str:
     """A step's dedup identity: its content minus bookkeeping, as canonical JSON."""
@@ -78,26 +75,16 @@ def _nomad_id(project: str, batch, subbatch, sample: str) -> str:
     return f'{project}_{batch}_{subbatch}_C-{sample}'
 
 
-def _today_serial() -> int:
-    return (date.today() - _EPOCH).days
-
-
-def _date_serial(value) -> int:
-    """`date` form value -> spreadsheet serial. Accepts None (today), an int
-    serial, or an ISO date string like '2026-08-27' (what a web form sends)."""
-    if value is None:
-        return _today_serial()
-    if isinstance(value, int):
-        return value
-    return (date.fromisoformat(str(value)) - _EPOCH).days
-
-
 def build_samples(info: dict) -> list[dict]:
-    """The Experiment-Info rows from the form: generated sample names + lab_ids."""
-    date_serial = _date_serial(info.get('date'))
+    """The Experiment-Info rows from the form: generated sample names + lab_ids.
+
+    `date` is an ISO string - the format NOMAD's hysprint batch parser
+    accepts from the sheet's Date column (a bare spreadsheet serial would
+    be silently dropped there)."""
+    iso_date = str(info.get('date') or date.today().isoformat())
     return [
         {
-            'date': date_serial,
+            'date': iso_date,
             'project_name': info['project_name'],
             'batch': info['batch'],
             'subbatch': info['subbatch'],

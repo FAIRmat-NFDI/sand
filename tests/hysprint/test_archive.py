@@ -18,13 +18,13 @@ def test_build_samples_generates_names_and_lab_ids():
     samples = build_samples(INFO)
     assert [s['sample'] for s in samples] == ['1', '2', '3']
     assert samples[0]['lab_id'] == 'perov_B1_a_C-1'
-    # ISO date converted to the spreadsheet serial
-    assert samples[0]['date'] == (date(2026, 8, 27) - date(1899, 12, 30)).days
+    # ISO string: the format the hysprint batch parser accepts
+    assert samples[0]['date'] == '2026-08-27'
 
 
-def test_build_samples_defaults_date_to_today_serial():
+def test_build_samples_defaults_date_to_today():
     samples = build_samples({**INFO, 'date': None})
-    assert samples[0]['date'] == (date.today() - date(1899, 12, 30)).days
+    assert samples[0]['date'] == date.today().isoformat()
 
 
 def test_build_samples_rejects_uncountable_first_sample():
