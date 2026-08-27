@@ -1,5 +1,7 @@
+import asyncio
 import json
 from dataclasses import dataclass
+from http import HTTPStatus
 from urllib.parse import urlparse, urlunparse
 
 import httpx
@@ -43,6 +45,139 @@ class NomadAuthError(NomadAPIError):
     pass
 
 
+def build_client(base_url: str, token: str) -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        base_url=base_url,
+        headers={
+            'Authorization': f'Bearer {token}',
+            'Accept': 'application/json',
+        },
+        timeout=httpx.Timeout(30.0),
+    )
+
+
+def check_response(response: httpx.Response, step: str) -> None:
+    if response.status_code in (401, 403):
+        raise NomadAuthError(response.status_code, response.text, step=step)
+    if response.status_code >= HTTP_ERROR_STATUS:
+        raise NomadAPIError(response.status_code, response.text, step=step)
+
+
+async def create_upload(
+    client: httpx.AsyncClient, upload_name: str | None = None
+) -> str:
+    params = {'upload_name': upload_name} if upload_name else None
+    response = await client.post('/uploads', params=params)
+    check_response(response, step='create_upload')
+    try:
+        return response.json()['upload_id']
+    except (ValueError, TypeError, KeyError):
+        raise NomadAPIError(
+            0,
+            f'Expected JSON with upload_id, got: {response.text[:500]}',
+            step='create_upload',
+        )
+
+
+@dataclass(frozen=True)
+class RawFileWriter:
+    """Raw-file writes that wait out NOMAD's upload processing.
+
+    Every raw-file write triggers processing, and NOMAD rejects further
+    writes to the upload until it finishes. Poll the upload's
+    process_running state and send the body only when the upload is idle —
+    this avoids re-transmitting large files and does not depend on the
+    wording of NOMAD's rejection message.
+    """
+
+    retry_interval_s: float = 1.0
+    write_timeout_s: float = 60.0
+
+    async def upload_raw_file(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        file_name: str,
+        content: bytes,
+        content_type: str,
+    ) -> None:
+        """PUT a raw file once the upload is idle. A 400 caused by
+        processing that started between the check and the PUT is retried."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.write_timeout_s
+        # PUT raw only accepts a bare basename in file_name; the directory
+        # goes into the URL path.
+        directory, _, base_name = file_name.rpartition('/')
+        while True:
+            await self.wait_until_writable(client, upload_id, deadline, file_name)
+            response = await client.put(
+                f'/uploads/{upload_id}/raw/{directory}',
+                params={'file_name': base_name},
+                content=content,
+                headers={'Content-Type': content_type},
+            )
+            if (
+                response.status_code == HTTPStatus.BAD_REQUEST
+                and loop.time() < deadline
+                and await self._upload_is_processing(client, upload_id)
+            ):
+                continue
+            check_response(response, step='upload_raw_file')
+            return
+
+    async def wait_until_writable(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        deadline: float,
+        file_name: str,
+    ) -> None:
+        """Wait until the upload exists, is unpublished, and is not
+        processing; raise a NomadAPIError with the real cause otherwise."""
+        loop = asyncio.get_running_loop()
+        while True:
+            response = await client.get(f'/uploads/{upload_id}')
+            if response.status_code == HTTPStatus.NOT_FOUND:
+                raise NomadAPIError(
+                    HTTPStatus.NOT_FOUND,
+                    f'Upload {upload_id} does not exist',
+                    step='upload_status',
+                )
+            check_response(response, step='upload_status')
+            try:
+                data = response.json().get('data') or {}
+            except ValueError:
+                data = {}
+            if data.get('published'):
+                raise NomadAPIError(
+                    HTTPStatus.BAD_REQUEST,
+                    f'Upload {upload_id} is published and read-only',
+                    step='upload_status',
+                )
+            if not data.get('process_running'):
+                return
+            if loop.time() >= deadline:
+                raise NomadAPIError(
+                    HTTPStatus.BAD_REQUEST,
+                    f'Upload {upload_id} still processing after '
+                    f'{self.write_timeout_s:.0f}s; could not write {file_name}',
+                    step='upload_raw_file',
+                )
+            await asyncio.sleep(self.retry_interval_s)
+
+    async def _upload_is_processing(
+        self, client: httpx.AsyncClient, upload_id: str
+    ) -> bool:
+        response = await client.get(f'/uploads/{upload_id}')
+        if response.status_code != HTTPStatus.OK:
+            return False
+        try:
+            data = response.json().get('data') or {}
+        except ValueError:
+            return False
+        return bool(data.get('process_running'))
+
+
 @dataclass
 class UploadResult:
     upload_id: str
@@ -50,18 +185,17 @@ class UploadResult:
 
 
 class NomadUploader:
-    def __init__(self, base_url: str) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        retry_interval_s: float = 1.0,
+        write_timeout_s: float = 60.0,
+    ) -> None:
         self._base_url = base_url
+        self._writer = RawFileWriter(retry_interval_s, write_timeout_s)
 
     def build_client(self, token: str) -> httpx.AsyncClient:
-        return httpx.AsyncClient(
-            base_url=self._base_url,
-            headers={
-                'Authorization': f'Bearer {token}',
-                'Accept': 'application/json',
-            },
-            timeout=httpx.Timeout(30.0),
-        )
+        return build_client(self._base_url, token)
 
     async def upload(self, archive: dict, token: str) -> UploadResult:
         """Upload a single archive dict as entry.archive.json."""
@@ -75,33 +209,15 @@ class NomadUploader:
 
         Lets callers reuse a single connection pool across several uploads.
         """
-        response = await client.post('/uploads')
-        self._check_response(response, step='create_upload')
-
-        try:
-            upload_id = response.json()['upload_id']
-        except (ValueError, TypeError, KeyError):
-            raise NomadAPIError(
-                0,
-                f'Expected JSON with upload_id, got: {response.text[:500]}',
-                step='create_upload',
-            )
-
-        response = await client.put(
-            f'/uploads/{upload_id}/raw/',
-            params={'file_name': ARCHIVE_FILENAME},
-            content=json.dumps(archive).encode(),
-            headers={'Content-Type': 'application/json'},
+        upload_id = await create_upload(client)
+        await self._writer.upload_raw_file(
+            client,
+            upload_id,
+            ARCHIVE_FILENAME,
+            json.dumps(archive).encode(),
+            'application/json',
         )
-        self._check_response(response, step='write_archive')
-
         return UploadResult(upload_id=upload_id, entry_url=self._entry_url(upload_id))
 
     def _entry_url(self, upload_id: str) -> str:
         return gui_upload_url(self._base_url, upload_id)
-
-    def _check_response(self, response: httpx.Response, step: str) -> None:
-        if response.status_code in (401, 403):
-            raise NomadAuthError(response.status_code, response.text, step=step)
-        if response.status_code >= HTTP_ERROR_STATUS:
-            raise NomadAPIError(response.status_code, response.text, step=step)

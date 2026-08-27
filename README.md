@@ -5,22 +5,26 @@ Voice/text AI assistant for extracting structured lab process data into NOMAD.
 ## How it works
 
 ```
-record audio in the SAND UI
-  -> SAND uploads the audio file to NOMAD
+create an experiment in the SAND UI (with the experiment-info form)
+  -> one NOMAD upload with an InputCollection entry
+     (+ a WrittenNote labeled 'experiment_info' holding the form JSON)
+
+record audio / save a step note in the SAND UI (experiment selected)
+  -> the file/note goes into the experiment upload
        -> the voice-eln plugin creates an AudioInput entry
           and transcribes it (Whisper, inside NOMAD)
+  -> the entry is referenced from the experiment's InputCollection
   -> SAND shows a clickable link to the created entry
-
-type/paste process text in the SAND UI
-  -> LLM extraction (Anthropic) turns the text into solar cell entries
-  -> entries are uploaded to NOMAD
 ```
 
-SAND does **not** transcribe audio itself. Every recording becomes a durable
-[`nomad-voice-eln`](https://github.com/FAIRmat-NFDI/nomad-voice-eln) `AudioInput`
-entry — raw audio, machine transcript, and human corrections live there. SAND
-only creates that entry and shows a link to it; the `/audio` response contains
-`upload_id`, `entry_id`, and `entry_url` pointing at the created entry.
+An **experiment** is one NOMAD upload holding a
+[`nomad-voice-eln`](https://github.com/FAIRmat-NFDI/nomad-voice-eln)
+`InputCollection` entry plus all the `AudioInput` and `WrittenNote` entries
+that belong to it. The SAND dashboard lists the user's **unpublished**
+experiments (published uploads are read-only); recordings and typed step notes
+always attach to the selected experiment. SAND does **not** transcribe audio
+itself — raw audio, machine transcript, and human corrections live in the
+voice-eln entries.
 
 ## Running the SAND app
 
@@ -124,9 +128,12 @@ prefix appended.
 | `GET`  | `http://localhost:8000/nomad-oasis/sand/` | The SAND UI (`static/index.html`) |
 | `GET`  | `http://localhost:8000/nomad-oasis/sand/docs` | FastAPI Swagger / OpenAPI docs |
 | `GET`  | `http://localhost:8000/nomad-oasis/sand/auth/config` | Keycloak config for the frontend |
-| `POST` | `http://localhost:8000/nomad-oasis/sand/api/audio` | Audio → AudioInput entry in NOMAD (returns the entry link) |
+| `GET`  | `http://localhost:8000/nomad-oasis/sand/api/input-collections` | The user's unpublished experiments |
+| `POST` | `http://localhost:8000/nomad-oasis/sand/api/input-collections` | Create an experiment (optionally with the info form) |
+| `POST` | `http://localhost:8000/nomad-oasis/sand/api/input-collections/{upload_id}/audio` | Add a recording (→ AudioInput entry) |
+| `POST` | `http://localhost:8000/nomad-oasis/sand/api/input-collections/{upload_id}/notes` | Add a typed step note (→ WrittenNote entry) |
 | `POST` | `http://localhost:8000/nomad-oasis/sand/api/extract` | AI extraction (text → structured data) |
 | `POST` | `http://localhost:8000/nomad-oasis/sand/api/pipeline` | Full pipeline (text → structured data → NOMAD upload) |
 
-The `audio`, `extract`, and `pipeline` routes require a logged-in user, so
-you must authenticate through Keycloak before calling them.
+The `input-collections`, `extract`, and `pipeline` routes require a logged-in
+user, so you must authenticate through Keycloak before calling them.
