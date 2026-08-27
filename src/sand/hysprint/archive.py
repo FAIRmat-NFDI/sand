@@ -75,13 +75,22 @@ def _nomad_id(project: str, batch, subbatch, sample: str) -> str:
     return f'{project}_{batch}_{subbatch}_C-{sample}'
 
 
+def _iso_date(value) -> str:
+    if value is None:
+        return date.today().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return date.fromisoformat(str(value)).isoformat()
+
+
 def build_samples(info: dict) -> list[dict]:
     """The Experiment-Info rows from the form: generated sample names + lab_ids.
 
-    `date` is an ISO string - the format NOMAD's hysprint batch parser
-    accepts from the sheet's Date column (a bare spreadsheet serial would
-    be silently dropped there)."""
-    iso_date = str(info.get('date') or date.today().isoformat())
+    `date` is stored as an ISO string - the format NOMAD's hysprint batch
+    parser accepts from the sheet's Date column (a bare spreadsheet serial
+    would be silently dropped there). Accepts a datetime.date, an ISO
+    string (validated), or None (today)."""
+    iso_date = _iso_date(info.get('date'))
     return [
         {
             'date': iso_date,
