@@ -107,8 +107,7 @@ class CollectedInput:
     kind: str  # 'audio' | 'note'
     text: str | None
     label: str
-    datetime: str | None  # as stored on the entry; clock source varies by kind
-    entry_create_time: str | None  # NOMAD's UTC clock; use this for ordering
+    datetime: str | None  # as stored on the entry; user-editable in NOMAD
 
 
 _TRANSCRIPT_FIELDS = (
@@ -321,11 +320,11 @@ class VoiceElnService:
     ) -> list[CollectedInput]:
         """All inputs of an experiment's collection, as one ordered list.
 
-        Ordered by NOMAD's entry_create_time, not the stored data.datetime:
-        the latter mixes clocks (notes get sand's UTC, audios get the NOMAD
-        server's local time mislabeled as UTC), which would reorder
-        interleaved inputs by the server's UTC offset. Entries without a
-        create time sort last; ties break by entry id.
+        Ordered by the entry's datetime — user-editable in NOMAD, so
+        researchers can correct or arrange the timeline. Entries without
+        one sort last; ties break by entry id. Caveat: AudioInput
+        datetimes are the NOMAD server's local time until
+        nomad-voice-eln#41 is fixed.
         """
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
@@ -354,7 +353,7 @@ class VoiceElnService:
         )
 
         def sort_key(item: CollectedInput):
-            parsed = _parse_input_datetime(item.entry_create_time)
+            parsed = _parse_input_datetime(item.datetime)
             return (
                 parsed is None,
                 parsed.timestamp() if parsed else 0.0,
@@ -369,21 +368,15 @@ class VoiceElnService:
         response = await client.get(f'/entries/{entry_id}/archive')
         if response.status_code == HTTPStatus.NOT_FOUND:
             return CollectedInput(
-                entry_id=entry_id,
-                kind=kind,
-                text=None,
-                label='',
-                datetime=None,
-                entry_create_time=None,
+                entry_id=entry_id, kind=kind, text=None, label='', datetime=None
             )
         check_response(response, step='collect_inputs')
         try:
             body = response.json()
         except ValueError:
             body = {}
-        entry_archive = (body.get('data') or {}).get('archive') or {}
-        section = entry_archive.get('data') or {}
-        metadata = entry_archive.get('metadata') or {}
+        # 'or {}' at every level: NOMAD serializes unset sections as null
+        section = ((body.get('data') or {}).get('archive') or {}).get('data') or {}
 
         if kind == 'audio':
             text = next(
@@ -404,7 +397,6 @@ class VoiceElnService:
             text=text,
             label=str(section.get('label') or ''),
             datetime=section.get('datetime'),
-            entry_create_time=metadata.get('entry_create_time'),
         )
 
     async def _upload_raw_file(
