@@ -58,6 +58,31 @@ def entry_ref(upload_id: str, entry_id: str) -> str:
     return f'../uploads/{upload_id}/archive/{entry_id}#/data'
 
 
+def _entry_id_from_ref(ref: str) -> str:
+    """The entry id inside a '../uploads/{uid}/archive/{eid}#/data' reference."""
+    _, sep, rest = str(ref).partition('/archive/')
+    entry_id = rest.split('#', 1)[0].strip('/')
+    if not sep or not entry_id or '/' in entry_id:
+        raise NomadAPIError(
+            0, f'Unparseable entry reference: {ref!r}', step='collect_inputs'
+        )
+    return entry_id
+
+
+def _parse_input_datetime(value) -> datetime | None:
+    """The entry's datetime as an aware datetime, or None if absent/invalid.
+    Naive values are taken as UTC so mixed values stay comparable."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
 @dataclass
 class EntryHandle:
     upload_id: str
@@ -76,6 +101,32 @@ class ExperimentSummary:
     upload_id: str
     entry_id: str
     name: str
+
+
+@dataclass
+class CollectedInput:
+    """One input of a collection, audio and note normalized to the same shape.
+
+    `text` is the input's usable text: for a note its stored text, for an
+    audio the first non-empty of intended_transcript, corrected_transcript,
+    whisper_transcript. None means nothing usable yet (audio not transcribed,
+    or the referenced entry not processed) - callers decide whether that is
+    an error.
+    """
+
+    entry_id: str
+    kind: str  # 'audio' | 'note'
+    text: str | None
+    label: str
+    datetime: str | None  # as stored on the entry
+
+
+# AudioInput transcript fields, in the order the best available one wins.
+_TRANSCRIPT_FIELDS = (
+    'intended_transcript',
+    'corrected_transcript',
+    'whisper_transcript',
+)
 
 
 class VoiceElnService:
@@ -272,6 +323,92 @@ class VoiceElnService:
             client, upload_id, 'audios', entry_id, mainfile
         )
         return EntryHandle(upload_id=upload_id, entry_id=entry_id)
+
+    async def collect_inputs(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        collection_entry_id: str | None = None,
+    ) -> list[CollectedInput]:
+        """All inputs of an experiment's collection, ordered by datetime.
+
+        Reads the InputCollection's `audios` and `notes` references, fetches
+        each referenced entry's archive, and normalizes both kinds to
+        CollectedInput. Ordering is by the entry's datetime (entries
+        without one sort last), ties broken by entry id.
+        """
+        mainfile = await self._resolve_collection_mainfile(
+            client, upload_id, collection_entry_id
+        )
+        archive = await self._read_collection(client, upload_id, mainfile)
+        data = archive.get('data')
+        if not isinstance(data, dict):
+            raise NomadAPIError(
+                0,
+                f'Experiment mainfile {mainfile} has no data section',
+                step='collect_inputs',
+            )
+
+        targets: list[tuple[str, str]] = []  # (entry_id, kind)
+        seen: set[str] = set()
+        for kind, field in (('audio', 'audios'), ('note', 'notes')):
+            refs = data.get(field)
+            for ref in refs if isinstance(refs, list) else []:
+                entry_id = _entry_id_from_ref(ref)
+                if entry_id not in seen:
+                    seen.add(entry_id)
+                    targets.append((entry_id, kind))
+
+        inputs = await asyncio.gather(
+            *(self._fetch_input(client, entry_id, kind) for entry_id, kind in targets)
+        )
+
+        def sort_key(item: CollectedInput):
+            parsed = _parse_input_datetime(item.datetime)
+            return (
+                parsed is None,
+                parsed.timestamp() if parsed else 0.0,
+                item.entry_id,
+            )
+
+        return sorted(inputs, key=sort_key)
+
+    async def _fetch_input(
+        self, client: httpx.AsyncClient, entry_id: str, kind: str
+    ) -> CollectedInput:
+        """One referenced entry, normalized; not-yet-processed -> text None."""
+        response = await client.get(f'/entries/{entry_id}/archive')
+        if response.status_code == HTTPStatus.NOT_FOUND:
+            return CollectedInput(
+                entry_id=entry_id, kind=kind, text=None, label='', datetime=None
+            )
+        check_response(response, step='collect_inputs')
+        try:
+            body = response.json()
+        except ValueError:
+            body = {}
+        section = (body.get('data') or {}).get('archive', {}).get('data') or {}
+
+        if kind == 'audio':
+            text = next(
+                (
+                    str(section[field]).strip()
+                    for field in _TRANSCRIPT_FIELDS
+                    if section.get(field) and str(section[field]).strip()
+                ),
+                None,
+            )
+        else:
+            raw = section.get('text')
+            text = str(raw).strip() if raw and str(raw).strip() else None
+
+        return CollectedInput(
+            entry_id=entry_id,
+            kind=kind,
+            text=text,
+            label=str(section.get('label') or ''),
+            datetime=section.get('datetime'),
+        )
 
     async def _upload_raw_file(
         self,
