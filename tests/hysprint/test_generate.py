@@ -63,9 +63,20 @@ def test_route_inputs_rejects_textless_input():
         route_inputs(inputs)
 
 
-def test_route_inputs_requires_at_least_one_step():
-    with pytest.raises(HysprintInputError, match='no step inputs'):
-        route_inputs([_info_input()])
+def test_route_inputs_allows_experiment_without_steps():
+    info, steps = route_inputs([_info_input()])
+    assert info['project_name'] == 'perov'
+    assert steps == []
+
+
+def test_route_inputs_coerces_n_samples_to_int():
+    info, _ = route_inputs([_info_input({**INFO, 'n_samples': str(INFO['n_samples'])})])
+    assert info['n_samples'] == INFO['n_samples']
+
+
+def test_route_inputs_rejects_non_numeric_n_samples():
+    with pytest.raises(HysprintInputError, match='whole number'):
+        route_inputs([_info_input({**INFO, 'n_samples': 'many'})])
 
 
 def test_assemble_builds_the_canonical_archive():

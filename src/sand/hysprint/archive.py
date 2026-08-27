@@ -1,3 +1,8 @@
+"""Assemble hysprint {samples, steps} archives from the form and extracted steps.
+
+Copied from nomad-entry-data (src/hzb_pool/archive.py) - keep in sync.
+"""
+
 import json
 import re
 from datetime import date
@@ -50,7 +55,7 @@ def canonicalize(archive: dict) -> dict:
     for e in sorted(slots.values(), key=lambda e: e['pos']):
         step = dict(e['step'])
         step['samples'] = _collapse_all(
-            sorted(e['ids'], key=lambda x: order.get(x, len(order))), all_ids
+            sorted(e['ids'], key=lambda x: (order.get(x, len(order)), x)), all_ids
         )
         steps.append(step)
     return {'samples': samples, 'steps': steps}
@@ -62,8 +67,9 @@ def _sample_names(first: str, n: int) -> list[str]:
     m = re.match(r'^(.*?)(\d+)$', str(first))
     if not m:
         raise ValueError(f'first sample {first!r} has no trailing number to count from')
-    prefix, start = m.group(1), int(m.group(2))
-    return [f'{prefix}{start + i}' for i in range(n)]
+    prefix, digits = m.group(1), m.group(2)
+    # keep the zero-padding: first "05" -> 05, 06, ... so narrated labels match
+    return [f'{prefix}{int(digits) + i:0{len(digits)}d}' for i in range(n)]
 
 
 def _nomad_id(project: str, batch, subbatch, sample: str) -> str:
@@ -73,11 +79,9 @@ def _nomad_id(project: str, batch, subbatch, sample: str) -> str:
 def build_samples(info: dict) -> list[dict]:
     """The Experiment-Info rows from the form: generated sample names + lab_ids.
 
-    `date` is stored as an ISO string - the format NOMAD's hysprint batch
-    parser accepts from the sheet's Date column (a bare spreadsheet serial
-    would be silently dropped there). Accepts a datetime.date, an ISO
-    string (validated), or None (today)."""
-    iso_date = _iso_date(info.get('date'))
+    `date` is the form's string as-is (the hysprint batch parser expects an
+    ISO date), defaulting to today."""
+    iso_date = str(info.get('date') or date.today().isoformat())
     return [
         {
             'date': iso_date,

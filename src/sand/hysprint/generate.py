@@ -1,3 +1,5 @@
+"""Route an experiment's collected inputs and assemble the final archive."""
+
 import json
 
 from sand.hysprint.archive import canonicalize, compose_experiment
@@ -17,7 +19,13 @@ class HysprintInputError(ValueError):
 
 
 def route_inputs(inputs: list[CollectedInput]) -> tuple[dict, list[str]]:
-    """classify experiment info and audio transcription text.
+    """(experiment-info form, ordered step texts) from the collected inputs.
+
+    The input labeled 'experiment_info' carries the form as JSON and is not
+    a step; every other input is a step narration (an experiment may have
+    none). An input without text (audio not transcribed / entry not
+    processed) makes generation impossible, so it raises rather than being
+    silently dropped.
     """
     info = None
     steps: list[str] = []
@@ -56,6 +64,13 @@ def route_inputs(inputs: list[CollectedInput]) -> tuple[dict, list[str]]:
         raise HysprintInputError(
             f'experiment_info is missing fields: {", ".join(missing)}'
         )
+    # the form JSON may carry n_samples as "3" or 3.0; downstream does range(n)
+    try:
+        info['n_samples'] = int(info['n_samples'])
+    except (TypeError, ValueError):
+        raise HysprintInputError('n_samples must be a whole number')
+    if info['n_samples'] < 1:
+        raise HysprintInputError('n_samples must be at least 1')
     return info, steps
 
 

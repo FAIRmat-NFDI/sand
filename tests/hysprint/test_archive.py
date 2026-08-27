@@ -27,14 +27,10 @@ def test_build_samples_defaults_date_to_today():
     assert samples[0]['date'] == date.today().isoformat()
 
 
-def test_build_samples_accepts_date_object():
-    samples = build_samples({**INFO, 'date': date(2026, 8, 27)})
-    assert samples[0]['date'] == '2026-08-27'
-
-
-def test_build_samples_rejects_malformed_date():
-    with pytest.raises(ValueError):
-        build_samples({**INFO, 'date': '27.08.2026'})
+def test_build_samples_keeps_zero_padded_names():
+    samples = build_samples({**INFO, 'first_sample': '05'})
+    assert [s['sample'] for s in samples] == ['05', '06', '07']
+    assert samples[0]['lab_id'] == 'perov_B1_a_C-05'
 
 
 def test_build_samples_rejects_uncountable_first_sample():

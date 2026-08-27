@@ -1,3 +1,10 @@
+"""Hysprint per-step extraction ingredients: prompts and schema slices.
+
+Adapted from nomad-entry-data (src/extraction/single_step_extractor.py,
+src/hzb_pool/schema.py). The artifact sand/schemas/hzb_experiment.schema.json
+is that repo's generated output — update by copying the regenerated file.
+"""
+
 import json
 import re
 from functools import lru_cache
@@ -76,6 +83,9 @@ def to_single_step_schema(full: dict, step_type: str) -> dict:
     canonical = step['properties'].pop('step_type')['const']
     for bookkeeping in ('position_in_experimental_plan', 'datetime', 'operator'):
         step['properties'].pop(bookkeeping, None)
+    # without this, a schema-valid variant may omit 'samples' and the
+    # assembly would KeyError instead of the model being forced to name them
+    step['required'] = ['samples']
     return {
         '$schema': full['$schema'],
         'type': 'object',
@@ -83,7 +93,7 @@ def to_single_step_schema(full: dict, step_type: str) -> dict:
         'required': ['step_type', 'variants'],
         'properties': {
             'step_type': {'const': canonical},
-            'variants': {'type': 'array', 'items': step},
+            'variants': {'type': 'array', 'minItems': 1, 'items': step},
         },
     }
 
