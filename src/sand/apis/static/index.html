@@ -289,68 +289,6 @@
       display: none;
     }
 
-    /* Results */
-    #results {
-      display: none;
-    }
-
-    .results-title {
-      font-size: 1rem;
-      font-weight: 600;
-      color: #333;
-      margin-bottom: 12px;
-    }
-
-    .result-card {
-      border-left: 3px solid #008A67;
-      padding: 12px 16px;
-      margin-bottom: 12px;
-      background: #fff;
-      border-radius: 0 4px 4px 0;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-    }
-
-    .result-card .name {
-      font-weight: 600;
-      color: #333;
-      margin-bottom: 4px;
-    }
-
-    .result-card .upload-id {
-      font-size: 0.8rem;
-      color: #666;
-      font-family: monospace;
-      margin-bottom: 4px;
-    }
-
-    .result-card a {
-      font-size: 0.875rem;
-      color: #2A4CDF;
-      text-decoration: none;
-    }
-
-    .result-card a:hover {
-      text-decoration: underline;
-    }
-
-    .result-card details {
-      margin-top: 8px;
-    }
-
-    .result-card summary {
-      font-size: 0.8rem;
-      color: #666;
-      cursor: pointer;
-    }
-
-    .result-card pre {
-      font-size: 0.8rem;
-      background: #f5f5f5;
-      padding: 8px;
-      border-radius: 4px;
-      overflow-x: auto;
-      margin-top: 4px;
-    }
 
     /* Divider */
     .divider {
@@ -428,25 +366,7 @@
 
         <p class="audio-entry-text" id="audio-entry"></p>
 
-        <hr class="divider">
-
-        <button class="btn btn-secondary" id="pipeline-btn">
-          <span class="material-icons">science</span>
-          Extract &amp; Upload
-        </button>
-        <p class="status-text" style="display: block; margin-top: 4px;">
-          Extract &amp; Upload parses the text into solar-cell entries as
-          separate NOMAD uploads — they are not attached to the experiment.
-        </p>
-
         <p class="error-text" id="error" role="alert"></p>
-      </div>
-
-      <div id="results">
-        <div class="card">
-          <div class="results-title">Uploaded perovskite solar cells</div>
-          <div id="results-list"></div>
-        </div>
       </div>
     </div>
   </div>
@@ -884,79 +804,6 @@
       }
       await uploadAudio(file, experiment);
     });
-
-    const pipelineBtn = document.getElementById("pipeline-btn");
-    const resultsDiv = document.getElementById("results");
-    const resultsList = document.getElementById("results-list");
-
-    async function runPipeline() {
-      const text = textArea.value.trim();
-      if (!text) {
-        showError("Nothing to process. Record or type something first.");
-        return;
-      }
-
-      clearError();
-      resultsDiv.style.display = "none";
-      resultsList.replaceChildren();
-      pipelineBtn.disabled = true;
-      pipelineBtn.innerHTML = '<span class="material-icons">hourglass_top</span> Processing...';
-
-      try {
-        const res = await authFetch("api/pipeline", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
-        });
-        if (!res.ok) {
-          showError("Pipeline failed: " + await errorDetail(res));
-          return;
-        }
-        const data = await res.json();
-        if (!data.cells || data.cells.length === 0) {
-          showError("No perovskite solar cells were extracted from the text.");
-          return;
-        }
-
-        for (const p of data.cells) {
-          const card = document.createElement("div");
-          card.className = "result-card";
-
-          const name = document.createElement("div");
-          name.className = "name";
-          name.textContent = p.name;
-
-          const uploadId = document.createElement("div");
-          uploadId.className = "upload-id";
-          uploadId.textContent = "Upload ID: " + p.upload_id;
-
-          const link = document.createElement("a");
-          link.href = p.entry_url;
-          link.target = "_blank";
-          link.rel = "noopener noreferrer";
-          link.textContent = "View on NOMAD";
-
-          const details = document.createElement("details");
-          const summary = document.createElement("summary");
-          summary.textContent = "Archive JSON";
-          const pre = document.createElement("pre");
-          pre.textContent = JSON.stringify(p.archive, null, 2);
-          details.appendChild(summary);
-          details.appendChild(pre);
-
-          card.append(name, uploadId, link, details);
-          resultsList.appendChild(card);
-        }
-        resultsDiv.style.display = "block";
-      } catch (err) {
-        showError("Network error: " + err.message);
-      } finally {
-        pipelineBtn.disabled = false;
-        pipelineBtn.innerHTML = '<span class="material-icons">science</span> Extract &amp; Upload';
-      }
-    }
-
-    pipelineBtn.addEventListener("click", runPipeline);
 
     recordBtn.addEventListener("click", () => {
       if (mediaRecorder && mediaRecorder.state === "recording") {
