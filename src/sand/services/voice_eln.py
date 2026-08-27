@@ -17,7 +17,6 @@ from sand.services.nomad_upload import (
     gui_upload_url,
 )
 
-# Qualified names of the nomad-voice-eln schema sections sand instantiates.
 INPUT_COLLECTION_M_DEF = (
     'nomad_voice_eln.schema_packages.schema_package.InputCollection'
 )
@@ -35,7 +34,7 @@ STEP_LABEL = 'step'
 EXPERIMENT_INFO_MAINFILE = 'experiment_info.archive.json'
 
 # Audio types the nomad-voice-eln parser matches (its mainfile_name_re);
-# a file with any other extension is stored but never becomes an entry.
+# a file with any other extension is stored but never becomes an audio entry.
 AUDIO_EXTENSIONS = frozenset({'wav', 'mp3', 'm4a', 'flac', 'ogg', 'webm', 'opus'})
 
 # Equivalent containers stored under an extension the parser matches:
@@ -56,7 +55,6 @@ def normalize_audio_filename(filename: str) -> str | None:
 
 
 def entry_ref(upload_id: str, entry_id: str) -> str:
-    """The reference string NOMAD's ReferenceEditQuantity uses for entries."""
     return f'../uploads/{upload_id}/archive/{entry_id}#/data'
 
 
