@@ -1,0 +1,2493 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "samples": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/sample"
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/cleaning_uv_ozone"
+          },
+          {
+            "$ref": "#/$defs/cleaning_o2_plasma"
+          },
+          {
+            "$ref": "#/$defs/spin_coating"
+          },
+          {
+            "$ref": "#/$defs/slot_die_coating"
+          },
+          {
+            "$ref": "#/$defs/blade_coating"
+          },
+          {
+            "$ref": "#/$defs/dip_coating"
+          },
+          {
+            "$ref": "#/$defs/inkjet_printing"
+          },
+          {
+            "$ref": "#/$defs/evaporation"
+          },
+          {
+            "$ref": "#/$defs/co_evaporation"
+          },
+          {
+            "$ref": "#/$defs/ald"
+          },
+          {
+            "$ref": "#/$defs/sputtering"
+          },
+          {
+            "$ref": "#/$defs/laser_scribing"
+          },
+          {
+            "$ref": "#/$defs/annealing"
+          },
+          {
+            "$ref": "#/$defs/generic_process"
+          },
+          {
+            "$ref": "#/$defs/ink_recycling"
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "date_time": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        },
+        "project_name": {
+          "type": "string"
+        },
+        "batch": {
+          "type": "string"
+        },
+        "subbatch": {
+          "type": "string"
+        },
+        "sample": {
+          "type": "string"
+        },
+        "lab_id": {
+          "type": "string"
+        },
+        "variation": {
+          "type": "string"
+        },
+        "sample_dimension": {
+          "type": "string"
+        },
+        "sample_area": {
+          "type": "number",
+          "unit": "cm²"
+        },
+        "number_of_pixels": {
+          "type": "number"
+        },
+        "pixel_area": {
+          "type": "number",
+          "unit": "cm²"
+        },
+        "substrate_material": {
+          "type": "string"
+        },
+        "substrate_conductive_layer": {
+          "type": "string"
+        },
+        "sheet_resistance": {
+          "type": "number",
+          "unit": "Ohms/square"
+        },
+        "transmission": {
+          "type": "number",
+          "unit": "%"
+        },
+        "number_of_junctions": {
+          "type": "number"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "cleaning_uv_ozone": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "step_type": {
+          "const": "Cleaning UV-Ozone"
+        },
+        "datetime": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "cleaning_steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "solvent": {
+                "type": "string"
+              },
+              "time": {
+                "type": "number",
+                "unit": "s"
+              },
+              "temperature": {
+                "type": "number",
+                "unit": "°C"
+              }
+            }
+          }
+        },
+        "uv_ozone_time": {
+          "type": "number",
+          "unit": "s"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "atmosphere": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "relative_humidity": {
+              "type": "number",
+              "unit": "%"
+            },
+            "temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "start_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "end_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            }
+          }
+        },
+        "position_in_experimental_plan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "const": "all"
+            }
+          ]
+        }
+      }
+    },
+    "cleaning_o2_plasma": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "step_type": {
+          "const": "Cleaning O2-Plasma"
+        },
+        "datetime": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "cleaning_steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "solvent": {
+                "type": "string"
+              },
+              "time": {
+                "type": "number",
+                "unit": "s"
+              },
+              "temperature": {
+                "type": "number",
+                "unit": "°C"
+              }
+            }
+          }
+        },
+        "gas_plasma_gas": {
+          "type": "string"
+        },
+        "gas_plasma_time": {
+          "type": "number",
+          "unit": "s"
+        },
+        "gas_plasma_power": {
+          "type": "number",
+          "unit": "W"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "atmosphere": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "relative_humidity": {
+              "type": "number",
+              "unit": "%"
+            },
+            "temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "start_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "end_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            }
+          }
+        },
+        "position_in_experimental_plan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "const": "all"
+            }
+          ]
+        }
+      }
+    },
+    "spin_coating": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "step_type": {
+          "const": "Spin Coating"
+        },
+        "datetime": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "material_name": {
+          "type": "string"
+        },
+        "layer_type": {
+          "type": "string"
+        },
+        "tool_gb_name": {
+          "type": "string"
+        },
+        "layer_thickness": {
+          "type": "number",
+          "unit": "nm"
+        },
+        "solvents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "volume": {
+                "type": "number",
+                "unit": "µL"
+              },
+              "relative_amount": {
+                "type": "number"
+              },
+              "chemical_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "solutes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "concentration": {
+                "type": "number",
+                "unit": "mM"
+              },
+              "relative_amount": {
+                "type": "number"
+              },
+              "chemical_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "additives": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "concentration": {
+                "type": "number",
+                "unit": "mM"
+              },
+              "relative_amount": {
+                "type": "number"
+              },
+              "chemical_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "viscosity": {
+          "type": "number",
+          "unit": "mPa*s"
+        },
+        "contact_angle": {
+          "type": "number",
+          "unit": "°"
+        },
+        "density": {
+          "type": "number",
+          "unit": "g/cm^3"
+        },
+        "surface_tension": {
+          "type": "number",
+          "unit": "mN/m"
+        },
+        "solution_volume": {
+          "type": "number",
+          "unit": "µL"
+        },
+        "spin_delay": {
+          "type": "number",
+          "unit": "s"
+        },
+        "rotation_steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "speed": {
+                "type": "number",
+                "unit": "rpm"
+              },
+              "time": {
+                "type": "number",
+                "unit": "s"
+              },
+              "acceleration": {
+                "type": "number",
+                "unit": "rpm/s"
+              }
+            }
+          }
+        },
+        "anti_solvent_name": {
+          "type": "string"
+        },
+        "anti_solvent_volume": {
+          "type": "number",
+          "unit": "ml"
+        },
+        "anti_solvent_dropping_time": {
+          "type": "number",
+          "unit": "s"
+        },
+        "anti_solvent_dropping_speed": {
+          "type": "number",
+          "unit": "ul/s"
+        },
+        "anti_solvent_dropping_height": {
+          "type": "number",
+          "unit": "mm"
+        },
+        "gas": {
+          "type": "string"
+        },
+        "gas_quenching_start_time": {
+          "type": "number",
+          "unit": "s"
+        },
+        "gas_quenching_duration": {
+          "type": "number",
+          "unit": "s"
+        },
+        "gas_quenching_flow_rate": {
+          "type": "number",
+          "unit": "ml/s"
+        },
+        "gas_quenching_pressure": {
+          "type": "number",
+          "unit": "bar"
+        },
+        "gas_quenching_velocity": {
+          "type": "number",
+          "unit": "m/s"
+        },
+        "gas_quenching_height": {
+          "type": "number",
+          "unit": "mm"
+        },
+        "nozzle_shape": {
+          "type": "string"
+        },
+        "nozzle_size": {
+          "type": "number",
+          "unit": "mm²"
+        },
+        "vacuum_quenching_start_time": {
+          "type": "number",
+          "unit": "s"
+        },
+        "vacuum_quenching_duration": {
+          "type": "number",
+          "unit": "s"
+        },
+        "vacuum_quenching_pressure": {
+          "type": "number",
+          "unit": "bar"
+        },
+        "annealing_time": {
+          "type": "number",
+          "unit": "min"
+        },
+        "annealing_temperature": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "annealing_atmosphere": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "atmosphere": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "relative_humidity": {
+              "type": "number",
+              "unit": "%"
+            },
+            "temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "start_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "end_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            }
+          }
+        },
+        "position_in_experimental_plan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "const": "all"
+            }
+          ]
+        }
+      }
+    },
+    "slot_die_coating": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "step_type": {
+          "const": "Slot Die Coating"
+        },
+        "datetime": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "material_name": {
+          "type": "string"
+        },
+        "layer_type": {
+          "type": "string"
+        },
+        "tool_gb_name": {
+          "type": "string"
+        },
+        "layer_thickness": {
+          "type": "number",
+          "unit": "nm"
+        },
+        "solvents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "volume": {
+                "type": "number",
+                "unit": "µL"
+              },
+              "relative_amount": {
+                "type": "number"
+              },
+              "chemical_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "solutes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "concentration": {
+                "type": "number",
+                "unit": "mM"
+              },
+              "relative_amount": {
+                "type": "number"
+              },
+              "chemical_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "additives": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "concentration": {
+                "type": "number",
+                "unit": "mM"
+              },
+              "relative_amount": {
+                "type": "number"
+              },
+              "chemical_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "viscosity": {
+          "type": "number",
+          "unit": "mPa*s"
+        },
+        "contact_angle": {
+          "type": "number",
+          "unit": "°"
+        },
+        "density": {
+          "type": "number",
+          "unit": "g/cm^3"
+        },
+        "surface_tension": {
+          "type": "number",
+          "unit": "mN/m"
+        },
+        "coating_run": {
+          "type": "string"
+        },
+        "solution_volume": {
+          "type": "number",
+          "unit": "µL"
+        },
+        "flow_rate": {
+          "type": "number",
+          "unit": "ul/min"
+        },
+        "head_gap": {
+          "type": "number",
+          "unit": "mm"
+        },
+        "speed": {
+          "type": "number",
+          "unit": "mm/s"
+        },
+        "coated_area": {
+          "type": "number",
+          "unit": "mm²"
+        },
+        "air_knife_angle": {
+          "type": "number",
+          "unit": "°"
+        },
+        "air_knife_gap": {
+          "type": "number",
+          "unit": "cm"
+        },
+        "bead_volume": {
+          "type": "number",
+          "unit": "mm/s"
+        },
+        "drying_speed": {
+          "type": "number",
+          "unit": "cm/min"
+        },
+        "chuck_heating_temperature": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "annealing_time": {
+          "type": "number",
+          "unit": "min"
+        },
+        "annealing_temperature": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "annealing_atmosphere": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "atmosphere": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "relative_humidity": {
+              "type": "number",
+              "unit": "%"
+            },
+            "temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "start_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "end_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            }
+          }
+        },
+        "position_in_experimental_plan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "const": "all"
+            }
+          ]
+        }
+      }
+    },
+    "blade_coating": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "step_type": {
+          "const": "Blade Coating"
+        },
+        "datetime": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "material_name": {
+          "type": "string"
+        },
+        "layer_type": {
+          "type": "string"
+        },
+        "tool_gb_name": {
+          "type": "string"
+        },
+        "layer_thickness": {
+          "type": "number",
+          "unit": "nm"
+        },
+        "solvents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "volume": {
+                "type": "number",
+                "unit": "µL"
+              },
+              "relative_amount": {
+                "type": "number"
+              },
+              "chemical_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "solutes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "concentration": {
+                "type": "number",
+                "unit": "mM"
+              },
+              "relative_amount": {
+                "type": "number"
+              },
+              "chemical_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "additives": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "concentration": {
+                "type": "number",
+                "unit": "mM"
+              },
+              "relative_amount": {
+                "type": "number"
+              },
+              "chemical_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "viscosity": {
+          "type": "number",
+          "unit": "mPa*s"
+        },
+        "contact_angle": {
+          "type": "number",
+          "unit": "°"
+        },
+        "density": {
+          "type": "number",
+          "unit": "g/cm^3"
+        },
+        "surface_tension": {
+          "type": "number",
+          "unit": "mN/m"
+        },
+        "solution_volume": {
+          "type": "number",
+          "unit": "µL"
+        },
+        "blade_speed": {
+          "type": "number",
+          "unit": "mm/s"
+        },
+        "dispensed_ink_volume": {
+          "type": "number",
+          "unit": "µL"
+        },
+        "blade_gap": {
+          "type": "number",
+          "unit": "um"
+        },
+        "blade_size": {
+          "type": "string"
+        },
+        "coating_width": {
+          "type": "number",
+          "unit": "mm"
+        },
+        "coating_length": {
+          "type": "number",
+          "unit": "mm"
+        },
+        "dead_length": {
+          "type": "number",
+          "unit": "mm"
+        },
+        "bed_temperature": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "ink_temperature": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "gas": {
+          "type": "string"
+        },
+        "gas_quenching_start_time": {
+          "type": "number",
+          "unit": "s"
+        },
+        "gas_quenching_duration": {
+          "type": "number",
+          "unit": "s"
+        },
+        "gas_quenching_flow_rate": {
+          "type": "number",
+          "unit": "ml/s"
+        },
+        "gas_quenching_pressure": {
+          "type": "number",
+          "unit": "bar"
+        },
+        "gas_quenching_velocity": {
+          "type": "number",
+          "unit": "m/s"
+        },
+        "gas_quenching_height": {
+          "type": "number",
+          "unit": "mm"
+        },
+        "nozzle_shape": {
+          "type": "string"
+        },
+        "nozzle_size": {
+          "type": "number",
+          "unit": "mm²"
+        },
+        "annealing_time": {
+          "type": "number",
+          "unit": "min"
+        },
+        "annealing_temperature": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "annealing_atmosphere": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "atmosphere": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "relative_humidity": {
+              "type": "number",
+              "unit": "%"
+            },
+            "temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "start_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "end_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            }
+          }
+        },
+        "position_in_experimental_plan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "const": "all"
+            }
+          ]
+        }
+      }
+    },
+    "dip_coating": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "step_type": {
+          "const": "Dip Coating"
+        },
+        "datetime": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "material_name": {
+          "type": "string"
+        },
+        "layer_type": {
+          "type": "string"
+        },
+        "tool_gb_name": {
+          "type": "string"
+        },
+        "layer_thickness": {
+          "type": "number",
+          "unit": "nm"
+        },
+        "solvents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "volume": {
+                "type": "number",
+                "unit": "µL"
+              },
+              "relative_amount": {
+                "type": "number"
+              },
+              "chemical_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "solutes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "concentration": {
+                "type": "number",
+                "unit": "mM"
+              },
+              "relative_amount": {
+                "type": "number"
+              },
+              "chemical_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "additives": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "concentration": {
+                "type": "number",
+                "unit": "mM"
+              },
+              "relative_amount": {
+                "type": "number"
+              },
+              "chemical_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "viscosity": {
+          "type": "number",
+          "unit": "mPa*s"
+        },
+        "contact_angle": {
+          "type": "number",
+          "unit": "°"
+        },
+        "density": {
+          "type": "number",
+          "unit": "g/cm^3"
+        },
+        "surface_tension": {
+          "type": "number",
+          "unit": "mN/m"
+        },
+        "dipping_duration": {
+          "type": "number",
+          "unit": "s"
+        },
+        "annealing_time": {
+          "type": "number",
+          "unit": "min"
+        },
+        "annealing_temperature": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "annealing_atmosphere": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "atmosphere": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "relative_humidity": {
+              "type": "number",
+              "unit": "%"
+            },
+            "temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "start_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "end_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            }
+          }
+        },
+        "position_in_experimental_plan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "const": "all"
+            }
+          ]
+        }
+      }
+    },
+    "inkjet_printing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "step_type": {
+          "const": "Inkjet Printing"
+        },
+        "datetime": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "material_name": {
+          "type": "string"
+        },
+        "layer_type": {
+          "type": "string"
+        },
+        "tool_gb_name": {
+          "type": "string"
+        },
+        "layer_thickness": {
+          "type": "number",
+          "unit": "nm"
+        },
+        "solvents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "volume": {
+                "type": "number",
+                "unit": "µL"
+              },
+              "relative_amount": {
+                "type": "number"
+              },
+              "chemical_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "solutes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "concentration": {
+                "type": "number",
+                "unit": "mM"
+              },
+              "relative_amount": {
+                "type": "number"
+              },
+              "chemical_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "additives": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "concentration": {
+                "type": "number",
+                "unit": "mM"
+              },
+              "relative_amount": {
+                "type": "number"
+              },
+              "chemical_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "viscosity": {
+          "type": "number",
+          "unit": "mPa*s"
+        },
+        "contact_angle": {
+          "type": "number",
+          "unit": "°"
+        },
+        "density": {
+          "type": "number",
+          "unit": "g/cm^3"
+        },
+        "surface_tension": {
+          "type": "number",
+          "unit": "mN/m"
+        },
+        "printhead_name": {
+          "type": "string"
+        },
+        "number_of_active_nozzles": {
+          "type": "number"
+        },
+        "active_nozzles": {
+          "type": "string"
+        },
+        "droplet_density_x": {
+          "type": "number",
+          "unit": "dpi"
+        },
+        "droplet_density_y": {
+          "type": "number",
+          "unit": "dpi"
+        },
+        "quality_factor": {
+          "type": "number"
+        },
+        "step_size": {
+          "type": "string"
+        },
+        "printing_direction": {
+          "type": "number"
+        },
+        "number_of_swaths": {
+          "type": "number"
+        },
+        "printed_area": {
+          "type": "number",
+          "unit": "mm²"
+        },
+        "droplet_per_second": {
+          "type": "number",
+          "unit": "1/s"
+        },
+        "droplet_volume": {
+          "type": "number",
+          "unit": "pl"
+        },
+        "ink_reservoir_pressure": {
+          "type": "number",
+          "unit": "bar"
+        },
+        "table_temperature": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "dropping_height": {
+          "type": "number",
+          "unit": "mm"
+        },
+        "substrate_thickness": {
+          "type": "number",
+          "unit": "mm"
+        },
+        "printing_speed": {
+          "type": "number",
+          "unit": "mm/s"
+        },
+        "print_head_angle": {
+          "type": "number",
+          "unit": "deg"
+        },
+        "nozzle_temperature": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "nozzle_voltage_config_file": {
+          "type": "string"
+        },
+        "image_used": {
+          "type": "string"
+        },
+        "gavd_gas": {
+          "type": "string"
+        },
+        "gavd_start_time": {
+          "type": "number",
+          "unit": "s"
+        },
+        "gavd_vacuum_pressure": {
+          "type": "number",
+          "unit": "mbar"
+        },
+        "gavd_temperature": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "gavd_vacuum_time": {
+          "type": "number",
+          "unit": "s"
+        },
+        "gas_flow_duration": {
+          "type": "number",
+          "unit": "s"
+        },
+        "gas_flow_pressure": {
+          "type": "number",
+          "unit": "mbar"
+        },
+        "nozzle_shape": {
+          "type": "string"
+        },
+        "nozzle_type": {
+          "type": "string"
+        },
+        "gavd_comment": {
+          "type": "string"
+        },
+        "annealing_time": {
+          "type": "number",
+          "unit": "min"
+        },
+        "annealing_temperature": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "annealing_atmosphere": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "atmosphere": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "relative_humidity": {
+              "type": "number",
+              "unit": "%"
+            },
+            "temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "start_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "end_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            }
+          }
+        },
+        "position_in_experimental_plan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "const": "all"
+            }
+          ]
+        }
+      }
+    },
+    "evaporation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "step_type": {
+          "const": "Evaporation"
+        },
+        "datetime": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "material_name": {
+          "type": "string"
+        },
+        "layer_type": {
+          "type": "string"
+        },
+        "tool_gb_name": {
+          "type": "string"
+        },
+        "organic": {
+          "type": "boolean"
+        },
+        "sample_holder_width": {
+          "type": "number",
+          "unit": "cm"
+        },
+        "base_pressure": {
+          "type": "number",
+          "unit": "bar"
+        },
+        "pressure_start": {
+          "type": "number",
+          "unit": "bar"
+        },
+        "pressure_end": {
+          "type": "number",
+          "unit": "bar"
+        },
+        "source_temperature_start": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "source_temperature_end": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "substrate_temperature": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "thickness": {
+          "type": "number",
+          "unit": "nm"
+        },
+        "rate_start": {
+          "type": "number",
+          "unit": "Å/s"
+        },
+        "rate_target": {
+          "type": "number",
+          "unit": "Å/s"
+        },
+        "tooling_factor": {
+          "type": "number"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "atmosphere": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "relative_humidity": {
+              "type": "number",
+              "unit": "%"
+            },
+            "temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "start_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "end_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            }
+          }
+        },
+        "position_in_experimental_plan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "const": "all"
+            }
+          ]
+        }
+      }
+    },
+    "co_evaporation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "step_type": {
+          "const": "Co-Evaporation"
+        },
+        "datetime": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "material_name": {
+          "type": "string"
+        },
+        "layer_type": {
+          "type": "string"
+        },
+        "tool_gb_name": {
+          "type": "string"
+        },
+        "materials": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "material_name": {
+                "type": "string"
+              },
+              "source_temperature_start": {
+                "type": "number",
+                "unit": "°C"
+              },
+              "source_temperature_end": {
+                "type": "number",
+                "unit": "°C"
+              },
+              "thickness": {
+                "type": "number",
+                "unit": "nm"
+              },
+              "rate": {
+                "type": "number",
+                "unit": "Å/s"
+              },
+              "base_pressure": {
+                "type": "number",
+                "unit": "bar"
+              },
+              "pressure_start": {
+                "type": "number",
+                "unit": "bar"
+              },
+              "pressure_end": {
+                "type": "number",
+                "unit": "bar"
+              },
+              "substrate_temperature": {
+                "type": "number",
+                "unit": "°C"
+              },
+              "tooling_factor": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "notes": {
+          "type": "string"
+        },
+        "atmosphere": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "relative_humidity": {
+              "type": "number",
+              "unit": "%"
+            },
+            "temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "start_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "end_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            }
+          }
+        },
+        "position_in_experimental_plan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "const": "all"
+            }
+          ]
+        }
+      }
+    },
+    "ald": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "step_type": {
+          "const": "ALD"
+        },
+        "datetime": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "material_name": {
+          "type": "string"
+        },
+        "layer_type": {
+          "type": "string"
+        },
+        "tool_gb_name": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "thickness": {
+          "type": "number",
+          "unit": "nm"
+        },
+        "temperature": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "rate": {
+          "type": "number",
+          "unit": "Å/s"
+        },
+        "time": {
+          "type": "number",
+          "unit": "s"
+        },
+        "number_of_cycles": {
+          "type": "number"
+        },
+        "precursor_1": {
+          "type": "string"
+        },
+        "pulse_duration_1": {
+          "type": "number",
+          "unit": "s"
+        },
+        "manifold_temperature_1": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "bottle_temperature_1": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "precursor_2": {
+          "type": "string"
+        },
+        "pulse_duration_2": {
+          "type": "number",
+          "unit": "s"
+        },
+        "manifold_temperature_2": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "atmosphere": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "relative_humidity": {
+              "type": "number",
+              "unit": "%"
+            },
+            "temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "start_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "end_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            }
+          }
+        },
+        "position_in_experimental_plan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "const": "all"
+            }
+          ]
+        }
+      }
+    },
+    "sputtering": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "step_type": {
+          "const": "Sputtering"
+        },
+        "datetime": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "material_name": {
+          "type": "string"
+        },
+        "layer_type": {
+          "type": "string"
+        },
+        "tool_gb_name": {
+          "type": "string"
+        },
+        "gas": {
+          "type": "string"
+        },
+        "temperature": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "pressure": {
+          "type": "number",
+          "unit": "mbar"
+        },
+        "deposition_time": {
+          "type": "number",
+          "unit": "s"
+        },
+        "burn_in_time": {
+          "type": "number",
+          "unit": "s"
+        },
+        "power": {
+          "type": "number",
+          "unit": "W"
+        },
+        "rotation_rate": {
+          "type": "number",
+          "unit": "rpm"
+        },
+        "thickness": {
+          "type": "number",
+          "unit": "nm"
+        },
+        "gas_flow_rate": {
+          "type": "number",
+          "unit": "cm³/min"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "atmosphere": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "relative_humidity": {
+              "type": "number",
+              "unit": "%"
+            },
+            "temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "start_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "end_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            }
+          }
+        },
+        "position_in_experimental_plan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "const": "all"
+            }
+          ]
+        }
+      }
+    },
+    "laser_scribing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "step_type": {
+          "const": "Laser Scribing"
+        },
+        "datetime": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "laser_wavelength": {
+          "type": "number",
+          "unit": "nm"
+        },
+        "laser_pulse_time": {
+          "type": "number",
+          "unit": "ps"
+        },
+        "laser_pulse_frequency": {
+          "type": "number",
+          "unit": "kHz"
+        },
+        "speed": {
+          "type": "number",
+          "unit": "mm/s"
+        },
+        "fluence": {
+          "type": "number",
+          "unit": "J/cm2"
+        },
+        "power": {
+          "type": "number",
+          "unit": "%"
+        },
+        "recipe_file": {
+          "type": "string"
+        },
+        "dead_area": {
+          "type": "number",
+          "unit": "cm2"
+        },
+        "width_of_cell": {
+          "type": "number",
+          "unit": "mm"
+        },
+        "number_of_cells": {
+          "type": "number"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "atmosphere": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "relative_humidity": {
+              "type": "number",
+              "unit": "%"
+            },
+            "temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "start_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "end_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            }
+          }
+        },
+        "position_in_experimental_plan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "const": "all"
+            }
+          ]
+        }
+      }
+    },
+    "annealing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "step_type": {
+          "const": "Annealing"
+        },
+        "datetime": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "annealing_time": {
+          "type": "number",
+          "unit": "min"
+        },
+        "annealing_temperature": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "annealing_atmosphere": {
+          "type": "string"
+        },
+        "relative_humidity": {
+          "type": "number",
+          "unit": "%"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "atmosphere": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "relative_humidity": {
+              "type": "number",
+              "unit": "%"
+            },
+            "temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "start_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "end_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            }
+          }
+        },
+        "position_in_experimental_plan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "const": "all"
+            }
+          ]
+        }
+      }
+    },
+    "generic_process": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "step_type": {
+          "const": "Generic Process"
+        },
+        "datetime": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "atmosphere": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "relative_humidity": {
+              "type": "number",
+              "unit": "%"
+            },
+            "temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "start_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "end_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            }
+          }
+        },
+        "position_in_experimental_plan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "const": "all"
+            }
+          ]
+        }
+      }
+    },
+    "ink_recycling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "step_type": {
+          "const": "Ink Recycling"
+        },
+        "datetime": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "solvents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "volume": {
+                "type": "number",
+                "unit": "ml"
+              }
+            }
+          }
+        },
+        "solutes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "concentration": {
+                "type": "number",
+                "unit": "M"
+              },
+              "amount": {
+                "type": "number",
+                "unit": "g"
+              },
+              "moles": {
+                "type": "number",
+                "unit": "mol"
+              }
+            }
+          }
+        },
+        "precursors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "moles": {
+                "type": "number",
+                "unit": "mol"
+              }
+            }
+          }
+        },
+        "functional_liquid_name": {
+          "type": "string"
+        },
+        "functional_liquid_volume": {
+          "type": "number",
+          "unit": "ml"
+        },
+        "dissolving_temperature": {
+          "type": "number",
+          "unit": "°C"
+        },
+        "filter_material": {
+          "type": "string"
+        },
+        "filter_size": {
+          "type": "number",
+          "unit": "mm"
+        },
+        "filter_weight": {
+          "type": "number",
+          "unit": "g"
+        },
+        "recovered_solute": {
+          "type": "number",
+          "unit": "g"
+        },
+        "yield": {
+          "type": "number",
+          "unit": "%"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "atmosphere": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "relative_humidity": {
+              "type": "number",
+              "unit": "%"
+            },
+            "temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_oxygen_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "start_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "end_gb_temperature": {
+              "type": "number",
+              "unit": "°C"
+            },
+            "start_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            },
+            "end_water_level_ppm": {
+              "type": "number",
+              "unit": "ppm"
+            }
+          }
+        },
+        "position_in_experimental_plan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "samples": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "const": "all"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
