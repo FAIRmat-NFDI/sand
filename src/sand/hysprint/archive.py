@@ -98,9 +98,15 @@ def build_samples(info: dict) -> list[dict]:
 
 
 def append_step(archive: dict, slot: dict, pos: int) -> dict:
-    """Add one extracted step (its variants) at plan position `pos`. The
-    extractor names samples by LABEL ("1"); the archive keys steps by lab_id.
-    A label the form did not declare raises."""
+    """Add one extracted step (its variants) at plan position `pos`.
+
+    A slot is one extracted step, e.g.:
+        {'step_type': 'Spin Coating',
+         'variants': [{'samples': ['1', '2'], 'material_name': 'NiOx'},
+                      {'samples': 'all', ...step fields...}]}
+
+    The extractor names samples by LABEL ("1"); the archive keys steps by
+    lab_id. A label the form did not declare raises."""
     by_label = {s['sample']: s['lab_id'] for s in archive['samples']}
     for variant in slot['variants']:
         samples = variant['samples']
