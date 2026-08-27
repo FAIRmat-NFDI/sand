@@ -1,8 +1,3 @@
-"""Assemble hysprint {samples, steps} archives from the form and extracted steps.
-
-Copied from nomad-entry-data (src/hzb_pool/archive.py) - keep in sync.
-"""
-
 import json
 import re
 from datetime import date
@@ -73,14 +68,6 @@ def _sample_names(first: str, n: int) -> list[str]:
 
 def _nomad_id(project: str, batch, subbatch, sample: str) -> str:
     return f'{project}_{batch}_{subbatch}_C-{sample}'
-
-
-def _iso_date(value) -> str:
-    if value is None:
-        return date.today().isoformat()
-    if isinstance(value, date):
-        return value.isoformat()
-    return date.fromisoformat(str(value)).isoformat()
 
 
 def build_samples(info: dict) -> list[dict]:

@@ -1,10 +1,3 @@
-"""Hysprint per-step extraction ingredients: prompts and schema slices.
-
-Adapted from nomad-entry-data (src/extraction/single_step_extractor.py,
-src/hzb_pool/schema.py). The artifact sand/schemas/hzb_experiment.schema.json
-is that repo's generated output — update by copying the regenerated file.
-"""
-
 import json
 import re
 from functools import lru_cache
