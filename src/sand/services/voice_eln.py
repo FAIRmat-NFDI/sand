@@ -70,8 +70,6 @@ def _entry_id_from_ref(ref: str) -> str:
 
 
 def _parse_input_datetime(value) -> datetime | None:
-    """The entry's datetime as an aware datetime, or None if absent/invalid.
-    Naive values are taken as UTC so mixed values stay comparable."""
     if not value:
         return None
     try:
@@ -105,15 +103,6 @@ class ExperimentSummary:
 
 @dataclass
 class CollectedInput:
-    """One input of a collection, audio and note normalized to the same shape.
-
-    `text` is the input's usable text: for a note its stored text, for an
-    audio the first non-empty of intended_transcript, corrected_transcript,
-    whisper_transcript. None means nothing usable yet (audio not transcribed,
-    or the referenced entry not processed) - callers decide whether that is
-    an error.
-    """
-
     entry_id: str
     kind: str  # 'audio' | 'note'
     text: str | None
@@ -121,7 +110,6 @@ class CollectedInput:
     datetime: str | None  # as stored on the entry
 
 
-# AudioInput transcript fields, in the order the best available one wins.
 _TRANSCRIPT_FIELDS = (
     'intended_transcript',
     'corrected_transcript',
@@ -376,7 +364,6 @@ class VoiceElnService:
     async def _fetch_input(
         self, client: httpx.AsyncClient, entry_id: str, kind: str
     ) -> CollectedInput:
-        """One referenced entry, normalized; not-yet-processed -> text None."""
         response = await client.get(f'/entries/{entry_id}/archive')
         if response.status_code == HTTPStatus.NOT_FOUND:
             return CollectedInput(
