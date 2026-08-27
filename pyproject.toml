@@ -31,7 +31,6 @@ dependencies = [
     "anthropic>=0.40.0",
     "httpx>=0.23.3",
     "python-multipart>=0.0.18",
-    "perla-extract",
 ]
 
 [project.urls]
@@ -130,7 +129,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-sand = ["apis/static/*", "solar_cell_schema.json", "schemas/*"]
+sand = ["apis/static/*", "schemas/*"]
 
 [project.entry-points.'nomad.plugin']
 sand_api = "sand.apis:sand_api"

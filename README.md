@@ -132,8 +132,6 @@ prefix appended.
 | `POST` | `http://localhost:8000/nomad-oasis/sand/api/input-collections` | Create an experiment (optionally with the info form) |
 | `POST` | `http://localhost:8000/nomad-oasis/sand/api/input-collections/{upload_id}/audio` | Add a recording (→ AudioInput entry) |
 | `POST` | `http://localhost:8000/nomad-oasis/sand/api/input-collections/{upload_id}/notes` | Add a typed step note (→ WrittenNote entry) |
-| `POST` | `http://localhost:8000/nomad-oasis/sand/api/extract` | AI extraction (text → structured data) |
-| `POST` | `http://localhost:8000/nomad-oasis/sand/api/pipeline` | Full pipeline (text → structured data → NOMAD upload) |
 
-The `input-collections`, `extract`, and `pipeline` routes require a logged-in
+The `input-collections` routes require a logged-in
 user, so you must authenticate through Keycloak before calling them.

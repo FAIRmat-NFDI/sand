@@ -7,10 +7,6 @@ from nomad.app.v1.routers.auth import get_current_user
 from nomad.config import config
 
 from sand.apis.routers.experiments import router as experiments_router
-from sand.apis.routers.extract import router as extract_router
-from sand.apis.routers.pipeline import router as pipeline_router
-from sand.services.extraction import ExtractionService
-from sand.services.nomad_upload import NomadUploader
 from sand.services.voice_eln import VoiceElnService
 
 # TODO: this need to be updated maybe to uplaod access when the api scope is supprted.
@@ -32,17 +28,8 @@ app = FastAPI(
 app.state.voice_eln = VoiceElnService(
     base_url=sand_api_entry_point.nomad_base_url,
 )
-app.state.extraction = ExtractionService(
-    api_key=sand_api_entry_point.anthropic_api_key,
-    model=sand_api_entry_point.anthropic_model,
-)
-app.state.nomad = NomadUploader(
-    base_url=sand_api_entry_point.nomad_base_url,
-)
 
 app.include_router(experiments_router, prefix='/api', dependencies=[require_login])
-app.include_router(extract_router, prefix='/api', dependencies=[require_login])
-app.include_router(pipeline_router, prefix='/api', dependencies=[require_login])
 
 
 @app.get('/auth/config')

@@ -1,3 +1,2 @@
 graft src/sand/example_uploads
 graft src/sand/apis/static
-include src/sand/solar_cell_schema.json
