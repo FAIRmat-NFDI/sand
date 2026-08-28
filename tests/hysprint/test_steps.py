@@ -26,7 +26,10 @@ def test_select_schema_enumerates_all_step_types():
 
 def test_fill_schema_slices_one_step_type():
     schema = fill_schema('spin coating')  # casing normalized via $defs key
-    assert schema['properties']['step_type'] == {'const': 'Spin Coating'}
+    assert schema['properties']['step_type'] == {
+        'type': 'string',
+        'enum': ['Spin Coating'],
+    }
     items = schema['properties']['variants']['items']
     assert 'samples' in items['properties']
     # bookkeeping is addressing/identity, never step content
