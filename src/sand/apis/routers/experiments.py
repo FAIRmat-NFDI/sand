@@ -9,7 +9,7 @@ from sand.hysprint.step_extractor import extract_step
 from sand.models.experiments import (
     CreateHysprintExperimentRequest,
     CreateNoteRequest,
-    ExtractResponse,
+    HysprintExtractResponse,
     InputCollectionListResponse,
     InputCollectionResponse,
     InputCollectionSummaryModel,
@@ -212,12 +212,14 @@ async def add_note(
     )
 
 
-@router.post('/input-collections/{upload_id}/extract', response_model=ExtractResponse)
+@router.post(
+    '/input-collections/{upload_id}/extract', response_model=HysprintExtractResponse
+)
 async def extract_hysprint_experiment(
     upload_id: str,
     request: Request,
     collection_entry_id: str | None = None,
-) -> ExtractResponse:
+) -> HysprintExtractResponse:
     """Extract the experiment's inputs into the hysprint {samples, steps} archive."""
     voice = _voice_service(request)
     runner: ExtractionService = request.app.state.extraction_service
@@ -267,6 +269,6 @@ async def extract_hysprint_experiment(
         # e.g. a narration names a sample label the form did not declare
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    return ExtractResponse(
+    return HysprintExtractResponse(
         archive=archive, step_types=[slot['step_type'] for slot in slots]
     )
