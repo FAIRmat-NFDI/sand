@@ -32,6 +32,7 @@ dependencies = [
     # distribution installs (not on PyPI); sand imports them lazily.
     "httpx>=0.23.3",
     "python-multipart>=0.0.18",
+    "openpyxl>=3.1",
 ]
 
 [project.urls]

@@ -5,6 +5,11 @@ from fastapi import APIRouter, HTTPException, Request, UploadFile
 
 from sand.apis.deps import get_bearer_token
 from sand.hysprint.generate import HysprintInputError, assemble, route_inputs
+from sand.hysprint.sheet import (
+    DERIVED_SHEET_MAINFILE,
+    grid_to_xlsx_bytes,
+    to_sheet,
+)
 from sand.hysprint.step_extractor import extract_step
 from sand.models.experiments import (
     CreateHysprintExperimentRequest,
@@ -219,8 +224,15 @@ async def extract_hysprint_experiment(
     upload_id: str,
     request: Request,
     collection_entry_id: str | None = None,
+    dry_run: bool = False,
 ) -> HysprintExtractResponse:
-    """Extract the experiment's inputs into the hysprint {samples, steps} archive."""
+    """Extract the experiment's inputs into the hysprint {samples, steps}
+    archive, lay it out as the batch sheet, upload the sheet (the hysprint
+    parser turns it into the derived experiment entry), and reference that
+    entry from the collection's derived_entries.
+
+    dry_run=true stops after extraction and returns the archive only.
+    """
     voice = _voice_service(request)
     runner: ExtractionService = request.app.state.extraction_service
     token = get_bearer_token(request)
@@ -269,6 +281,29 @@ async def extract_hysprint_experiment(
         # e.g. a narration names a sample label the form did not declare
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    step_types = [slot['step_type'] for slot in slots]
+    if dry_run:
+        return HysprintExtractResponse(archive=archive, step_types=step_types)
+
+    grid, sheet_issues = to_sheet(archive)
+    xlsx = grid_to_xlsx_bytes(grid)
+    try:
+        async with voice.build_client(token) as client:
+            derived = await voice.add_derived_sheet(
+                client,
+                upload_id,
+                xlsx,
+                DERIVED_SHEET_MAINFILE,
+                collection_entry_id=collection_entry_id,
+            )
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
     return HysprintExtractResponse(
-        archive=archive, step_types=[slot['step_type'] for slot in slots]
+        archive=archive,
+        step_types=step_types,
+        derived_entry=InputCollectionResponse(
+            **_entry_response(voice, derived.upload_id, derived.entry_id)
+        ),
+        sheet_issues=sheet_issues,
     )

@@ -312,6 +312,39 @@ class VoiceElnService:
         )
         return EntryHandle(upload_id=upload_id, entry_id=entry_id)
 
+    async def add_derived_sheet(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        xlsx: bytes,
+        sheet_mainfile: str,
+        collection_entry_id: str | None = None,
+    ) -> EntryHandle:
+        """Store the derived experiment sheet and link it from the collection.
+
+        The xlsx lands in the experiment upload under the fixed
+        `sheet_mainfile`; NOMAD's hysprint batch parser turns it into the
+        derived experiment entry (deterministic id), which is referenced
+        from the collection's `derived_entries`.
+        """
+        mainfile = await self._resolve_collection_mainfile(
+            client, upload_id, collection_entry_id
+        )
+        await self._read_collection(client, upload_id, mainfile)
+
+        await self._upload_raw_file(
+            client,
+            upload_id,
+            sheet_mainfile,
+            xlsx,
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        entry_id = generate_entry_id(upload_id, sheet_mainfile)
+        await self._append_to_collection(
+            client, upload_id, 'derived_entries', entry_id, mainfile
+        )
+        return EntryHandle(upload_id=upload_id, entry_id=entry_id)
+
     async def collect_inputs(
         self,
         client: httpx.AsyncClient,
