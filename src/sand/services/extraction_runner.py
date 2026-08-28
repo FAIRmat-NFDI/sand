@@ -24,12 +24,7 @@ class ExtractionError(RuntimeError):
 
 
 class ExtractionRunner:
-    """One extract() call = one ExtractionWorkflow execution, unique id.
-
-    `client_factory` is awaited to get a temporalio client; it defaults to
-    nomad.actions.client.get_client (address/TLS/OIDC and the pydantic
-    payload converter all come from NOMAD's own config).
-    """
+    """One extract() call = one ExtractionWorkflow execution, unique id."""
 
     def __init__(
         self,
@@ -37,13 +32,11 @@ class ExtractionRunner:
         api_key: str,
         task_queue: str = DEFAULT_TASK_QUEUE,
         timeout_s: float = 600.0,
-        client_factory=None,
     ) -> None:
         self._model_name = model_name
         self._api_key = api_key
         self._task_queue = task_queue
         self._timeout_s = timeout_s
-        self._client_factory = client_factory
 
     async def extract(
         self,
@@ -58,8 +51,12 @@ class ExtractionRunner:
         validates the JSON against the schema, and self-corrects on failure;
         an exhausted retry budget surfaces here as ExtractionError.
         """
-        # Deferred: only needed when extraction actually runs, and the
-        # package is only present where the plugin is installed.
+        # Deferred imports: only needed when extraction actually runs, and
+        # the nomad-llm-extraction package is only present where the plugin
+        # is installed. get_client is nomad's own Temporal client
+        # (address/TLS/OIDC and the pydantic payload converter come from
+        # NOMAD's config).
+        from nomad.actions.client import get_client
         from nomad_llm_extraction.pipeline.models import (
             ExtractionWorkflowInput,
             LLMEngineConfig,
@@ -76,7 +73,7 @@ class ExtractionRunner:
             ),
         )
 
-        client = await self._get_client()
+        client = await get_client()
         result = await asyncio.wait_for(
             client.execute_workflow(
                 ExtractionWorkflow.run,
@@ -94,10 +91,3 @@ class ExtractionRunner:
                 retries=result.retries,
             )
         return result.extracted_data
-
-    async def _get_client(self):
-        if self._client_factory is not None:
-            return await self._client_factory()
-        from nomad.actions.client import get_client
-
-        return await get_client()
