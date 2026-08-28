@@ -7,7 +7,7 @@ from nomad.app.v1.routers.auth import get_current_user
 from nomad.config import config
 
 from sand.apis.routers.experiments import router as experiments_router
-from sand.services.extraction_runner import ExtractionRunner
+from sand.services.extraction_service import ExtractionService
 from sand.services.voice_eln import VoiceElnService
 
 # TODO: this need to be updated maybe to uplaod access when the api scope is supprted.
@@ -29,7 +29,7 @@ app = FastAPI(
 app.state.voice_eln = VoiceElnService(
     base_url=sand_api_entry_point.nomad_base_url,
 )
-app.state.extraction_runner = ExtractionRunner(
+app.state.extraction_service = ExtractionService(
     model_name=sand_api_entry_point.llm_model_name,
     api_key=sand_api_entry_point.llm_api_key,
 )

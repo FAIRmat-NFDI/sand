@@ -13,7 +13,7 @@ class ExtractionError(RuntimeError):
         super().__init__(message)
 
 
-class ExtractionRunner:
+class ExtractionService:
     def __init__(
         self,
         model_name: str,
