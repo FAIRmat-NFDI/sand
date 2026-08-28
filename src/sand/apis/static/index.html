@@ -254,6 +254,32 @@
       text-decoration: underline;
     }
 
+    /* Generate result card */
+    .results-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+    }
+
+    #generate-result summary {
+      font-size: 0.875rem;
+      color: #666;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+
+    #generate-result pre {
+      font-size: 0.8rem;
+      background: #f5f5f5;
+      padding: 8px;
+      border-radius: 4px;
+      overflow-x: auto;
+      margin-top: 4px;
+      max-height: 420px;
+      overflow-y: auto;
+    }
+
     /* Error */
     .error-text {
       color: #d32f2f;
@@ -366,7 +392,26 @@
 
         <p class="audio-entry-text" id="audio-entry"></p>
 
+        <hr class="divider">
+
+        <div class="controls">
+          <button class="btn btn-secondary" id="generate-btn" type="button">
+            <span class="material-icons">science</span>
+            Generate hysprint experiment
+          </button>
+          <span class="status-text" id="generate-status"></span>
+        </div>
+
         <p class="error-text" id="error" role="alert"></p>
+      </div>
+
+      <div class="card" id="generate-result" hidden>
+        <div class="results-title">Extracted experiment</div>
+        <p class="status-text" id="generate-summary"></p>
+        <details>
+          <summary>Archive JSON</summary>
+          <pre id="generate-json"></pre>
+        </details>
       </div>
     </div>
   </div>
@@ -779,6 +824,44 @@
         showError("Network error: " + err.message);
       } finally {
         saveNoteBtn.disabled = false;
+      }
+    });
+
+    const generateBtn = document.getElementById("generate-btn");
+    const generateStatus = document.getElementById("generate-status");
+    const generateResult = document.getElementById("generate-result");
+    const generateSummary = document.getElementById("generate-summary");
+    const generateJson = document.getElementById("generate-json");
+
+    generateBtn.addEventListener("click", async () => {
+      clearError();
+      const experiment = requireExperiment();
+      if (!experiment) return;
+      generateBtn.disabled = true;
+      generateResult.hidden = true;
+      generateStatus.textContent = "Extracting... this can take a few minutes.";
+      try {
+        const generateUrl = "api/input-collections/" + experiment.upload_id
+          + "/generate?collection_entry_id=" + encodeURIComponent(experiment.entry_id);
+        const res = await authFetch(generateUrl, { method: "POST" });
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          const detail = body && body.detail ? body.detail : res.statusText;
+          showError("Generate failed: " + detail);
+          return;
+        }
+        const data = await res.json();
+        generateSummary.textContent =
+          data.archive.samples.length + " sample(s), "
+          + data.archive.steps.length + " step(s): "
+          + data.step_types.join(" → ");
+        generateJson.textContent = JSON.stringify(data.archive, null, 2);
+        generateResult.hidden = false;
+      } catch (err) {
+        showError("Network error: " + err.message);
+      } finally {
+        generateBtn.disabled = false;
+        generateStatus.textContent = "";
       }
     });
 

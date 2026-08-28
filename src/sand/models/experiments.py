@@ -36,3 +36,11 @@ class InputCollectionListResponse(BaseModel):
 
 class CreateNoteRequest(BaseModel):
     text: str
+
+
+class GenerateResponse(BaseModel):
+    """The extracted hysprint archive; step_types = the chosen type per
+    step in plan order (a quick sanity check of the SELECT stage)."""
+
+    archive: dict
+    step_types: list[str]

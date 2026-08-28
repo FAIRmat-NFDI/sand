@@ -1,15 +1,20 @@
+import asyncio
 import json
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
 
 from sand.apis.deps import get_bearer_token
+from sand.hysprint.generate import HysprintInputError, assemble, route_inputs
+from sand.hysprint.step_extractor import extract_step
 from sand.models.experiments import (
     CreateHysprintExperimentRequest,
     CreateNoteRequest,
+    GenerateResponse,
     InputCollectionListResponse,
     InputCollectionResponse,
     InputCollectionSummaryModel,
 )
+from sand.services.extraction_runner import ExtractionError, ExtractionRunner
 from sand.services.nomad_upload import NomadAPIError, NomadAuthError
 from sand.services.voice_eln import (
     AUDIO_EXTENSIONS,
@@ -168,6 +173,70 @@ async def add_audio(
 
     return InputCollectionResponse(
         **_entry_response(voice, result.upload_id, result.entry_id)
+    )
+
+
+@router.post('/input-collections/{upload_id}/generate', response_model=GenerateResponse)
+async def generate_hysprint_experiment(
+    upload_id: str,
+    request: Request,
+    collection_entry_id: str | None = None,
+) -> GenerateResponse:
+    """Extract the experiment's inputs into the hysprint {samples, steps} archive.
+
+    Synchronous v1: the request waits for the per-step LLM extraction
+    (steps run concurrently). See issue #19 for the fire-and-forget plan.
+    """
+    voice = _voice_service(request)
+    runner: ExtractionRunner = request.app.state.extraction_runner
+    token = get_bearer_token(request)
+
+    try:
+        async with voice.build_client(token) as client:
+            inputs = await voice.collect_inputs(
+                client, upload_id, collection_entry_id=collection_entry_id
+            )
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    pending = [i for i in inputs if i.text is None]
+    if pending:
+        raise HTTPException(
+            status_code=409,
+            detail=f'{len(pending)} input(s) not transcribed or processed yet; '
+            'try again in a moment',
+        )
+
+    try:
+        info, step_texts = route_inputs(inputs)
+    except HysprintInputError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    async def extract_one(index: int, text: str) -> dict:
+        step_name = f'step {index + 1} ({text[:60]!r})'
+        try:
+            return await extract_step(runner, text)
+        except ExtractionError as exc:
+            raise HTTPException(
+                status_code=502, detail=f'LLM extraction failed for {step_name}: {exc}'
+            ) from exc
+        except TimeoutError as exc:
+            raise HTTPException(
+                status_code=504, detail=f'LLM extraction timed out for {step_name}'
+            ) from exc
+
+    slots = await asyncio.gather(
+        *(extract_one(i, text) for i, text in enumerate(step_texts))
+    )
+
+    try:
+        archive = assemble(info, list(slots))
+    except ValueError as exc:
+        # e.g. a narration names a sample label the form did not declare
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return GenerateResponse(
+        archive=archive, step_types=[slot['step_type'] for slot in slots]
     )
 
 
