@@ -176,16 +176,51 @@ async def add_audio(
     )
 
 
-@router.post('/input-collections/{upload_id}/generate', response_model=GenerateResponse)
-async def generate_hysprint_experiment(
+@router.post(
+    '/input-collections/{upload_id}/notes', response_model=InputCollectionResponse
+)
+async def add_note(
+    upload_id: str,
+    body: CreateNoteRequest,
+    request: Request,
+    collection_entry_id: str | None = None,
+) -> InputCollectionResponse:
+    """Add a typed step note (WrittenNote labeled 'step') to the experiment.
+
+    collection_entry_id pins the target collection exactly (an upload can
+    hold more than one); without it the upload's collection is discovered.
+    """
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    if not body.text.strip():
+        raise HTTPException(status_code=400, detail='Note text is empty')
+
+    try:
+        async with voice.build_client(token) as client:
+            result = await voice.add_written_note(
+                client,
+                upload_id,
+                body.text,
+                collection_entry_id=collection_entry_id,
+            )
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return InputCollectionResponse(
+        **_entry_response(voice, result.upload_id, result.entry_id)
+    )
+
+
+@router.post('/input-collections/{upload_id}/extract', response_model=ExtractResponse)
+async def extract_hysprint_experiment(
     upload_id: str,
     request: Request,
     collection_entry_id: str | None = None,
-) -> GenerateResponse:
-    """Extract the experiment's inputs into the hysprint {samples, steps} archive.
-    """
+) -> ExtractResponse:
+    """Extract the experiment's inputs into the hysprint {samples, steps} archive."""
     voice = _voice_service(request)
-    runner: ExtractionRunner = request.app.state.extraction_runner
+    runner: ExtractionService = request.app.state.extraction_service
     token = get_bearer_token(request)
 
     try:
@@ -232,42 +267,6 @@ async def generate_hysprint_experiment(
         # e.g. a narration names a sample label the form did not declare
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    return GenerateResponse(
+    return ExtractResponse(
         archive=archive, step_types=[slot['step_type'] for slot in slots]
-    )
-
-
-@router.post(
-    '/input-collections/{upload_id}/notes', response_model=InputCollectionResponse
-)
-async def add_note(
-    upload_id: str,
-    body: CreateNoteRequest,
-    request: Request,
-    collection_entry_id: str | None = None,
-) -> InputCollectionResponse:
-    """Add a typed step note (WrittenNote labeled 'step') to the experiment.
-
-    collection_entry_id pins the target collection exactly (an upload can
-    hold more than one); without it the upload's collection is discovered.
-    """
-    voice = _voice_service(request)
-    token = get_bearer_token(request)
-
-    if not body.text.strip():
-        raise HTTPException(status_code=400, detail='Note text is empty')
-
-    try:
-        async with voice.build_client(token) as client:
-            result = await voice.add_written_note(
-                client,
-                upload_id,
-                body.text,
-                collection_entry_id=collection_entry_id,
-            )
-    except NomadAPIError as exc:
-        raise _http_error(exc) from exc
-
-    return InputCollectionResponse(
-        **_entry_response(voice, result.upload_id, result.entry_id)
     )
