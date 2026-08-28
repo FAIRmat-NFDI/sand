@@ -1,11 +1,3 @@
-"""Extract one hysprint step narration: SELECT the step type, then FILL it.
-
-Two ExtractionWorkflow executions per step (docs/handover.md §4: select+fill,
-not tool-calling). The runner's schema validation replaces the experiment
-pilot's manual reply checks: the SELECT enum forces an on-list step type and
-FILL output must match the sliced step schema.
-"""
-
 from sand.hysprint.steps import (
     FILL_SYSTEM,
     SELECT_SYSTEM,

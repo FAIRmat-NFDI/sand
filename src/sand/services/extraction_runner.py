@@ -1,11 +1,3 @@
-"""Run one LLM extraction on NOMAD's Temporal infrastructure.
-
-The nomad-llm-extraction plugin's action entry point registers its
-workflows and activities on NOMAD's action worker (cpu-task-queue), so
-sand runs no worker of its own: it starts an ExtractionWorkflow there
-and awaits the result.
-"""
-
 import asyncio
 from uuid import uuid4
 
@@ -15,8 +7,6 @@ DEFAULT_TASK_QUEUE = 'cpu-task-queue'
 
 
 class ExtractionError(RuntimeError):
-    """The extraction workflow finished without valid extracted data."""
-
     def __init__(self, message: str, raw_output: str = '', retries: int = 0) -> None:
         self.raw_output = raw_output
         self.retries = retries
@@ -24,8 +14,6 @@ class ExtractionError(RuntimeError):
 
 
 class ExtractionRunner:
-    """One extract() call = one ExtractionWorkflow execution, unique id."""
-
     def __init__(
         self,
         model_name: str,
@@ -45,17 +33,6 @@ class ExtractionRunner:
         system_prompt: str,
         instruction_text: str = '',
     ) -> dict:
-        """One text + one JSON schema -> the validated extracted dict.
-
-        The workflow builds the prompt, calls the LLM (LiteLLM), parses and
-        validates the JSON against the schema, and self-corrects on failure;
-        an exhausted retry budget surfaces here as ExtractionError.
-        """
-        # Deferred imports: only needed when extraction actually runs, and
-        # the nomad-llm-extraction package is only present where the plugin
-        # is installed. get_client is nomad's own Temporal client
-        # (address/TLS/OIDC and the pydantic payload converter come from
-        # NOMAD's config).
         from nomad.actions.client import get_client
         from nomad_llm_extraction.pipeline.models import (
             ExtractionWorkflowInput,
@@ -73,6 +50,7 @@ class ExtractionRunner:
             ),
         )
 
+        # see issue #19, todo
         client = await get_client()
         result = await asyncio.wait_for(
             client.execute_workflow(
