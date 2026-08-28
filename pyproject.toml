@@ -28,7 +28,8 @@ dependencies = [
     "nomad-lab>=1.4.1",
     "pydantic",
     "temporalio",
-    "nomad-llm-extraction",
+    # nomad-llm-extraction and nomad-voice-eln are peer NOMAD plugins the
+    # distribution installs (not on PyPI); sand imports them lazily.
     "httpx>=0.23.3",
     "python-multipart>=0.0.18",
 ]
