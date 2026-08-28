@@ -9,12 +9,12 @@ from sand.hysprint.step_extractor import extract_step
 from sand.models.experiments import (
     CreateHysprintExperimentRequest,
     CreateNoteRequest,
-    GenerateResponse,
+    ExtractResponse,
     InputCollectionListResponse,
     InputCollectionResponse,
     InputCollectionSummaryModel,
 )
-from sand.services.extraction_runner import ExtractionError, ExtractionRunner
+from sand.services.extraction_service import ExtractionError, ExtractionService
 from sand.services.nomad_upload import NomadAPIError, NomadAuthError
 from sand.services.voice_eln import (
     AUDIO_EXTENSIONS,
@@ -183,9 +183,6 @@ async def generate_hysprint_experiment(
     collection_entry_id: str | None = None,
 ) -> GenerateResponse:
     """Extract the experiment's inputs into the hysprint {samples, steps} archive.
-
-    Synchronous v1: the request waits for the per-step LLM extraction
-    (steps run concurrently). See issue #19 for the fire-and-forget plan.
     """
     voice = _voice_service(request)
     runner: ExtractionRunner = request.app.state.extraction_runner

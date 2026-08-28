@@ -38,7 +38,7 @@ class CreateNoteRequest(BaseModel):
     text: str
 
 
-class GenerateResponse(BaseModel):
+class ExtractResponse(BaseModel):
     """The extracted hysprint archive; step_types = the chosen type per
     step in plan order (a quick sanity check of the SELECT stage)."""
 
