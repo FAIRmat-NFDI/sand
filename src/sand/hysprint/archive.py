@@ -78,10 +78,14 @@ def _nomad_id(project: str, batch, subbatch, sample: str) -> str:
 
 # TODO: collect substrate info in the experiment-info form instead of
 # hardcoding. The batch parser needs a non-empty substrate block: with the
-# columns present but empty it crashes (find_substrate returns None).
+# columns present but empty it crashes (find_substrate returns None). The
+# numeric field is load-bearing too - an all-string block gets pandas'
+# str dtype on one side of the parser's Series.equals and object on the
+# other, so rows never match; a number keeps both sides object.
 DEFAULT_SUBSTRATE = {
     'substrate_material': 'Glass',
     'substrate_conductive_layer': 'ITO',
+    'number_of_pixels': 6,
 }
 
 
