@@ -224,14 +224,9 @@ async def extract_hysprint_experiment(
     upload_id: str,
     request: Request,
     collection_entry_id: str | None = None,
-    dry_run: bool = False,
 ) -> HysprintExtractResponse:
     """Extract the experiment's inputs into the hysprint {samples, steps}
-    archive, lay it out as the batch sheet, upload the sheet (the hysprint
-    parser turns it into the derived experiment entry), and reference that
-    entry from the collection's derived_entries.
-
-    dry_run=true stops after extraction and returns the archive only.
+    archive, upload the resulting xlsx, and return the derived entry.
     """
     voice = _voice_service(request)
     runner: ExtractionService = request.app.state.extraction_service
@@ -282,9 +277,6 @@ async def extract_hysprint_experiment(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     step_types = [slot['step_type'] for slot in slots]
-    if dry_run:
-        return HysprintExtractResponse(archive=archive, step_types=step_types)
-
     grid, sheet_issues = to_sheet(archive)
     xlsx = grid_to_xlsx_bytes(grid)
     try:

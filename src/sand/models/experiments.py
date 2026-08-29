@@ -41,11 +41,10 @@ class CreateNoteRequest(BaseModel):
 class HysprintExtractResponse(BaseModel):
     """The extracted hysprint archive; step_types = the chosen type per
     step in plan order (a quick sanity check of the SELECT stage).
-    derived_entry/sheet_issues are unset on a dry run: derived_entry is
-    the sheet's batch-experiment entry in NOMAD, sheet_issues lists any
-    archive fields the sheet could not represent."""
+    derived_entry is the sheet's batch-experiment entry in NOMAD;
+    sheet_issues lists archive fields the sheet could not represent."""
 
     archive: dict
     step_types: list[str]
-    derived_entry: InputCollectionResponse | None = None
-    sheet_issues: list[str] = []
+    derived_entry: InputCollectionResponse
+    sheet_issues: list[str]
