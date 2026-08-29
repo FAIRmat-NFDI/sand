@@ -65,8 +65,6 @@ class ExtractionService:
                 timeout=self._timeout_s,
             )
         except WorkflowFailureError as exc:
-            # the workflow died (ApplicationError etc.) instead of returning
-            # an err_message result; surface the innermost cause
             cause = exc.cause
             while getattr(cause, 'cause', None) is not None:
                 cause = cause.cause

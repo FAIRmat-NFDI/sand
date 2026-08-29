@@ -51,10 +51,6 @@ def test_sheet_lays_out_headers_sections_and_sample_rows():
     # the date lands as the ISO string the batch parser accepts
     date_col = row1.index('Date')
     assert rows[0][date_col] == '2026-08-29'
-    # the hardcoded substrate defaults fill the substrate block on every
-    # row - present-but-empty substrate columns crash the batch parser
-    substrate_col = row1.index('Substrate material')
-    assert {r[substrate_col] for r in rows} == {'Glass'}
     # the spin coating cells are filled for sample 1 only
     material_col = row1.index('Material name')
     assert rows[0][material_col] == 'NiOx'

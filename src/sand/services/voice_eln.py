@@ -491,12 +491,6 @@ class VoiceElnService:
     async def _read_collection(
         self, client: httpx.AsyncClient, upload_id: str, mainfile: str
     ) -> dict:
-        """The collection mainfile's JSON, once the upload is idle.
-
-        Raw files land in staging asynchronously after a PUT, so wait for
-        processing to finish before reading — a plain GET right after a
-        write can 404 even though the write succeeded.
-        """
         await self._writer.wait_until_writable(
             client,
             upload_id,
@@ -533,14 +527,6 @@ class VoiceElnService:
         upload_id: str,
         collection_entry_id: str | None,
     ) -> str:
-        """Mainfile of the collection the caller addressed.
-
-        With an entry id, the target is exact: sand's own experiments use
-        the deterministic EXPERIMENT_MAINFILE (resolvable without the
-        index, which lags right after creation), anything else is looked
-        up by entry id. Without one, fall back to discovering the
-        upload's collection.
-        """
         if collection_entry_id is None:
             return await self._find_collection_mainfile(client, upload_id)
         if collection_entry_id == generate_entry_id(upload_id, EXPERIMENT_MAINFILE):
