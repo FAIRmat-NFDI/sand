@@ -1,6 +1,7 @@
 import asyncio
 import json
 import posixpath
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -496,11 +497,10 @@ class VoiceElnService:
         processing to finish before reading — a plain GET right after a
         write can 404 even though the write succeeded.
         """
-        loop = asyncio.get_running_loop()
         await self._writer.wait_until_writable(
             client,
             upload_id,
-            loop.time() + self._writer.write_timeout_s,
+            time.monotonic() + self._writer.write_timeout_s,
             mainfile,
         )
         response = await client.get(f'/uploads/{upload_id}/raw/{mainfile}')
