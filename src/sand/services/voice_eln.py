@@ -1,5 +1,6 @@
 import asyncio
 import posixpath
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -304,7 +305,13 @@ class VoiceElnService:
         sheet_mainfile: str,
         collection_entry_id: str,
     ) -> EntryHandle:
-        """Store the derived experiment sheet and link it from the collection."""
+        """Store the derived experiment sheet and link it from the collection.
+
+        derived_entries is REPLACED with the sheet's entry plus every entry
+        its parse created (the sheet entry's processed_archive) - a
+        regenerate can produce a different entry set, so appending would
+        accumulate stale references.
+        """
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
@@ -318,10 +325,71 @@ class VoiceElnService:
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
         entry_id = generate_entry_id(upload_id, sheet_mainfile)
-        await self._append_to_collection(
-            client, upload_id, 'derived_entries', entry_id, mainfile
+
+        # The parsed entries exist only once the upload finished processing
+        # the sheet; read_archive above already waits for idle, but the PUT
+        # just re-triggered processing, so wait again.
+        await self._writer.wait_until_writable(
+            client,
+            upload_id,
+            time.monotonic() + self._writer.write_timeout_s,
+            sheet_mainfile,
+        )
+        parsed_ids = await self._processed_entry_ids(client, entry_id)
+        await self._set_collection_refs(
+            client, upload_id, 'derived_entries', [entry_id, *parsed_ids], mainfile
         )
         return EntryHandle(upload_id=upload_id, entry_id=entry_id)
+
+    async def _processed_entry_ids(
+        self, client: httpx.AsyncClient, sheet_entry_id: str, attempts: int = 5
+    ) -> list[str]:
+        """Entry ids the sheet's parse created (its processed_archive).
+
+        A few short retries cover the gap between the upload reporting idle
+        and the entry archive being readable; an empty result (parse failed
+        or still pending) is not an error - the caller links the sheet
+        entry alone.
+        """
+        for attempt in range(attempts):
+            response = await client.get(f'/entries/{sheet_entry_id}/archive')
+            if response.status_code != HTTPStatus.NOT_FOUND:
+                check_response(response, step='read_derived_entries')
+                try:
+                    body = response.json()
+                except ValueError:
+                    body = {}
+                section = ((body.get('data') or {}).get('archive') or {}).get(
+                    'data'
+                ) or {}
+                refs = section.get('processed_archive')
+                if isinstance(refs, list) and refs:
+                    return [entry_id_from_ref(ref) for ref in refs]
+            if attempt < attempts - 1:
+                await asyncio.sleep(self._writer.retry_interval_s)
+        return []
+
+    async def _set_collection_refs(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        field: str,
+        entry_ids: list[str],
+        mainfile: str,
+    ) -> None:
+        """Replace the field's references with exactly these entries."""
+        archive = await self._writer.read_archive(client, upload_id, mainfile)
+        data = archive.get('data')
+        if not isinstance(data, dict):
+            raise NomadAPIError(
+                0,
+                f'Experiment mainfile {mainfile} has no data section',
+                step='read_collection',
+            )
+        refs = [entry_ref(upload_id, entry_id) for entry_id in entry_ids]
+        if data.get(field) != refs:
+            data[field] = refs
+            await self._writer.write_archive(client, upload_id, mainfile, archive)
 
     async def collect_inputs(
         self,
