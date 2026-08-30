@@ -20,7 +20,7 @@ from sand.models.experiments import (
     InputCollectionSummaryModel,
 )
 from sand.services.extraction_service import ExtractionError, ExtractionService
-from sand.services.nomad_upload import NomadAPIError, NomadAuthError
+from sand.services.nomad_api import NomadAPIError, NomadAuthError
 from sand.services.voice_eln import (
     AUDIO_EXTENSIONS,
     VoiceElnService,

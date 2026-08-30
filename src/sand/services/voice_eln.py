@@ -9,7 +9,7 @@ from http import HTTPStatus
 import httpx
 from nomad.utils import generate_entry_id
 
-from sand.services.nomad_upload import (
+from sand.services.nomad_api import (
     NomadAPIError,
     RawFileWriter,
     build_client,

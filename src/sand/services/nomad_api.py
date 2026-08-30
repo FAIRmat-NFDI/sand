@@ -1,14 +1,12 @@
+"""Generic NOMAD REST API plumbing: client, errors, upload/raw-file helpers."""
+
 import asyncio
-import json
 import time
 from dataclasses import dataclass
 from http import HTTPStatus
 from urllib.parse import urlparse, urlunparse
 
 import httpx
-
-# Mainfile name the archive is uploaded under (see NomadUploader.upload).
-ARCHIVE_FILENAME = 'entry.archive.json'
 
 # Lowest HTTP status code that counts as an error response.
 HTTP_ERROR_STATUS = 400
@@ -175,48 +173,3 @@ class RawFileWriter:
         except ValueError:
             return False
         return bool(data.get('process_running'))
-
-
-@dataclass
-class UploadResult:
-    upload_id: str
-    entry_url: str
-
-
-class NomadUploader:
-    def __init__(
-        self,
-        base_url: str,
-        retry_interval_s: float = 1.0,
-        write_timeout_s: float = 60.0,
-    ) -> None:
-        self._base_url = base_url
-        self._writer = RawFileWriter(retry_interval_s, write_timeout_s)
-
-    def build_client(self, token: str) -> httpx.AsyncClient:
-        return build_client(self._base_url, token)
-
-    async def upload(self, archive: dict, token: str) -> UploadResult:
-        """Upload a single archive dict as entry.archive.json."""
-        async with self.build_client(token) as client:
-            return await self.upload_with_client(client, archive)
-
-    async def upload_with_client(
-        self, client: httpx.AsyncClient, archive: dict
-    ) -> UploadResult:
-        """Upload one archive over an existing client.
-
-        Lets callers reuse a single connection pool across several uploads.
-        """
-        upload_id = await create_upload(client)
-        await self._writer.upload_raw_file(
-            client,
-            upload_id,
-            ARCHIVE_FILENAME,
-            json.dumps(archive).encode(),
-            'application/json',
-        )
-        return UploadResult(upload_id=upload_id, entry_url=self._entry_url(upload_id))
-
-    def _entry_url(self, upload_id: str) -> str:
-        return gui_upload_url(self._base_url, upload_id)
