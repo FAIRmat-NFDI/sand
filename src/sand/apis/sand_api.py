@@ -1,14 +1,20 @@
+import json
 from pathlib import Path
 
-from fastapi import Depends, FastAPI
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from nomad.app.v1.routers.auth import get_current_user
 from nomad.config import config
 
 from sand.apis.routers.experiments import router as experiments_router
+from sand.hysprint.generate import HysprintInputError
 from sand.services.extraction_service import ExtractionService
+from sand.services.nomad_api import NomadAPIError, NomadAuthError
 from sand.services.voice_eln import VoiceElnService
+
+# NOMAD statuses passed through to the caller as-is.
+CLIENT_ERROR_STATUSES = (400, 404, 409)
 
 # TODO: this need to be updated maybe to uplaod access when the api scope is supprted.
 require_login = Depends(get_current_user({}, allow_anonymous=False))
@@ -35,6 +41,34 @@ app.state.extraction_service = ExtractionService(
 )
 
 app.include_router(experiments_router, prefix='/api', dependencies=[require_login])
+
+
+def _nomad_detail(exc: NomadAPIError) -> str:
+    """The human-readable message: NOMAD errors carry a raw JSON body."""
+    try:
+        body = json.loads(exc.detail)
+    except ValueError:
+        return exc.detail
+    if isinstance(body, dict) and isinstance(body.get('detail'), str):
+        return body['detail']
+    return exc.detail
+
+
+@app.exception_handler(NomadAPIError)
+async def nomad_api_error_handler(request: Request, exc: NomadAPIError):
+    """Translate NOMAD API failures instead of try/except in every endpoint."""
+    if isinstance(exc, NomadAuthError):
+        return JSONResponse(status_code=401, content={'detail': _nomad_detail(exc)})
+    if exc.status_code in CLIENT_ERROR_STATUSES:
+        return JSONResponse(
+            status_code=exc.status_code, content={'detail': _nomad_detail(exc)}
+        )
+    return JSONResponse(status_code=502, content={'detail': str(exc)})
+
+
+@app.exception_handler(HysprintInputError)
+async def hysprint_input_error_handler(request: Request, exc: HysprintInputError):
+    return JSONResponse(status_code=400, content={'detail': str(exc)})
 
 
 @app.get('/auth/config')
