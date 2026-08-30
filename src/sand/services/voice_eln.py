@@ -345,11 +345,6 @@ class VoiceElnService:
         self, client: httpx.AsyncClient, sheet_entry_id: str, attempts: int = 5
     ) -> list[str]:
         """Entry ids the sheet's parse created (its processed_archive).
-
-        A few short retries cover the gap between the upload reporting idle
-        and the entry archive being readable; an empty result (parse failed
-        or still pending) is not an error - the caller links the sheet
-        entry alone.
         """
         for attempt in range(attempts):
             response = await client.get(f'/entries/{sheet_entry_id}/archive')
@@ -377,7 +372,7 @@ class VoiceElnService:
         entry_ids: list[str],
         mainfile: str,
     ) -> None:
-        """Replace the field's references with exactly these entries."""
+        """Replace the field's references with the xlxs file and its parsed entries"""
         archive = await self._writer.read_archive(client, upload_id, mainfile)
         data = archive.get('data')
         if not isinstance(data, dict):
