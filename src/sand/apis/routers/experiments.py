@@ -133,12 +133,12 @@ async def add_audio(
     upload_id: str,
     file: UploadFile,
     request: Request,
-    collection_entry_id: str | None = None,
+    collection_entry_id: str,
 ) -> InputCollectionResponse:
     """Add audio to an InputCollection entry.
 
-    collection_entry_id pins the target collection exactly (an upload can
-    hold more than one); without it the upload's collection is discovered.
+    collection_entry_id names the target collection exactly (an upload
+    can hold more than one).
     """
     voice = _voice_service(request)
     token = get_bearer_token(request)
@@ -188,12 +188,12 @@ async def add_note(
     upload_id: str,
     body: CreateNoteRequest,
     request: Request,
-    collection_entry_id: str | None = None,
+    collection_entry_id: str,
 ) -> InputCollectionResponse:
     """Add a typed step note (WrittenNote labeled 'step') to the experiment.
 
-    collection_entry_id pins the target collection exactly (an upload can
-    hold more than one); without it the upload's collection is discovered.
+    collection_entry_id names the target collection exactly (an upload
+    can hold more than one).
     """
     voice = _voice_service(request)
     token = get_bearer_token(request)
@@ -223,7 +223,7 @@ async def add_note(
 async def extract_hysprint_experiment(
     upload_id: str,
     request: Request,
-    collection_entry_id: str | None = None,
+    collection_entry_id: str,
 ) -> HysprintExtractResponse:
     """Extract the experiment's inputs into the hysprint {samples, steps}
     archive, upload the resulting xlsx, and return the derived entry.
