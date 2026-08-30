@@ -1,6 +1,7 @@
-"""Generic NOMAD REST API plumbing: client, errors, upload/raw-file helpers."""
+"""Generic NOMAD REST API plumbing: client, errors, refs, URLs, raw files."""
 
 import asyncio
+import json
 import time
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -30,6 +31,27 @@ def gui_upload_url(base_url: str, upload_id: str) -> str:
     #   {base}/gui/user/uploads/upload/id/{upload_id}
     gui_base = urlunparse((parsed.scheme, netloc, f'{path}/gui', '', '', ''))
     return f'{gui_base}/user/uploads/upload/id/{upload_id}'
+
+
+def gui_entry_url(base_url: str, upload_id: str, entry_id: str) -> str:
+    """Build the NOMAD GUI URL for one entry."""
+    return f'{gui_upload_url(base_url, upload_id)}/entry/id/{entry_id}'
+
+
+def entry_ref(upload_id: str, entry_id: str) -> str:
+    """The reference string NOMAD's entry references use."""
+    return f'../uploads/{upload_id}/archive/{entry_id}#/data'
+
+
+def entry_id_from_ref(ref: str) -> str:
+    """The entry id inside a '../uploads/{uid}/archive/{eid}#/data' reference."""
+    _, sep, rest = str(ref).partition('/archive/')
+    entry_id = rest.split('#', 1)[0].strip('/')
+    if not sep or not entry_id or '/' in entry_id:
+        raise NomadAPIError(
+            0, f'Unparseable entry reference: {ref!r}', step='entry_ref'
+        )
+    return entry_id
 
 
 class NomadAPIError(Exception):
@@ -161,6 +183,50 @@ class RawFileWriter:
                     step='upload_raw_file',
                 )
             await asyncio.sleep(self.retry_interval_s)
+
+    async def write_archive(
+        self, client: httpx.AsyncClient, upload_id: str, mainfile: str, archive: dict
+    ) -> None:
+        """Serialize the archive dict and PUT it as the raw mainfile."""
+        await self.upload_raw_file(
+            client,
+            upload_id,
+            mainfile,
+            json.dumps(archive).encode(),
+            'application/json',
+        )
+
+    async def read_archive(
+        self, client: httpx.AsyncClient, upload_id: str, mainfile: str
+    ) -> dict:
+        """The raw mainfile's JSON, once the upload is idle.
+
+        Raw files land in staging asynchronously after a PUT, so wait for
+        processing to finish before reading - a plain GET right after a
+        write can 404 even though the write succeeded.
+        """
+        await self.wait_until_writable(
+            client, upload_id, time.monotonic() + self.write_timeout_s, mainfile
+        )
+        response = await client.get(f'/uploads/{upload_id}/raw/{mainfile}')
+        if response.status_code == HTTPStatus.NOT_FOUND:
+            raise NomadAPIError(
+                HTTPStatus.NOT_FOUND,
+                f'No mainfile {mainfile} found in upload {upload_id}',
+                step='read_archive',
+            )
+        check_response(response, step='read_archive')
+        try:
+            archive = response.json()
+        except ValueError:
+            raise NomadAPIError(
+                0, f'Mainfile {mainfile} is not valid JSON', step='read_archive'
+            )
+        if not isinstance(archive, dict):
+            raise NomadAPIError(
+                0, f'Mainfile {mainfile} is not a JSON object', step='read_archive'
+            )
+        return archive
 
     async def _upload_is_processing(
         self, client: httpx.AsyncClient, upload_id: str

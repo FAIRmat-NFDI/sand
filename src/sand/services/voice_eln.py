@@ -1,7 +1,5 @@
 import asyncio
-import json
 import posixpath
-import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -15,7 +13,9 @@ from sand.services.nomad_api import (
     build_client,
     check_response,
     create_upload,
-    gui_upload_url,
+    entry_id_from_ref,
+    entry_ref,
+    gui_entry_url,
 )
 
 INPUT_COLLECTION_M_DEF = (
@@ -53,21 +53,6 @@ def normalize_audio_filename(filename: str) -> str | None:
     if ext not in AUDIO_EXTENSIONS:
         return None
     return f'{stem}.{ext}'
-
-
-def entry_ref(upload_id: str, entry_id: str) -> str:
-    return f'../uploads/{upload_id}/archive/{entry_id}#/data'
-
-
-def _entry_id_from_ref(ref: str) -> str:
-    """The entry id inside a '../uploads/{uid}/archive/{eid}#/data' reference."""
-    _, sep, rest = str(ref).partition('/archive/')
-    entry_id = rest.split('#', 1)[0].strip('/')
-    if not sep or not entry_id or '/' in entry_id:
-        raise NomadAPIError(
-            0, f'Unparseable entry reference: {ref!r}', step='collect_inputs'
-        )
-    return entry_id
 
 
 def _parse_input_datetime(value) -> datetime | None:
@@ -140,8 +125,7 @@ class VoiceElnService:
         return build_client(self._base_url, token)
 
     def entry_url(self, upload_id: str, entry_id: str) -> str:
-        upload_url = gui_upload_url(self._base_url, upload_id)
-        return f'{upload_url}/entry/id/{entry_id}'
+        return gui_entry_url(self._base_url, upload_id, entry_id)
 
     async def list_input_collections(
         self, client: httpx.AsyncClient
@@ -192,7 +176,7 @@ class VoiceElnService:
         self, client: httpx.AsyncClient, name: str
     ) -> EntryHandle:
         upload_id = await create_upload(client, upload_name=name)
-        await self._write_archive(
+        await self._writer.write_archive(
             client,
             upload_id,
             EXPERIMENT_MAINFILE,
@@ -252,7 +236,7 @@ class VoiceElnService:
         collection_mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
-        await self._write_archive(
+        await self._writer.write_archive(
             client,
             upload_id,
             note.mainfile,
@@ -295,12 +279,12 @@ class VoiceElnService:
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
-        await self._read_collection(client, upload_id, mainfile)
+        await self._writer.read_archive(client, upload_id, mainfile)
 
         # Timestamp prefix: recordings all arrive as e.g. 'recording.webm',
         # and a second file with the same name would overwrite the first.
         stored_name = f'{_utc_now_stamp()}_{posixpath.basename(filename)}'
-        await self._upload_raw_file(
+        await self._writer.upload_raw_file(
             client, upload_id, stored_name, audio, 'application/octet-stream'
         )
 
@@ -324,9 +308,9 @@ class VoiceElnService:
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
-        await self._read_collection(client, upload_id, mainfile)
+        await self._writer.read_archive(client, upload_id, mainfile)
 
-        await self._upload_raw_file(
+        await self._writer.upload_raw_file(
             client,
             upload_id,
             sheet_mainfile,
@@ -356,7 +340,7 @@ class VoiceElnService:
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
-        archive = await self._read_collection(client, upload_id, mainfile)
+        archive = await self._writer.read_archive(client, upload_id, mainfile)
         data = archive.get('data')
         if not isinstance(data, dict):
             raise NomadAPIError(
@@ -370,7 +354,7 @@ class VoiceElnService:
         for kind, field in (('audio', 'audios'), ('note', 'notes')):
             refs = data.get(field)
             for ref in refs if isinstance(refs, list) else []:
-                entry_id = _entry_id_from_ref(ref)
+                entry_id = entry_id_from_ref(ref)
                 if entry_id not in seen:
                     seen.add(entry_id)
                     targets.append((entry_id, kind))
@@ -426,29 +410,6 @@ class VoiceElnService:
             datetime=section.get('datetime'),
         )
 
-    async def _upload_raw_file(
-        self,
-        client: httpx.AsyncClient,
-        upload_id: str,
-        file_name: str,
-        content: bytes,
-        content_type: str,
-    ) -> None:
-        await self._writer.upload_raw_file(
-            client, upload_id, file_name, content, content_type
-        )
-
-    async def _write_archive(
-        self, client: httpx.AsyncClient, upload_id: str, mainfile: str, archive: dict
-    ) -> None:
-        await self._upload_raw_file(
-            client,
-            upload_id,
-            mainfile,
-            json.dumps(archive).encode(),
-            'application/json',
-        )
-
     async def _append_to_collection(
         self,
         client: httpx.AsyncClient,
@@ -463,7 +424,7 @@ class VoiceElnService:
         the same experiment can race here (accepted for now, see the design
         discussion).
         """
-        archive = await self._read_collection(client, upload_id, mainfile)
+        archive = await self._writer.read_archive(client, upload_id, mainfile)
         data = archive.get('data')
         if not isinstance(data, dict):
             raise NomadAPIError(
@@ -479,40 +440,7 @@ class VoiceElnService:
         ref = entry_ref(upload_id, entry_id)
         if ref not in refs:
             refs.append(ref)
-            await self._write_archive(client, upload_id, mainfile, archive)
-
-    async def _read_collection(
-        self, client: httpx.AsyncClient, upload_id: str, mainfile: str
-    ) -> dict:
-        await self._writer.wait_until_writable(
-            client,
-            upload_id,
-            time.monotonic() + self._writer.write_timeout_s,
-            mainfile,
-        )
-        response = await client.get(f'/uploads/{upload_id}/raw/{mainfile}')
-        if response.status_code == HTTPStatus.NOT_FOUND:
-            raise NomadAPIError(
-                HTTPStatus.NOT_FOUND,
-                f'No experiment entry ({mainfile}) found in upload {upload_id}',
-                step='read_collection',
-            )
-        check_response(response, step='read_collection')
-        try:
-            archive = response.json()
-        except ValueError:
-            raise NomadAPIError(
-                0,
-                f'Experiment mainfile {mainfile} is not valid JSON',
-                step='read_collection',
-            )
-        if not isinstance(archive, dict):
-            raise NomadAPIError(
-                0,
-                f'Experiment mainfile {mainfile} is not a JSON object',
-                step='read_collection',
-            )
-        return archive
+            await self._writer.write_archive(client, upload_id, mainfile, archive)
 
     async def _resolve_collection_mainfile(
         self,
