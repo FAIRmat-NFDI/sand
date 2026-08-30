@@ -1,5 +1,7 @@
 import asyncio
 import posixpath
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -108,8 +110,11 @@ class VoiceElnService:
 
     One experiment = one NOMAD upload holding an InputCollection entry
     (EXPERIMENT_MAINFILE) plus the WrittenNote entries and audio files.
-     Audio files are turned into AudioInput entries by the
+    Audio files are turned into AudioInput entries by the
     nomad-voice-eln parser and transcribed inside NOMAD.
+
+    Holds only configuration; the operations live on VoiceElnSession,
+    opened per request via `async with service.session(token)`.
     """
 
     def __init__(
@@ -121,14 +126,31 @@ class VoiceElnService:
         self._base_url = base_url
         self._writer = RawFileWriter(retry_interval_s, write_timeout_s)
 
-    def build_client(self, token: str) -> httpx.AsyncClient:
-        return build_client(self._base_url, token)
+    def entry_url(self, upload_id: str, entry_id: str) -> str:
+        return gui_entry_url(self._base_url, upload_id, entry_id)
+
+    @asynccontextmanager
+    async def session(self, token: str) -> AsyncIterator['VoiceElnSession']:
+        """One authenticated client shared by all of a request's calls."""
+        async with build_client(self._base_url, token) as client:
+            yield VoiceElnSession(client, self._writer, self._base_url)
+
+
+class VoiceElnSession:
+    """The voice-eln operations, bound to one authenticated client."""
+
+    def __init__(
+        self, client: httpx.AsyncClient, writer: RawFileWriter, base_url: str
+    ) -> None:
+        self._client = client
+        self._writer = writer
+        self._base_url = base_url
 
     def entry_url(self, upload_id: str, entry_id: str) -> str:
         return gui_entry_url(self._base_url, upload_id, entry_id)
 
     async def list_input_collections(
-        self, client: httpx.AsyncClient
+        self,
     ) -> list[InputCollectionSummary]:
         """The user's unpublished InputCollection entries (published ones
         are read-only)."""
@@ -142,7 +164,7 @@ class VoiceElnService:
             }
             if page_after_value:
                 pagination['page_after_value'] = page_after_value
-            response = await client.post(
+            response = await self._client.post(
                 '/entries/query',
                 json={
                     'owner': 'user',
@@ -172,12 +194,10 @@ class VoiceElnService:
             for entry in entries
         ]
 
-    async def create_input_collection(
-        self, client: httpx.AsyncClient, name: str
-    ) -> EntryHandle:
-        upload_id = await create_upload(client, upload_name=name)
+    async def create_input_collection(self, name: str) -> EntryHandle:
+        upload_id = await create_upload(self._client, upload_name=name)
         await self._writer.write_archive(
-            client,
+            self._client,
             upload_id,
             EXPERIMENT_MAINFILE,
             {
@@ -195,7 +215,6 @@ class VoiceElnService:
 
     async def add_written_note(
         self,
-        client: httpx.AsyncClient,
         upload_id: str,
         text: str,
         collection_entry_id: str,
@@ -207,11 +226,10 @@ class VoiceElnService:
         """
         mainfile = f'note_{_utc_now_stamp()}.archive.json'
         note = _Note(text=text, label=STEP_LABEL, mainfile=mainfile)
-        return await self._add_note(client, upload_id, note, collection_entry_id)
+        return await self._add_note(upload_id, note, collection_entry_id)
 
     async def add_experiment_info(
         self,
-        client: httpx.AsyncClient,
         upload_id: str,
         info_json: str,
         collection_entry_id: str,
@@ -223,21 +241,20 @@ class VoiceElnService:
             label=EXPERIMENT_INFO_LABEL,
             mainfile=EXPERIMENT_INFO_MAINFILE,
         )
-        return await self._add_note(client, upload_id, note, collection_entry_id)
+        return await self._add_note(upload_id, note, collection_entry_id)
 
     async def _add_note(
         self,
-        client: httpx.AsyncClient,
         upload_id: str,
         note: '_Note',
         collection_entry_id: str,
     ) -> EntryHandle:
         """Create the WrittenNote entry and reference it from the collection."""
         collection_mainfile = await self._resolve_collection_mainfile(
-            client, upload_id, collection_entry_id
+            upload_id, collection_entry_id
         )
         await self._writer.write_archive(
-            client,
+            self._client,
             upload_id,
             note.mainfile,
             {
@@ -255,13 +272,12 @@ class VoiceElnService:
             entry_id=generate_entry_id(upload_id, note.mainfile),
         )
         await self._append_to_collection(
-            client, upload_id, 'notes', handle.entry_id, collection_mainfile
+            upload_id, 'notes', handle.entry_id, collection_mainfile
         )
         return handle
 
     async def add_audio(
         self,
-        client: httpx.AsyncClient,
         upload_id: str,
         audio: bytes,
         filename: str,
@@ -277,28 +293,25 @@ class VoiceElnService:
         # reference it from; otherwise the file would sit orphaned in the
         # upload and every retry would deposit another copy.
         mainfile = await self._resolve_collection_mainfile(
-            client, upload_id, collection_entry_id
+            upload_id, collection_entry_id
         )
-        await self._writer.read_archive(client, upload_id, mainfile)
+        await self._writer.read_archive(self._client, upload_id, mainfile)
 
         # Timestamp prefix: recordings all arrive as e.g. 'recording.webm',
         # and a second file with the same name would overwrite the first.
         stored_name = f'{_utc_now_stamp()}_{posixpath.basename(filename)}'
         await self._writer.upload_raw_file(
-            client, upload_id, stored_name, audio, 'application/octet-stream'
+            self._client, upload_id, stored_name, audio, 'application/octet-stream'
         )
 
         # The parser creates the AudioInput entry under a deterministic
         # companion mainfile, so the entry id is known before the entry exists.
         entry_id = generate_entry_id(upload_id, f'{stored_name}.archive.json')
-        await self._append_to_collection(
-            client, upload_id, 'audios', entry_id, mainfile
-        )
+        await self._append_to_collection(upload_id, 'audios', entry_id, mainfile)
         return EntryHandle(upload_id=upload_id, entry_id=entry_id)
 
     async def add_derived_sheet(
         self,
-        client: httpx.AsyncClient,
         upload_id: str,
         xlsx: bytes,
         sheet_mainfile: str,
@@ -306,12 +319,12 @@ class VoiceElnService:
     ) -> EntryHandle:
         """Store the derived experiment sheet and link it from the collection."""
         mainfile = await self._resolve_collection_mainfile(
-            client, upload_id, collection_entry_id
+            upload_id, collection_entry_id
         )
-        await self._writer.read_archive(client, upload_id, mainfile)
+        await self._writer.read_archive(self._client, upload_id, mainfile)
 
         await self._writer.upload_raw_file(
-            client,
+            self._client,
             upload_id,
             sheet_mainfile,
             xlsx,
@@ -319,13 +332,12 @@ class VoiceElnService:
         )
         entry_id = generate_entry_id(upload_id, sheet_mainfile)
         await self._append_to_collection(
-            client, upload_id, 'derived_entries', entry_id, mainfile
+            upload_id, 'derived_entries', entry_id, mainfile
         )
         return EntryHandle(upload_id=upload_id, entry_id=entry_id)
 
     async def collect_inputs(
         self,
-        client: httpx.AsyncClient,
         upload_id: str,
         collection_entry_id: str,
     ) -> list[CollectedInput]:
@@ -338,9 +350,9 @@ class VoiceElnService:
         nomad-voice-eln#41 is fixed.
         """
         mainfile = await self._resolve_collection_mainfile(
-            client, upload_id, collection_entry_id
+            upload_id, collection_entry_id
         )
-        archive = await self._writer.read_archive(client, upload_id, mainfile)
+        archive = await self._writer.read_archive(self._client, upload_id, mainfile)
         data = archive.get('data')
         if not isinstance(data, dict):
             raise NomadAPIError(
@@ -360,7 +372,7 @@ class VoiceElnService:
                     targets.append((entry_id, kind))
 
         inputs = await asyncio.gather(
-            *(self._fetch_input(client, entry_id, kind) for entry_id, kind in targets)
+            *(self._fetch_input(entry_id, kind) for entry_id, kind in targets)
         )
 
         def sort_key(item: CollectedInput):
@@ -373,10 +385,8 @@ class VoiceElnService:
 
         return sorted(inputs, key=sort_key)
 
-    async def _fetch_input(
-        self, client: httpx.AsyncClient, entry_id: str, kind: str
-    ) -> CollectedInput:
-        response = await client.get(f'/entries/{entry_id}/archive')
+    async def _fetch_input(self, entry_id: str, kind: str) -> CollectedInput:
+        response = await self._client.get(f'/entries/{entry_id}/archive')
         if response.status_code == HTTPStatus.NOT_FOUND:
             return CollectedInput(
                 entry_id=entry_id, kind=kind, text=None, label='', datetime=None
@@ -412,7 +422,6 @@ class VoiceElnService:
 
     async def _append_to_collection(
         self,
-        client: httpx.AsyncClient,
         upload_id: str,
         field: str,
         entry_id: str,
@@ -424,7 +433,7 @@ class VoiceElnService:
         the same experiment can race here (accepted for now, see the design
         discussion).
         """
-        archive = await self._writer.read_archive(client, upload_id, mainfile)
+        archive = await self._writer.read_archive(self._client, upload_id, mainfile)
         data = archive.get('data')
         if not isinstance(data, dict):
             raise NomadAPIError(
@@ -440,18 +449,17 @@ class VoiceElnService:
         ref = entry_ref(upload_id, entry_id)
         if ref not in refs:
             refs.append(ref)
-            await self._writer.write_archive(client, upload_id, mainfile, archive)
+            await self._writer.write_archive(self._client, upload_id, mainfile, archive)
 
     async def _resolve_collection_mainfile(
         self,
-        client: httpx.AsyncClient,
         upload_id: str,
         collection_entry_id: str,
     ) -> str:
         """return mainfile path"""
         if collection_entry_id == generate_entry_id(upload_id, EXPERIMENT_MAINFILE):
             return EXPERIMENT_MAINFILE
-        response = await client.post(
+        response = await self._client.post(
             '/entries/query',
             json={
                 'owner': 'visible',

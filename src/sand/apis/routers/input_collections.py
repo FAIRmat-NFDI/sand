@@ -73,8 +73,8 @@ async def list_input_collections(request: Request) -> InputCollectionListRespons
     token = get_bearer_token(request)
 
     try:
-        async with voice.build_client(token) as client:
-            input_collections = await voice.list_input_collections(client)
+        async with voice.session(token) as session:
+            input_collections = await session.list_input_collections()
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
@@ -109,11 +109,10 @@ async def create_hysprint_input_collection(
         )
 
     try:
-        async with voice.build_client(token) as client:
-            result = await voice.create_input_collection(client, name)
+        async with voice.session(token) as session:
+            result = await session.create_input_collection(name)
             if info:
-                await voice.add_experiment_info(
-                    client,
+                await session.add_experiment_info(
                     result.upload_id,
                     json.dumps(info),
                     collection_entry_id=result.entry_id,
@@ -165,9 +164,8 @@ async def add_audio(
         raise HTTPException(status_code=400, detail='Uploaded file is empty')
 
     try:
-        async with voice.build_client(token) as client:
-            result = await voice.add_audio(
-                client,
+        async with voice.session(token) as session:
+            result = await session.add_audio(
                 upload_id,
                 audio,
                 filename,
@@ -202,9 +200,8 @@ async def add_note(
         raise HTTPException(status_code=400, detail='Note text is empty')
 
     try:
-        async with voice.build_client(token) as client:
-            result = await voice.add_written_note(
-                client,
+        async with voice.session(token) as session:
+            result = await session.add_written_note(
                 upload_id,
                 body.text,
                 collection_entry_id=collection_entry_id,
@@ -233,9 +230,9 @@ async def extract_hysprint_experiment(
     token = get_bearer_token(request)
 
     try:
-        async with voice.build_client(token) as client:
-            inputs = await voice.collect_inputs(
-                client, upload_id, collection_entry_id=collection_entry_id
+        async with voice.session(token) as session:
+            inputs = await session.collect_inputs(
+                upload_id, collection_entry_id=collection_entry_id
             )
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
@@ -280,9 +277,8 @@ async def extract_hysprint_experiment(
     grid, sheet_issues = to_sheet(archive)
     xlsx = grid_to_xlsx_bytes(grid)
     try:
-        async with voice.build_client(token) as client:
-            derived = await voice.add_derived_sheet(
-                client,
+        async with voice.session(token) as session:
+            derived = await session.add_derived_sheet(
                 upload_id,
                 xlsx,
                 DERIVED_SHEET_MAINFILE,

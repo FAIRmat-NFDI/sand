@@ -5,10 +5,16 @@ import httpx
 import pytest
 from nomad.utils import generate_entry_id
 
-from sand.services.nomad_api import NomadAPIError, NomadAuthError, entry_ref
+from sand.services.nomad_api import (
+    NomadAPIError,
+    NomadAuthError,
+    RawFileWriter,
+    build_client,
+    entry_ref,
+)
 from sand.services.voice_eln import (
     EXPERIMENT_MAINFILE,
-    VoiceElnService,
+    VoiceElnSession,
     normalize_audio_filename,
 )
 
@@ -17,9 +23,10 @@ UPLOAD_ID = 'up-123'
 SAND_COLLECTION_ID = generate_entry_id(UPLOAD_ID, EXPERIMENT_MAINFILE)
 
 
-def _service() -> VoiceElnService:
+def _session(client: httpx.AsyncClient) -> VoiceElnSession:
     # retry_interval_s=0: no sleeps in tests
-    return VoiceElnService(BASE_URL, retry_interval_s=0, write_timeout_s=5)
+    writer = RawFileWriter(retry_interval_s=0, write_timeout_s=5)
+    return VoiceElnSession(client, writer, BASE_URL)
 
 
 def _client(handler) -> httpx.AsyncClient:
@@ -120,10 +127,10 @@ async def test_create_experiment_writes_collection_and_info_note():
     fake = _FakeNomad()
 
     async with _client(fake) as client:
-        service = _service()
-        result = await service.create_input_collection(client, 'perov_B1_a')
-        await service.add_experiment_info(
-            client, UPLOAD_ID, json.dumps(INFO), collection_entry_id=SAND_COLLECTION_ID
+        session = _session(client)
+        result = await session.create_input_collection('perov_B1_a')
+        await session.add_experiment_info(
+            UPLOAD_ID, json.dumps(INFO), collection_entry_id=SAND_COLLECTION_ID
         )
 
     assert result.upload_id == UPLOAD_ID
@@ -145,7 +152,7 @@ async def test_create_experiment_without_info_has_no_notes():
     fake = _FakeNomad()
 
     async with _client(fake) as client:
-        await _service().create_input_collection(client, 'scratch')
+        await _session(client).create_input_collection('scratch')
 
     collection = fake.archive(EXPERIMENT_MAINFILE)['data']
     assert 'notes' not in collection
@@ -157,10 +164,9 @@ async def test_add_audio_stores_file_and_references_it_from_collection():
     fake = _FakeNomad()
 
     async with _client(fake) as client:
-        service = _service()
-        await service.create_input_collection(client, 'perov_B1_a')
-        result = await service.add_audio(
-            client,
+        session = _session(client)
+        await session.create_input_collection('perov_B1_a')
+        result = await session.add_audio(
             UPLOAD_ID,
             b'AUDIO',
             'rec.m4a',
@@ -186,8 +192,7 @@ async def test_add_audio_without_collection_stores_no_file():
 
     async with _client(fake) as client:
         with pytest.raises(NomadAPIError) as excinfo:
-            await _service().add_audio(
-                client,
+            await _session(client).add_audio(
                 UPLOAD_ID,
                 b'AUDIO',
                 'rec.m4a',
@@ -203,10 +208,9 @@ async def test_add_note_writes_step_note_and_references_it():
     fake = _FakeNomad()
 
     async with _client(fake) as client:
-        service = _service()
-        await service.create_input_collection(client, 'perov_B1_a')
-        result = await service.add_written_note(
-            client,
+        session = _session(client)
+        await session.create_input_collection('perov_B1_a')
+        result = await session.add_written_note(
             UPLOAD_ID,
             'spun coat at 2000 rpm',
             collection_entry_id=SAND_COLLECTION_ID,
@@ -232,8 +236,8 @@ async def test_append_writes_back_nested_mainfile():
     ).encode()
 
     async with _client(fake) as client:
-        result = await _service().add_written_note(
-            client, UPLOAD_ID, 'a step', collection_entry_id='e-nested'
+        result = await _session(client).add_written_note(
+            UPLOAD_ID, 'a step', collection_entry_id='e-nested'
         )
 
     collection = fake.archive('exp/my_collection.archive.json')['data']
@@ -250,8 +254,8 @@ async def test_append_handles_null_refs_field():
     ).encode()
 
     async with _client(fake) as client:
-        result = await _service().add_written_note(
-            client, UPLOAD_ID, 'a step', collection_entry_id=SAND_COLLECTION_ID
+        result = await _session(client).add_written_note(
+            UPLOAD_ID, 'a step', collection_entry_id=SAND_COLLECTION_ID
         )
 
     collection = fake.archive(EXPERIMENT_MAINFILE)['data']
@@ -265,8 +269,8 @@ async def test_append_rejects_collection_without_data_section():
 
     async with _client(fake) as client:
         with pytest.raises(NomadAPIError, match='no data section'):
-            await _service().add_written_note(
-                client, UPLOAD_ID, 'a step', collection_entry_id=SAND_COLLECTION_ID
+            await _session(client).add_written_note(
+                UPLOAD_ID, 'a step', collection_entry_id=SAND_COLLECTION_ID
             )
 
 
@@ -283,7 +287,7 @@ async def test_list_input_collections_returns_summaries():
     )
 
     async with _client(fake) as client:
-        experiments = await _service().list_input_collections(client)
+        experiments = await _session(client).list_input_collections()
 
     assert len(experiments) == 1
     assert experiments[0].upload_id == UPLOAD_ID
@@ -299,10 +303,10 @@ async def test_write_waits_for_processing_and_sends_body_once():
     fake = _FakeNomad(processing_polls=2)
 
     async with _client(fake) as client:
-        service = _service()
-        result = await service.create_input_collection(client, 'perov_B1_a')
-        await service.add_experiment_info(
-            client, UPLOAD_ID, json.dumps(INFO), collection_entry_id=SAND_COLLECTION_ID
+        session = _session(client)
+        result = await session.create_input_collection('perov_B1_a')
+        await session.add_experiment_info(
+            UPLOAD_ID, json.dumps(INFO), collection_entry_id=SAND_COLLECTION_ID
         )
 
     assert result.upload_id == UPLOAD_ID
@@ -319,7 +323,7 @@ async def test_write_retries_when_processing_starts_after_the_idle_check():
     fake = _FakeNomad(blocked_writes=1)
 
     async with _client(fake) as client:
-        await _service().create_input_collection(client, 'x')
+        await _session(client).create_input_collection('x')
 
     assert EXPERIMENT_MAINFILE in fake.raw_files
 
@@ -330,8 +334,8 @@ async def test_write_to_unknown_upload_raises_not_found():
 
     async with _client(fake) as client:
         with pytest.raises(NomadAPIError) as excinfo:
-            await _service().add_written_note(
-                client, UPLOAD_ID, 'a step', collection_entry_id=SAND_COLLECTION_ID
+            await _session(client).add_written_note(
+                UPLOAD_ID, 'a step', collection_entry_id=SAND_COLLECTION_ID
             )
 
     assert excinfo.value.status_code == HTTPStatus.NOT_FOUND
@@ -345,10 +349,10 @@ async def test_collection_entry_id_resolves_sand_mainfile_without_index():
     fake = _FakeNomad()
 
     async with _client(fake) as client:
-        service = _service()
-        created = await service.create_input_collection(client, 'perov_B1_a')
-        result = await service.add_written_note(
-            client, UPLOAD_ID, 'a step', collection_entry_id=created.entry_id
+        session = _session(client)
+        created = await session.create_input_collection('perov_B1_a')
+        result = await session.add_written_note(
+            UPLOAD_ID, 'a step', collection_entry_id=created.entry_id
         )
 
     collection = fake.archive(EXPERIMENT_MAINFILE)['data']
@@ -365,8 +369,8 @@ async def test_collection_entry_id_resolves_foreign_mainfile_by_query():
     ).encode()
 
     async with _client(fake) as client:
-        result = await _service().add_written_note(
-            client, UPLOAD_ID, 'a step', collection_entry_id='e-second'
+        result = await _session(client).add_written_note(
+            UPLOAD_ID, 'a step', collection_entry_id='e-second'
         )
 
     collection = fake.archive('second.archive.json')['data']
@@ -379,8 +383,8 @@ async def test_unknown_collection_entry_id_raises_not_found():
 
     async with _client(fake) as client:
         with pytest.raises(NomadAPIError) as excinfo:
-            await _service().add_audio(
-                client, UPLOAD_ID, b'AUDIO', 'rec.m4a', collection_entry_id='e-gone'
+            await _session(client).add_audio(
+                UPLOAD_ID, b'AUDIO', 'rec.m4a', collection_entry_id='e-gone'
             )
 
     assert excinfo.value.status_code == HTTPStatus.NOT_FOUND
@@ -393,8 +397,8 @@ async def test_write_to_published_upload_is_rejected():
 
     async with _client(fake) as client:
         with pytest.raises(NomadAPIError, match='published'):
-            await _service().add_written_note(
-                client, UPLOAD_ID, 'a step', collection_entry_id=SAND_COLLECTION_ID
+            await _session(client).add_written_note(
+                UPLOAD_ID, 'a step', collection_entry_id=SAND_COLLECTION_ID
             )
 
     assert fake.raw_files == {}
@@ -407,11 +411,11 @@ async def test_invalid_token_raises_auth_error():
 
     async with _client(handler) as client:
         with pytest.raises(NomadAuthError):
-            await _service().create_input_collection(client, 'x')
+            await _session(client).create_input_collection('x')
 
 
 def test_build_client_sends_bearer_token():
-    client = _service().build_client('tok-1')
+    client = build_client(BASE_URL, 'tok-1')
     assert client.headers['Authorization'] == 'Bearer tok-1'
 
 
