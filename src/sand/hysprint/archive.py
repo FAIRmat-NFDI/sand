@@ -101,7 +101,7 @@ def build_samples(info: dict) -> list[dict]:
             'lab_id': _nomad_id(
                 info['project_name'], info['batch'], info['subbatch'], name
             ),
-            **DEFAULT_SUBSTRATE, # todo: change to user input
+            **DEFAULT_SUBSTRATE,  # todo: change to user input
         }
         for name in _sample_names(info['first_sample'], info['n_samples'])
     ]

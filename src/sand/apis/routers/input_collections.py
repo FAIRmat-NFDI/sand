@@ -11,7 +11,7 @@ from sand.hysprint.sheet import (
     to_sheet,
 )
 from sand.hysprint.step_extractor import extract_step
-from sand.models.experiments import (
+from sand.models.input_collections import (
     CreateHysprintExperimentRequest,
     CreateNoteRequest,
     HysprintExtractResponse,

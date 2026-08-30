@@ -58,9 +58,13 @@ def select_schema() -> dict:
     }
 
 
+@lru_cache(maxsize=32)
 def fill_schema(step_type: str) -> dict:
     """The FILL extraction target for one step type:
-    {step_type: <pinned to the one type>, variants: [{samples, ...fields}]}."""
+    {step_type: <pinned to the one type>, variants: [{samples, ...fields}]}.
+
+    Cached (~15 possible inputs); callers must treat the result as
+    immutable."""
     return _strip_units(to_single_step_schema(full_schema(), step_type))
 
 
