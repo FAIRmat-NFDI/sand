@@ -5,11 +5,10 @@ import httpx
 import pytest
 from nomad.utils import generate_entry_id
 
-from sand.services.nomad_upload import NomadAPIError, NomadAuthError
+from sand.services.nomad_api import NomadAPIError, NomadAuthError, entry_ref
 from sand.services.voice_eln import (
     EXPERIMENT_MAINFILE,
     VoiceElnService,
-    entry_ref,
     normalize_audio_filename,
 )
 

@@ -1,3 +1,5 @@
+"""Generic NOMAD REST API plumbing: client, errors, refs, URLs, raw files."""
+
 import asyncio
 import json
 import time
@@ -6,9 +8,6 @@ from http import HTTPStatus
 from urllib.parse import urlparse, urlunparse
 
 import httpx
-
-# Mainfile name the archive is uploaded under (see NomadUploader.upload).
-ARCHIVE_FILENAME = 'entry.archive.json'
 
 # Lowest HTTP status code that counts as an error response.
 HTTP_ERROR_STATUS = 400
@@ -32,6 +31,27 @@ def gui_upload_url(base_url: str, upload_id: str) -> str:
     #   {base}/gui/user/uploads/upload/id/{upload_id}
     gui_base = urlunparse((parsed.scheme, netloc, f'{path}/gui', '', '', ''))
     return f'{gui_base}/user/uploads/upload/id/{upload_id}'
+
+
+def gui_entry_url(base_url: str, upload_id: str, entry_id: str) -> str:
+    """Build the NOMAD GUI URL for one entry."""
+    return f'{gui_upload_url(base_url, upload_id)}/entry/id/{entry_id}'
+
+
+def entry_ref(upload_id: str, entry_id: str) -> str:
+    """The reference string NOMAD's entry references use."""
+    return f'../uploads/{upload_id}/archive/{entry_id}#/data'
+
+
+def entry_id_from_ref(ref: str) -> str:
+    """The entry id inside a '../uploads/{uid}/archive/{eid}#/data' reference."""
+    _, sep, rest = str(ref).partition('/archive/')
+    entry_id = rest.split('#', 1)[0].strip('/')
+    if not sep or not entry_id or '/' in entry_id:
+        raise NomadAPIError(
+            0, f'Unparseable entry reference: {ref!r}', step='entry_ref'
+        )
+    return entry_id
 
 
 class NomadAPIError(Exception):
@@ -164,6 +184,50 @@ class RawFileWriter:
                 )
             await asyncio.sleep(self.retry_interval_s)
 
+    async def write_archive(
+        self, client: httpx.AsyncClient, upload_id: str, mainfile: str, archive: dict
+    ) -> None:
+        """Serialize the archive dict and PUT it as the raw mainfile."""
+        await self.upload_raw_file(
+            client,
+            upload_id,
+            mainfile,
+            json.dumps(archive).encode(),
+            'application/json',
+        )
+
+    async def read_archive(
+        self, client: httpx.AsyncClient, upload_id: str, mainfile: str
+    ) -> dict:
+        """The raw mainfile's JSON, once the upload is idle.
+
+        Raw files land in staging asynchronously after a PUT, so wait for
+        processing to finish before reading - a plain GET right after a
+        write can 404 even though the write succeeded.
+        """
+        await self.wait_until_writable(
+            client, upload_id, time.monotonic() + self.write_timeout_s, mainfile
+        )
+        response = await client.get(f'/uploads/{upload_id}/raw/{mainfile}')
+        if response.status_code == HTTPStatus.NOT_FOUND:
+            raise NomadAPIError(
+                HTTPStatus.NOT_FOUND,
+                f'No mainfile {mainfile} found in upload {upload_id}',
+                step='read_archive',
+            )
+        check_response(response, step='read_archive')
+        try:
+            archive = response.json()
+        except ValueError:
+            raise NomadAPIError(
+                0, f'Mainfile {mainfile} is not valid JSON', step='read_archive'
+            )
+        if not isinstance(archive, dict):
+            raise NomadAPIError(
+                0, f'Mainfile {mainfile} is not a JSON object', step='read_archive'
+            )
+        return archive
+
     async def _upload_is_processing(
         self, client: httpx.AsyncClient, upload_id: str
     ) -> bool:
@@ -175,48 +239,3 @@ class RawFileWriter:
         except ValueError:
             return False
         return bool(data.get('process_running'))
-
-
-@dataclass
-class UploadResult:
-    upload_id: str
-    entry_url: str
-
-
-class NomadUploader:
-    def __init__(
-        self,
-        base_url: str,
-        retry_interval_s: float = 1.0,
-        write_timeout_s: float = 60.0,
-    ) -> None:
-        self._base_url = base_url
-        self._writer = RawFileWriter(retry_interval_s, write_timeout_s)
-
-    def build_client(self, token: str) -> httpx.AsyncClient:
-        return build_client(self._base_url, token)
-
-    async def upload(self, archive: dict, token: str) -> UploadResult:
-        """Upload a single archive dict as entry.archive.json."""
-        async with self.build_client(token) as client:
-            return await self.upload_with_client(client, archive)
-
-    async def upload_with_client(
-        self, client: httpx.AsyncClient, archive: dict
-    ) -> UploadResult:
-        """Upload one archive over an existing client.
-
-        Lets callers reuse a single connection pool across several uploads.
-        """
-        upload_id = await create_upload(client)
-        await self._writer.upload_raw_file(
-            client,
-            upload_id,
-            ARCHIVE_FILENAME,
-            json.dumps(archive).encode(),
-            'application/json',
-        )
-        return UploadResult(upload_id=upload_id, entry_url=self._entry_url(upload_id))
-
-    def _entry_url(self, upload_id: str) -> str:
-        return gui_upload_url(self._base_url, upload_id)
