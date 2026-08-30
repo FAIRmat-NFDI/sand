@@ -321,13 +321,7 @@ class VoiceElnService:
         sheet_mainfile: str,
         collection_entry_id: str | None = None,
     ) -> EntryHandle:
-        """Store the derived experiment sheet and link it from the collection.
-
-        The xlsx lands in the experiment upload under the fixed
-        `sheet_mainfile`; NOMAD's hysprint batch parser turns it into the
-        derived experiment entry (deterministic id), which is referenced
-        from the collection's `derived_entries`.
-        """
+        """Store the derived experiment sheet and link it from the collection."""
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
@@ -527,38 +521,36 @@ class VoiceElnService:
         upload_id: str,
         collection_entry_id: str | None,
     ) -> str:
-        if collection_entry_id is None:
-            return await self._find_collection_mainfile(client, upload_id)
-        if collection_entry_id == generate_entry_id(upload_id, EXPERIMENT_MAINFILE):
-            return EXPERIMENT_MAINFILE
-        response = await client.post(
-            '/entries/query',
-            json={
-                'owner': 'visible',
-                'query': {'entry_id': collection_entry_id, 'upload_id': upload_id},
-                'required': {'include': ['mainfile']},
-                'pagination': {'page_size': 1},
-            },
-        )
-        check_response(response, step='find_collection')
-        entries = response.json().get('data', [])
-        if not entries:
-            raise NomadAPIError(
-                HTTPStatus.NOT_FOUND,
-                f'No entry {collection_entry_id} found in upload {upload_id}',
-                step='find_collection',
-            )
-        return entries[0]['mainfile']
+        """The mainfile path of the collection the caller addressed.
 
-    async def _find_collection_mainfile(
-        self, client: httpx.AsyncClient, upload_id: str
-    ) -> str:
-        """Mainfile of the InputCollection entry in this upload.
-
-        Queried so experiments created directly in NOMAD (any mainfile name)
-        also work; falls back to sand's own EXPERIMENT_MAINFILE when the
-        entry is not indexed yet (right after create_input_collection).
+        With an entry id: sand's own deterministic id resolves without the
+        search index (which lags right after creation), any other id is
+        looked up. Without one: discover the upload's collection - falling
+        back to sand's mainfile when nothing is indexed yet, refusing when
+        several foreign collections make the target ambiguous.
         """
+        if collection_entry_id is not None:
+            if collection_entry_id == generate_entry_id(upload_id, EXPERIMENT_MAINFILE):
+                return EXPERIMENT_MAINFILE
+            response = await client.post(
+                '/entries/query',
+                json={
+                    'owner': 'visible',
+                    'query': {'entry_id': collection_entry_id, 'upload_id': upload_id},
+                    'required': {'include': ['mainfile']},
+                    'pagination': {'page_size': 1},
+                },
+            )
+            check_response(response, step='find_collection')
+            entries = response.json().get('data', [])
+            if not entries:
+                raise NomadAPIError(
+                    HTTPStatus.NOT_FOUND,
+                    f'No entry {collection_entry_id} found in upload {upload_id}',
+                    step='find_collection',
+                )
+            return entries[0]['mainfile']
+
         response = await client.post(
             '/entries/query',
             json={
