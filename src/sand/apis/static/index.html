@@ -551,7 +551,7 @@
       experimentsById[experiment.entry_id] = experiment;
       const option = document.createElement("option");
       option.value = experiment.entry_id;
-      option.textContent = experiment.name;
+      option.textContent = experiment.name || experiment.upload_id;
       experimentSelect.appendChild(option);
     }
 

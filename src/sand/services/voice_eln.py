@@ -183,7 +183,7 @@ class VoiceElnService:
             ExperimentSummary(
                 upload_id=entry['upload_id'],
                 entry_id=entry['entry_id'],
-                name=entry.get('entry_name') or entry['upload_id'],
+                name=entry.get('entry_name') or '',
             )
             for entry in entries
         ]
