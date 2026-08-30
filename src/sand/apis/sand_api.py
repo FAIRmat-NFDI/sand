@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from nomad.app.v1.routers.auth import get_current_user
 from nomad.config import config
 
-from sand.apis.routers.experiments import router as experiments_router
+from sand.apis.routers.input_collections import router as input_collections_router
 from sand.services.extraction_service import ExtractionService
 from sand.services.voice_eln import VoiceElnService
 
@@ -34,7 +34,9 @@ app.state.extraction_service = ExtractionService(
     api_key=sand_api_entry_point.llm_api_key,
 )
 
-app.include_router(experiments_router, prefix='/api', dependencies=[require_login])
+app.include_router(
+    input_collections_router, prefix='/api', dependencies=[require_login]
+)
 
 
 @app.get('/auth/config')

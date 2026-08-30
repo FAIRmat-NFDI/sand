@@ -52,7 +52,8 @@ class ExtractionService:
 
         from temporalio.client import WorkflowFailureError
 
-        # see issue #19, todo
+        # Deliberately synchronous: execute and await the result in line.
+        # Issue #19 tracks the fire-and-forget action migration.
         client = await get_client()
         try:
             result = await asyncio.wait_for(

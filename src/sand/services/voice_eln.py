@@ -81,7 +81,7 @@ class _Note:
 
 
 @dataclass
-class ExperimentSummary:
+class InputCollectionSummary:
     upload_id: str
     entry_id: str
     name: str
@@ -129,7 +129,7 @@ class VoiceElnService:
 
     async def list_input_collections(
         self, client: httpx.AsyncClient
-    ) -> list[ExperimentSummary]:
+    ) -> list[InputCollectionSummary]:
         """The user's unpublished InputCollection entries (published ones
         are read-only)."""
         entries: list[dict] = []
@@ -164,7 +164,7 @@ class VoiceElnService:
             if not page_after_value or not page:
                 break
         return [
-            ExperimentSummary(
+            InputCollectionSummary(
                 upload_id=entry['upload_id'],
                 entry_id=entry['entry_id'],
                 name=entry.get('entry_name') or '',

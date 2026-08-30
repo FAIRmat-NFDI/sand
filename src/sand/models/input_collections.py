@@ -40,6 +40,6 @@ class CreateNoteRequest(BaseModel):
 
 class HysprintExtractResponse(BaseModel):
     archive: dict
-    step_types: list[str] # the chosen type per step in plan order
+    step_types: list[str]  # the chosen type per step in plan order
     derived_entry: InputCollectionResponse
-    sheet_issues: list[str] # archive fields sheet cannot represent
+    sheet_issues: list[str]  # archive fields sheet cannot represent
