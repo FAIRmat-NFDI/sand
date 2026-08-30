@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 from dataclasses import dataclass
 from http import HTTPStatus
 from urllib.parse import urlparse, urlunparse
@@ -103,8 +104,7 @@ class RawFileWriter:
     ) -> None:
         """PUT a raw file once the upload is idle. A 400 caused by
         processing that started between the check and the PUT is retried."""
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + self.write_timeout_s
+        deadline = time.monotonic() + self.write_timeout_s
         # PUT raw only accepts a bare basename in file_name; the directory
         # goes into the URL path.
         directory, _, base_name = file_name.rpartition('/')
@@ -118,7 +118,7 @@ class RawFileWriter:
             )
             if (
                 response.status_code == HTTPStatus.BAD_REQUEST
-                and loop.time() < deadline
+                and time.monotonic() < deadline
                 and await self._upload_is_processing(client, upload_id)
             ):
                 continue
@@ -134,7 +134,6 @@ class RawFileWriter:
     ) -> None:
         """Wait until the upload exists, is unpublished, and is not
         processing; raise a NomadAPIError with the real cause otherwise."""
-        loop = asyncio.get_running_loop()
         while True:
             response = await client.get(f'/uploads/{upload_id}')
             if response.status_code == HTTPStatus.NOT_FOUND:
@@ -156,7 +155,7 @@ class RawFileWriter:
                 )
             if not data.get('process_running'):
                 return
-            if loop.time() >= deadline:
+            if time.monotonic() >= deadline:
                 raise NomadAPIError(
                     HTTPStatus.BAD_REQUEST,
                     f'Upload {upload_id} still processing after '

@@ -50,17 +50,25 @@ class ExtractionService:
             ),
         )
 
+        from temporalio.client import WorkflowFailureError
+
         # see issue #19, todo
         client = await get_client()
-        result = await asyncio.wait_for(
-            client.execute_workflow(
-                ExtractionWorkflow.run,
-                workflow_input,
-                id=f'sand-extract-{uuid4()}',
-                task_queue=self._task_queue,
-            ),
-            timeout=self._timeout_s,
-        )
+        try:
+            result = await asyncio.wait_for(
+                client.execute_workflow(
+                    ExtractionWorkflow.run,
+                    workflow_input,
+                    id=f'sand-extract-{uuid4()}',
+                    task_queue=self._task_queue,
+                ),
+                timeout=self._timeout_s,
+            )
+        except WorkflowFailureError as exc:
+            cause = exc.cause
+            while getattr(cause, 'cause', None) is not None:
+                cause = cause.cause
+            raise ExtractionError(str(cause or exc)) from exc
 
         if result.err_message:
             raise ExtractionError(

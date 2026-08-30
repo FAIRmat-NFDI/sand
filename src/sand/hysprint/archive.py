@@ -76,6 +76,15 @@ def _nomad_id(project: str, batch, subbatch, sample: str) -> str:
     return f'{project}_{batch}_{subbatch}_C-{sample}'
 
 
+# TODO: collect substrate info in the experiment-info form instead of
+# hardcoding.
+DEFAULT_SUBSTRATE = {
+    'substrate_material': 'Glass',
+    'substrate_conductive_layer': 'ITO',
+    'number_of_pixels': 6,
+}
+
+
 def build_samples(info: dict) -> list[dict]:
     """The Experiment-Info rows from the form: generated sample names + lab_ids.
 
@@ -92,6 +101,7 @@ def build_samples(info: dict) -> list[dict]:
             'lab_id': _nomad_id(
                 info['project_name'], info['batch'], info['subbatch'], name
             ),
+            **DEFAULT_SUBSTRATE, # todo: change to user input
         }
         for name in _sample_names(info['first_sample'], info['n_samples'])
     ]

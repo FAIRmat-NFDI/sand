@@ -54,13 +54,13 @@ def select_schema() -> dict:
         'type': 'object',
         'additionalProperties': False,
         'required': ['step_type'],
-        'properties': {'step_type': {'enum': list(step_types())}},
+        'properties': {'step_type': {'type': 'string', 'enum': list(step_types())}},
     }
 
 
 def fill_schema(step_type: str) -> dict:
     """The FILL extraction target for one step type:
-    {step_type: <const>, variants: [{samples, ...the step's fields}]}."""
+    {step_type: <pinned to the one type>, variants: [{samples, ...fields}]}."""
     return _strip_units(to_single_step_schema(full_schema(), step_type))
 
 
@@ -70,17 +70,14 @@ def _step_key(step_type: str) -> str:
 
 
 def to_single_step_schema(full: dict, step_type: str) -> dict:
-    """Derive the extraction target for ONE step: `step_type` becomes a top-level
-    const; bookkeeping fields (plan position, datetime, operator) are dropped —
-    they are addressing/identity, never step content. `samples` stays in label
-    form. An unknown step type raises ValueError."""
+    """Derive the extraction target for ONE step"""
     step_def = full['$defs'].get(_step_key(step_type))
     if step_def is None or 'step_type' not in step_def['properties']:
         raise ValueError(
             f'unknown step type {step_type!r}; expected one of {sorted(step_types())}'
         )
     step = json.loads(json.dumps(step_def))
-    canonical = step['properties'].pop('step_type')['const']
+    step_type = step['properties'].pop('step_type')['const']
     for bookkeeping in ('position_in_experimental_plan', 'datetime', 'operator'):
         step['properties'].pop(bookkeeping, None)
     # without this, a schema-valid variant may omit 'samples' and the
@@ -92,7 +89,7 @@ def to_single_step_schema(full: dict, step_type: str) -> dict:
         'additionalProperties': False,
         'required': ['step_type', 'variants'],
         'properties': {
-            'step_type': {'const': canonical},
+            'step_type': {'type': 'string', 'enum': [step_type]},
             'variants': {'type': 'array', 'minItems': 1, 'items': step},
         },
     }

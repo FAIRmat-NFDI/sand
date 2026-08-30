@@ -5,6 +5,11 @@ from fastapi import APIRouter, HTTPException, Request, UploadFile
 
 from sand.apis.deps import get_bearer_token
 from sand.hysprint.generate import HysprintInputError, assemble, route_inputs
+from sand.hysprint.sheet import (
+    DERIVED_SHEET_MAINFILE,
+    grid_to_xlsx_bytes,
+    to_sheet,
+)
 from sand.hysprint.step_extractor import extract_step
 from sand.models.experiments import (
     CreateHysprintExperimentRequest,
@@ -128,12 +133,12 @@ async def add_audio(
     upload_id: str,
     file: UploadFile,
     request: Request,
-    collection_entry_id: str | None = None,
+    collection_entry_id: str,
 ) -> InputCollectionResponse:
     """Add audio to an InputCollection entry.
 
-    collection_entry_id pins the target collection exactly (an upload can
-    hold more than one); without it the upload's collection is discovered.
+    collection_entry_id names the target collection exactly (an upload
+    can hold more than one).
     """
     voice = _voice_service(request)
     token = get_bearer_token(request)
@@ -183,12 +188,12 @@ async def add_note(
     upload_id: str,
     body: CreateNoteRequest,
     request: Request,
-    collection_entry_id: str | None = None,
+    collection_entry_id: str,
 ) -> InputCollectionResponse:
     """Add a typed step note (WrittenNote labeled 'step') to the experiment.
 
-    collection_entry_id pins the target collection exactly (an upload can
-    hold more than one); without it the upload's collection is discovered.
+    collection_entry_id names the target collection exactly (an upload
+    can hold more than one).
     """
     voice = _voice_service(request)
     token = get_bearer_token(request)
@@ -218,9 +223,11 @@ async def add_note(
 async def extract_hysprint_experiment(
     upload_id: str,
     request: Request,
-    collection_entry_id: str | None = None,
+    collection_entry_id: str,
 ) -> HysprintExtractResponse:
-    """Extract the experiment's inputs into the hysprint {samples, steps} archive."""
+    """Extract the experiment's inputs into the hysprint {samples, steps}
+    archive, upload the resulting xlsx, and return the derived entry.
+    """
     voice = _voice_service(request)
     runner: ExtractionService = request.app.state.extraction_service
     token = get_bearer_token(request)
@@ -269,6 +276,26 @@ async def extract_hysprint_experiment(
         # e.g. a narration names a sample label the form did not declare
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    step_types = [slot['step_type'] for slot in slots]
+    grid, sheet_issues = to_sheet(archive)
+    xlsx = grid_to_xlsx_bytes(grid)
+    try:
+        async with voice.build_client(token) as client:
+            derived = await voice.add_derived_sheet(
+                client,
+                upload_id,
+                xlsx,
+                DERIVED_SHEET_MAINFILE,
+                collection_entry_id=collection_entry_id,
+            )
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
     return HysprintExtractResponse(
-        archive=archive, step_types=[slot['step_type'] for slot in slots]
+        archive=archive,
+        step_types=step_types,
+        derived_entry=InputCollectionResponse(
+            **_entry_response(voice, derived.upload_id, derived.entry_id)
+        ),
+        sheet_issues=sheet_issues,
     )

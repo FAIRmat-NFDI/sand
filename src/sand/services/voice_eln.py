@@ -1,6 +1,7 @@
 import asyncio
 import json
 import posixpath
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -182,7 +183,7 @@ class VoiceElnService:
             ExperimentSummary(
                 upload_id=entry['upload_id'],
                 entry_id=entry['entry_id'],
-                name=entry.get('entry_name') or entry['upload_id'],
+                name=entry.get('entry_name') or '',
             )
             for entry in entries
         ]
@@ -213,13 +214,12 @@ class VoiceElnService:
         client: httpx.AsyncClient,
         upload_id: str,
         text: str,
-        collection_entry_id: str | None = None,
+        collection_entry_id: str,
     ) -> EntryHandle:
         """Add a typed step note (WrittenNote labeled 'step').
 
-        With collection_entry_id, the note is attached to exactly that
-        InputCollection entry; otherwise the upload's collection is
-        discovered (and must be unambiguous).
+        collection_entry_id names the exact InputCollection entry the
+        note is attached to (an upload can hold more than one).
         """
         mainfile = f'note_{_utc_now_stamp()}.archive.json'
         note = _Note(text=text, label=STEP_LABEL, mainfile=mainfile)
@@ -230,7 +230,7 @@ class VoiceElnService:
         client: httpx.AsyncClient,
         upload_id: str,
         info_json: str,
-        collection_entry_id: str | None = None,
+        collection_entry_id: str,
     ) -> EntryHandle:
         """Store the experiment-info form JSON as its dedicated
         WrittenNote (label routing, see docs/handover.md §8)."""
@@ -246,7 +246,7 @@ class VoiceElnService:
         client: httpx.AsyncClient,
         upload_id: str,
         note: '_Note',
-        collection_entry_id: str | None,
+        collection_entry_id: str,
     ) -> EntryHandle:
         """Create the WrittenNote entry and reference it from the collection."""
         collection_mainfile = await self._resolve_collection_mainfile(
@@ -281,7 +281,7 @@ class VoiceElnService:
         upload_id: str,
         audio: bytes,
         filename: str,
-        collection_entry_id: str | None = None,
+        collection_entry_id: str,
     ) -> EntryHandle:
         """Add a recording to an experiment.
 
@@ -312,11 +312,38 @@ class VoiceElnService:
         )
         return EntryHandle(upload_id=upload_id, entry_id=entry_id)
 
+    async def add_derived_sheet(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        xlsx: bytes,
+        sheet_mainfile: str,
+        collection_entry_id: str,
+    ) -> EntryHandle:
+        """Store the derived experiment sheet and link it from the collection."""
+        mainfile = await self._resolve_collection_mainfile(
+            client, upload_id, collection_entry_id
+        )
+        await self._read_collection(client, upload_id, mainfile)
+
+        await self._upload_raw_file(
+            client,
+            upload_id,
+            sheet_mainfile,
+            xlsx,
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        entry_id = generate_entry_id(upload_id, sheet_mainfile)
+        await self._append_to_collection(
+            client, upload_id, 'derived_entries', entry_id, mainfile
+        )
+        return EntryHandle(upload_id=upload_id, entry_id=entry_id)
+
     async def collect_inputs(
         self,
         client: httpx.AsyncClient,
         upload_id: str,
-        collection_entry_id: str | None = None,
+        collection_entry_id: str,
     ) -> list[CollectedInput]:
         """All inputs of an experiment's collection, as one ordered list.
 
@@ -457,17 +484,10 @@ class VoiceElnService:
     async def _read_collection(
         self, client: httpx.AsyncClient, upload_id: str, mainfile: str
     ) -> dict:
-        """The collection mainfile's JSON, once the upload is idle.
-
-        Raw files land in staging asynchronously after a PUT, so wait for
-        processing to finish before reading — a plain GET right after a
-        write can 404 even though the write succeeded.
-        """
-        loop = asyncio.get_running_loop()
         await self._writer.wait_until_writable(
             client,
             upload_id,
-            loop.time() + self._writer.write_timeout_s,
+            time.monotonic() + self._writer.write_timeout_s,
             mainfile,
         )
         response = await client.get(f'/uploads/{upload_id}/raw/{mainfile}')
@@ -498,18 +518,9 @@ class VoiceElnService:
         self,
         client: httpx.AsyncClient,
         upload_id: str,
-        collection_entry_id: str | None,
+        collection_entry_id: str,
     ) -> str:
-        """Mainfile of the collection the caller addressed.
-
-        With an entry id, the target is exact: sand's own experiments use
-        the deterministic EXPERIMENT_MAINFILE (resolvable without the
-        index, which lags right after creation), anything else is looked
-        up by entry id. Without one, fall back to discovering the
-        upload's collection.
-        """
-        if collection_entry_id is None:
-            return await self._find_collection_mainfile(client, upload_id)
+        """return mainfile path"""
         if collection_entry_id == generate_entry_id(upload_id, EXPERIMENT_MAINFILE):
             return EXPERIMENT_MAINFILE
         response = await client.post(
@@ -530,49 +541,6 @@ class VoiceElnService:
                 step='find_collection',
             )
         return entries[0]['mainfile']
-
-    async def _find_collection_mainfile(
-        self, client: httpx.AsyncClient, upload_id: str
-    ) -> str:
-        """Mainfile of the InputCollection entry in this upload.
-
-        Queried so experiments created directly in NOMAD (any mainfile name)
-        also work; falls back to sand's own EXPERIMENT_MAINFILE when the
-        entry is not indexed yet (right after create_input_collection).
-        """
-        response = await client.post(
-            '/entries/query',
-            json={
-                'owner': 'visible',
-                'query': {
-                    'upload_id': upload_id,
-                    'section_defs.definition_qualified_name': (INPUT_COLLECTION_M_DEF),
-                },
-                'required': {'include': ['mainfile']},
-                'pagination': {
-                    'page_size': 2,
-                    'order_by': 'entry_create_time',
-                    'order': 'asc',
-                },
-            },
-        )
-        check_response(response, step='find_collection')
-        entries = response.json().get('data', [])
-        mainfiles = [entry['mainfile'] for entry in entries]
-        if len(mainfiles) > 1:
-            # Ambiguous target: prefer sand's own collection if present,
-            # otherwise refuse rather than silently pick the oldest.
-            if EXPERIMENT_MAINFILE in mainfiles:
-                return EXPERIMENT_MAINFILE
-            raise NomadAPIError(
-                HTTPStatus.BAD_REQUEST,
-                f'Upload {upload_id} contains more than one InputCollection '
-                'entry; cannot decide which experiment to add to',
-                step='find_collection',
-            )
-        if mainfiles:
-            return mainfiles[0]
-        return EXPERIMENT_MAINFILE
 
 
 def _utc_now_iso() -> str:

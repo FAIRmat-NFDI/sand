@@ -407,7 +407,9 @@
 
       <div class="card" id="extract-result" hidden>
         <div class="results-title">Extracted experiment</div>
+        <p class="audio-entry-text" id="derived-entry"></p>
         <p class="status-text" id="extract-summary"></p>
+        <p class="error-text" id="sheet-issues"></p>
         <details>
           <summary>Archive JSON</summary>
           <pre id="extract-json"></pre>
@@ -549,7 +551,7 @@
       experimentsById[experiment.entry_id] = experiment;
       const option = document.createElement("option");
       option.value = experiment.entry_id;
-      option.textContent = experiment.name;
+      option.textContent = experiment.name || experiment.upload_id;
       experimentSelect.appendChild(option);
     }
 
@@ -832,6 +834,8 @@
     const extractResult = document.getElementById("extract-result");
     const extractSummary = document.getElementById("extract-summary");
     const extractJson = document.getElementById("extract-json");
+    const derivedEntryEl = document.getElementById("derived-entry");
+    const sheetIssuesEl = document.getElementById("sheet-issues");
 
     extractBtn.addEventListener("click", async () => {
       clearError();
@@ -856,6 +860,22 @@
           + data.archive.steps.length + " step(s): "
           + data.step_types.join(" → ");
         extractJson.textContent = JSON.stringify(data.archive, null, 2);
+        derivedEntryEl.replaceChildren();
+        derivedEntryEl.style.display = "none";
+        if (data.derived_entry) {
+          const link = document.createElement("a");
+          link.href = data.derived_entry.entry_url;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = "View derived experiment on NOMAD";
+          derivedEntryEl.replaceChildren(link);
+          derivedEntryEl.style.display = "block";
+        }
+        const issues = data.sheet_issues || [];
+        sheetIssuesEl.textContent = issues.length
+          ? "Sheet could not hold everything: " + issues.join("; ")
+          : "";
+        sheetIssuesEl.style.display = issues.length ? "block" : "none";
         extractResult.hidden = false;
       } catch (err) {
         showError("Network error: " + err.message);
