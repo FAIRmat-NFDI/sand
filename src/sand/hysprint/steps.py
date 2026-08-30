@@ -77,7 +77,6 @@ def to_single_step_schema(full: dict, step_type: str) -> dict:
             f'unknown step type {step_type!r}; expected one of {sorted(step_types())}'
         )
     step = json.loads(json.dumps(step_def))
-    # rebind with the schema's canonical casing ('spin coating' -> 'Spin Coating')
     step_type = step['properties'].pop('step_type')['const']
     for bookkeeping in ('position_in_experimental_plan', 'datetime', 'operator'):
         step['properties'].pop(bookkeeping, None)
@@ -90,8 +89,6 @@ def to_single_step_schema(full: dict, step_type: str) -> dict:
         'additionalProperties': False,
         'required': ['step_type', 'variants'],
         'properties': {
-            # not JSON-Schema `const`: Gemini's tool-call schema dialect
-            # only understands an explicit type plus enum
             'step_type': {'type': 'string', 'enum': [step_type]},
             'variants': {'type': 'array', 'minItems': 1, 'items': step},
         },
