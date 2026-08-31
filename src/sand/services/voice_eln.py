@@ -75,13 +75,13 @@ class SheetEditedError(Exception):
     regenerate would silently discard the user's manual edits."""
 
 
-def _sheet_edited(current_xlsx: bytes, sidecar: bytes | None) -> bool:
-    """No sidecar (pre-sidecar uploads) or an unreadable one -> unknown
-    provenance, treated as unedited."""
-    if sidecar is None:
+def _sheet_edited(current_xlsx: bytes, extraction: bytes | None) -> bool:
+    """No extraction file (pre-extraction-file uploads) or an unreadable
+    one -> unknown provenance, treated as unedited."""
+    if extraction is None:
         return False
     try:
-        stored = json.loads(sidecar).get('xlsx_sha256')
+        stored = json.loads(extraction).get('xlsx_sha256')
     except ValueError:
         return False
     return bool(stored) and hashlib.sha256(current_xlsx).hexdigest() != stored
@@ -96,12 +96,12 @@ class EntryHandle:
 @dataclass(frozen=True)
 class DerivedSheet:
     """The extract endpoint's output files: the xlsx NOMAD parses and the
-    sidecar holding the pristine extraction result + provenance."""
+    extraction file holding the pristine result + provenance."""
 
     xlsx: bytes
-    mainfile: str
-    sidecar: dict
-    sidecar_mainfile: str
+    xlsx_mainfile: str
+    extraction: dict
+    extraction_mainfile: str
 
 
 @dataclass(frozen=True)
@@ -335,10 +335,10 @@ class VoiceElnService:
         collection_entry_id: str,
         force: bool = False,
     ) -> EntryHandle:
-        """Store the derived sheet + its extraction sidecar, link both.
+        """Store the derived sheet + its extraction file, link both.
 
         Guard: if the stored xlsx differs from the hash in the stored
-        sidecar, the user edited it by hand -> SheetEditedError unless
+        extraction file, the user edited it by hand -> SheetEditedError unless
         force. Raw files of previously parsed entries the new parse did
         not regenerate are deleted (lab_id changes would orphan them).
 
@@ -352,15 +352,17 @@ class VoiceElnService:
         )
         await self._writer.read_archive(client, upload_id, mainfile)
 
-        entry_id = generate_entry_id(upload_id, sheet.mainfile)
-        current = await self._writer.read_raw_file(client, upload_id, sheet.mainfile)
+        entry_id = generate_entry_id(upload_id, sheet.xlsx_mainfile)
+        current = await self._writer.read_raw_file(
+            client, upload_id, sheet.xlsx_mainfile
+        )
         old_ids: list[str] = []
         if current is not None:
             if not force:
-                stored_sidecar = await self._writer.read_raw_file(
-                    client, upload_id, sheet.sidecar_mainfile
+                stored_extraction = await self._writer.read_raw_file(
+                    client, upload_id, sheet.extraction_mainfile
                 )
-                if _sheet_edited(current, stored_sidecar):
+                if _sheet_edited(current, stored_extraction):
                     raise SheetEditedError(
                         'the experiment sheet was edited by hand; regenerating '
                         'would discard those edits'
@@ -370,15 +372,15 @@ class VoiceElnService:
         await self._writer.upload_raw_file(
             client,
             upload_id,
-            sheet.mainfile,
+            sheet.xlsx_mainfile,
             sheet.xlsx,
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
         await self._writer.upload_raw_file(
             client,
             upload_id,
-            sheet.sidecar_mainfile,
-            json.dumps(sheet.sidecar, ensure_ascii=False).encode(),
+            sheet.extraction_mainfile,
+            json.dumps(sheet.extraction, ensure_ascii=False).encode(),
             'application/json',
         )
 
@@ -389,7 +391,7 @@ class VoiceElnService:
             client,
             upload_id,
             time.monotonic() + self._writer.write_timeout_s,
-            sheet.mainfile,
+            sheet.xlsx_mainfile,
         )
         parsed_ids = await self._processed_entry_ids(client, entry_id)
         orphan_ids = [i for i in old_ids if i not in set(parsed_ids)]
@@ -398,7 +400,7 @@ class VoiceElnService:
                 client,
                 upload_id,
                 orphan_ids,
-                keep={sheet.mainfile, sheet.sidecar_mainfile, mainfile},
+                keep={sheet.xlsx_mainfile, sheet.extraction_mainfile, mainfile},
             )
         await self._set_collection_refs(
             client, upload_id, 'derived_entries', [entry_id, *parsed_ids], mainfile

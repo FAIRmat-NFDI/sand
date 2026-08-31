@@ -289,14 +289,14 @@ async def extract_hysprint_experiment(
     xlsx = grid_to_xlsx_bytes(grid)
     sheet = DerivedSheet(
         xlsx=xlsx,
-        mainfile=DERIVED_SHEET_MAINFILE,
-        sidecar={
+        xlsx_mainfile=DERIVED_SHEET_MAINFILE,
+        extraction={
             'archive': archive,
             'xlsx_sha256': hashlib.sha256(xlsx).hexdigest(),
             'extracted_at': datetime.now(timezone.utc).isoformat(),
             'input_entry_ids': [i.entry_id for i in inputs],
         },
-        sidecar_mainfile=EXTRACTED_JSON_MAINFILE,
+        extraction_mainfile=EXTRACTED_JSON_MAINFILE,
     )
     try:
         async with voice.build_client(token) as client:

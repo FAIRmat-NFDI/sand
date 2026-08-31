@@ -429,19 +429,19 @@ async def test_write_to_published_upload_is_rejected():
     assert fake.raw_files == {}
 
 
-# --- derived sheet: sidecar, edited-sheet guard, orphan cleanup ---
+# --- derived sheet: extraction file, edited-sheet guard, orphan cleanup ---
 
 
-def _sidecar_for(xlsx: bytes) -> dict:
+def _extraction_for(xlsx: bytes) -> dict:
     return {'archive': {}, 'xlsx_sha256': hashlib.sha256(xlsx).hexdigest()}
 
 
 async def _add_sheet(service, client, xlsx: bytes, force=False):
     sheet = DerivedSheet(
         xlsx=xlsx,
-        mainfile=DERIVED_SHEET_MAINFILE,
-        sidecar=_sidecar_for(xlsx),
-        sidecar_mainfile=EXTRACTED_JSON_MAINFILE,
+        xlsx_mainfile=DERIVED_SHEET_MAINFILE,
+        extraction=_extraction_for(xlsx),
+        extraction_mainfile=EXTRACTED_JSON_MAINFILE,
     )
     return await service.add_derived_sheet(
         client,
@@ -453,7 +453,7 @@ async def _add_sheet(service, client, xlsx: bytes, force=False):
 
 
 @pytest.mark.asyncio
-async def test_add_derived_sheet_stores_sidecar_and_links_parsed_entries():
+async def test_add_derived_sheet_stores_extraction_file_and_links_parsed_entries():
     fake = _FakeNomad()
     fake.entry_archives[SHEET_ENTRY_ID] = [
         {
@@ -470,8 +470,8 @@ async def test_add_derived_sheet_stores_sidecar_and_links_parsed_entries():
         result = await _add_sheet(service, client, b'XLSX')
 
     assert fake.raw_files[DERIVED_SHEET_MAINFILE] == b'XLSX'
-    sidecar = fake.archive(EXTRACTED_JSON_MAINFILE)
-    assert sidecar['xlsx_sha256'] == hashlib.sha256(b'XLSX').hexdigest()
+    extraction = fake.archive(EXTRACTED_JSON_MAINFILE)
+    assert extraction['xlsx_sha256'] == hashlib.sha256(b'XLSX').hexdigest()
     collection = fake.archive(EXPERIMENT_MAINFILE)['data']
     assert collection['derived_entries'] == [
         entry_ref(UPLOAD_ID, result.entry_id),
@@ -489,7 +489,7 @@ async def test_regenerate_refuses_to_overwrite_a_hand_edited_sheet():
         await service.create_input_collection(client, 'perov_B1_a')
         fake.raw_files[DERIVED_SHEET_MAINFILE] = b'EDITED'
         fake.raw_files[EXTRACTED_JSON_MAINFILE] = json.dumps(
-            _sidecar_for(b'ORIGINAL')
+            _extraction_for(b'ORIGINAL')
         ).encode()
         with pytest.raises(SheetEditedError):
             await _add_sheet(service, client, b'NEW')
@@ -505,17 +505,17 @@ async def test_regenerate_refuses_to_overwrite_a_hand_edited_sheet():
 
 
 @pytest.mark.asyncio
-async def test_regenerate_over_unedited_or_sidecarless_sheet_needs_no_force():
+async def test_regenerate_over_unedited_or_pre_extraction_sheet_needs_no_force():
     fake = _FakeNomad()
 
     async with _client(fake) as client:
         service = _service()
         await service.create_input_collection(client, 'perov_B1_a')
-        # pre-sidecar upload: provenance unknown, treated as unedited
+        # no extraction file (pre-extraction upload): provenance unknown
         fake.raw_files[DERIVED_SHEET_MAINFILE] = b'LEGACY'
         await _add_sheet(service, client, b'NEW')
 
-        # hash matches the sidecar: not edited
+        # hash matches the extraction file: not edited
         await _add_sheet(service, client, b'NEWER')
 
     assert fake.raw_files[DERIVED_SHEET_MAINFILE] == b'NEWER'
@@ -546,7 +546,7 @@ async def test_regenerate_deletes_raw_files_of_dropped_parsed_entries():
         await service.create_input_collection(client, 'perov_B1_a')
         fake.raw_files[DERIVED_SHEET_MAINFILE] = b'OLD'
         fake.raw_files[EXTRACTED_JSON_MAINFILE] = json.dumps(
-            _sidecar_for(b'OLD')
+            _extraction_for(b'OLD')
         ).encode()
         fake.raw_files['gone_sample.archive.json'] = b'{}'
         result = await _add_sheet(service, client, b'NEW')
