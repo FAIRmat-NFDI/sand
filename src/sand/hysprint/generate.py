@@ -84,7 +84,9 @@ def resolve_sample_labels(slot: dict, sample_names: list[str]) -> dict:
     names ('1' spoken, 's_1' declared): the model transcribes labels
     exactly as stated, so the mapping is code's job. Exact match first,
     else the unique declared name sharing the trailing number; anything
-    else raises with the declared names listed.
+    else raises with the declared names listed. Trailing numbers compare
+    as integers, so zero-padding never matters ('01', '001', 's_001' all
+    resolve against 's_01' or 's_1' alike).
     """
     by_number: dict[int, list[str]] = {}
     for name in sample_names:
