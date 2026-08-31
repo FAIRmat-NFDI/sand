@@ -1,3 +1,4 @@
+import hashlib
 import json
 from http import HTTPStatus
 
@@ -5,9 +6,12 @@ import httpx
 import pytest
 from nomad.utils import generate_entry_id
 
+from sand.hysprint.sheet import DERIVED_SHEET_MAINFILE, EXTRACTED_JSON_MAINFILE
 from sand.services.nomad_api import NomadAPIError, NomadAuthError, entry_ref
 from sand.services.voice_eln import (
     EXPERIMENT_MAINFILE,
+    DerivedSheet,
+    SheetEditedError,
     VoiceElnService,
     normalize_audio_filename,
 )
@@ -15,6 +19,7 @@ from sand.services.voice_eln import (
 BASE_URL = 'http://localhost:8000/nomad-oasis/api/v1'
 UPLOAD_ID = 'up-123'
 SAND_COLLECTION_ID = generate_entry_id(UPLOAD_ID, EXPERIMENT_MAINFILE)
+SHEET_ENTRY_ID = generate_entry_id(UPLOAD_ID, DERIVED_SHEET_MAINFILE)
 
 
 def _service() -> VoiceElnService:
@@ -49,6 +54,10 @@ class _FakeNomad:
         self.published = published
         self.upload_exists = upload_exists
         self.put_attempts = 0
+        # entry_id -> list of data sections; each GET pops one (last sticks),
+        # so a test can serve different processed_archive before/after a write
+        self.entry_archives: dict[str, list[dict]] = {}
+        self.deleted: list[str] = []
 
     def _status(self) -> httpx.Response:
         if not self.upload_exists:
@@ -86,20 +95,40 @@ class _FakeNomad:
         name = request.url.path.split('/raw/', 1)[1]
         if name not in self.raw_files:
             return httpx.Response(404, json={'detail': 'not found'})
+        if request.method == 'DELETE':
+            del self.raw_files[name]
+            self.deleted.append(name)
+            return httpx.Response(200, json={})
         return httpx.Response(200, content=self.raw_files[name])
+
+    def _entry_archive(self, entry_id: str) -> httpx.Response:
+        sections = self.entry_archives.get(entry_id)
+        if not sections:
+            return httpx.Response(404, json={'detail': 'not found'})
+        data = sections.pop(0) if len(sections) > 1 else sections[0]
+        return httpx.Response(200, json={'data': {'archive': {'data': data}}})
+
+    def _entries(self, request: httpx.Request, path: str) -> httpx.Response:
+        if request.method == 'GET' and path.endswith('/archive'):
+            return self._entry_archive(
+                path.split('/entries/')[1].split('/', maxsplit=1)[0]
+            )
+        if request.method == 'POST' and path.endswith('/entries/query'):
+            return httpx.Response(200, json={'data': self.query_results})
+        return httpx.Response(404, json={'detail': f'unexpected {path}'})
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
         if request.method == 'POST' and path.endswith('/uploads'):
             return httpx.Response(200, json={'upload_id': UPLOAD_ID})
+        if '/entries/' in path:
+            return self._entries(request, path)
         if f'/uploads/{UPLOAD_ID}/raw/' in path:
             return self._raw(request)
         if request.method == 'GET' and '/uploads/' in path:
             if path.endswith('/uploads/' + UPLOAD_ID):
                 return self._status()
             return httpx.Response(404, json={'detail': 'upload not found'})
-        if request.method == 'POST' and path.endswith('/entries/query'):
-            return httpx.Response(200, json={'data': self.query_results})
         return httpx.Response(404, json={'detail': f'unexpected {path}'})
 
     def archive(self, mainfile: str) -> dict:
@@ -398,6 +427,137 @@ async def test_write_to_published_upload_is_rejected():
             )
 
     assert fake.raw_files == {}
+
+
+# --- derived sheet: sidecar, edited-sheet guard, orphan cleanup ---
+
+
+def _sidecar_for(xlsx: bytes) -> dict:
+    return {'archive': {}, 'xlsx_sha256': hashlib.sha256(xlsx).hexdigest()}
+
+
+async def _add_sheet(service, client, xlsx: bytes, force=False):
+    sheet = DerivedSheet(
+        xlsx=xlsx,
+        mainfile=DERIVED_SHEET_MAINFILE,
+        sidecar=_sidecar_for(xlsx),
+        sidecar_mainfile=EXTRACTED_JSON_MAINFILE,
+    )
+    return await service.add_derived_sheet(
+        client,
+        UPLOAD_ID,
+        sheet,
+        collection_entry_id=SAND_COLLECTION_ID,
+        force=force,
+    )
+
+
+@pytest.mark.asyncio
+async def test_add_derived_sheet_stores_sidecar_and_links_parsed_entries():
+    fake = _FakeNomad()
+    fake.entry_archives[SHEET_ENTRY_ID] = [
+        {
+            'processed_archive': [
+                entry_ref(UPLOAD_ID, 'p1'),
+                entry_ref(UPLOAD_ID, 'p2'),
+            ]
+        }
+    ]
+
+    async with _client(fake) as client:
+        service = _service()
+        await service.create_input_collection(client, 'perov_B1_a')
+        result = await _add_sheet(service, client, b'XLSX')
+
+    assert fake.raw_files[DERIVED_SHEET_MAINFILE] == b'XLSX'
+    sidecar = fake.archive(EXTRACTED_JSON_MAINFILE)
+    assert sidecar['xlsx_sha256'] == hashlib.sha256(b'XLSX').hexdigest()
+    collection = fake.archive(EXPERIMENT_MAINFILE)['data']
+    assert collection['derived_entries'] == [
+        entry_ref(UPLOAD_ID, result.entry_id),
+        entry_ref(UPLOAD_ID, 'p1'),
+        entry_ref(UPLOAD_ID, 'p2'),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_regenerate_refuses_to_overwrite_a_hand_edited_sheet():
+    fake = _FakeNomad()
+
+    async with _client(fake) as client:
+        service = _service()
+        await service.create_input_collection(client, 'perov_B1_a')
+        fake.raw_files[DERIVED_SHEET_MAINFILE] = b'EDITED'
+        fake.raw_files[EXTRACTED_JSON_MAINFILE] = json.dumps(
+            _sidecar_for(b'ORIGINAL')
+        ).encode()
+        with pytest.raises(SheetEditedError):
+            await _add_sheet(service, client, b'NEW')
+        # the edited sheet survives untouched
+        assert fake.raw_files[DERIVED_SHEET_MAINFILE] == b'EDITED'
+
+        await _add_sheet(service, client, b'NEW', force=True)
+
+    assert fake.raw_files[DERIVED_SHEET_MAINFILE] == b'NEW'
+    assert fake.archive(EXTRACTED_JSON_MAINFILE)['xlsx_sha256'] == (
+        hashlib.sha256(b'NEW').hexdigest()
+    )
+
+
+@pytest.mark.asyncio
+async def test_regenerate_over_unedited_or_sidecarless_sheet_needs_no_force():
+    fake = _FakeNomad()
+
+    async with _client(fake) as client:
+        service = _service()
+        await service.create_input_collection(client, 'perov_B1_a')
+        # pre-sidecar upload: provenance unknown, treated as unedited
+        fake.raw_files[DERIVED_SHEET_MAINFILE] = b'LEGACY'
+        await _add_sheet(service, client, b'NEW')
+
+        # hash matches the sidecar: not edited
+        await _add_sheet(service, client, b'NEWER')
+
+    assert fake.raw_files[DERIVED_SHEET_MAINFILE] == b'NEWER'
+
+
+@pytest.mark.asyncio
+async def test_regenerate_deletes_raw_files_of_dropped_parsed_entries():
+    fake = _FakeNomad(
+        query_results=[{'entry_id': 'p-old', 'mainfile': 'gone_sample.archive.json'}],
+    )
+    fake.entry_archives[SHEET_ENTRY_ID] = [
+        {
+            'processed_archive': [
+                entry_ref(UPLOAD_ID, 'p-old'),
+                entry_ref(UPLOAD_ID, 'p-kept'),
+            ]
+        },
+        {
+            'processed_archive': [
+                entry_ref(UPLOAD_ID, 'p-kept'),
+                entry_ref(UPLOAD_ID, 'p-new'),
+            ]
+        },
+    ]
+
+    async with _client(fake) as client:
+        service = _service()
+        await service.create_input_collection(client, 'perov_B1_a')
+        fake.raw_files[DERIVED_SHEET_MAINFILE] = b'OLD'
+        fake.raw_files[EXTRACTED_JSON_MAINFILE] = json.dumps(
+            _sidecar_for(b'OLD')
+        ).encode()
+        fake.raw_files['gone_sample.archive.json'] = b'{}'
+        result = await _add_sheet(service, client, b'NEW')
+
+    assert fake.deleted == ['gone_sample.archive.json']
+    collection = fake.archive(EXPERIMENT_MAINFILE)['data']
+    assert collection['derived_entries'] == [
+        entry_ref(UPLOAD_ID, result.entry_id),
+        entry_ref(UPLOAD_ID, 'p-kept'),
+        entry_ref(UPLOAD_ID, 'p-new'),
+    ]
 
 
 @pytest.mark.asyncio

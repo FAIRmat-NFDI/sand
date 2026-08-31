@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import json
 import posixpath
 import time
 from dataclasses import dataclass
@@ -68,10 +70,38 @@ def _parse_input_datetime(value) -> datetime | None:
     return parsed
 
 
+class SheetEditedError(Exception):
+    """The stored sheet no longer matches the hash sand recorded: a
+    regenerate would silently discard the user's manual edits."""
+
+
+def _sheet_edited(current_xlsx: bytes, sidecar: bytes | None) -> bool:
+    """No sidecar (pre-sidecar uploads) or an unreadable one -> unknown
+    provenance, treated as unedited."""
+    if sidecar is None:
+        return False
+    try:
+        stored = json.loads(sidecar).get('xlsx_sha256')
+    except ValueError:
+        return False
+    return bool(stored) and hashlib.sha256(current_xlsx).hexdigest() != stored
+
+
 @dataclass
 class EntryHandle:
     upload_id: str
     entry_id: str
+
+
+@dataclass(frozen=True)
+class DerivedSheet:
+    """The extract endpoint's output files: the xlsx NOMAD parses and the
+    sidecar holding the pristine extraction result + provenance."""
+
+    xlsx: bytes
+    mainfile: str
+    sidecar: dict
+    sidecar_mainfile: str
 
 
 @dataclass(frozen=True)
@@ -301,11 +331,16 @@ class VoiceElnService:
         self,
         client: httpx.AsyncClient,
         upload_id: str,
-        xlsx: bytes,
-        sheet_mainfile: str,
+        sheet: DerivedSheet,
         collection_entry_id: str,
+        force: bool = False,
     ) -> EntryHandle:
-        """Store the derived experiment sheet and link it from the collection.
+        """Store the derived sheet + its extraction sidecar, link both.
+
+        Guard: if the stored xlsx differs from the hash in the stored
+        sidecar, the user edited it by hand -> SheetEditedError unless
+        force. Raw files of previously parsed entries the new parse did
+        not regenerate are deleted (lab_id changes would orphan them).
 
         derived_entries is REPLACED with the sheet's entry plus every entry
         its parse created (the sheet entry's processed_archive) - a
@@ -317,29 +352,82 @@ class VoiceElnService:
         )
         await self._writer.read_archive(client, upload_id, mainfile)
 
+        entry_id = generate_entry_id(upload_id, sheet.mainfile)
+        current = await self._writer.read_raw_file(client, upload_id, sheet.mainfile)
+        old_ids: list[str] = []
+        if current is not None:
+            if not force:
+                stored_sidecar = await self._writer.read_raw_file(
+                    client, upload_id, sheet.sidecar_mainfile
+                )
+                if _sheet_edited(current, stored_sidecar):
+                    raise SheetEditedError(
+                        'the experiment sheet was edited by hand; regenerating '
+                        'would discard those edits'
+                    )
+            old_ids = await self._processed_entry_ids(client, entry_id, attempts=1)
+
         await self._writer.upload_raw_file(
             client,
             upload_id,
-            sheet_mainfile,
-            xlsx,
+            sheet.mainfile,
+            sheet.xlsx,
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
-        entry_id = generate_entry_id(upload_id, sheet_mainfile)
+        await self._writer.upload_raw_file(
+            client,
+            upload_id,
+            sheet.sidecar_mainfile,
+            json.dumps(sheet.sidecar, ensure_ascii=False).encode(),
+            'application/json',
+        )
 
         # The parsed entries exist only once the upload finished processing
-        # the sheet; read_archive above already waits for idle, but the PUT
+        # the sheet; the writer waits before each write, but the last PUT
         # just re-triggered processing, so wait again.
         await self._writer.wait_until_writable(
             client,
             upload_id,
             time.monotonic() + self._writer.write_timeout_s,
-            sheet_mainfile,
+            sheet.mainfile,
         )
         parsed_ids = await self._processed_entry_ids(client, entry_id)
+        orphan_ids = [i for i in old_ids if i not in set(parsed_ids)]
+        if orphan_ids:
+            await self._delete_entry_files(
+                client,
+                upload_id,
+                orphan_ids,
+                keep={sheet.mainfile, sheet.sidecar_mainfile, mainfile},
+            )
         await self._set_collection_refs(
             client, upload_id, 'derived_entries', [entry_id, *parsed_ids], mainfile
         )
         return EntryHandle(upload_id=upload_id, entry_id=entry_id)
+
+    async def _delete_entry_files(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        entry_ids: list[str],
+        keep: set[str],
+    ) -> None:
+        """Delete the raw files behind stale parsed entries (NOMAD drops
+        the entries on reprocess). `keep` shields sand's own mainfiles."""
+        response = await client.post(
+            '/entries/query',
+            json={
+                'owner': 'visible',
+                'query': {'upload_id': upload_id, 'entry_id:any': entry_ids},
+                'required': {'include': ['entry_id', 'mainfile']},
+                'pagination': {'page_size': len(entry_ids)},
+            },
+        )
+        check_response(response, step='find_stale_entries')
+        for entry in response.json().get('data', []):
+            target = entry.get('mainfile')
+            if target and target not in keep:
+                await self._writer.delete_raw_file(client, upload_id, target)
 
     async def _processed_entry_ids(
         self, client: httpx.AsyncClient, sheet_entry_id: str, attempts: int = 5

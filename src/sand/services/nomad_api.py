@@ -184,6 +184,39 @@ class RawFileWriter:
                 )
             await asyncio.sleep(self.retry_interval_s)
 
+    async def read_raw_file(
+        self, client: httpx.AsyncClient, upload_id: str, file_name: str
+    ) -> bytes | None:
+        """The raw file's bytes once the upload is idle; None if absent."""
+        await self.wait_until_writable(
+            client, upload_id, time.monotonic() + self.write_timeout_s, file_name
+        )
+        response = await client.get(f'/uploads/{upload_id}/raw/{file_name}')
+        if response.status_code == HTTPStatus.NOT_FOUND:
+            return None
+        check_response(response, step='read_raw_file')
+        return response.content
+
+    async def delete_raw_file(
+        self, client: httpx.AsyncClient, upload_id: str, file_name: str
+    ) -> None:
+        """DELETE a raw file once the upload is idle (already-gone is fine).
+        Deleting triggers processing, like a PUT, with the same race."""
+        deadline = time.monotonic() + self.write_timeout_s
+        while True:
+            await self.wait_until_writable(client, upload_id, deadline, file_name)
+            response = await client.delete(f'/uploads/{upload_id}/raw/{file_name}')
+            if response.status_code == HTTPStatus.NOT_FOUND:
+                return
+            if (
+                response.status_code == HTTPStatus.BAD_REQUEST
+                and time.monotonic() < deadline
+                and await self._upload_is_processing(client, upload_id)
+            ):
+                continue
+            check_response(response, step='delete_raw_file')
+            return
+
     async def write_archive(
         self, client: httpx.AsyncClient, upload_id: str, mainfile: str, archive: dict
     ) -> None:
