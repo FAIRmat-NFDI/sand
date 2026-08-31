@@ -6,7 +6,7 @@ import re
 from sand.hysprint.archive import build_samples, canonicalize, compose_experiment
 from sand.services.voice_eln import EXPERIMENT_INFO_LABEL, CollectedInput
 
-# the LAST number in a name is the sample counter: 'a_1_s_2_x' -> 2
+# the LAST number in a name is the sample counter: 'project_2_s_1_niox' -> 2
 _LAST_NUMBER_RE = re.compile(r'(\d+)(?=\D*$)')
 
 REQUIRED_INFO_FIELDS = (
@@ -80,14 +80,6 @@ def route_inputs(inputs: list[CollectedInput]) -> tuple[dict, list[str]]:
 
 def resolve_sample_labels(labels: list[str], sample_names: list[str]) -> list[str]:
     """Map narrated sample labels to the declared sample names.
-
-    The narration may name samples differently from the form-generated
-    names ('1' spoken, 's_1' or 's_1_x' declared): the model transcribes
-    labels exactly as stated, so the mapping is code's job. Exact match
-    first, else the unique declared name whose last number matches;
-    anything else raises with the declared names listed. Numbers compare
-    as integers, so zero-padding never matters ('01', '001', 's_001' all
-    resolve against 's_01' or 's_1' alike).
     """
     by_number: dict[int, list[str]] = {}
     for name in sample_names:
