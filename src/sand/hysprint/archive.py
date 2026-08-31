@@ -76,13 +76,19 @@ def _nomad_id(project: str, batch, subbatch, sample: str) -> str:
     return f'{project}_{batch}_{subbatch}_C-{sample}'
 
 
-# TODO: collect substrate info in the experiment-info form instead of
-# hardcoding.
-DEFAULT_SUBSTRATE = {
-    'substrate_material': 'Glass',
-    'substrate_conductive_layer': 'ITO',
-    'number_of_pixels': 6,
-}
+# Sample/substrate info from the form - identical for every sample of an
+# experiment.
+SAMPLE_INFO_FIELDS = (
+    'sample_dimension',
+    'sample_area',
+    'number_of_pixels',
+    'pixel_area',
+    'substrate_material',
+    'substrate_conductive_layer',
+    'sheet_resistance',
+    'transmission',
+    'number_of_junctions',
+)
 
 
 def build_samples(info: dict) -> list[dict]:
@@ -91,6 +97,7 @@ def build_samples(info: dict) -> list[dict]:
     `date` is the form's string as-is (the hysprint batch parser expects an
     ISO date), defaulting to today."""
     iso_date = str(info.get('date') or date.today().isoformat())
+    sample_info = {k: info[k] for k in SAMPLE_INFO_FIELDS if info.get(k) is not None}
     return [
         {
             'date': iso_date,
@@ -101,7 +108,7 @@ def build_samples(info: dict) -> list[dict]:
             'lab_id': _nomad_id(
                 info['project_name'], info['batch'], info['subbatch'], name
             ),
-            **DEFAULT_SUBSTRATE,  # todo: change to user input
+            **sample_info,
         }
         for name in _sample_names(info['first_sample'], info['n_samples'])
     ]

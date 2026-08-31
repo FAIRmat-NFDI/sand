@@ -344,8 +344,7 @@ class VoiceElnService:
     async def _processed_entry_ids(
         self, client: httpx.AsyncClient, sheet_entry_id: str, attempts: int = 5
     ) -> list[str]:
-        """Entry ids the sheet's parse created (its processed_archive).
-        """
+        """Entry ids the sheet's parse created (its processed_archive)."""
         for attempt in range(attempts):
             response = await client.get(f'/entries/{sheet_entry_id}/archive')
             if response.status_code != HTTPStatus.NOT_FOUND:
