@@ -90,15 +90,6 @@ SAMPLE_INFO_FIELDS = (
     'number_of_junctions',
 )
 
-# Fallbacks for experiments whose stored experiment_info predates the form
-# fields. They keep the sheet's substrate block non-empty (and numeric):
-# present-but-empty columns crash the batch parser.
-DEFAULT_SAMPLE_INFO = {
-    'substrate_material': 'Glass',
-    'substrate_conductive_layer': 'ITO',
-    'number_of_pixels': 6,
-}
-
 
 def build_samples(info: dict) -> list[dict]:
     """The Experiment-Info rows from the form: generated sample names + lab_ids.
@@ -106,10 +97,7 @@ def build_samples(info: dict) -> list[dict]:
     `date` is the form's string as-is (the hysprint batch parser expects an
     ISO date), defaulting to today."""
     iso_date = str(info.get('date') or date.today().isoformat())
-    sample_info = {
-        **DEFAULT_SAMPLE_INFO,
-        **{k: info[k] for k in SAMPLE_INFO_FIELDS if info.get(k) is not None},
-    }
+    sample_info = {k: info[k] for k in SAMPLE_INFO_FIELDS if info.get(k) is not None}
     return [
         {
             'date': iso_date,
