@@ -77,8 +77,8 @@ def route_inputs(inputs: list[CollectedInput]) -> tuple[dict, list[str]]:
     return info, steps
 
 
-def resolve_sample_labels(slot: dict, sample_names: list[str]) -> dict:
-    """Map extracted sample labels to the declared sample names, in place.
+def resolve_sample_labels(labels: list[str], sample_names: list[str]) -> list[str]:
+    """Map narrated sample labels to the declared sample names.
 
     The narration may name samples differently from the form-generated
     names ('1' spoken, 's_1' declared): the model transcribes labels
@@ -94,29 +94,28 @@ def resolve_sample_labels(slot: dict, sample_names: list[str]) -> dict:
         if m:
             by_number.setdefault(int(m.group(1)), []).append(name)
 
-    for variant in slot.get('variants', []):
-        labels = variant.get('samples')
-        if labels == 'all' or not isinstance(labels, list):
+    resolved = []
+    for label in labels:
+        if label in sample_names:
+            resolved.append(label)
             continue
-        resolved = []
-        for label in labels:
-            if label in sample_names:
-                resolved.append(label)
-                continue
-            m = _TRAILING_NUMBER_RE.search(str(label))
-            candidates = by_number.get(int(m.group(1)), []) if m else []
-            if len(candidates) != 1:
-                raise HysprintInputError(
-                    f'cannot match the narrated sample {label!r} to one of the '
-                    f'declared samples {sample_names}'
-                )
-            resolved.append(candidates[0])
-        variant['samples'] = resolved
-    return slot
+        m = _TRAILING_NUMBER_RE.search(str(label))
+        candidates = by_number.get(int(m.group(1)), []) if m else []
+        if len(candidates) != 1:
+            raise HysprintInputError(
+                f'cannot match the narrated sample {label!r} to one of the '
+                f'declared samples {sample_names}'
+            )
+        resolved.append(candidates[0])
+    return resolved
 
 
 def assemble(info: dict, slots: list[dict]) -> dict:
     """Ordered extracted slots + form -> the canonical {samples, steps} archive."""
     sample_names = [s['sample'] for s in build_samples(info)]
-    slots = [resolve_sample_labels(slot, sample_names) for slot in slots]
+    for slot in slots:
+        for variant in slot.get('variants', []):
+            labels = variant.get('samples')
+            if isinstance(labels, list):
+                variant['samples'] = resolve_sample_labels(labels, sample_names)
     return canonicalize(compose_experiment(info, slots))
