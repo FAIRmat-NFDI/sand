@@ -129,6 +129,20 @@ def test_resolve_normalizes_zero_padding_both_directions():
     assert resolve_sample_labels(['01', '001'], plain) == ['s_1', 's_1']
 
 
+def test_resolve_matches_the_last_number_through_a_suffix():
+    suffixed = [f's_{i}_x' for i in range(1, 15)]
+    assert resolve_sample_labels(['1', '11', 's_1'], suffixed) == [
+        's_1_x',
+        's_11_x',
+        's_1_x',
+    ]
+    # more numbers before the counter: the LAST one is the sample number
+    assert resolve_sample_labels(['2', '3'], ['a_1_s_2_x', 'a_1_s_3_x']) == [
+        'a_1_s_2_x',
+        'a_1_s_3_x',
+    ]
+
+
 def test_resolve_rejects_unmatched_label():
     with pytest.raises(HysprintInputError, match="narrated sample '99'"):
         resolve_sample_labels(['99'], ['s_1', 's_2'])

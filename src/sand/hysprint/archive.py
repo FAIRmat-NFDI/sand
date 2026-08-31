@@ -62,14 +62,15 @@ def canonicalize(archive: dict) -> dict:
 
 
 def _sample_names(first: str, n: int) -> list[str]:
-    """first "1" -> 1..n, first "x_1" -> x_1..x_n. A first sample without a
-    trailing number cannot be auto-continued -> ValueError."""
-    m = re.match(r'^(.*?)(\d+)$', str(first))
+    """first "1" -> 1..n, first "x_1" -> x_1..x_n, first "x_1_y" -> x_1_y..x_n_y.
+    The counter is the LAST number in the name (a suffix may follow it). A first
+    sample without any number cannot be auto-continued -> ValueError."""
+    m = re.match(r'^(.*?)(\d+)(\D*)$', str(first))
     if not m:
-        raise ValueError(f'first sample {first!r} has no trailing number to count from')
-    prefix, digits = m.group(1), m.group(2)
+        raise ValueError(f'first sample {first!r} has no number to count from')
+    prefix, digits, suffix = m.groups()
     # keep the zero-padding: first "05" -> 05, 06, ... so narrated labels match
-    return [f'{prefix}{int(digits) + i:0{len(digits)}d}' for i in range(n)]
+    return [f'{prefix}{int(digits) + i:0{len(digits)}d}{suffix}' for i in range(n)]
 
 
 def _nomad_id(project: str, batch, subbatch, sample: str) -> str:

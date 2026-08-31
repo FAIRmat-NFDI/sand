@@ -6,7 +6,8 @@ import re
 from sand.hysprint.archive import build_samples, canonicalize, compose_experiment
 from sand.services.voice_eln import EXPERIMENT_INFO_LABEL, CollectedInput
 
-_TRAILING_NUMBER_RE = re.compile(r'(\d+)$')
+# the LAST number in a name is the sample counter: 'a_1_s_2_x' -> 2
+_LAST_NUMBER_RE = re.compile(r'(\d+)(?=\D*$)')
 
 REQUIRED_INFO_FIELDS = (
     'project_name',
@@ -81,16 +82,16 @@ def resolve_sample_labels(labels: list[str], sample_names: list[str]) -> list[st
     """Map narrated sample labels to the declared sample names.
 
     The narration may name samples differently from the form-generated
-    names ('1' spoken, 's_1' declared): the model transcribes labels
-    exactly as stated, so the mapping is code's job. Exact match first,
-    else the unique declared name sharing the trailing number; anything
-    else raises with the declared names listed. Trailing numbers compare
+    names ('1' spoken, 's_1' or 's_1_x' declared): the model transcribes
+    labels exactly as stated, so the mapping is code's job. Exact match
+    first, else the unique declared name whose last number matches;
+    anything else raises with the declared names listed. Numbers compare
     as integers, so zero-padding never matters ('01', '001', 's_001' all
     resolve against 's_01' or 's_1' alike).
     """
     by_number: dict[int, list[str]] = {}
     for name in sample_names:
-        m = _TRAILING_NUMBER_RE.search(name)
+        m = _LAST_NUMBER_RE.search(name)
         if m:
             by_number.setdefault(int(m.group(1)), []).append(name)
 
@@ -99,7 +100,7 @@ def resolve_sample_labels(labels: list[str], sample_names: list[str]) -> list[st
         if label in sample_names:
             resolved.append(label)
             continue
-        m = _TRAILING_NUMBER_RE.search(str(label))
+        m = _LAST_NUMBER_RE.search(str(label))
         candidates = by_number.get(int(m.group(1)), []) if m else []
         if len(candidates) != 1:
             raise HysprintInputError(

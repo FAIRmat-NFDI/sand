@@ -33,8 +33,16 @@ def test_build_samples_keeps_zero_padded_names():
     assert samples[0]['lab_id'] == 'perov_B1_a_C-05'
 
 
+def test_build_samples_counts_the_last_number_and_keeps_the_suffix():
+    samples = build_samples({**INFO, 'first_sample': 's_1_x'})
+    assert [s['sample'] for s in samples] == ['s_1_x', 's_2_x', 's_3_x']
+
+    samples = build_samples({**INFO, 'first_sample': 'a_1_s_2_x'})
+    assert [s['sample'] for s in samples] == ['a_1_s_2_x', 'a_1_s_3_x', 'a_1_s_4_x']
+
+
 def test_build_samples_rejects_uncountable_first_sample():
-    with pytest.raises(ValueError, match='no trailing number'):
+    with pytest.raises(ValueError, match='no number'):
         build_samples({**INFO, 'first_sample': 'alpha'})
 
 
