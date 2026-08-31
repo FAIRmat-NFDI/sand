@@ -8,6 +8,19 @@ class HysprintExperimentInfoForm(BaseModel):
     first_sample: str = Field(min_length=1)
     n_samples: int = Field(ge=1)
 
+    # Sample/substrate info - identical for every sample of an experiment.
+    # The defaulted three keep the sheet's substrate block non-empty (and
+    # numeric): present-but-empty columns crash the batch parser.
+    substrate_material: str = Field('Glass', min_length=1)
+    substrate_conductive_layer: str = Field('ITO', min_length=1)
+    number_of_pixels: int = Field(6, ge=1)
+    sample_dimension: str | None = None
+    sample_area: float | None = None  # cm^2
+    pixel_area: float | None = None  # cm^2
+    sheet_resistance: float | None = None  # Ohms/square
+    transmission: float | None = None  # %
+    number_of_junctions: int | None = None
+
     def default_name(self) -> str:
         """The lab naming convention experiments follow; lab_ids derive
         from these parts (docs/handover.md), so it lives on the model

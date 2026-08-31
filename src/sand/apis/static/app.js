@@ -192,7 +192,37 @@ document.getElementById("create-experiment-btn").addEventListener("click", async
     showError("Number of samples must be a whole number of at least 1.");
     return;
   }
-  const body = { info: { ...fields, n_samples: nSamples } };
+  const info = { ...fields, n_samples: nSamples };
+  // Sample/substrate info - the same for every sample of the experiment.
+  // Blank fields are omitted; the server applies its defaults.
+  const stringField = (id, key) => {
+    const value = document.getElementById(id).value.trim();
+    if (value) info[key] = value;
+  };
+  const numberField = (id, key) => {
+    const value = document.getElementById(id).value.trim();
+    if (!value) return true;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      showError("Invalid number in " + key.replaceAll("_", " ") + ".");
+      return false;
+    }
+    info[key] = parsed;
+    return true;
+  };
+  stringField("exp-substrate-material", "substrate_material");
+  stringField("exp-substrate-conductive-layer", "substrate_conductive_layer");
+  stringField("exp-sample-dimension", "sample_dimension");
+  const numbersOk = [
+    numberField("exp-number-of-pixels", "number_of_pixels"),
+    numberField("exp-sample-area", "sample_area"),
+    numberField("exp-pixel-area", "pixel_area"),
+    numberField("exp-sheet-resistance", "sheet_resistance"),
+    numberField("exp-transmission", "transmission"),
+    numberField("exp-number-of-junctions", "number_of_junctions"),
+  ].every(Boolean);
+  if (!numbersOk) return;
+  const body = { info };
   try {
     const res = await authFetch("api/input-collections", {
       method: "POST",
@@ -206,7 +236,7 @@ document.getElementById("create-experiment-btn").addEventListener("click", async
     const created = await res.json();
     newExperimentForm.hidden = true;
     for (const input of newExperimentForm.querySelectorAll("input")) {
-      input.value = "";
+      input.value = input.defaultValue; // keeps the Glass/ITO/6 prefills
     }
     // Insert the new experiment locally: NOMAD indexes the entry
     // asynchronously, so an immediate list refetch would not have it.

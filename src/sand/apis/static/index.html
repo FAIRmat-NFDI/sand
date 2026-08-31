@@ -46,6 +46,15 @@
             <label>Subbatch <input class="form-input" id="exp-subbatch"></label>
             <label>First sample <input class="form-input" id="exp-first-sample"></label>
             <label>Number of samples <input class="form-input" id="exp-n-samples" type="number" min="1"></label>
+            <label>Substrate material <input class="form-input" id="exp-substrate-material" value="Glass"></label>
+            <label>Substrate conductive layer <input class="form-input" id="exp-substrate-conductive-layer" value="ITO"></label>
+            <label>Number of pixels <input class="form-input" id="exp-number-of-pixels" type="number" min="1" value="6"></label>
+            <label>Sample dimension <input class="form-input" id="exp-sample-dimension" placeholder="optional"></label>
+            <label>Sample area [cm&sup2;] <input class="form-input" id="exp-sample-area" type="number" step="any" placeholder="optional"></label>
+            <label>Pixel area [cm&sup2;] <input class="form-input" id="exp-pixel-area" type="number" step="any" placeholder="optional"></label>
+            <label>Sheet resistance [Ohms/square] <input class="form-input" id="exp-sheet-resistance" type="number" step="any" placeholder="optional"></label>
+            <label>Transmission [%] <input class="form-input" id="exp-transmission" type="number" step="any" placeholder="optional"></label>
+            <label>Number of junctions <input class="form-input" id="exp-number-of-junctions" type="number" min="1" placeholder="optional"></label>
           </div>
           <div class="controls">
             <button class="btn btn-primary" id="create-experiment-btn" type="button">Create</button>
