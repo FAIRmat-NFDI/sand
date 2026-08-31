@@ -338,9 +338,12 @@ class VoiceElnService:
         """Store the derived sheet + its extraction file, link both.
 
         Guard: if the stored xlsx differs from the hash in the stored
-        extraction file, the user edited it by hand -> SheetEditedError unless
-        force. Raw files of previously parsed entries the new parse did
-        not regenerate are deleted (lab_id changes would orphan them).
+        extraction file, the user edited it by hand -> SheetEditedError
+        unless force. The previous parse output is deleted BEFORE the new
+        sheet is written: the hysprint parser never overwrites an existing
+        generated file (create_archive(overwrite=False)), so a re-parse
+        over old files would silently keep their stale content. Unchanged
+        filenames get the same entry ids back, so links do not rot.
 
         derived_entries is REPLACED with the sheet's entry plus every entry
         its parse created (the sheet entry's processed_archive) - a
@@ -369,6 +372,16 @@ class VoiceElnService:
                     )
             old_ids = await self._processed_entry_ids(client, entry_id, attempts=1)
 
+        # Clear the previous parse output before the parser runs again -
+        # it skips files that already exist, keeping stale content.
+        if old_ids:
+            await self._delete_entry_files(
+                client,
+                upload_id,
+                old_ids,
+                keep={sheet.xlsx_mainfile, sheet.extraction_mainfile, mainfile},
+            )
+
         await self._writer.upload_raw_file(
             client,
             upload_id,
@@ -394,14 +407,6 @@ class VoiceElnService:
             sheet.xlsx_mainfile,
         )
         parsed_ids = await self._processed_entry_ids(client, entry_id)
-        orphan_ids = [i for i in old_ids if i not in set(parsed_ids)]
-        if orphan_ids:
-            await self._delete_entry_files(
-                client,
-                upload_id,
-                orphan_ids,
-                keep={sheet.xlsx_mainfile, sheet.extraction_mainfile, mainfile},
-            )
         await self._set_collection_refs(
             client, upload_id, 'derived_entries', [entry_id, *parsed_ids], mainfile
         )

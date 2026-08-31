@@ -522,14 +522,20 @@ async def test_regenerate_over_unedited_or_pre_extraction_sheet_needs_no_force()
 
 
 @pytest.mark.asyncio
-async def test_regenerate_deletes_raw_files_of_dropped_parsed_entries():
+async def test_regenerate_deletes_the_previous_parse_output_before_reparse():
+    # the hysprint parser never overwrites an existing generated file, so
+    # ALL old parse output must go before the re-parse - including entries
+    # the new parse recreates under the same name (else stale content)
     fake = _FakeNomad(
-        query_results=[{'entry_id': 'p-old', 'mainfile': 'gone_sample.archive.json'}],
+        query_results=[
+            {'entry_id': 'p-gone', 'mainfile': 'gone_sample.archive.json'},
+            {'entry_id': 'p-kept', 'mainfile': 'kept_sample.archive.json'},
+        ],
     )
     fake.entry_archives[SHEET_ENTRY_ID] = [
         {
             'processed_archive': [
-                entry_ref(UPLOAD_ID, 'p-old'),
+                entry_ref(UPLOAD_ID, 'p-gone'),
                 entry_ref(UPLOAD_ID, 'p-kept'),
             ]
         },
@@ -549,9 +555,13 @@ async def test_regenerate_deletes_raw_files_of_dropped_parsed_entries():
             _extraction_for(b'OLD')
         ).encode()
         fake.raw_files['gone_sample.archive.json'] = b'{}'
+        fake.raw_files['kept_sample.archive.json'] = b'{}'
         result = await _add_sheet(service, client, b'NEW')
 
-    assert fake.deleted == ['gone_sample.archive.json']
+    assert sorted(fake.deleted) == [
+        'gone_sample.archive.json',
+        'kept_sample.archive.json',
+    ]
     collection = fake.archive(EXPERIMENT_MAINFILE)['data']
     assert collection['derived_entries'] == [
         entry_ref(UPLOAD_ID, result.entry_id),
