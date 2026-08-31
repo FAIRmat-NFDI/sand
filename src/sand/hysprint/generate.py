@@ -1,9 +1,13 @@
 """Route an experiment's collected inputs and assemble the final archive."""
 
 import json
+import re
 
-from sand.hysprint.archive import canonicalize, compose_experiment
+from sand.hysprint.archive import build_samples, canonicalize, compose_experiment
 from sand.services.voice_eln import EXPERIMENT_INFO_LABEL, CollectedInput
+
+# the LAST number in a name is the sample counter: 'project_2_s_1_niox' -> 2
+_LAST_NUMBER_RE = re.compile(r'(\d+)(?=\D*$)')
 
 REQUIRED_INFO_FIELDS = (
     'project_name',
@@ -74,6 +78,37 @@ def route_inputs(inputs: list[CollectedInput]) -> tuple[dict, list[str]]:
     return info, steps
 
 
+def resolve_sample_labels(labels: list[str], sample_names: list[str]) -> list[str]:
+    """Map narrated sample labels to the declared sample names.
+    """
+    by_number: dict[int, list[str]] = {}
+    for name in sample_names:
+        m = _LAST_NUMBER_RE.search(name)
+        if m:
+            by_number.setdefault(int(m.group(1)), []).append(name)
+
+    resolved = []
+    for label in labels:
+        if label in sample_names:
+            resolved.append(label)
+            continue
+        m = _LAST_NUMBER_RE.search(str(label))
+        candidates = by_number.get(int(m.group(1)), []) if m else []
+        if len(candidates) != 1:
+            raise HysprintInputError(
+                f'cannot match the narrated sample {label!r} to one of the '
+                f'declared samples {sample_names}'
+            )
+        resolved.append(candidates[0])
+    return resolved
+
+
 def assemble(info: dict, slots: list[dict]) -> dict:
     """Ordered extracted slots + form -> the canonical {samples, steps} archive."""
+    sample_names = [s['sample'] for s in build_samples(info)]
+    for slot in slots:
+        for variant in slot.get('variants', []):
+            labels = variant.get('samples')
+            if isinstance(labels, list):
+                variant['samples'] = resolve_sample_labels(labels, sample_names)
     return canonicalize(compose_experiment(info, slots))

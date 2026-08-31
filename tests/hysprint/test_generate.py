@@ -2,7 +2,12 @@ import json
 
 import pytest
 
-from sand.hysprint.generate import HysprintInputError, assemble, route_inputs
+from sand.hysprint.generate import (
+    HysprintInputError,
+    assemble,
+    resolve_sample_labels,
+    route_inputs,
+)
 from sand.services.voice_eln import CollectedInput
 
 INFO = {
@@ -100,3 +105,79 @@ def test_assemble_builds_the_canonical_archive():
     assert [s['position_in_experimental_plan'] for s in archive['steps']] == [1, 2, 2]
     assert archive['steps'][0]['samples'] == 'all'
     assert archive['steps'][1]['samples'] == ['perov_B1_a_C-1']
+
+
+# --- sample-label resolution: narrated labels -> declared sample names ---
+
+
+def test_resolve_keeps_exact_matches():
+    resolved = resolve_sample_labels(['s_1', 's_11'], ['s_1', 's_2', 's_11'])
+    assert resolved == ['s_1', 's_11']
+
+
+def test_resolve_maps_bare_numbers_to_prefixed_names():
+    # the reported failure: form declared s_1..s_14, narration said "1"
+    resolved = resolve_sample_labels(['1', '11'], [f's_{i}' for i in range(1, 15)])
+    assert resolved == ['s_1', 's_11']
+
+
+def test_resolve_normalizes_zero_padding_both_directions():
+    padded = [f's_{i:02d}' for i in range(1, 15)]
+    assert resolve_sample_labels(['1', '01', '001', 's_001'], padded) == ['s_01'] * 4
+
+    plain = [f's_{i}' for i in range(1, 15)]
+    assert resolve_sample_labels(['01', '001'], plain) == ['s_1', 's_1']
+
+
+def test_resolve_matches_the_last_number_through_a_suffix():
+    suffixed = [f's_{i}_x' for i in range(1, 15)]
+    assert resolve_sample_labels(['1', '11', 's_1'], suffixed) == [
+        's_1_x',
+        's_11_x',
+        's_1_x',
+    ]
+    # more numbers before the counter: the LAST one is the sample number
+    assert resolve_sample_labels(['2', '3'], ['a_1_s_2_x', 'a_1_s_3_x']) == [
+        'a_1_s_2_x',
+        'a_1_s_3_x',
+    ]
+
+
+def test_resolve_rejects_unmatched_label():
+    with pytest.raises(HysprintInputError, match="narrated sample '99'"):
+        resolve_sample_labels(['99'], ['s_1', 's_2'])
+
+
+def test_resolve_rejects_ambiguous_trailing_number():
+    # two declared names share the trailing number: refuse, never guess
+    with pytest.raises(HysprintInputError, match='cannot match'):
+        resolve_sample_labels(['1'], ['a_1', 'b_1'])
+
+
+def test_assemble_leaves_all_untouched():
+    slots = [{'step_type': 'Cleaning', 'variants': [{'samples': 'all', 'time': 5}]}]
+    archive = assemble(
+        {**INFO, 'first_sample': 's_1'},
+        slots,
+    )
+    assert archive['steps'][0]['samples'] == 'all'
+
+
+def test_assemble_resolves_labels_through_to_lab_ids():
+    info = {
+        'project_name': 'p',
+        'batch': 'b',
+        'subbatch': 's',
+        'first_sample': 's_1',
+        'n_samples': 14,
+    }
+    slots = [
+        {
+            'step_type': 'Cleaning',
+            'variants': [{'samples': ['1', 's_11'], 'time': 5}],
+        }
+    ]
+
+    archive = assemble(info, slots)
+
+    assert archive['steps'][0]['samples'] == ['p_b_s_C-s_1', 'p_b_s_C-s_11']
