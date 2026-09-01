@@ -75,16 +75,18 @@ class SheetEditedError(Exception):
     regenerate would silently discard the user's manual edits."""
 
 
-def _sheet_edited(current_xlsx: bytes, extraction: bytes | None) -> bool:
-    """No extraction file (pre-extraction-file uploads) or an unreadable
-    one -> unknown provenance, treated as unedited."""
+def _sheet_hash_matches(current_xlsx: bytes, extraction: bytes | None) -> bool:
+    """False only when the recorded hash exists and differs from the stored
+    xlsx - someone other than sand changed the sheet. No extraction file
+    (pre-extraction-file uploads) or an unreadable one -> unknown
+    provenance, treated as matching (the guard fails open)."""
     if extraction is None:
-        return False
+        return True
     try:
         stored = json.loads(extraction).get('xlsx_sha256')
     except ValueError:
-        return False
-    return bool(stored) and hashlib.sha256(current_xlsx).hexdigest() != stored
+        return True
+    return not stored or hashlib.sha256(current_xlsx).hexdigest() == stored
 
 
 def _same_archive(stored_extraction: bytes | None, extraction: dict) -> bool:
@@ -374,7 +376,7 @@ class VoiceElnService:
             stored_extraction = await self._writer.read_raw_file(
                 client, upload_id, sheet.extraction_mainfile
             )
-            edited = _sheet_edited(current, stored_extraction)
+            edited = not _sheet_hash_matches(current, stored_extraction)
             if edited and not force:
                 raise SheetEditedError(
                     'the experiment sheet was edited by hand; regenerating '
