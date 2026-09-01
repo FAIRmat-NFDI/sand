@@ -87,21 +87,6 @@ def _sheet_hash_matches(current_xlsx: bytes, extraction: bytes | None) -> bool:
     return not stored or hashlib.sha256(current_xlsx).hexdigest() == stored
 
 
-def _same_archive(stored_extraction: bytes | None, extraction: dict) -> bool:
-    """True when the stored extraction file encodes the same archive as the
-    new result: the sheet would regenerate identically, so the delete +
-    re-parse is a no-op. Compared on the archive JSON, not the xlsx bytes -
-    openpyxl output is not byte-deterministic across runs."""
-    if stored_extraction is None:
-        return False
-    try:
-        stored = json.loads(stored_extraction)
-    except ValueError:
-        return False
-    archive = stored.get('archive')
-    return archive is not None and archive == extraction.get('archive')
-
-
 @dataclass
 class EntryHandle:
     upload_id: str
@@ -110,12 +95,13 @@ class EntryHandle:
 
 @dataclass(frozen=True)
 class DerivedSheet:
-    """The extract endpoint's output files: the xlsx NOMAD parses and the
-    extraction file holding the pristine result + provenance."""
-
     xlsx: bytes
+    # file name: hysprint_experiment.xlsx
     xlsx_mainfile: str
+    # {archive, xlsx_sha256, extracted_at, input_entry_ids} — the pristine
+    # result; the hash detects hand-edited sheets.
     extraction: dict
+    # file name: hysprint_experiment.extracted.json
     extraction_mainfile: str
 
 
@@ -351,9 +337,10 @@ class VoiceElnService:
         force: bool = False,
     ) -> EntryHandle:
         """
-        current xlxs hash and the hash in arhive do not mismatch without force → 409;
-        hash matches and archive unchanged → skip,
-         everything else → replace the xlxs and reparse and update the derived entry as well
+        A hand-edited sheet (stored xlsx no longer matching the recorded
+        hash) → 409 without force; otherwise replace the xlsx, reparse,
+        and update the derived entries. Always regenerating keeps the
+        path self-healing — every retry redoes the full work (issue #34).
         """
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
@@ -366,31 +353,16 @@ class VoiceElnService:
         )
         old_ids: list[str] = []
         if current is not None:
-            stored_extraction = await self._writer.read_raw_file(
-                client, upload_id, sheet.extraction_mainfile
-            )
-            match = _sheet_hash_matches(current, stored_extraction)
-            if not match and not force:
-                raise SheetEditedError(
-                    'the experiment sheet does not match the recorded hash: it '
-                    'was edited by hand, and regenerating would discard those '
-                    'edits'
+            if not force:
+                stored_extraction = await self._writer.read_raw_file(
+                    client, upload_id, sheet.extraction_mainfile
                 )
-            if match and _same_archive(stored_extraction, sheet.extraction):
-                # Nothing changed: skip the delete + re-parse. Still
-                # re-set the references - a previous run may have crashed
-                # between the parse and the reference write, and every
-                # retry lands here, so this is the only repair path.
-                # Costs only reads when they already match.
-                parsed_ids = await self._processed_entry_ids(client, entry_id)
-                await self._set_collection_refs(
-                    client,
-                    upload_id,
-                    'derived_entries',
-                    [entry_id, *parsed_ids],
-                    mainfile,
-                )
-                return EntryHandle(upload_id=upload_id, entry_id=entry_id)
+                if not _sheet_hash_matches(current, stored_extraction):
+                    raise SheetEditedError(
+                        'the experiment sheet does not match the recorded '
+                        'hash: it was edited by hand, and regenerating would '
+                        'discard those edits'
+                    )
             old_ids = await self._processed_entry_ids(client, entry_id, attempts=1)
 
         # Clear the previous parse output before the parser runs again -
