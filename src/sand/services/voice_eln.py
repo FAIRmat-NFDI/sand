@@ -113,9 +113,16 @@ class DerivedSheet:
     """The extract endpoint's output files: the xlsx NOMAD parses and the
     extraction file holding the pristine result + provenance."""
 
+    # The rendered spreadsheet the hysprint batch parser turns into the
+    # derived experiment entry.
     xlsx: bytes
+    # Its file name in the upload; the derived entry id derives from it.
     xlsx_mainfile: str
+    # {archive, xlsx_sha256, extracted_at, input_entry_ids} — the pristine
+    # result; the hash detects hand-edited sheets, the archive detects
+    # unchanged re-runs.
     extraction: dict
+    # File name the extraction dict is stored under, as JSON.
     extraction_mainfile: str
 
 
@@ -352,7 +359,7 @@ class VoiceElnService:
     ) -> EntryHandle:
         """
         current xlxs hash and the hash in arhive do not mismatch without force → 409;
-        hash matches and archive unchanged → skip,
+        hash matches and archive unchanged → skip delete,
          everything else → replace the xlxs and reparse and update the derived entry as well
         """
         mainfile = await self._resolve_collection_mainfile(
@@ -379,9 +386,7 @@ class VoiceElnService:
             if match and _same_archive(stored_extraction, sheet.extraction):
                 # Nothing changed: skip the delete + re-parse. Still
                 # re-set the references - a previous run may have crashed
-                # between the parse and the reference write, and every
-                # retry lands here, so this is the only repair path.
-                # Costs only reads when they already match.
+                # between the parse and the reference write.
                 parsed_ids = await self._processed_entry_ids(client, entry_id)
                 await self._set_collection_refs(
                     client,
