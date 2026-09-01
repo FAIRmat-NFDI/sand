@@ -454,13 +454,26 @@ extractBtn.addEventListener("click", async () => {
   extractResult.hidden = true;
   extractStatus.textContent = "Extracting... this can take a few minutes.";
   try {
-    const extractUrl = "api/input-collections/" + experiment.upload_id
-      + "/extract?collection_entry_id=" + encodeURIComponent(experiment.entry_id);
-    const res = await authFetch(extractUrl, { method: "POST" });
+    const runExtract = (force) => authFetch(
+      "api/input-collections/" + experiment.upload_id
+      + "/extract?collection_entry_id=" + encodeURIComponent(experiment.entry_id)
+      + (force ? "&force=true" : ""),
+      { method: "POST" });
+    let res = await runExtract(false);
     if (!res.ok) {
       const body = await res.json().catch(() => null);
       const detail = body && body.detail ? body.detail : res.statusText;
-      showError("Extract failed: " + detail);
+      if (res.status === 409 && detail.includes("edited by hand")
+          && window.confirm("The sheet was edited by hand. Re-extract and discard those edits?")) {
+        res = await runExtract(true);
+      } else {
+        showError("Extract failed: " + detail);
+        return;
+      }
+    }
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      showError("Extract failed: " + (body && body.detail ? body.detail : res.statusText));
       return;
     }
     const data = await res.json();

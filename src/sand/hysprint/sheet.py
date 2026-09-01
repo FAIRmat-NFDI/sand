@@ -20,6 +20,10 @@ DELIM = ';'
 # overwrites it in place, so the derived entry id (and link) never changes.
 DERIVED_SHEET_MAINFILE = 'hysprint_experiment.xlsx'
 
+# Pristine extraction result + provenance, stored next to the sheet. NOT
+# named *.archive.json, so NOMAD never parses it as an entry.
+EXTRACTED_JSON_MAINFILE = 'hysprint_experiment.extracted.json'
+
 
 def step_key(step_type: str) -> str:
     """'Slot Die Coating' -> 'slot_die_coating'."""

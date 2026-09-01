@@ -1,5 +1,7 @@
 import asyncio
+import hashlib
 import json
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
 
@@ -7,6 +9,7 @@ from sand.apis.deps import get_bearer_token
 from sand.hysprint.generate import HysprintInputError, assemble, route_inputs
 from sand.hysprint.sheet import (
     DERIVED_SHEET_MAINFILE,
+    EXTRACTED_JSON_MAINFILE,
     grid_to_xlsx_bytes,
     to_sheet,
 )
@@ -23,6 +26,8 @@ from sand.services.extraction_service import ExtractionError, ExtractionService
 from sand.services.nomad_api import NomadAPIError, NomadAuthError
 from sand.services.voice_eln import (
     AUDIO_EXTENSIONS,
+    DerivedSheet,
+    SheetEditedError,
     VoiceElnService,
     normalize_audio_filename,
 )
@@ -224,9 +229,12 @@ async def extract_hysprint_experiment(
     upload_id: str,
     request: Request,
     collection_entry_id: str,
+    force: bool = False,
 ) -> HysprintExtractResponse:
     """Extract the experiment's inputs into the hysprint {samples, steps}
     archive, upload the resulting xlsx, and return the derived entry.
+
+    force=true overwrites a sheet the user edited by hand (409 otherwise).
     """
     voice = _voice_service(request)
     runner: ExtractionService = request.app.state.extraction_service
@@ -279,15 +287,28 @@ async def extract_hysprint_experiment(
     step_types = [slot['step_type'] for slot in slots]
     grid, sheet_issues = to_sheet(archive)
     xlsx = grid_to_xlsx_bytes(grid)
+    sheet = DerivedSheet(
+        xlsx=xlsx,
+        xlsx_mainfile=DERIVED_SHEET_MAINFILE,
+        extraction={
+            'archive': archive,
+            'xlsx_sha256': hashlib.sha256(xlsx).hexdigest(),
+            'extracted_at': datetime.now(timezone.utc).isoformat(),
+            'input_entry_ids': [i.entry_id for i in inputs],
+        },
+        extraction_mainfile=EXTRACTED_JSON_MAINFILE,
+    )
     try:
         async with voice.build_client(token) as client:
             derived = await voice.add_derived_sheet(
                 client,
                 upload_id,
-                xlsx,
-                DERIVED_SHEET_MAINFILE,
+                sheet,
                 collection_entry_id=collection_entry_id,
+                force=force,
             )
+    except SheetEditedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
