@@ -350,15 +350,10 @@ class VoiceElnService:
         collection_entry_id: str,
         force: bool = False,
     ) -> EntryHandle:
-        """Store the derived sheet + its extraction file, link both.
-
-        Guard: if the stored xlsx differs from the hash in the stored
-        extraction file, the user edited it by hand -> SheetEditedError
-        unless force. The previous parse output is deleted BEFORE the new
-        sheet is written (a regenerate can produce a different entry set,
-        and the parser never overwrites existing files). An unedited sheet
-        whose stored extraction encodes the same archive short-circuits:
-        references re-checked, nothing rewritten.
+        """
+        current xlxs hash and the hash in arhive do not mismatch without force → 409;
+        hash matches and archive unchanged → skip,
+         everything else → replace the xlxs and reparse and update the derived entry as well
         """
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
@@ -376,16 +371,17 @@ class VoiceElnService:
             )
             match = _sheet_hash_matches(current, stored_extraction)
             if not match and not force:
-                # 'edited by hand' is the GUI's marker for the force-retry
-                # confirm dialog (app.js) - keep it in the message.
                 raise SheetEditedError(
                     'the experiment sheet does not match the recorded hash: it '
                     'was edited by hand, and regenerating would discard those '
                     'edits'
                 )
             if match and _same_archive(stored_extraction, sheet.extraction):
-                # Nothing changed: skip the delete + re-parse, just make
-                # sure the references are in place.
+                # Nothing changed: skip the delete + re-parse. Still
+                # re-set the references - a previous run may have crashed
+                # between the parse and the reference write, and every
+                # retry lands here, so this is the only repair path.
+                # Costs only reads when they already match.
                 parsed_ids = await self._processed_entry_ids(client, entry_id)
                 await self._set_collection_refs(
                     client,
