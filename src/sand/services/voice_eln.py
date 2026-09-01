@@ -76,10 +76,8 @@ class SheetEditedError(Exception):
 
 
 def _sheet_hash_matches(current_xlsx: bytes, extraction: bytes | None) -> bool:
-    """False only when the recorded hash exists and differs from the stored
-    xlsx - someone other than sand changed the sheet. No extraction file
-    (pre-extraction-file uploads) or an unreadable one -> unknown
-    provenance, treated as matching (the guard fails open)."""
+    """check current xlsx in the upload matches the recorded xlsx_sha256 in
+    hysprint_experiment.extracted.json"""
     if extraction is None:
         return True
     try:
@@ -376,13 +374,16 @@ class VoiceElnService:
             stored_extraction = await self._writer.read_raw_file(
                 client, upload_id, sheet.extraction_mainfile
             )
-            edited = not _sheet_hash_matches(current, stored_extraction)
-            if edited and not force:
+            match = _sheet_hash_matches(current, stored_extraction)
+            if not match and not force:
+                # 'edited by hand' is the GUI's marker for the force-retry
+                # confirm dialog (app.js) - keep it in the message.
                 raise SheetEditedError(
-                    'the experiment sheet was edited by hand; regenerating '
-                    'would discard those edits'
+                    'the experiment sheet does not match the recorded hash: it '
+                    'was edited by hand, and regenerating would discard those '
+                    'edits'
                 )
-            if not edited and _same_archive(stored_extraction, sheet.extraction):
+            if match and _same_archive(stored_extraction, sheet.extraction):
                 # Nothing changed: skip the delete + re-parse, just make
                 # sure the references are in place.
                 parsed_ids = await self._processed_entry_ids(client, entry_id)
