@@ -87,6 +87,21 @@ def _sheet_edited(current_xlsx: bytes, extraction: bytes | None) -> bool:
     return bool(stored) and hashlib.sha256(current_xlsx).hexdigest() != stored
 
 
+def _same_archive(stored_extraction: bytes | None, extraction: dict) -> bool:
+    """True when the stored extraction file encodes the same archive as the
+    new result: the sheet would regenerate identically, so the delete +
+    re-parse is a no-op. Compared on the archive JSON, not the xlsx bytes -
+    openpyxl output is not byte-deterministic across runs."""
+    if stored_extraction is None:
+        return False
+    try:
+        stored = json.loads(stored_extraction)
+    except ValueError:
+        return False
+    archive = stored.get('archive')
+    return archive is not None and archive == extraction.get('archive')
+
+
 @dataclass
 class EntryHandle:
     upload_id: str
@@ -340,15 +355,10 @@ class VoiceElnService:
         Guard: if the stored xlsx differs from the hash in the stored
         extraction file, the user edited it by hand -> SheetEditedError
         unless force. The previous parse output is deleted BEFORE the new
-        sheet is written: the hysprint parser never overwrites an existing
-        generated file (create_archive(overwrite=False)), so a re-parse
-        over old files would silently keep their stale content. Unchanged
-        filenames get the same entry ids back, so links do not rot.
-
-        derived_entries is REPLACED with the sheet's entry plus every entry
-        its parse created (the sheet entry's processed_archive) - a
-        regenerate can produce a different entry set, so appending would
-        accumulate stale references.
+        sheet is written (a regenerate can produce a different entry set,
+        and the parser never overwrites existing files). An unedited sheet
+        whose stored extraction encodes the same archive short-circuits:
+        references re-checked, nothing rewritten.
         """
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
@@ -361,15 +371,27 @@ class VoiceElnService:
         )
         old_ids: list[str] = []
         if current is not None:
-            if not force:
-                stored_extraction = await self._writer.read_raw_file(
-                    client, upload_id, sheet.extraction_mainfile
+            stored_extraction = await self._writer.read_raw_file(
+                client, upload_id, sheet.extraction_mainfile
+            )
+            edited = _sheet_edited(current, stored_extraction)
+            if edited and not force:
+                raise SheetEditedError(
+                    'the experiment sheet was edited by hand; regenerating '
+                    'would discard those edits'
                 )
-                if _sheet_edited(current, stored_extraction):
-                    raise SheetEditedError(
-                        'the experiment sheet was edited by hand; regenerating '
-                        'would discard those edits'
-                    )
+            if not edited and _same_archive(stored_extraction, sheet.extraction):
+                # Nothing changed: skip the delete + re-parse, just make
+                # sure the references are in place.
+                parsed_ids = await self._processed_entry_ids(client, entry_id)
+                await self._set_collection_refs(
+                    client,
+                    upload_id,
+                    'derived_entries',
+                    [entry_id, *parsed_ids],
+                    mainfile,
+                )
+                return EntryHandle(upload_id=upload_id, entry_id=entry_id)
             old_ids = await self._processed_entry_ids(client, entry_id, attempts=1)
 
         # Clear the previous parse output before the parser runs again -

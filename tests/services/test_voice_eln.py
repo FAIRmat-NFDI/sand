@@ -433,7 +433,12 @@ async def test_write_to_published_upload_is_rejected():
 
 
 def _extraction_for(xlsx: bytes) -> dict:
-    return {'archive': {}, 'xlsx_sha256': hashlib.sha256(xlsx).hexdigest()}
+    # archive tied to the xlsx bytes, so different sheets mean different
+    # archives (as in reality) and the no-op short-circuit does not trigger
+    return {
+        'archive': {'content': xlsx.decode()},
+        'xlsx_sha256': hashlib.sha256(xlsx).hexdigest(),
+    }
 
 
 async def _add_sheet(service, client, xlsx: bytes, force=False):
@@ -519,6 +524,44 @@ async def test_regenerate_over_unedited_or_pre_extraction_sheet_needs_no_force()
         await _add_sheet(service, client, b'NEWER')
 
     assert fake.raw_files[DERIVED_SHEET_MAINFILE] == b'NEWER'
+
+
+@pytest.mark.asyncio
+async def test_regenerate_with_identical_archive_skips_the_reparse():
+    # new xlsx BYTES always differ (openpyxl is not byte-deterministic);
+    # equality is judged on the archive in the extraction file
+    fake = _FakeNomad()
+    fake.entry_archives[SHEET_ENTRY_ID] = [
+        {'processed_archive': [entry_ref(UPLOAD_ID, 'p1')]}
+    ]
+
+    async with _client(fake) as client:
+        service = _service()
+        await service.create_input_collection(client, 'perov_B1_a')
+        fake.raw_files[DERIVED_SHEET_MAINFILE] = b'OLD'
+        fake.raw_files[EXTRACTED_JSON_MAINFILE] = json.dumps(
+            _extraction_for(b'OLD')
+        ).encode()
+        sheet = DerivedSheet(
+            xlsx=b'DIFFERENT-BYTES',
+            xlsx_mainfile=DERIVED_SHEET_MAINFILE,
+            extraction={
+                'archive': {'content': 'OLD'},  # same archive as stored
+                'xlsx_sha256': hashlib.sha256(b'DIFFERENT-BYTES').hexdigest(),
+            },
+            extraction_mainfile=EXTRACTED_JSON_MAINFILE,
+        )
+        result = await service.add_derived_sheet(
+            client, UPLOAD_ID, sheet, collection_entry_id=SAND_COLLECTION_ID
+        )
+
+    assert fake.raw_files[DERIVED_SHEET_MAINFILE] == b'OLD'  # untouched
+    assert fake.deleted == []
+    collection = fake.archive(EXPERIMENT_MAINFILE)['data']
+    assert collection['derived_entries'] == [
+        entry_ref(UPLOAD_ID, result.entry_id),
+        entry_ref(UPLOAD_ID, 'p1'),
+    ]
 
 
 @pytest.mark.asyncio
