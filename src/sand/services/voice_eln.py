@@ -328,6 +328,17 @@ class VoiceElnService:
         )
         return EntryHandle(upload_id=upload_id, entry_id=entry_id)
 
+    async def read_derived_sheet(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        sheet_mainfile: str,
+        collection_entry_id: str,
+    ) -> bytes | None:
+        """The stored sheet's bytes; None when nothing was extracted yet."""
+        await self._resolve_collection_mainfile(client, upload_id, collection_entry_id)
+        return await self._writer.read_raw_file(client, upload_id, sheet_mainfile)
+
     async def add_derived_sheet(
         self,
         client: httpx.AsyncClient,

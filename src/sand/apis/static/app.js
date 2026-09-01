@@ -507,6 +507,35 @@ extractBtn.addEventListener("click", async () => {
   }
 });
 
+const downloadSheetBtn = document.getElementById("download-sheet-btn");
+
+downloadSheetBtn.addEventListener("click", async () => {
+  clearError();
+  const experiment = requireExperiment();
+  if (!experiment) return;
+  downloadSheetBtn.disabled = true;
+  try {
+    const res = await authFetch(
+      "api/input-collections/" + experiment.upload_id
+      + "/sheet?collection_entry_id=" + encodeURIComponent(experiment.entry_id));
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      showError("Download failed: " + (body && body.detail ? body.detail : res.statusText));
+      return;
+    }
+    const url = URL.createObjectURL(await res.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "hysprint_experiment.xlsx";
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    showError("Network error: " + err.message);
+  } finally {
+    downloadSheetBtn.disabled = false;
+  }
+});
+
 const uploadInput = document.getElementById("upload-input");
 
 uploadBtn.addEventListener("click", () => {

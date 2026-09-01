@@ -3,7 +3,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile
+from fastapi import APIRouter, HTTPException, Request, Response, UploadFile
 
 from sand.apis.deps import get_bearer_token
 from sand.hysprint.generate import HysprintInputError, assemble, route_inputs
@@ -219,6 +219,44 @@ async def add_note(
 
     return InputCollectionResponse(
         **_entry_response(voice, result.upload_id, result.entry_id)
+    )
+
+
+XLSX_MEDIA_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+
+@router.get('/input-collections/{upload_id}/sheet')
+async def download_sheet(
+    upload_id: str,
+    request: Request,
+    collection_entry_id: str,
+) -> Response:
+    """The derived experiment sheet, as an xlsx download."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    try:
+        async with voice.build_client(token) as client:
+            xlsx = await voice.read_derived_sheet(
+                client,
+                upload_id,
+                DERIVED_SHEET_MAINFILE,
+                collection_entry_id=collection_entry_id,
+            )
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    if xlsx is None:
+        raise HTTPException(
+            status_code=404,
+            detail='No sheet in this experiment yet; extract first',
+        )
+    return Response(
+        content=xlsx,
+        media_type=XLSX_MEDIA_TYPE,
+        headers={
+            'Content-Disposition': f'attachment; filename="{DERIVED_SHEET_MAINFILE}"'
+        },
     )
 
 
