@@ -54,5 +54,7 @@ class HysprintExtractResponse(BaseModel):
 
 
 class SheetUploadResponse(BaseModel):
-    changed: bool  # False: uploaded bytes equal the stored sheet, nothing done
+    # False: uploaded bytes equal the stored sheet; the derived links are
+    # still verified (and a failed previous parse repaired) either way.
+    changed: bool
     derived_entry: InputCollectionResponse

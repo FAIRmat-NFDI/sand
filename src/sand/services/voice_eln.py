@@ -391,9 +391,10 @@ class VoiceElnService:
         extraction file stays the pristine machine record, so its hash
         diverging from the new xlsx marks the sheet as hand-edited).
 
-        Returns (changed, handle). Unchanged bytes skip the rewrite, but
-        the derived state is still verified: a missing or failed previous
-        parse falls through to a full reparse.
+        Returns (changed, handle): whether the sheet content differs from
+        what was stored. Unchanged bytes skip the rewrite, but the derived
+        state is still verified: a missing or failed previous parse falls
+        through to a repair reparse (still reported as unchanged).
         """
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
@@ -404,9 +405,11 @@ class VoiceElnService:
         current = await self._writer.read_raw_file(
             client, upload_id, sheet.xlsx_mainfile
         )
+        handle = EntryHandle(upload_id=upload_id, entry_id=entry_id)
+        changed = current != sheet.xlsx
 
         old_ids: list[str] = []
-        if current == sheet.xlsx:
+        if not changed:
             parsed_ids = await self._processed_entry_ids(client, entry_id)
             if parsed_ids:
                 await self._set_collection_refs(
@@ -416,12 +419,13 @@ class VoiceElnService:
                     [entry_id, *parsed_ids],
                     mainfile,
                 )
-                return False, EntryHandle(upload_id=upload_id, entry_id=entry_id)
+                return False, handle
+            # same bytes but no parse output: repair with a full reparse
         elif current is not None:
             old_ids = await self._processed_entry_ids(client, entry_id, attempts=1)
 
         await self._reparse_sheet(client, upload_id, sheet, old_ids, mainfile)
-        return True, EntryHandle(upload_id=upload_id, entry_id=entry_id)
+        return changed, handle
 
     async def _reparse_sheet(
         self,
@@ -431,8 +435,7 @@ class VoiceElnService:
         old_ids: list[str],
         collection_mainfile: str,
     ) -> None:
-        """Delete the previous parse output (the parser skips files that
-        already exist, keeping stale content), write the sheet files, wait
+        """Delete the previous parse output, write the sheet files, wait
         out the parse, and point derived_entries at the result."""
         if old_ids:
             await self._delete_entry_files(
