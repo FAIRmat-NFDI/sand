@@ -99,8 +99,9 @@ class DerivedSheet:
     # file name: hysprint_experiment.xlsx
     xlsx_mainfile: str
     # {archive, xlsx_sha256, extracted_at, input_entry_ids} — the pristine
-    # result; the hash detects hand-edited sheets.
-    extraction: dict
+    # result; the hash detects hand-edited sheets. None for a user-uploaded
+    # sheet: only extraction writes the extraction file.
+    extraction: dict | None
     # file name: hysprint_experiment.extracted.json
     extraction_mainfile: str
 
@@ -376,14 +377,76 @@ class VoiceElnService:
                     )
             old_ids = await self._processed_entry_ids(client, entry_id, attempts=1)
 
-        # Clear the previous parse output before the parser runs again -
-        # it skips files that already exist, keeping stale content.
+        await self._reparse_sheet(client, upload_id, sheet, old_ids, mainfile)
+        return EntryHandle(upload_id=upload_id, entry_id=entry_id)
+
+    async def replace_derived_sheet(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        sheet: DerivedSheet,
+        collection_entry_id: str,
+    ) -> tuple[bool, EntryHandle]:
+        """Store a user-edited sheet (sheet.extraction is None: the
+        extraction file stays the pristine machine record, so its hash
+        diverging from the new xlsx marks the sheet as hand-edited).
+
+        Returns (changed, handle): whether the sheet content differs from
+        what was stored. Unchanged bytes skip the rewrite, but the derived
+        state is still verified: a missing or failed previous parse falls
+        through to a repair reparse (still reported as unchanged).
+        """
+        mainfile = await self._resolve_collection_mainfile(
+            client, upload_id, collection_entry_id
+        )
+        await self._writer.read_archive(client, upload_id, mainfile)
+
+        entry_id = generate_entry_id(upload_id, sheet.xlsx_mainfile)
+        current = await self._writer.read_raw_file(
+            client, upload_id, sheet.xlsx_mainfile
+        )
+        handle = EntryHandle(upload_id=upload_id, entry_id=entry_id)
+        changed = current != sheet.xlsx
+
+        old_ids: list[str] = []
+        if not changed:
+            parsed_ids = await self._processed_entry_ids(client, entry_id)
+            if parsed_ids:
+                await self._set_collection_refs(
+                    client,
+                    upload_id,
+                    'derived_entries',
+                    [entry_id, *parsed_ids],
+                    mainfile,
+                )
+                return False, handle
+            # same bytes but no parse output: repair with a full reparse
+        elif current is not None:
+            old_ids = await self._processed_entry_ids(client, entry_id, attempts=1)
+
+        await self._reparse_sheet(client, upload_id, sheet, old_ids, mainfile)
+        return changed, handle
+
+    async def _reparse_sheet(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        sheet: DerivedSheet,
+        old_ids: list[str],
+        collection_mainfile: str,
+    ) -> None:
+        """Delete the previous parse output, write the sheet files, wait
+        out the parse, and point derived_entries at the result."""
         if old_ids:
             await self._delete_entry_files(
                 client,
                 upload_id,
                 old_ids,
-                keep={sheet.xlsx_mainfile, sheet.extraction_mainfile, mainfile},
+                keep={
+                    sheet.xlsx_mainfile,
+                    sheet.extraction_mainfile,
+                    collection_mainfile,
+                },
             )
 
         await self._writer.upload_raw_file(
@@ -393,13 +456,14 @@ class VoiceElnService:
             sheet.xlsx,
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
-        await self._writer.upload_raw_file(
-            client,
-            upload_id,
-            sheet.extraction_mainfile,
-            json.dumps(sheet.extraction, ensure_ascii=False).encode(),
-            'application/json',
-        )
+        if sheet.extraction is not None:
+            await self._writer.upload_raw_file(
+                client,
+                upload_id,
+                sheet.extraction_mainfile,
+                json.dumps(sheet.extraction, ensure_ascii=False).encode(),
+                'application/json',
+            )
 
         # The parsed entries exist only once the upload finished processing
         # the sheet; the writer waits before each write, but the last PUT
@@ -410,11 +474,15 @@ class VoiceElnService:
             time.monotonic() + self._writer.write_timeout_s,
             sheet.xlsx_mainfile,
         )
+        entry_id = generate_entry_id(upload_id, sheet.xlsx_mainfile)
         parsed_ids = await self._processed_entry_ids(client, entry_id)
         await self._set_collection_refs(
-            client, upload_id, 'derived_entries', [entry_id, *parsed_ids], mainfile
+            client,
+            upload_id,
+            'derived_entries',
+            [entry_id, *parsed_ids],
+            collection_mainfile,
         )
-        return EntryHandle(upload_id=upload_id, entry_id=entry_id)
 
     async def _delete_entry_files(
         self,

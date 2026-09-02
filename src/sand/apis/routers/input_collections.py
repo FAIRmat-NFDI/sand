@@ -21,6 +21,7 @@ from sand.models.input_collections import (
     InputCollectionListResponse,
     InputCollectionResponse,
     InputCollectionSummaryModel,
+    SheetUploadResponse,
 )
 from sand.services.extraction_service import ExtractionError, ExtractionService
 from sand.services.nomad_api import NomadAPIError, NomadAuthError
@@ -61,6 +62,21 @@ def _nomad_detail(exc: NomadAPIError) -> str:
     if isinstance(body, dict) and isinstance(body.get('detail'), str):
         return body['detail']
     return exc.detail
+
+
+async def _read_upload(file: UploadFile) -> bytes:
+    """The uploaded file's bytes, size-capped; empty or oversized raises."""
+    buf = bytearray()
+    while True:
+        chunk = await file.read(64 * 1024)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail='File too large (max 25 MB)')
+    if not buf:
+        raise HTTPException(status_code=400, detail='Uploaded file is empty')
+    return bytes(buf)
 
 
 def _entry_response(voice: VoiceElnService, upload_id: str, entry_id: str) -> dict:
@@ -156,18 +172,7 @@ async def add_audio(
             + ', '.join(sorted(AUDIO_EXTENSIONS)),
         )
 
-    buf = bytearray()
-    while True:
-        chunk = await file.read(64 * 1024)
-        if not chunk:
-            break
-        buf.extend(chunk)
-        if len(buf) > MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=413, detail='File too large (max 25 MB)')
-
-    audio = bytes(buf)
-    if not audio:
-        raise HTTPException(status_code=400, detail='Uploaded file is empty')
+    audio = await _read_upload(file)
 
     try:
         async with voice.build_client(token) as client:
@@ -257,6 +262,51 @@ async def download_sheet(
         headers={
             'Content-Disposition': f'attachment; filename="{DERIVED_SHEET_MAINFILE}"'
         },
+    )
+
+
+@router.put('/input-collections/{upload_id}/sheet', response_model=SheetUploadResponse)
+async def upload_sheet(
+    upload_id: str,
+    file: UploadFile,
+    request: Request,
+    collection_entry_id: str,
+) -> SheetUploadResponse:
+    """Replace the derived sheet with a user-edited xlsx.
+
+    Stored under the fixed sheet name whatever the client filename says.
+    The extraction file is never touched, so a later re-extract sees the
+    hash mismatch and demands force before discarding the edits.
+    """
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    if not (file.filename or '').lower().endswith('.xlsx'):
+        raise HTTPException(status_code=415, detail='Upload an .xlsx file')
+    xlsx = await _read_upload(file)
+
+    sheet = DerivedSheet(
+        xlsx=xlsx,
+        xlsx_mainfile=DERIVED_SHEET_MAINFILE,
+        extraction=None,
+        extraction_mainfile=EXTRACTED_JSON_MAINFILE,
+    )
+    try:
+        async with voice.build_client(token) as client:
+            changed, handle = await voice.replace_derived_sheet(
+                client,
+                upload_id,
+                sheet,
+                collection_entry_id=collection_entry_id,
+            )
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return SheetUploadResponse(
+        changed=changed,
+        derived_entry=InputCollectionResponse(
+            **_entry_response(voice, handle.upload_id, handle.entry_id)
+        ),
     )
 
 

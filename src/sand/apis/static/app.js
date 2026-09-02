@@ -536,6 +536,48 @@ downloadSheetBtn.addEventListener("click", async () => {
   }
 });
 
+const uploadSheetBtn = document.getElementById("upload-sheet-btn");
+const uploadSheetInput = document.getElementById("upload-sheet-input");
+
+uploadSheetBtn.addEventListener("click", () => {
+  uploadSheetInput.click();
+});
+
+uploadSheetInput.addEventListener("change", async () => {
+  const file = uploadSheetInput.files[0];
+  uploadSheetInput.value = "";
+  if (!file) return;
+
+  clearError();
+  const experiment = requireExperiment();
+  if (!experiment) return;
+  if (!window.confirm("Replace the sheet on NOMAD with this file?")) return;
+
+  uploadSheetBtn.disabled = true;
+  extractStatus.textContent = "Uploading sheet...";
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await authFetch(
+      "api/input-collections/" + experiment.upload_id
+      + "/sheet?collection_entry_id=" + encodeURIComponent(experiment.entry_id),
+      { method: "PUT", body: form });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      showError("Sheet upload failed: " + (body && body.detail ? body.detail : res.statusText));
+      return;
+    }
+    extractStatus.textContent = body.changed
+      ? "Sheet replaced and reparsed."
+      : "Sheet unchanged (same content).";
+  } catch (err) {
+    showError("Network error: " + err.message);
+  } finally {
+    uploadSheetBtn.disabled = false;
+    if (!extractStatus.textContent.startsWith("Sheet")) extractStatus.textContent = "";
+  }
+});
+
 const uploadInput = document.getElementById("upload-input");
 
 uploadBtn.addEventListener("click", () => {
