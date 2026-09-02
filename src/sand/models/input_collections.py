@@ -51,3 +51,8 @@ class HysprintExtractResponse(BaseModel):
     step_types: list[str]
     derived_entry: InputCollectionResponse
     sheet_issues: list[str]  # archive fields sheet cannot represent
+
+
+class SheetUploadResponse(BaseModel):
+    changed: bool  # False: uploaded bytes equal the stored sheet, nothing done
+    derived_entry: InputCollectionResponse
