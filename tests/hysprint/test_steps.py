@@ -31,7 +31,15 @@ def test_fill_schema_slices_one_step_type():
         'enum': ['Spin Coating'],
     }
     items = schema['properties']['variants']['items']
-    assert 'samples' in items['properties']
+    # dialect-safe samples node: no const (invisible to Gemini) and no
+    # empty list (samples: [] landed a step on no sample row at all)
+    assert items['properties']['samples'] == {
+        'anyOf': [
+            {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1},
+            {'type': 'string', 'enum': ['all']},
+        ]
+    }
+    assert 'samples' in items['required']
     # bookkeeping is addressing/identity, never step content
     for bookkeeping in ('position_in_experimental_plan', 'datetime', 'operator'):
         assert bookkeeping not in items['properties']

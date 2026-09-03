@@ -87,6 +87,18 @@ def to_single_step_schema(full: dict, step_type: str) -> dict:
     # without this, a schema-valid variant may omit 'samples' and the
     # assembly would KeyError instead of the model being forced to name them
     step['required'] = ['samples']
+    # The artifact's samples node is {anyOf: [array, {const: 'all'}]}.
+    # Gemini's tool-call dialect ignores `const` (the 'all' branch is
+    # invisible to the model) and the array has no minItems, so a
+    # narration like "all samples" validated as samples: [] and the step
+    # landed on no sample row at all. Explicit enum + minItems force the
+    # model to name labels or say 'all'.
+    step['properties']['samples'] = {
+        'anyOf': [
+            {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1},
+            {'type': 'string', 'enum': ['all']},
+        ]
+    }
     return {
         '$schema': full['$schema'],
         'type': 'object',
