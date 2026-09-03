@@ -70,11 +70,6 @@ def _parse_input_datetime(value) -> datetime | None:
     return parsed
 
 
-class SheetEditedError(Exception):
-    """The stored sheet no longer matches the hash sand recorded: a
-    regenerate would silently discard the user's manual edits."""
-
-
 def _sheet_hash_matches(current_xlsx: bytes, extraction: bytes | None) -> bool:
     """check current xlsx in the upload matches the recorded xlsx_sha256 in
     hysprint_experiment.extracted.json"""
@@ -346,13 +341,14 @@ class VoiceElnService:
         upload_id: str,
         sheet: DerivedSheet,
         collection_entry_id: str,
-        force: bool = False,
-    ) -> EntryHandle:
-        """
-        A hand-edited sheet (stored xlsx no longer matching the recorded
-        hash) → 409 without force; otherwise replace the xlsx, reparse,
-        and update the derived entries. Always regenerating keeps the
-        path self-healing — every retry redoes the full work (issue #34).
+    ) -> tuple[EntryHandle, bool]:
+        """Replace the sheet, reparse, and update the derived entries;
+        always regenerating keeps the path self-healing — every retry
+        redoes the full work (issue #34).
+
+        Returns (handle, replaced_edits): True when the stored xlsx no
+        longer matched the recorded hash, i.e. this regenerate discarded
+        hand edits — the caller warns, it never blocks.
         """
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
@@ -363,22 +359,17 @@ class VoiceElnService:
         current = await self._writer.read_raw_file(
             client, upload_id, sheet.xlsx_mainfile
         )
+        replaced_edits = False
         old_ids: list[str] = []
         if current is not None:
-            if not force:
-                stored_extraction = await self._writer.read_raw_file(
-                    client, upload_id, sheet.extraction_mainfile
-                )
-                if not _sheet_hash_matches(current, stored_extraction):
-                    raise SheetEditedError(
-                        'the experiment sheet does not match the recorded '
-                        'hash: it was edited by hand, and regenerating would '
-                        'discard those edits'
-                    )
+            stored_extraction = await self._writer.read_raw_file(
+                client, upload_id, sheet.extraction_mainfile
+            )
+            replaced_edits = not _sheet_hash_matches(current, stored_extraction)
             old_ids = await self._processed_entry_ids(client, entry_id, attempts=1)
 
         await self._reparse_sheet(client, upload_id, sheet, old_ids, mainfile)
-        return EntryHandle(upload_id=upload_id, entry_id=entry_id)
+        return EntryHandle(upload_id=upload_id, entry_id=entry_id), replaced_edits
 
     async def replace_derived_sheet(
         self,

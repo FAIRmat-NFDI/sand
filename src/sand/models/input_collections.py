@@ -51,6 +51,7 @@ class HysprintExtractResponse(BaseModel):
     step_types: list[str]
     derived_entry: InputCollectionResponse
     sheet_issues: list[str]  # archive fields sheet cannot represent
+    warnings: list[str] = []  # e.g. a hand-edited sheet was replaced
 
 
 class SheetUploadResponse(BaseModel):
