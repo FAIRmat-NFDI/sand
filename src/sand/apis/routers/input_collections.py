@@ -28,7 +28,6 @@ from sand.services.nomad_api import NomadAPIError, NomadAuthError
 from sand.services.voice_eln import (
     AUDIO_EXTENSIONS,
     DerivedSheet,
-    SheetEditedError,
     VoiceElnService,
     normalize_audio_filename,
 )
@@ -65,7 +64,6 @@ def _nomad_detail(exc: NomadAPIError) -> str:
 
 
 async def _read_upload(file: UploadFile) -> bytes:
-    """The uploaded file's bytes, size-capped; empty or oversized raises."""
     buf = bytearray()
     while True:
         chunk = await file.read(64 * 1024)
@@ -272,11 +270,13 @@ async def upload_sheet(
     request: Request,
     collection_entry_id: str,
 ) -> SheetUploadResponse:
-    """Replace the derived sheet with a user-edited xlsx.
+    """Replace the derived sheet with a user-uploaded one.
 
-    Stored under the fixed sheet name whatever the client filename says.
-    The extraction file is never touched, so a later re-extract sees the
-    hash mismatch and demands force before discarding the edits.
+    Stored under the fixed sheet name.
+    The extraction json is never touched by user replace the xlsx.
+    By comparing the hash in extraction json and the current xlsx,
+    we know if the xlsx is user edited or directly converted from
+    extracted json.
     """
     voice = _voice_service(request)
     token = get_bearer_token(request)
@@ -317,12 +317,11 @@ async def extract_hysprint_experiment(
     upload_id: str,
     request: Request,
     collection_entry_id: str,
-    force: bool = False,
 ) -> HysprintExtractResponse:
     """Extract the experiment's inputs into the hysprint {samples, steps}
     archive, upload the resulting xlsx, and return the derived entry.
 
-    force=true overwrites a sheet the user edited by hand (409 otherwise).
+    A hand-edited sheet is overwritten; the response carries a warning.
     """
     voice = _voice_service(request)
     runner: ExtractionService = request.app.state.extraction_service
@@ -388,18 +387,21 @@ async def extract_hysprint_experiment(
     )
     try:
         async with voice.build_client(token) as client:
-            derived = await voice.add_derived_sheet(
+            derived, replaced_edits = await voice.add_derived_sheet(
                 client,
                 upload_id,
                 sheet,
                 collection_entry_id=collection_entry_id,
-                force=force,
             )
-    except SheetEditedError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
+    warnings = []
+    if replaced_edits:
+        warnings.append(
+            'the sheet had manual edits (it did not match the recorded '
+            'hash); this extraction replaced them'
+        )
     return HysprintExtractResponse(
         archive=archive,
         step_types=step_types,
@@ -407,4 +409,5 @@ async def extract_hysprint_experiment(
             **_entry_response(voice, derived.upload_id, derived.entry_id)
         ),
         sheet_issues=sheet_issues,
+        warnings=warnings,
     )

@@ -124,12 +124,20 @@ def append_step(archive: dict, slot: dict, pos: int) -> dict:
                       {'samples': 'all', ...step fields...}]}
 
     The extractor names samples by LABEL ("1"); the archive keys steps by
-    lab_id. A label the form did not declare raises."""
+    lab_id. A label the form did not declare raises, and so does an empty
+    samples list: it would land the step on no sample row at all - the
+    sheet block renders blank and the parser skips it, which looks like
+    a complete sheet with the step silently missing."""
     by_label = {s['sample']: s['lab_id'] for s in archive['samples']}
     for variant in slot['variants']:
         samples = variant['samples']
         if samples == 'all':
             who = 'all'
+        elif not samples:
+            raise ValueError(
+                f'step {slot.get("step_type")!r} names no samples (neither '
+                "labels nor 'all')"
+            )
         else:
             who = []
             for label in samples:

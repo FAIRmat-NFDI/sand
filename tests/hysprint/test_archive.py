@@ -68,6 +68,15 @@ def test_append_step_rejects_undeclared_label():
         append_step(archive, slot, 1)
 
 
+def test_append_step_rejects_empty_samples_list():
+    # samples: [] would land the step on no sample row: blank sheet block,
+    # parser skips it - a complete-looking sheet with the step missing
+    archive = {'samples': build_samples(INFO), 'steps': []}
+    slot = {'step_type': 'Cleaning', 'variants': [{'samples': [], 'time': 5}]}
+    with pytest.raises(ValueError, match='names no samples'):
+        append_step(archive, slot, 1)
+
+
 def test_canonicalize_merges_identical_variants_and_collapses_to_all():
     archive = {'samples': build_samples(INFO), 'steps': []}
     slot = {
