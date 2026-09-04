@@ -143,6 +143,35 @@ def test_resolve_matches_the_last_number_through_a_suffix():
     ]
 
 
+def test_resolve_matches_numbering_with_an_arbitrary_start():
+    names = ['vp712', 'vp713', 'vp714']
+    assert resolve_sample_labels(['712', '0713', 'vp714'], names) == [
+        'vp712',
+        'vp713',
+        'vp714',
+    ]
+    # ordinals are ambiguous (first sample vs label 1): refuse, never guess
+    with pytest.raises(HysprintInputError, match="narrated sample '1'"):
+        resolve_sample_labels(['1'], names)
+
+
+def test_assemble_resolves_arbitrary_start_labels_to_lab_ids():
+    info = {
+        'project_name': 'p',
+        'batch': 'b',
+        'subbatch': 's',
+        'first_sample': 'vp712',
+        'n_samples': 3,
+    }
+    slots = [
+        {'step_type': 'Cleaning', 'variants': [{'samples': ['712', '714'], 'time': 5}]}
+    ]
+
+    archive = assemble(info, slots)
+
+    assert archive['steps'][0]['samples'] == ['p_b_s_C-vp712', 'p_b_s_C-vp714']
+
+
 def test_resolve_rejects_unmatched_label():
     with pytest.raises(HysprintInputError, match="narrated sample '99'"):
         resolve_sample_labels(['99'], ['s_1', 's_2'])

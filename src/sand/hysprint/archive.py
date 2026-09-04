@@ -63,8 +63,9 @@ def canonicalize(archive: dict) -> dict:
 
 def _sample_names(first: str, n: int) -> list[str]:
     """first "1" -> 1..n, first "x_1" -> x_1..x_n, first "x_1_y" -> x_1_y..x_n_y.
-    The counter is the LAST number in the name (a suffix may follow it). A first
-    sample without any number cannot be auto-continued -> ValueError."""
+    The counter is the LAST number in the name (a suffix may follow it) and
+    starts wherever the first sample starts: "vp712" -> vp712, vp713, ...
+    A first sample without any number cannot be auto-continued -> ValueError."""
     m = re.match(r'^(.*?)(\d+)(\D*)$', str(first))
     if not m:
         raise ValueError(f'first sample {first!r} has no number to count from')

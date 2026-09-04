@@ -79,7 +79,11 @@ def route_inputs(inputs: list[CollectedInput]) -> tuple[dict, list[str]]:
 
 
 def resolve_sample_labels(labels: list[str], sample_names: list[str]) -> list[str]:
-    """Map narrated sample labels to the declared sample names."""
+    """Map narrated sample labels to the declared sample names.
+
+    Numbers are matched as spoken, wherever the numbering starts: declared
+    vp712..vp714 resolves '712' (or '0712' or 'vp712'), never ordinals -
+    narrating '1' for the first of vp712.. is ambiguous and raises."""
     by_number: dict[int, list[str]] = {}
     for name in sample_names:
         m = _LAST_NUMBER_RE.search(name)

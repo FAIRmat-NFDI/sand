@@ -61,6 +61,12 @@ def test_append_step_maps_labels_to_lab_ids():
     assert archive['steps'][0]['position_in_experimental_plan'] == 1
 
 
+def test_build_samples_counts_from_an_arbitrary_start():
+    samples = build_samples({**INFO, 'first_sample': 'vp712'})
+    assert [s['sample'] for s in samples] == ['vp712', 'vp713', 'vp714']
+    assert samples[0]['lab_id'] == 'perov_B1_a_C-vp712'
+
+
 def test_append_step_rejects_undeclared_label():
     archive = {'samples': build_samples(INFO), 'steps': []}
     slot = {'step_type': 'Cleaning', 'variants': [{'samples': ['7']}]}
