@@ -127,7 +127,7 @@ class CollectedInput:
 _TRANSCRIPT_FIELDS = (
     'intended_transcript',
     'corrected_transcript',
-    'whisper_transcript',
+    'transcript',
 )
 
 
