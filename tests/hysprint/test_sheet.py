@@ -92,6 +92,33 @@ def test_sheet_warns_for_unknown_step_type():
     assert grid[0][0] == 'Experiment Info'  # only the info section remains
 
 
+def test_sheet_holds_solute_relative_amounts():
+    # "molar ratio 1:1 of PbI2 and MAI" -> solutes[].relative_amount; the
+    # parser reads 'Solute N relative amount' by name, the template now
+    # carries the column
+    archive = _archive(
+        [
+            {
+                'step_type': 'Spin Coating',
+                'position_in_experimental_plan': 1,
+                'samples': 'all',
+                'material_name': 'MAPI',
+                'solutes': [
+                    {'name': 'PbI2', 'relative_amount': 1},
+                    {'name': 'MAI', 'relative_amount': 1},
+                ],
+            }
+        ]
+    )
+
+    grid, issues = to_sheet(archive)
+
+    assert issues == []
+    row = dict(zip(grid[1], grid[2]))
+    assert row['Solute 1 relative amount'] == '1'
+    assert row['Solute 2 relative amount'] == '1'
+
+
 def test_xlsx_bytes_round_trip_with_typed_cells():
     grid = [
         ['Experiment Info', ''],
