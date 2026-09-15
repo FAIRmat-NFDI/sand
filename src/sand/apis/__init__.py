@@ -7,6 +7,11 @@ class SandAPIEntryPoint(APIEntryPoint):
     llm_model_name: str = 'gemini/gemini-2.5-flash'
     llm_api_key: str = ''
 
+    # Live transcription while recording (empty key = feature off).
+    # Falls back to the DEEPGRAM_API_KEY environment variable.
+    deepgram_api_key: str = ''
+    deepgram_model: str = 'nova-3'
+
     def load(self):
         from sand.apis.sand_api import app
 
