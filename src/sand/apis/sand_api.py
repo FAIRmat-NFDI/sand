@@ -39,6 +39,7 @@ app.state.deepgram_api_key = sand_api_entry_point.deepgram_api_key or os.environ
     'DEEPGRAM_API_KEY', ''
 )
 app.state.deepgram_model = sand_api_entry_point.deepgram_model
+app.state.store_live_transcript = sand_api_entry_point.store_live_transcript
 
 app.include_router(
     input_collections_router, prefix='/api', dependencies=[require_login]
