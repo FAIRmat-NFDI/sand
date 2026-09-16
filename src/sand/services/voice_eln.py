@@ -25,6 +25,7 @@ INPUT_COLLECTION_M_DEF = (
     'nomad_voice_eln.schema_packages.schema_package.InputCollection'
 )
 WRITTEN_NOTE_M_DEF = 'nomad_voice_eln.schema_packages.schema_package.WrittenNote'
+AUDIO_INPUT_M_DEF = 'nomad_voice_eln.schema_packages.schema_package.AudioInput'
 
 # Mainfile of the InputCollection entry in an experiment upload created by sand.
 EXPERIMENT_MAINFILE = 'experiment.archive.json'
@@ -99,6 +100,15 @@ class DerivedSheet:
     extraction: dict | None
     # file name: hysprint_experiment.extracted.json
     extraction_mainfile: str
+
+
+@dataclass(frozen=True)
+class AudioUpload:
+    audio: bytes
+    filename: str
+    # live transcription result; None -> the automatic whisper run happens
+    transcript: str | None = None
+    stt_model: str | None = None
 
 
 @dataclass(frozen=True)
@@ -291,15 +301,21 @@ class VoiceElnService:
         self,
         client: httpx.AsyncClient,
         upload_id: str,
-        audio: bytes,
-        filename: str,
+        upload: AudioUpload,
         collection_entry_id: str,
     ) -> EntryHandle:
         """Add a recording to an experiment.
 
         Uploads the audio file into the experiment upload (the voice-eln
-        parser turns it into an AudioInput entry and transcribes it) and
-        references the entry from the experiment's InputCollection.
+        parser turns it into an AudioInput entry) and references the entry
+        from the experiment's InputCollection.
+
+        With `upload.transcript` (live transcription already happened), sand
+        writes the companion archive itself BEFORE the audio: the
+        voice-eln parser skips an existing companion, and its normalizer
+        skips the (paid) automatic transcription when a transcript is
+        present. Without one, the parser creates the companion and the
+        transcription action runs as usual.
         """
         # Fail before storing the audio if there is no collection to
         # reference it from; otherwise the file would sit orphaned in the
@@ -311,14 +327,37 @@ class VoiceElnService:
 
         # Timestamp prefix: recordings all arrive as e.g. 'recording.webm',
         # and a second file with the same name would overwrite the first.
-        stored_name = f'{_utc_now_stamp()}_{posixpath.basename(filename)}'
+        stored_name = f'{_utc_now_stamp()}_{posixpath.basename(upload.filename)}'
+        companion = f'{stored_name}.archive.json'
+
+        if upload.transcript and upload.transcript.strip():
+            now = _utc_now_iso()
+            await self._writer.write_archive(
+                client,
+                upload_id,
+                companion,
+                {
+                    'data': {
+                        'm_def': AUDIO_INPUT_M_DEF,
+                        'raw_audio': stored_name,
+                        'datetime': now,
+                        'transcript': upload.transcript.strip(),
+                        'transcription_status': 'COMPLETED',
+                        'transcription_meta': {
+                            'stt_model': upload.stt_model,
+                            'transcribed_at': now,
+                        },
+                    }
+                },
+            )
+
         await self._writer.upload_raw_file(
-            client, upload_id, stored_name, audio, 'application/octet-stream'
+            client, upload_id, stored_name, upload.audio, 'application/octet-stream'
         )
 
-        # The parser creates the AudioInput entry under a deterministic
-        # companion mainfile, so the entry id is known before the entry exists.
-        entry_id = generate_entry_id(upload_id, f'{stored_name}.archive.json')
+        # The companion mainfile is deterministic (written above, or created
+        # by the parser), so the entry id is known before the entry exists.
+        entry_id = generate_entry_id(upload_id, companion)
         await self._append_to_collection(
             client, upload_id, 'audios', entry_id, mainfile
         )

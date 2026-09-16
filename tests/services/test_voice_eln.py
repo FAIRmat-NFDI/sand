@@ -8,6 +8,7 @@ from nomad.utils import generate_entry_id
 from sand.services.nomad_api import NomadAPIError, NomadAuthError, entry_ref
 from sand.services.voice_eln import (
     EXPERIMENT_MAINFILE,
+    AudioUpload,
     VoiceElnService,
     normalize_audio_filename,
 )
@@ -162,8 +163,7 @@ async def test_add_audio_stores_file_and_references_it_from_collection():
         result = await service.add_audio(
             client,
             UPLOAD_ID,
-            b'AUDIO',
-            'rec.m4a',
+            AudioUpload(audio=b'AUDIO', filename='rec.m4a'),
             collection_entry_id=SAND_COLLECTION_ID,
         )
 
@@ -189,8 +189,7 @@ async def test_add_audio_without_collection_stores_no_file():
             await _service().add_audio(
                 client,
                 UPLOAD_ID,
-                b'AUDIO',
-                'rec.m4a',
+                AudioUpload(audio=b'AUDIO', filename='rec.m4a'),
                 collection_entry_id=SAND_COLLECTION_ID,
             )
 
@@ -380,7 +379,10 @@ async def test_unknown_collection_entry_id_raises_not_found():
     async with _client(fake) as client:
         with pytest.raises(NomadAPIError) as excinfo:
             await _service().add_audio(
-                client, UPLOAD_ID, b'AUDIO', 'rec.m4a', collection_entry_id='e-gone'
+                client,
+                UPLOAD_ID,
+                AudioUpload(audio=b'AUDIO', filename='rec.m4a'),
+                collection_entry_id='e-gone',
             )
 
     assert excinfo.value.status_code == HTTPStatus.NOT_FOUND

@@ -443,8 +443,10 @@ async function startRecording() {
 
   mediaRecorder.onstop = async () => {
     // fires after the final ondataavailable, so the last chunk has been
-    // streamed before we tell the relay to flush
-    stopLiveTranscript();
+    // streamed before we tell the relay to flush; the promise resolves
+    // with the full final transcript once the relay closed
+    statusEl.textContent = "Finishing transcript...";
+    const liveTranscript = await stopLiveTranscript();
     stream.getTracks().forEach((t) => t.stop());
     experimentSelect.disabled = false;
     const experiment = recordingExperiment;
@@ -456,7 +458,7 @@ async function startRecording() {
       uploadBtn.disabled = false;
       return;
     }
-    await uploadAudio(blob, experiment);
+    await uploadAudio(blob, experiment, liveTranscript);
   };
 
   startLiveTranscript();
@@ -510,7 +512,7 @@ async function handleEntryResponse(fetchPromise, failPrefix, message, linkText) 
   return true;
 }
 
-async function uploadAudio(blobOrFile, experiment) {
+async function uploadAudio(blobOrFile, experiment, transcript) {
   if (!experiment) return;
   recordBtn.disabled = true;
   uploadBtn.disabled = true;
@@ -526,6 +528,9 @@ async function uploadAudio(blobOrFile, experiment) {
     const ext = mimeSubtype || "wav";
     form.append("file", blobOrFile, "recording." + ext);
   }
+  // the live transcription result: the entry is created pre-transcribed
+  // and the automatic whisper run is skipped
+  if (transcript) form.append("transcript", transcript);
 
   const audioUrl = "api/input-collections/" + experiment.upload_id
     + "/audio?collection_entry_id=" + encodeURIComponent(experiment.entry_id);
