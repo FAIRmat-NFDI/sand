@@ -289,11 +289,12 @@ function stopTimer() {
 // Chunks stream to sand's Deepgram relay in parallel with the local
 // accumulation; if the relay is off or fails, recording works unchanged.
 
-let liveWs = null;
-let liveReady = false;
-// MediaRecorder's FIRST chunk carries the WebM container header, so
-// chunks produced before the relay is ready are queued, not dropped.
-let liveQueue = [];
+// One object per relay connection: handlers close over it, so a socket
+// that outlives its recording (draining finals) or a stale callback from
+// a quickly-restarted recording can never touch the next recording's
+// state. `liveConn` always points at the connection of the CURRENT
+// recording; only that one may write to the panel or receive chunks.
+let liveConn = null;
 
 const liveTranscriptEl = document.getElementById("live-transcript");
 const liveFinalEl = document.getElementById("live-final");
@@ -306,8 +307,6 @@ function liveTranscriptUrl() {
 }
 
 function startLiveTranscript() {
-  liveReady = false;
-  liveQueue = [];
   liveFinalEl.textContent = "";
   liveInterimEl.textContent = "";
   liveTranscriptEl.hidden = true;
@@ -317,7 +316,25 @@ function startLiveTranscript() {
   } catch (err) {
     return;
   }
-  liveWs = ws;
+  const conn = {
+    ws,
+    ready: false,
+    stopped: false,
+    // MediaRecorder's FIRST chunk carries the WebM container header, so
+    // chunks produced before the relay is ready are queued, not dropped.
+    queue: [],
+    // finals accumulate here (not read back from the DOM), so the value
+    // resolved on close is this recording's text even if another
+    // recording has taken over the panel meanwhile
+    finals: "",
+    finish: null,
+    done: null,
+  };
+  conn.done = new Promise((resolve) => {
+    conn.finish = () => resolve(conn.finals.trim());
+  });
+  liveConn = conn;
+
   ws.onopen = () => ws.send(JSON.stringify({ token: keycloak.token }));
   ws.onmessage = (event) => {
     let msg;
@@ -327,56 +344,73 @@ function startLiveTranscript() {
       return;
     }
     if (msg.type === "relay-ready") {
-      liveReady = true;
+      if (liveConn !== conn) {
+        // superseded by a newer recording: never touch its state
+        ws.close();
+        return;
+      }
+      conn.ready = true;
       liveTranscriptEl.hidden = false;
-      for (const chunk of liveQueue) ws.send(chunk);
-      liveQueue = [];
+      for (const chunk of conn.queue) ws.send(chunk);
+      conn.queue = [];
+      // recording already stopped while we were connecting: the queued
+      // chunks (header included) are sent above, now ask for the flush
+      if (conn.stopped) ws.send(JSON.stringify({ type: "relay-stop" }));
       return;
     }
     const alt = msg.channel && msg.channel.alternatives && msg.channel.alternatives[0];
     if (!alt) return;
     if (msg.is_final) {
       if (alt.transcript) {
-        liveFinalEl.textContent +=
-          (liveFinalEl.textContent ? " " : "") + alt.transcript;
+        conn.finals += (conn.finals ? " " : "") + alt.transcript;
       }
-      liveInterimEl.textContent = "";
-    } else {
-      liveInterimEl.textContent = alt.transcript || "";
+    }
+    if (liveConn === conn) {
+      // drain finals of a stopped recording still render, but a newer
+      // recording owns the panel
+      if (msg.is_final) {
+        liveFinalEl.textContent = conn.finals;
+        liveInterimEl.textContent = "";
+      } else {
+        liveInterimEl.textContent = alt.transcript || "";
+      }
     }
   };
-  ws.onclose = () => {
-    if (liveWs === ws) {
-      liveWs = null;
-      liveReady = false;
-    }
-  };
+  ws.onclose = () => conn.finish();
 }
 
 function sendLiveChunk(chunk) {
-  if (liveWs && liveReady && liveWs.readyState === WebSocket.OPEN) {
-    liveWs.send(chunk);
-  } else if (liveWs) {
-    liveQueue.push(chunk);
+  const conn = liveConn;
+  if (!conn || conn.stopped) return;
+  if (conn.ready && conn.ws.readyState === WebSocket.OPEN) {
+    conn.ws.send(chunk);
+  } else if (conn.ws.readyState !== WebSocket.CLOSED) {
+    conn.queue.push(chunk);
   }
 }
 
+// Resolves with this recording's final transcript once the relay socket
+// has closed - Deepgram's LAST finals arrive after the stop message, so
+// reading any earlier would truncate the text.
 function stopLiveTranscript() {
-  const ws = liveWs;
-  liveWs = null;
-  liveReady = false;
-  liveQueue = [];
-  if (!ws) return;
-  if (ws.readyState === WebSocket.OPEN) {
-    // ask sand to flush Deepgram; its remaining finals still render
-    // through the handlers above, then sand closes the socket
+  const conn = liveConn;
+  if (!conn) return Promise.resolve("");
+  if (conn.stopped) return conn.done;
+  conn.stopped = true;
+  const ws = conn.ws;
+  if (ws.readyState === WebSocket.OPEN && conn.ready) {
+    // ask sand to flush Deepgram; the remaining finals arrive before close
     ws.send(JSON.stringify({ type: "relay-stop" }));
-    setTimeout(() => {
-      if (ws.readyState === WebSocket.OPEN) ws.close();
-    }, 12000);
-  } else {
-    ws.close();
   }
+  // not ready yet: keep the socket - the relay-ready handler flushes the
+  // queued chunks and sends relay-stop itself. Either way, give up after
+  // a deadline so the upload can never hang on a wedged socket.
+  setTimeout(() => {
+    if (ws.readyState !== WebSocket.CLOSED) ws.close();
+    conn.finish(); // resolving twice is a no-op
+  }, 12000);
+  if (ws.readyState === WebSocket.CLOSED) conn.finish();
+  return conn.done;
 }
 
 // The experiment chosen when recording started: the upload must go
