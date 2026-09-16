@@ -106,7 +106,6 @@ class DerivedSheet:
 class AudioUpload:
     audio: bytes
     filename: str
-    # live transcription result; None -> the automatic whisper run happens
     transcript: str | None = None
     stt_model: str | None = None
 
@@ -313,13 +312,11 @@ class VoiceElnService:
         With `upload.transcript` (live transcription already happened), sand
         writes the companion archive itself BEFORE the audio: the
         voice-eln parser skips an existing companion, and its normalizer
-        skips the (paid) automatic transcription when a transcript is
-        present. Without one, the parser creates the companion and the
-        transcription action runs as usual.
+        skips the automatic transcription when a transcript is
+        present.
         """
-        # Fail before storing the audio if there is no collection to
-        # reference it from; otherwise the file would sit orphaned in the
-        # upload and every retry would deposit another copy.
+
+
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
