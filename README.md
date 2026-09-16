@@ -92,6 +92,8 @@ plugins:
         # off; also read from the DEEPGRAM_API_KEY environment variable.
         deepgram_api_key: '<your-deepgram-api-key>'
         deepgram_model: 'nova-3'
+        # store the live transcript instead of running whisper (default off)
+        # store_live_transcript: true
 ```
 
 There is no Groq/Whisper configuration in SAND anymore: speech-to-text is done
