@@ -316,7 +316,6 @@ class VoiceElnService:
         present.
         """
 
-
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
