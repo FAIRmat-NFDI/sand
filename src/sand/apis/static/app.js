@@ -285,6 +285,100 @@ function stopTimer() {
   timerInterval = null;
 }
 
+// --- live transcription while recording (best-effort) ------------------
+// Chunks stream to sand's Deepgram relay in parallel with the local
+// accumulation; if the relay is off or fails, recording works unchanged.
+
+let liveWs = null;
+let liveReady = false;
+// MediaRecorder's FIRST chunk carries the WebM container header, so
+// chunks produced before the relay is ready are queued, not dropped.
+let liveQueue = [];
+
+const liveTranscriptEl = document.getElementById("live-transcript");
+const liveFinalEl = document.getElementById("live-final");
+const liveInterimEl = document.getElementById("live-interim");
+
+function liveTranscriptUrl() {
+  const url = new URL("api/live-transcript", window.location.href);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
+}
+
+function startLiveTranscript() {
+  liveReady = false;
+  liveQueue = [];
+  liveFinalEl.textContent = "";
+  liveInterimEl.textContent = "";
+  liveTranscriptEl.hidden = true;
+  let ws;
+  try {
+    ws = new WebSocket(liveTranscriptUrl());
+  } catch (err) {
+    return;
+  }
+  liveWs = ws;
+  ws.onopen = () => ws.send(JSON.stringify({ token: keycloak.token }));
+  ws.onmessage = (event) => {
+    let msg;
+    try {
+      msg = JSON.parse(event.data);
+    } catch (err) {
+      return;
+    }
+    if (msg.type === "relay-ready") {
+      liveReady = true;
+      liveTranscriptEl.hidden = false;
+      for (const chunk of liveQueue) ws.send(chunk);
+      liveQueue = [];
+      return;
+    }
+    const alt = msg.channel && msg.channel.alternatives && msg.channel.alternatives[0];
+    if (!alt) return;
+    if (msg.is_final) {
+      if (alt.transcript) {
+        liveFinalEl.textContent +=
+          (liveFinalEl.textContent ? " " : "") + alt.transcript;
+      }
+      liveInterimEl.textContent = "";
+    } else {
+      liveInterimEl.textContent = alt.transcript || "";
+    }
+  };
+  ws.onclose = () => {
+    if (liveWs === ws) {
+      liveWs = null;
+      liveReady = false;
+    }
+  };
+}
+
+function sendLiveChunk(chunk) {
+  if (liveWs && liveReady && liveWs.readyState === WebSocket.OPEN) {
+    liveWs.send(chunk);
+  } else if (liveWs) {
+    liveQueue.push(chunk);
+  }
+}
+
+function stopLiveTranscript() {
+  const ws = liveWs;
+  liveWs = null;
+  liveReady = false;
+  liveQueue = [];
+  if (!ws) return;
+  if (ws.readyState === WebSocket.OPEN) {
+    // ask sand to flush Deepgram; its remaining finals still render
+    // through the handlers above, then sand closes the socket
+    ws.send(JSON.stringify({ type: "relay-stop" }));
+    setTimeout(() => {
+      if (ws.readyState === WebSocket.OPEN) ws.close();
+    }, 12000);
+  } else {
+    ws.close();
+  }
+}
+
 // The experiment chosen when recording started: the upload must go
 // there even if the dropdown changes while recording.
 let recordingExperiment = null;
@@ -307,10 +401,16 @@ async function startRecording() {
   mediaRecorder = new MediaRecorder(stream);
 
   mediaRecorder.ondataavailable = (e) => {
-    if (e.data.size > 0) chunks.push(e.data);
+    if (e.data.size > 0) {
+      chunks.push(e.data);
+      sendLiveChunk(e.data);
+    }
   };
 
   mediaRecorder.onstop = async () => {
+    // fires after the final ondataavailable, so the last chunk has been
+    // streamed before we tell the relay to flush
+    stopLiveTranscript();
     stream.getTracks().forEach((t) => t.stop());
     experimentSelect.disabled = false;
     const experiment = recordingExperiment;
@@ -325,7 +425,10 @@ async function startRecording() {
     await uploadAudio(blob, experiment);
   };
 
-  mediaRecorder.start();
+  startLiveTranscript();
+  // timeslice: periodic chunks feed the live stream; the local blob is
+  // assembled from the same chunks, so the stored audio is unchanged
+  mediaRecorder.start(250);
   recordBtn.innerHTML = '<span class="material-icons">stop</span> Stop';
   recordBtn.classList.remove("btn-primary");
   recordBtn.classList.add("btn-recording");
@@ -336,6 +439,8 @@ async function startRecording() {
 function stopRecording() {
   if (mediaRecorder && mediaRecorder.state === "recording") {
     mediaRecorder.stop();
+  } else {
+    stopLiveTranscript();
   }
   stopTimer();
   recordBtn.innerHTML = '<span class="material-icons">mic</span> Record';
