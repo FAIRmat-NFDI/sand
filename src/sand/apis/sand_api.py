@@ -49,6 +49,16 @@ app.include_router(
 app.include_router(live_transcript_router, prefix='/api')
 
 
+@app.get('/ui-config')
+async def ui_config():
+    """Frontend defaults: whether live transcription exists at all, and
+    the default state of the save-live-transcript toggle."""
+    return {
+        'live_transcript_available': bool(app.state.deepgram_api_key),
+        'store_live_transcript': app.state.store_live_transcript,
+    }
+
+
 @app.get('/auth/config')
 async def auth_config():
     """Return Keycloak config so the frontend can initialize authentication."""

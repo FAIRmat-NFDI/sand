@@ -160,10 +160,10 @@ async def add_audio(
 
     collection_entry_id names the target collection exactly (an upload
     can hold more than one). `transcript` carries the live transcription
-    result, if any; it is stored (AudioInput created pre-transcribed,
-    whisper skipped) only when store_live_transcript is on - by default
-    the live text is display-only and whisper transcribes the audio
-    (issue #47: streaming quality is below batch).
+    result when the user chose to store it (the GUI toggle, defaulting
+    to the store_live_transcript config): the AudioInput is then created
+    pre-transcribed and whisper is skipped. Absent -> the live text was
+    display-only and whisper transcribes the audio (issue #47).
     """
     voice = _voice_service(request)
     token = get_bearer_token(request)
@@ -177,8 +177,6 @@ async def add_audio(
         )
 
     audio = await _read_upload(file)
-    if not request.app.state.store_live_transcript:
-        transcript = None
 
     try:
         async with voice.build_client(token) as client:
