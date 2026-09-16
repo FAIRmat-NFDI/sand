@@ -2,7 +2,6 @@
 
 Protocol (client side):
   1. connect, send {"token": "<NOMAD bearer token>"} as the first message
-     (WebSockets cannot carry an Authorization header from a browser);
   2. wait for {"type": "ready"};
   3. send audio chunks as binary frames;
   4. send {"type": "stop"} (or just close) - sand tells Deepgram to
@@ -62,7 +61,7 @@ async def _pump_client_audio(browser_ws: WebSocket, deepgram_ws) -> None:
                 control = json.loads(message['text'])
             except ValueError:
                 continue
-            if control.get('type') == 'stop':
+            if control.get('type') == 'relay-stop': # sand get this message from browser to tell deepgram to flush
                 break
     await deepgram_ws.send(json.dumps({'type': 'CloseStream'}))
 
@@ -107,7 +106,7 @@ async def live_transcript(browser_ws: WebSocket) -> None:
         await browser_ws.close(code=1011, reason='could not reach Deepgram')
         return
 
-    await browser_ws.send_text(json.dumps({'type': 'ready'}))
+    await browser_ws.send_text(json.dumps({'type': 'relay-ready'})) # sand sent to brwoser to tell ready to relay the audio to sand
     up = asyncio.create_task(_pump_client_audio(browser_ws, deepgram_ws))
     down = asyncio.create_task(_pump_transcripts(deepgram_ws, browser_ws))
     try:
