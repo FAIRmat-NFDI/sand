@@ -3,7 +3,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Form, HTTPException, Request, Response, UploadFile
 
 from sand.apis.deps import get_bearer_token
 from sand.hysprint.generate import HysprintInputError, assemble, route_inputs
@@ -27,6 +27,7 @@ from sand.services.extraction_service import ExtractionError, ExtractionService
 from sand.services.nomad_api import NomadAPIError, NomadAuthError
 from sand.services.voice_eln import (
     AUDIO_EXTENSIONS,
+    AudioUpload,
     DerivedSheet,
     VoiceElnService,
     normalize_audio_filename,
@@ -153,11 +154,14 @@ async def add_audio(
     file: UploadFile,
     request: Request,
     collection_entry_id: str,
+    transcript: str | None = Form(None),
 ) -> InputCollectionResponse:
     """Add audio to an InputCollection entry.
 
     collection_entry_id names the target collection exactly (an upload
-    can hold more than one).
+    can hold more than one). `transcript` carries the live transcription
+    result, if any - the AudioInput is then created pre-transcribed and
+    the automatic (whisper) transcription does not run.
     """
     voice = _voice_service(request)
     token = get_bearer_token(request)
@@ -177,8 +181,12 @@ async def add_audio(
             result = await voice.add_audio(
                 client,
                 upload_id,
-                audio,
-                filename,
+                AudioUpload(
+                    audio=audio,
+                    filename=filename,
+                    transcript=transcript,
+                    stt_model=f'deepgram/{request.app.state.deepgram_model}',
+                ),
                 collection_entry_id=collection_entry_id,
             )
     except NomadAPIError as exc:

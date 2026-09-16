@@ -8,6 +8,7 @@ from nomad.utils import generate_entry_id
 from sand.services.nomad_api import NomadAPIError, NomadAuthError, entry_ref
 from sand.services.voice_eln import (
     EXPERIMENT_MAINFILE,
+    AudioUpload,
     VoiceElnService,
     normalize_audio_filename,
 )
@@ -162,15 +163,53 @@ async def test_add_audio_stores_file_and_references_it_from_collection():
         result = await service.add_audio(
             client,
             UPLOAD_ID,
-            b'AUDIO',
-            'rec.m4a',
+            AudioUpload(audio=b'AUDIO', filename='rec.m4a'),
             collection_entry_id=SAND_COLLECTION_ID,
         )
 
     audio_files = [n for n in fake.raw_files if n.endswith('_rec.m4a')]
     assert len(audio_files) == 1
     assert fake.raw_files[audio_files[0]] == b'AUDIO'
+    # without a transcript, the companion is the parser's job (whisper runs)
+    assert f'{audio_files[0]}.archive.json' not in fake.raw_files
     # the entry id matches the parser's deterministic companion mainfile
+    assert result.entry_id == generate_entry_id(
+        UPLOAD_ID, f'{audio_files[0]}.archive.json'
+    )
+    collection = fake.archive(EXPERIMENT_MAINFILE)['data']
+    assert collection['audios'] == [entry_ref(UPLOAD_ID, result.entry_id)]
+
+
+@pytest.mark.asyncio
+async def test_add_audio_with_transcript_writes_pretranscribed_companion():
+    # the companion is written by sand BEFORE the audio: the voice-eln
+    # parser skips an existing companion, and a present transcript keeps
+    # its normalizer from starting the automatic (paid) transcription
+    fake = _FakeNomad()
+
+    async with _client(fake) as client:
+        service = _service()
+        await service.create_input_collection(client, 'perov_B1_a')
+        result = await service.add_audio(
+            client,
+            UPLOAD_ID,
+            AudioUpload(
+                audio=b'AUDIO',
+                filename='rec.m4a',
+                transcript='UV ozone clean for all samples',
+                stt_model='deepgram/nova-3',
+            ),
+            collection_entry_id=SAND_COLLECTION_ID,
+        )
+
+    audio_files = [n for n in fake.raw_files if n.endswith('_rec.m4a')]
+    assert len(audio_files) == 1
+    companion = fake.archive(f'{audio_files[0]}.archive.json')['data']
+    assert companion['raw_audio'] == audio_files[0]
+    assert companion['transcript'] == 'UV ozone clean for all samples'
+    assert companion['transcription_status'] == 'COMPLETED'
+    assert companion['transcription_meta']['stt_model'] == 'deepgram/nova-3'
+    assert companion['transcription_meta']['transcribed_at']
     assert result.entry_id == generate_entry_id(
         UPLOAD_ID, f'{audio_files[0]}.archive.json'
     )
@@ -189,8 +228,7 @@ async def test_add_audio_without_collection_stores_no_file():
             await _service().add_audio(
                 client,
                 UPLOAD_ID,
-                b'AUDIO',
-                'rec.m4a',
+                AudioUpload(audio=b'AUDIO', filename='rec.m4a'),
                 collection_entry_id=SAND_COLLECTION_ID,
             )
 
@@ -380,7 +418,10 @@ async def test_unknown_collection_entry_id_raises_not_found():
     async with _client(fake) as client:
         with pytest.raises(NomadAPIError) as excinfo:
             await _service().add_audio(
-                client, UPLOAD_ID, b'AUDIO', 'rec.m4a', collection_entry_id='e-gone'
+                client,
+                UPLOAD_ID,
+                AudioUpload(audio=b'AUDIO', filename='rec.m4a'),
+                collection_entry_id='e-gone',
             )
 
     assert excinfo.value.status_code == HTTPStatus.NOT_FOUND

@@ -331,7 +331,7 @@ function startLiveTranscript() {
     done: null,
   };
   conn.done = new Promise((resolve) => {
-    conn.finish = () => resolve(conn.finals.trim());
+    conn.finish = resolve;
   });
   liveConn = conn;
 
@@ -376,7 +376,10 @@ function startLiveTranscript() {
       }
     }
   };
-  ws.onclose = () => conn.finish();
+  // clean completion only: a close after a requested stop carries the
+  // finals; an unexpected close resolves empty, so a half-dead stream
+  // can never be saved as a complete transcript (whisper covers it)
+  ws.onclose = () => conn.finish(conn.stopped ? conn.finals.trim() : "");
 }
 
 function sendLiveChunk(chunk) {
@@ -407,9 +410,9 @@ function stopLiveTranscript() {
   // a deadline so the upload can never hang on a wedged socket.
   setTimeout(() => {
     if (ws.readyState !== WebSocket.CLOSED) ws.close();
-    conn.finish(); // resolving twice is a no-op
+    conn.finish(""); // a wedged socket is not a clean completion
   }, 12000);
-  if (ws.readyState === WebSocket.CLOSED) conn.finish();
+  if (ws.readyState === WebSocket.CLOSED) conn.finish("");
   return conn.done;
 }
 
@@ -442,21 +445,28 @@ async function startRecording() {
   };
 
   mediaRecorder.onstop = async () => {
-    // fires after the final ondataavailable, so the last chunk has been
-    // streamed before we tell the relay to flush
-    stopLiveTranscript();
-    stream.getTracks().forEach((t) => t.stop());
-    experimentSelect.disabled = false;
+    // snapshot this recording's state BEFORE any await: the record
+    // button is live again during the relay wait, and a new recording
+    // rebinds the globals (chunks, mediaRecorder, recordingExperiment)
     const experiment = recordingExperiment;
     recordingExperiment = null;
-    const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
+    const recorded = chunks;
+    const mimeType = mediaRecorder.mimeType;
+    stream.getTracks().forEach((t) => t.stop());
+    experimentSelect.disabled = false;
+    // fires after the final ondataavailable, so the last chunk has been
+    // streamed before we tell the relay to flush; the promise resolves
+    // with the full final transcript once the relay closed
+    statusEl.textContent = "Finishing transcript...";
+    const liveTranscript = await stopLiveTranscript();
+    const blob = new Blob(recorded, { type: mimeType });
     if (blob.size === 0) {
       showError("No audio recorded.");
       statusEl.textContent = "";
       uploadBtn.disabled = false;
       return;
     }
-    await uploadAudio(blob, experiment);
+    await uploadAudio(blob, experiment, liveTranscript);
   };
 
   startLiveTranscript();
@@ -510,7 +520,7 @@ async function handleEntryResponse(fetchPromise, failPrefix, message, linkText) 
   return true;
 }
 
-async function uploadAudio(blobOrFile, experiment) {
+async function uploadAudio(blobOrFile, experiment, transcript) {
   if (!experiment) return;
   recordBtn.disabled = true;
   uploadBtn.disabled = true;
@@ -526,6 +536,9 @@ async function uploadAudio(blobOrFile, experiment) {
     const ext = mimeSubtype || "wav";
     form.append("file", blobOrFile, "recording." + ext);
   }
+  // the live transcription result: the entry is created pre-transcribed
+  // and the automatic whisper run is skipped
+  if (transcript) form.append("transcript", transcript);
 
   const audioUrl = "api/input-collections/" + experiment.upload_id
     + "/audio?collection_entry_id=" + encodeURIComponent(experiment.entry_id);
