@@ -1,10 +1,4 @@
-"""Live transcription relay: browser audio -> Deepgram -> transcript events.
-
-The browser cannot hold the Deepgram key, so it talks only to sand: it
-streams MediaRecorder chunks over this WebSocket, sand forwards them to
-Deepgram's live API and relays the transcript JSON back. The recording
-itself is NOT stored here - the browser keeps the full blob and uploads
-it through the normal /audio endpoint when recording stops.
+"""Live transcription relay: browser audio -> Deepgram -> transcript.
 
 Protocol (client side):
   1. connect, send {"token": "<NOMAD bearer token>"} as the first message
@@ -75,7 +69,7 @@ async def _pump_client_audio(browser_ws: WebSocket, deepgram_ws) -> None:
 
 # Deepgram ──▶ browser
 async def _pump_transcripts(deepgram_ws, browser_ws: WebSocket) -> None:
-    """Forward Deepgram's JSON messages verbatim until it closes (it
+    """Forward Deepgram's JSON messages until it closes (it
     closes itself after CloseStream once all finals are delivered)."""
     async for message in deepgram_ws:
         if isinstance(message, str):
