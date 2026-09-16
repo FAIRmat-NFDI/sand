@@ -2,9 +2,9 @@
 
 Protocol (client side):
   1. connect, send {"token": "<NOMAD bearer token>"} as the first message
-  2. wait for {"type": "ready"};
+  2. wait for {"type": "relay-ready"};
   3. send audio chunks as binary frames;
-  4. send {"type": "stop"} (or just close) - sand tells Deepgram to
+  4. send {"type": "relay-stop"} (or just close) - sand tells Deepgram to
      flush, relays the remaining final transcripts, then closes.
 Deepgram's Results messages are forwarded verbatim; the client reads
 channel.alternatives[0].transcript and is_final.
@@ -61,7 +61,8 @@ async def _pump_client_audio(browser_ws: WebSocket, deepgram_ws) -> None:
                 control = json.loads(message['text'])
             except ValueError:
                 continue
-            if control.get('type') == 'relay-stop': # sand get this message from browser to tell deepgram to flush
+            # the browser tells sand to stop -> tell Deepgram to flush
+            if control.get('type') == 'relay-stop':
                 break
     await deepgram_ws.send(json.dumps({'type': 'CloseStream'}))
 
@@ -106,18 +107,25 @@ async def live_transcript(browser_ws: WebSocket) -> None:
         await browser_ws.close(code=1011, reason='could not reach Deepgram')
         return
 
-    await browser_ws.send_text(json.dumps({'type': 'relay-ready'})) # sand sent to brwoser to tell ready to relay the audio to sand
-    up = asyncio.create_task(_pump_client_audio(browser_ws, deepgram_ws))
-    down = asyncio.create_task(_pump_transcripts(deepgram_ws, browser_ws))
+    # From here on the paid Deepgram socket is open: every await (the
+    # ready-send included) can raise on a browser disconnect, so it all
+    # runs inside the scope whose finally closes both sockets.
+    up = down = None
     try:
+        # sand tells the browser it is ready to relay audio
+        await browser_ws.send_text(json.dumps({'type': 'relay-ready'}))
+        up = asyncio.create_task(_pump_client_audio(browser_ws, deepgram_ws))
+        down = asyncio.create_task(_pump_transcripts(deepgram_ws, browser_ws))
         await asyncio.wait({up, down}, return_when=asyncio.FIRST_COMPLETED)
         if up.done() and not down.done():
             # client finished: drain Deepgram's remaining finals
             with suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(down, timeout=DRAIN_TIMEOUT_S)
     finally:
-        up.cancel()
-        down.cancel()
+        if up is not None:
+            up.cancel()
+        if down is not None:
+            down.cancel()
         with suppress(Exception):
             await deepgram_ws.close()
         with suppress(Exception):
