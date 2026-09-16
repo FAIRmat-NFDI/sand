@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from fastapi import Depends, FastAPI
@@ -7,6 +8,7 @@ from nomad.app.v1.routers.auth import get_current_user
 from nomad.config import config
 
 from sand.apis.routers.input_collections import router as input_collections_router
+from sand.apis.routers.live_transcript import router as live_transcript_router
 from sand.services.extraction_service import ExtractionService
 from sand.services.voice_eln import VoiceElnService
 
@@ -33,10 +35,17 @@ app.state.extraction_service = ExtractionService(
     model_name=sand_api_entry_point.llm_model_name,
     api_key=sand_api_entry_point.llm_api_key,
 )
+app.state.deepgram_api_key = sand_api_entry_point.deepgram_api_key or os.environ.get(
+    'DEEPGRAM_API_KEY', ''
+)
+app.state.deepgram_model = sand_api_entry_point.deepgram_model
 
 app.include_router(
     input_collections_router, prefix='/api', dependencies=[require_login]
 )
+# No require_login here: browsers cannot send an Authorization header on a
+# WebSocket, so the endpoint authenticates in-band (first message = token).
+app.include_router(live_transcript_router, prefix='/api')
 
 
 @app.get('/auth/config')

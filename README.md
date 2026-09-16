@@ -88,6 +88,10 @@ plugins:
         llm_api_key: '<your-llm-api-key>'          # required: step extraction
         # Base URL of the NOMAD API the app uploads to. For a local instance:
         nomad_base_url: 'http://localhost:8000/nomad-oasis/api/v1'
+        # Live transcription while recording (optional). Empty key = feature
+        # off; also read from the DEEPGRAM_API_KEY environment variable.
+        deepgram_api_key: '<your-deepgram-api-key>'
+        deepgram_model: 'nova-3'
 ```
 
 There is no Groq/Whisper configuration in SAND anymore: speech-to-text is done
