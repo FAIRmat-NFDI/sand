@@ -351,11 +351,13 @@ async def start_extract_async(
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
-    from nomad.actions.manager import start_action
+    # the async variant: the sync one blocks the API event loop while it
+    # sets up its Mongo/Temporal infrastructure
+    from nomad.actions.manager import start_action_async
 
     from sand.actions.extract.models import ExtractInput
 
-    job_id = start_action(
+    job_id = await start_action_async(
         action_id='sand.actions.extract:extract_action_entry_point',
         data=ExtractInput(
             upload_id=upload_id,
@@ -385,9 +387,11 @@ async def extract_status(
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
-    if status is None:
+    # the status file is upload-level and an upload can hold several
+    # collections: only report a status belonging to the requested one
+    if status is None or status.get('collection_entry_id') != collection_entry_id:
         raise HTTPException(
-            status_code=404, detail='no extraction status in this experiment yet'
+            status_code=404, detail='no extraction status for this collection yet'
         )
     return status
 
