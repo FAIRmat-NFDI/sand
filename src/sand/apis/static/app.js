@@ -447,6 +447,12 @@ storeLiveToggle.addEventListener("change", () => {
 // there even if the dropdown changes while recording.
 let recordingExperiment = null;
 
+// Set by the Discard button: the onstop handler then throws the
+// recording away instead of uploading it.
+let discardRecording = false;
+
+const discardBtn = document.getElementById("discard-btn");
+
 async function startRecording() {
   clearError();
   const experiment = requireExperiment();
@@ -472,6 +478,20 @@ async function startRecording() {
   };
 
   mediaRecorder.onstop = async () => {
+    if (discardRecording) {
+      discardRecording = false;
+      stopLiveTranscript(); // close the relay; nothing is read back
+      stream.getTracks().forEach((t) => t.stop());
+      experimentSelect.disabled = false;
+      recordingExperiment = null;
+      chunks = [];
+      liveFinalEl.textContent = "";
+      liveInterimEl.textContent = "";
+      liveTranscriptEl.hidden = true;
+      statusEl.textContent = "Recording discarded.";
+      uploadBtn.disabled = false;
+      return;
+    }
     // snapshot this recording's state BEFORE any await: the record
     // button is live again during the relay wait, and a new recording
     // rebinds the globals (chunks, mediaRecorder, recordingExperiment)
@@ -503,6 +523,8 @@ async function startRecording() {
   // timeslice: periodic chunks feed the live stream; the local blob is
   // assembled from the same chunks, so the stored audio is unchanged
   mediaRecorder.start(250);
+  discardRecording = false;
+  discardBtn.hidden = false;
   recordBtn.innerHTML = '<span class="material-icons">stop</span> Stop';
   recordBtn.classList.remove("btn-primary");
   recordBtn.classList.add("btn-recording");
@@ -516,6 +538,7 @@ function stopRecording() {
   } else {
     stopLiveTranscript();
   }
+  discardBtn.hidden = true;
   stopTimer();
   recordBtn.innerHTML = '<span class="material-icons">mic</span> Record';
   recordBtn.classList.remove("btn-recording");
@@ -769,6 +792,13 @@ uploadInput.addEventListener("change", async () => {
     return;
   }
   await uploadAudio(file, experiment);
+});
+
+discardBtn.addEventListener("click", () => {
+  if (!mediaRecorder || mediaRecorder.state !== "recording") return;
+  if (!window.confirm("Discard this recording? Nothing will be saved.")) return;
+  discardRecording = true;
+  stopRecording();
 });
 
 recordBtn.addEventListener("click", () => {
