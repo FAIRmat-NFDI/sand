@@ -314,7 +314,7 @@ function startLiveTranscript() {
   try {
     ws = new WebSocket(liveTranscriptUrl());
   } catch (err) {
-    return;
+    return null;
   }
   const conn = {
     ws,
@@ -380,6 +380,7 @@ function startLiveTranscript() {
   // finals; an unexpected close resolves empty, so a half-dead stream
   // can never be saved as a complete transcript (whisper covers it)
   ws.onclose = () => conn.finish(conn.stopped ? conn.finals.trim() : "");
+  return conn;
 }
 
 function sendLiveChunk(chunk) {
@@ -395,9 +396,9 @@ function sendLiveChunk(chunk) {
 // Resolves with this recording's final transcript once the relay socket
 // has closed - Deepgram's LAST finals arrive after the stop message, so
 // reading any earlier would truncate the text.
-function stopLiveTranscript() {
-  const conn = liveConn;
+function stopLiveTranscript(conn, detach = false) {
   if (!conn) return Promise.resolve("");
+  if (detach && liveConn === conn) liveConn = null;
   if (conn.stopped) return conn.done;
   conn.stopped = true;
   const ws = conn.ws;
@@ -447,10 +448,6 @@ storeLiveToggle.addEventListener("change", () => {
 // there even if the dropdown changes while recording.
 let recordingExperiment = null;
 
-// Set by the Discard button: the onstop handler then throws the
-// recording away instead of uploading it.
-let discardRecording = false;
-
 const discardBtn = document.getElementById("discard-btn");
 
 async function startRecording() {
@@ -468,28 +465,33 @@ async function startRecording() {
   recordingExperiment = experiment;
   experimentSelect.disabled = true;
   chunks = [];
-  mediaRecorder = new MediaRecorder(stream);
+  const recorder = new MediaRecorder(stream);
+  mediaRecorder = recorder;
 
-  mediaRecorder.ondataavailable = (e) => {
+  recorder.ondataavailable = (e) => {
     if (e.data.size > 0) {
       chunks.push(e.data);
       sendLiveChunk(e.data);
     }
   };
 
-  mediaRecorder.onstop = async () => {
-    if (discardRecording) {
-      discardRecording = false;
-      stopLiveTranscript(); // close the relay; nothing is read back
+  recorder.onstop = async () => {
+    if (recorder.discardRequested) {
+      // close this recording's relay; detach so its late drain finals
+      // cannot repaint the cleared panel
+      stopLiveTranscript(myConn, true);
       stream.getTracks().forEach((t) => t.stop());
-      experimentSelect.disabled = false;
-      recordingExperiment = null;
-      chunks = [];
-      liveFinalEl.textContent = "";
-      liveInterimEl.textContent = "";
-      liveTranscriptEl.hidden = true;
-      statusEl.textContent = "Recording discarded.";
-      uploadBtn.disabled = false;
+      if (mediaRecorder === recorder) {
+        // only reset shared state if no newer recording took over
+        experimentSelect.disabled = false;
+        recordingExperiment = null;
+        chunks = [];
+        liveFinalEl.textContent = "";
+        liveInterimEl.textContent = "";
+        liveTranscriptEl.hidden = true;
+        statusEl.textContent = "Recording discarded.";
+        uploadBtn.disabled = false;
+      }
       return;
     }
     // snapshot this recording's state BEFORE any await: the record
@@ -498,7 +500,7 @@ async function startRecording() {
     const experiment = recordingExperiment;
     recordingExperiment = null;
     const recorded = chunks;
-    const mimeType = mediaRecorder.mimeType;
+    const mimeType = recorder.mimeType;
     stream.getTracks().forEach((t) => t.stop());
     experimentSelect.disabled = false;
     // fires after the final ondataavailable, so the last chunk has been
@@ -508,7 +510,7 @@ async function startRecording() {
     // stored; either way the panel keeps showing it
     const storeLive = !storeLiveLabel.hidden && storeLiveToggle.checked;
     statusEl.textContent = "Finishing transcript...";
-    const liveTranscript = await stopLiveTranscript();
+    const liveTranscript = await stopLiveTranscript(myConn);
     const blob = new Blob(recorded, { type: mimeType });
     if (blob.size === 0) {
       showError("No audio recorded.");
@@ -519,11 +521,10 @@ async function startRecording() {
     await uploadAudio(blob, experiment, storeLive ? liveTranscript : "");
   };
 
-  startLiveTranscript();
+  const myConn = startLiveTranscript();
   // timeslice: periodic chunks feed the live stream; the local blob is
   // assembled from the same chunks, so the stored audio is unchanged
-  mediaRecorder.start(250);
-  discardRecording = false;
+  recorder.start(250);
   discardBtn.hidden = false;
   recordBtn.innerHTML = '<span class="material-icons">stop</span> Stop';
   recordBtn.classList.remove("btn-primary");
@@ -536,7 +537,7 @@ function stopRecording() {
   if (mediaRecorder && mediaRecorder.state === "recording") {
     mediaRecorder.stop();
   } else {
-    stopLiveTranscript();
+    stopLiveTranscript(liveConn);
   }
   discardBtn.hidden = true;
   stopTimer();
@@ -797,7 +798,9 @@ uploadInput.addEventListener("change", async () => {
 discardBtn.addEventListener("click", () => {
   if (!mediaRecorder || mediaRecorder.state !== "recording") return;
   if (!window.confirm("Discard this recording? Nothing will be saved.")) return;
-  discardRecording = true;
+  // intent rides on THIS recorder object: a quick discard-then-redo
+  // creates a new recorder and cannot re-route or reset it
+  mediaRecorder.discardRequested = true;
   stopRecording();
 });
 
