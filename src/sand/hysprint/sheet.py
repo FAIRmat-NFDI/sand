@@ -22,6 +22,10 @@ DERIVED_SHEET_MAINFILE = 'hysprint_experiment.xlsx'
 
 EXTRACTED_JSON_MAINFILE = 'hysprint_experiment.extracted.json'
 
+# Progress of an asynchronous extraction (issue #19); the GUI polls it.
+# Not *.archive.json, so NOMAD never parses it as an entry.
+EXTRACTION_STATUS_MAINFILE = 'hysprint_extraction.status.json'
+
 
 def step_key(step_type: str) -> str:
     """'Slot Die Coating' -> 'slot_die_coating'."""

@@ -54,6 +54,10 @@ class HysprintExtractResponse(BaseModel):
     warnings: list[str] = []  # e.g. a hand-edited sheet was replaced
 
 
+class ExtractJobResponse(BaseModel):
+    job_id: str  # the action workflow id; poll /extract-status for progress
+
+
 class SheetUploadResponse(BaseModel):
     # False: uploaded bytes equal the stored sheet; the derived links are
     # still verified (and a failed previous parse repaired) either way.

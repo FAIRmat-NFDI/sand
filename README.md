@@ -81,6 +81,9 @@ plugins:
   entry_points:
     include:
       - sand.apis:sand_api
+      # asynchronous extraction action (runs on the cpu action worker;
+      # restart it after enabling): issue #19
+      - sand.actions.extract:extract_action_entry_point
       # plus the voice-eln entry points, see the nomad-voice-eln README
     options:
       sand.apis:sand_api:

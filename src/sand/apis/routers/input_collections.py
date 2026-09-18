@@ -10,6 +10,7 @@ from sand.hysprint.generate import HysprintInputError, assemble, route_inputs
 from sand.hysprint.sheet import (
     DERIVED_SHEET_MAINFILE,
     EXTRACTED_JSON_MAINFILE,
+    EXTRACTION_STATUS_MAINFILE,
     grid_to_xlsx_bytes,
     to_sheet,
 )
@@ -17,6 +18,7 @@ from sand.hysprint.step_extractor import extract_step
 from sand.models.input_collections import (
     CreateHysprintExperimentRequest,
     CreateNoteRequest,
+    ExtractJobResponse,
     HysprintExtractResponse,
     InputCollectionListResponse,
     InputCollectionResponse,
@@ -24,7 +26,7 @@ from sand.models.input_collections import (
     SheetUploadResponse,
 )
 from sand.services.extraction_service import ExtractionError, ExtractionService
-from sand.services.nomad_api import NomadAPIError, NomadAuthError
+from sand.services.nomad_api import NomadAPIError, NomadAuthError, check_response
 from sand.services.voice_eln import (
     AUDIO_EXTENSIONS,
     AudioUpload,
@@ -318,6 +320,76 @@ async def upload_sheet(
             **_entry_response(voice, handle.upload_id, handle.entry_id)
         ),
     )
+
+
+@router.post(
+    '/input-collections/{upload_id}/extract-async',
+    response_model=ExtractJobResponse,
+)
+async def start_extract_async(
+    upload_id: str,
+    request: Request,
+    collection_entry_id: str,
+) -> ExtractJobResponse:
+    """SKELETON (issue #19, PR 1): start the extraction action and return
+    a job id; poll /extract-status for progress. The workflow only writes
+    status markers for now - PR 2 moves the real pipeline into it. The
+    Extract button still uses the synchronous /extract.
+    """
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    try:
+        async with voice.build_client(token) as client:
+            # validates the collection (and the token) before starting
+            await voice.collect_inputs(
+                client, upload_id, collection_entry_id=collection_entry_id
+            )
+            me = await client.get('/users/me')
+            check_response(me, step='whoami')
+            user_id = me.json()['user_id']
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    from nomad.actions.manager import start_action
+
+    from sand.actions.extract.models import ExtractInput
+
+    job_id = start_action(
+        action_id='sand.actions.extract:extract_action_entry_point',
+        data=ExtractInput(
+            upload_id=upload_id,
+            user_id=user_id,
+            collection_entry_id=collection_entry_id,
+        ),
+    )
+    return ExtractJobResponse(job_id=job_id)
+
+
+@router.get('/input-collections/{upload_id}/extract-status')
+async def extract_status(
+    upload_id: str,
+    request: Request,
+    collection_entry_id: str,
+) -> dict:
+    """The asynchronous extraction's progress, read from the status file
+    the workflow writes into the upload."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    try:
+        async with voice.build_client(token) as client:
+            status = await voice.read_status_file(
+                client, upload_id, EXTRACTION_STATUS_MAINFILE
+            )
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    if status is None:
+        raise HTTPException(
+            status_code=404, detail='no extraction status in this experiment yet'
+        )
+    return status
 
 
 @router.post(
