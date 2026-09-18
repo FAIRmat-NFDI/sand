@@ -416,6 +416,33 @@ function stopLiveTranscript() {
   return conn.done;
 }
 
+// --- save-live-transcript toggle -----------------------------------
+// The user decides per recording whether the live text is stored
+// (whisper skipped) or display-only (whisper transcribes). The server
+// config only sets the default; the last choice is remembered locally.
+
+const storeLiveLabel = document.getElementById("store-live-label");
+const storeLiveToggle = document.getElementById("store-live-toggle");
+const STORE_LIVE_KEY = "sand.storeLiveTranscript";
+
+async function initUiConfig() {
+  try {
+    const res = await fetch("ui-config");
+    const cfg = await res.json();
+    if (!cfg.live_transcript_available) return; // no relay: keep hidden
+    let remembered = null;
+    try { remembered = localStorage.getItem(STORE_LIVE_KEY); } catch { /* ignore */ }
+    storeLiveToggle.checked =
+      remembered === null ? Boolean(cfg.store_live_transcript) : remembered === "true";
+    storeLiveLabel.hidden = false;
+  } catch { /* toggle stays hidden; recording works without it */ }
+}
+initUiConfig();
+
+storeLiveToggle.addEventListener("change", () => {
+  try { localStorage.setItem(STORE_LIVE_KEY, String(storeLiveToggle.checked)); } catch { /* ignore */ }
+});
+
 // The experiment chosen when recording started: the upload must go
 // there even if the dropdown changes while recording.
 let recordingExperiment = null;
@@ -457,6 +484,9 @@ async function startRecording() {
     // fires after the final ondataavailable, so the last chunk has been
     // streamed before we tell the relay to flush; the promise resolves
     // with the full final transcript once the relay closed
+    // the toggle state at stop time decides whether the live text is
+    // stored; either way the panel keeps showing it
+    const storeLive = !storeLiveLabel.hidden && storeLiveToggle.checked;
     statusEl.textContent = "Finishing transcript...";
     const liveTranscript = await stopLiveTranscript();
     const blob = new Blob(recorded, { type: mimeType });
@@ -466,7 +496,7 @@ async function startRecording() {
       uploadBtn.disabled = false;
       return;
     }
-    await uploadAudio(blob, experiment, liveTranscript);
+    await uploadAudio(blob, experiment, storeLive ? liveTranscript : "");
   };
 
   startLiveTranscript();

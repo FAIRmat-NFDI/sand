@@ -328,3 +328,13 @@ body {
   color: #666; /* >= 4.5:1 on the #f5f5f5 background (WCAG AA) */
   font-style: italic;
 }
+
+/* The save-live-transcript toggle (shown only when the relay is configured) */
+.toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+  font-size: 0.85rem;
+  color: #444;
+}

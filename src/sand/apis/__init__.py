@@ -11,9 +11,11 @@ class SandAPIEntryPoint(APIEntryPoint):
     # Falls back to the DEEPGRAM_API_KEY environment variable.
     deepgram_api_key: str = ''
     deepgram_model: str = 'nova-3'
-    # Store the live transcript and skip the whisper transcription.
-    # Off: the live text is display-only and whisper (Groq) transcribes
-    # the uploaded audio - streaming quality is below batch (issue #47).
+    # Default state of the GUI's "save live transcript" toggle: on = the
+    # live text is stored and whisper is skipped; off = the live text is
+    # display-only and whisper (Groq) transcribes the uploaded audio -
+    # streaming quality is below batch (issue #47). The user decides per
+    # recording; this only sets the default.
     store_live_transcript: bool = False
 
     def load(self):
