@@ -10,9 +10,7 @@ with workflow.unsafe.imports_passed_through():
 
 @workflow.defn
 class ExtractHysprintWorkflow:
-    """Skeleton (issue #19, PR 1): proves the wiring end to end - worker
-    registration, per-user token minting, status-file write-back, and
-    polling. PR 2 moves the real pipeline in here: collect inputs ->
+    """collect inputs ->
     per-step LLM child workflows -> assemble -> sheet write-back."""
 
     @workflow.run

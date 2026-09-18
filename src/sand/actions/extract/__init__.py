@@ -28,5 +28,5 @@ class ExtractActionEntryPoint(ActionEntryPoint):
 extract_action_entry_point = ExtractActionEntryPoint(
     name='ExtractHysprintAction',
     description='Extract an experiment collection into the hysprint sheet, '
-    'asynchronously (issue #19).',
+    'asynchronously.',
 )

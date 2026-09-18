@@ -389,7 +389,7 @@ class VoiceElnService:
     async def read_status_file(
         self, client: httpx.AsyncClient, upload_id: str, mainfile: str
     ) -> dict | None:
-        """The bookkeeping file's JSON; None when absent or unreadable."""
+        """The bookkeeping workflow status file's JSON"""
         raw = await self._writer.read_raw_file(client, upload_id, mainfile)
         if raw is None:
             return None
