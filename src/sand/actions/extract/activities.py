@@ -1,14 +1,3 @@
-"""Worker-side pieces of the extract action.
-
-NOMAD I/O activities mint a short-lived token for the requesting user
-(generate_simple_token - the mechanism behind NOMAD's app tokens) and
-reuse the exact HTTP service code the API endpoints use, so the worker
-needs no second implementation of the collect/write logic. The pure
-pipeline steps that read packaged files (schema slicing, the sheet
-template) also run here: workflow code must stay deterministic and free
-of file I/O.
-"""
-
 import hashlib
 from datetime import datetime, timezone
 
@@ -53,6 +42,7 @@ async def collect_and_route(data: ExtractInput) -> dict:
             client, data.upload_id, collection_entry_id=data.collection_entry_id
         )
 
+    # todo: decide if this warns or error
     pending = [i for i in inputs if i.text is None]
     if pending:
         raise ApplicationError(
@@ -66,13 +56,16 @@ async def collect_and_route(data: ExtractInput) -> dict:
         raise ApplicationError(str(exc), non_retryable=True) from exc
 
     entry_point = config.get_plugin_entry_point('sand.apis:sand_api')
+    # No API key here: everything an activity returns is persisted in
+    # Temporal's history. The LLM children run on this same worker and
+    # LiteLLM falls back to the provider env var (e.g. GEMINI_API_KEY),
+    # so the key never transits a payload.
     return {
         'info': info,
         'step_texts': step_texts,
         'select_schema': select_schema(),
         'input_entry_ids': [i.entry_id for i in inputs],
         'llm_model_name': entry_point.llm_model_name,
-        'llm_api_key': entry_point.llm_api_key,
     }
 
 

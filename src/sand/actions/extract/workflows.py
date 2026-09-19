@@ -77,9 +77,11 @@ class ExtractHysprintWorkflow:
                     'extraction_schema': schema,
                     'system_prompt': system,
                     'instruction_text': instruction,
+                    # no api_key: the child's LiteLLM engine reads the
+                    # provider env var on the worker (GEMINI_API_KEY, ...),
+                    # keeping the secret out of Temporal payloads
                     'llm_engine_config': {
                         'model_name': collected['llm_model_name'],
-                        'api_key': collected['llm_api_key'] or None,
                     },
                 }
 
