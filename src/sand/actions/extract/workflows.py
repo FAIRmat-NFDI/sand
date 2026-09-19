@@ -74,6 +74,10 @@ class ExtractHysprintWorkflow:
     @workflow.run
     async def run(self, data: ExtractInput) -> dict:
         job_id = workflow.info().workflow_id
+        # one entry per finished step, in completion order; carried in
+        # every snapshot so the final (or failed) status still shows
+        # which steps got through
+        finished_steps: list[dict] = []
 
         async def status(payload: dict) -> None:
             await workflow.execute_activity(
@@ -85,6 +89,7 @@ class ExtractHysprintWorkflow:
                         'job_id': job_id,
                         'collection_entry_id': data.collection_entry_id,
                         'updated_at': workflow.now().isoformat(),
+                        'steps': list(finished_steps),
                         **payload,
                     },
                 ),
@@ -155,6 +160,13 @@ class ExtractHysprintWorkflow:
                         non_retryable=True,
                     ) from exc
                 done += 1
+                finished_steps.append(
+                    {
+                        'step': index + 1,
+                        'step_type': step_type,
+                        'finished_at': workflow.now().isoformat(),
+                    }
+                )
                 await status(
                     {'phase': 'extracting', 'steps_done': done, 'steps_total': total}
                 )
