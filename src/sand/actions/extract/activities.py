@@ -56,10 +56,8 @@ async def collect_and_route(data: ExtractInput) -> dict:
         raise ApplicationError(str(exc), non_retryable=True) from exc
 
     entry_point = config.get_plugin_entry_point('sand.apis:sand_api')
-    # No API key here: everything an activity returns is persisted in
-    # Temporal's history. The LLM children run on this same worker and
-    # LiteLLM falls back to the provider env var (e.g. GEMINI_API_KEY),
-    # so the key never transits a payload.
+    # No API key here, we can set the key in the env for the child workflow
+    # since this is only for hysrpint lab.
     return {
         'info': info,
         'step_texts': step_texts,
@@ -71,8 +69,6 @@ async def collect_and_route(data: ExtractInput) -> dict:
 
 @activity.defn
 def make_fill_schema(step_type: str) -> dict:
-    """The FILL schema slice for one step type (reads the schema artifact,
-    so it lives in an activity, not in workflow code)."""
     from sand.hysprint.steps import fill_schema
 
     try:
@@ -83,10 +79,7 @@ def make_fill_schema(step_type: str) -> dict:
 
 @activity.defn
 async def assemble_and_store(data: StoreInput) -> dict:
-    """Slots + form -> archive -> sheet -> upload, reparse, relink.
-
-    Safe to retry: add_derived_sheet deletes the previous parse output
-    and rewrites everything (issue #34's always-regenerate)."""
+    """Slots + form -> archive -> sheet -> upload, reparse, relink."""
     from sand.hysprint.generate import assemble
     from sand.hysprint.sheet import (
         DERIVED_SHEET_MAINFILE,
