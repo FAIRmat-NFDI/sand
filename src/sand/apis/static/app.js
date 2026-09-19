@@ -157,6 +157,10 @@ async function loadExperiments(selectEntryId) {
     experimentSelect.value = wanted;
   }
   updateExperimentLink();
+  // restoring the selection fires no 'change' event: resume the polling
+  // of an unfinished extraction explicitly (reload-proof progress)
+  const restored = selectedExperiment();
+  if (restored) pollExtraction(restored);
 }
 
 experimentSelect.addEventListener("change", () => {
@@ -652,50 +656,130 @@ const extractJson = document.getElementById("extract-json");
 const derivedEntryEl = document.getElementById("derived-entry");
 const sheetIssuesEl = document.getElementById("sheet-issues");
 
+// --- asynchronous extraction (issue #19) --------------------------------
+// Extract starts a workflow and returns a job id; progress lives in a
+// status file in the upload, polled every few seconds. Reload-proof:
+// selecting an experiment checks for an unfinished job and resumes the
+// polling - no job id needs to survive in the browser.
+
+let extractPollTimer = null;
+
+function entryUrlFor(experiment, entryId) {
+  // .../upload/id/<upload>/entry/id/<entry> - swap the entry id
+  return experiment.entry_url.replace(/entry\/id\/[^/]+$/, "entry/id/" + entryId);
+}
+
+function stopExtractPolling() {
+  if (extractPollTimer) clearTimeout(extractPollTimer);
+  extractPollTimer = null;
+}
+
+function describePhase(status) {
+  if (status.phase === "extracting") {
+    return "Extracting step " + (status.steps_done ?? 0) + "/" + (status.steps_total ?? "?") + "...";
+  }
+  if (status.phase === "collecting") return "Collecting inputs...";
+  if (status.phase === "writing-sheet") return "Writing and parsing the sheet...";
+  return status.phase + "...";
+}
+
+function renderExtractResult(experiment, status) {
+  extractSummary.textContent = (status.step_types || []).length
+    ? "Steps: " + status.step_types.join(" \u2192 ")
+    : "";
+  extractJson.textContent = "";
+  derivedEntryEl.replaceChildren();
+  derivedEntryEl.style.display = "none";
+  if (status.derived_entry_id) {
+    const link = document.createElement("a");
+    link.href = entryUrlFor(experiment, status.derived_entry_id);
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "View derived experiment on NOMAD";
+    derivedEntryEl.replaceChildren(link);
+    derivedEntryEl.style.display = "block";
+  }
+  const notes = [];
+  for (const w of status.warnings || []) notes.push("Warning: " + w);
+  const issues = status.sheet_issues || [];
+  if (issues.length) notes.push("Sheet could not hold everything: " + issues.join("; "));
+  sheetIssuesEl.textContent = notes.join(" \u2014 ");
+  sheetIssuesEl.style.display = notes.length ? "block" : "none";
+  extractResult.hidden = false;
+}
+
+async function pollExtraction(experiment) {
+  stopExtractPolling();
+  extractBtn.disabled = true;
+  let res;
+  try {
+    res = await authFetch(
+      "api/input-collections/" + experiment.upload_id
+      + "/extract-status?collection_entry_id=" + encodeURIComponent(experiment.entry_id));
+  } catch (err) {
+    // transient network problem: keep polling
+    extractPollTimer = setTimeout(() => pollExtraction(experiment), 3000);
+    return;
+  }
+  if (res.status === 404) {
+    // no extraction for this collection (or none yet)
+    extractBtn.disabled = false;
+    extractStatus.textContent = "";
+    return;
+  }
+  const status = await res.json().catch(() => null);
+  if (!status) {
+    extractPollTimer = setTimeout(() => pollExtraction(experiment), 3000);
+    return;
+  }
+  if (status.phase === "completed") {
+    extractBtn.disabled = false;
+    extractStatus.textContent = "";
+    renderExtractResult(experiment, status);
+    return;
+  }
+  if (status.phase === "failed") {
+    extractBtn.disabled = false;
+    extractStatus.textContent = "";
+    showError("Extract failed: " + (status.error || "unknown error"));
+    return;
+  }
+  extractStatus.textContent = describePhase(status);
+  extractPollTimer = setTimeout(() => pollExtraction(experiment), 3000);
+}
+
+// selecting an experiment resumes the polling of an unfinished job
+experimentSelect.addEventListener("change", () => {
+  stopExtractPolling();
+  extractBtn.disabled = false;
+  extractStatus.textContent = "";
+  extractResult.hidden = true;
+  const experiment = selectedExperiment();
+  if (experiment) pollExtraction(experiment);
+});
+
 extractBtn.addEventListener("click", async () => {
   clearError();
   const experiment = requireExperiment();
   if (!experiment) return;
   extractBtn.disabled = true;
   extractResult.hidden = true;
-  extractStatus.textContent = "Extracting... this can take a few minutes.";
+  extractStatus.textContent = "Starting extraction...";
   try {
     const res = await authFetch(
       "api/input-collections/" + experiment.upload_id
-      + "/extract?collection_entry_id=" + encodeURIComponent(experiment.entry_id),
+      + "/extract-async?collection_entry_id=" + encodeURIComponent(experiment.entry_id),
       { method: "POST" });
     if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      showError("Extract failed: " + (body && body.detail ? body.detail : res.statusText));
+      showError("Extract failed: " + await errorDetail(res));
+      extractBtn.disabled = false;
+      extractStatus.textContent = "";
       return;
     }
-    const data = await res.json();
-    extractSummary.textContent =
-      data.archive.samples.length + " sample(s), "
-      + data.archive.steps.length + " step(s): "
-      + data.step_types.join(" → ");
-    extractJson.textContent = JSON.stringify(data.archive, null, 2);
-    derivedEntryEl.replaceChildren();
-    derivedEntryEl.style.display = "none";
-    if (data.derived_entry) {
-      const link = document.createElement("a");
-      link.href = data.derived_entry.entry_url;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.textContent = "View derived experiment on NOMAD";
-      derivedEntryEl.replaceChildren(link);
-      derivedEntryEl.style.display = "block";
-    }
-    const notes = [];
-    for (const w of data.warnings || []) notes.push("Warning: " + w);
-    const issues = data.sheet_issues || [];
-    if (issues.length) notes.push("Sheet could not hold everything: " + issues.join("; "));
-    sheetIssuesEl.textContent = notes.join(" — ");
-    sheetIssuesEl.style.display = notes.length ? "block" : "none";
-    extractResult.hidden = false;
+    // the job id is not kept: the status file is found by experiment
+    extractPollTimer = setTimeout(() => pollExtraction(experiment), 2000);
   } catch (err) {
     showError("Network error: " + err.message);
-  } finally {
     extractBtn.disabled = false;
     extractStatus.textContent = "";
   }
