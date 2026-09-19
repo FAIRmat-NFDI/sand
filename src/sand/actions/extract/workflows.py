@@ -1,3 +1,38 @@
+"""The asynchronous extraction orchestrator (issue #19).
+
+Processes and connections:
+
+    BROWSER ── POST /extract-async ──▶ sand API ── start_action ──▶ TEMPORAL
+       │◀───── {job_id} ─────────────────┘                            │
+       │ polls GET /extract-status every ~3 s                        ▼
+       │                                                     cpu action worker
+       │                                                  ExtractHysprintWorkflow
+       │                                                  ExtractionWorkflow (llm)
+       │                                                   env: GEMINI_API_KEY
+       │                                                     │            │
+       ▼        status.json, xlsx, extracted.json            ▼            ▼
+     NOMAD ◀────── HTTP + minted user token ──────────── activities   Gemini API
+
+Inside ExtractHysprintWorkflow (this file):
+
+    status "collecting"
+    activity collect_and_route ──▶ {info, step_texts[n], select_schema}
+    status "extracting 0/n"
+      per step, n in PARALLEL:
+        child ExtractionWorkflow(SELECT) ─▶ step_type
+        activity make_fill_schema(step_type)
+        child ExtractionWorkflow(FILL)   ─▶ slot ─▶ normalize_variants
+        status "extracting k/n"
+    status "writing-sheet"
+    activity assemble_and_store  (assemble ▶ sheet ▶ xlsx ▶ add_derived_sheet)
+    status "completed" {entry_id, step_types, issues}
+    on ANY failure: status "failed" {error}, then re-raise
+
+Temporal journals every activity result and child return: a worker crash
+replays the journal and resumes exactly where it stopped. The browser's
+only bridge to all of this is the status file in the upload.
+"""
+
 import asyncio
 from datetime import timedelta
 
@@ -31,11 +66,10 @@ def _error_message(exc: BaseException) -> str:
 
 @workflow.defn
 class ExtractHysprintWorkflow:
-    """The extraction orchestrator (issue #19): collect inputs, run one
+    """The extraction orchestrator: collect inputs, run one
     SELECT and one FILL child workflow per step (steps in parallel),
     assemble and store the sheet, and write progress into the upload's
-    status file at every phase. Temporal journals every step, so a worker
-    restart resumes exactly where it stopped."""
+    status file at every phase."""
 
     @workflow.run
     async def run(self, data: ExtractInput) -> dict:
@@ -79,7 +113,6 @@ class ExtractHysprintWorkflow:
                     'instruction_text': instruction,
                     # no api_key: the child's LiteLLM engine reads the
                     # provider env var on the worker (GEMINI_API_KEY, ...),
-                    # keeping the secret out of Temporal payloads
                     'llm_engine_config': {
                         'model_name': collected['llm_model_name'],
                     },
