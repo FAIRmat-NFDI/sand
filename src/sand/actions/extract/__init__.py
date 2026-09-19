@@ -15,13 +15,23 @@ class ExtractActionEntryPoint(ActionEntryPoint):
     def load(self):
         from nomad.actions import Action
 
-        from sand.actions.extract.activities import write_extraction_status
+        from sand.actions.extract.activities import (
+            assemble_and_store,
+            collect_and_route,
+            make_fill_schema,
+            write_extraction_status,
+        )
         from sand.actions.extract.workflows import ExtractHysprintWorkflow
 
         return Action(
             task_queue=self.task_queue,
             workflow=ExtractHysprintWorkflow,
-            activities=[write_extraction_status],
+            activities=[
+                collect_and_route,
+                make_fill_schema,
+                assemble_and_store,
+                write_extraction_status,
+            ],
         )
 
 
