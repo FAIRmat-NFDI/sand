@@ -1,36 +1,32 @@
 """The asynchronous extraction orchestrator (issue #19).
 
-Processes and connections:
-
-    BROWSER ── POST /extract-async ──▶ sand API ── start_action ──▶ TEMPORAL
-       │◀───── {job_id} ─────────────────┘                            │
-       │ polls GET /extract-status every ~3 s                        ▼
-       │                                                     cpu action worker
-       │                                                  ExtractHysprintWorkflow
-       │                                                  ExtractionWorkflow (llm)
-       │                                                   env: GEMINI_API_KEY
-       │                                                     │            │
-       ▼        status.json, xlsx, extracted.json            ▼            ▼
-     NOMAD ◀────── HTTP + minted user token ──────────── activities   Gemini API
-
-Inside ExtractHysprintWorkflow (this file):
-
-    status "collecting"
-    activity collect_and_route ──▶ {info, step_texts[n], select_schema}
-    status "extracting 0/n"
-      per step, n in PARALLEL:
-        child ExtractionWorkflow(SELECT) ─▶ step_type
-        activity make_fill_schema(step_type)
-        child ExtractionWorkflow(FILL)   ─▶ slot ─▶ normalize_variants
-        status "extracting k/n"
-    status "writing-sheet"
-    activity assemble_and_store  (assemble ▶ sheet ▶ xlsx ▶ add_derived_sheet)
-    status "completed" {entry_id, step_types, issues}
-    on ANY failure: status "failed" {error}, then re-raise
+    ExtractHysprintWorkflow.run
+    │
+    ├─ status "collecting"
+    ├─ activity collect_and_route ─▶ {info, step_texts[n], select_schema}
+    ├─ status "extracting 0/n"
+    │
+    │    per step, n in PARALLEL:
+    │    ┌────────────────────────────────────────────────────┐
+    │    │ child ExtractionWorkflow(SELECT) ─▶ step_type      │
+    │    │ activity make_fill_schema(step_type)               │
+    │    │ child ExtractionWorkflow(FILL)   ─▶ slot           │
+    │    │ normalize_variants(slot)                           │
+    │    │ status "extracting k/n"                            │
+    │    └────────────────────────────────────────────────────┘
+    │                  │ asyncio.gather ─▶ slots[n]
+    │
+    ├─ status "writing-sheet"
+    ├─ activity assemble_and_store
+    │      assemble ─▶ to_sheet ─▶ xlsx ─▶ add_derived_sheet
+    ├─ status "completed" {derived_entry_id, step_types, sheet_issues}
+    │
+    └─ on ANY failure: status "failed" {error}, then re-raise
 
 Temporal journals every activity result and child return: a worker crash
-replays the journal and resumes exactly where it stopped. The browser's
-only bridge to all of this is the status file in the upload.
+replays the journal and resumes exactly where it stopped. The status
+writes go to hysprint_extraction.status.json in the upload - the file
+the GUI polls.
 """
 
 import asyncio
