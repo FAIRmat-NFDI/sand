@@ -1,31 +1,23 @@
-import asyncio
-import hashlib
 import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Form, HTTPException, Request, Response, UploadFile
 
 from sand.apis.deps import get_bearer_token
-from sand.hysprint.generate import HysprintInputError, assemble, route_inputs
 from sand.hysprint.sheet import (
     DERIVED_SHEET_MAINFILE,
     EXTRACTED_JSON_MAINFILE,
     EXTRACTION_STATUS_MAINFILE,
-    grid_to_xlsx_bytes,
-    to_sheet,
 )
-from sand.hysprint.step_extractor import extract_step
 from sand.models.input_collections import (
     CreateHysprintExperimentRequest,
     CreateNoteRequest,
     ExtractJobResponse,
-    HysprintExtractResponse,
     InputCollectionListResponse,
     InputCollectionResponse,
     InputCollectionSummaryModel,
     SheetUploadResponse,
 )
-from sand.services.extraction_service import ExtractionError, ExtractionService
 from sand.services.nomad_api import NomadAPIError, NomadAuthError, check_response
 from sand.services.voice_eln import (
     AUDIO_EXTENSIONS,
@@ -78,6 +70,24 @@ async def _read_upload(file: UploadFile) -> bytes:
     if not buf:
         raise HTTPException(status_code=400, detail='Uploaded file is empty')
     return bytes(buf)
+
+
+# A crashed worker can leave a non-terminal status behind; after this long
+# without an update the guard stops trusting it and allows a fresh start.
+STALE_EXTRACTION_S = 30 * 60
+
+
+def _extraction_running(status: dict | None, collection_entry_id: str) -> bool:
+    if not status or status.get('collection_entry_id') != collection_entry_id:
+        return False
+    if status.get('phase') in ('completed', 'failed'):
+        return False
+    updated = status.get('updated_at')
+    try:
+        age = datetime.now(timezone.utc) - datetime.fromisoformat(updated)
+    except (TypeError, ValueError):
+        return False
+    return age.total_seconds() < STALE_EXTRACTION_S
 
 
 def _entry_response(voice: VoiceElnService, upload_id: str, entry_id: str) -> dict:
@@ -341,6 +351,15 @@ async def start_extract_async(
 
     try:
         async with voice.build_client(token) as client:
+            status = await voice.read_status_file(
+                client, upload_id, EXTRACTION_STATUS_MAINFILE
+            )
+            if _extraction_running(status, collection_entry_id):
+                raise HTTPException(
+                    status_code=409,
+                    detail='an extraction is already running for this '
+                    'experiment; wait for it to finish',
+                )
             # validates the collection (and the token) before starting
             await voice.collect_inputs(
                 client, upload_id, collection_entry_id=collection_entry_id
@@ -394,106 +413,3 @@ async def extract_status(
             status_code=404, detail='no extraction status for this collection yet'
         )
     return status
-
-
-@router.post(
-    '/input-collections/{upload_id}/extract', response_model=HysprintExtractResponse
-)
-async def extract_hysprint_experiment(
-    upload_id: str,
-    request: Request,
-    collection_entry_id: str,
-) -> HysprintExtractResponse:
-    """Extract the experiment's inputs into the hysprint {samples, steps}
-    archive, upload the resulting xlsx, and return the derived entry.
-
-    A hand-edited sheet is overwritten; the response carries a warning.
-    """
-    voice = _voice_service(request)
-    runner: ExtractionService = request.app.state.extraction_service
-    token = get_bearer_token(request)
-
-    try:
-        async with voice.build_client(token) as client:
-            inputs = await voice.collect_inputs(
-                client, upload_id, collection_entry_id=collection_entry_id
-            )
-    except NomadAPIError as exc:
-        raise _http_error(exc) from exc
-
-    pending = [i for i in inputs if i.text is None]
-    if pending:
-        raise HTTPException(
-            status_code=409,
-            detail=f'{len(pending)} input(s) not transcribed or processed yet; '
-            'try again in a moment',
-        )
-
-    try:
-        info, step_texts = route_inputs(inputs)
-    except HysprintInputError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    async def extract_one(index: int, text: str) -> dict:
-        step_name = f'step {index + 1} ({text[:60]!r})'
-        try:
-            return await extract_step(runner, text)
-        except ExtractionError as exc:
-            raise HTTPException(
-                status_code=502, detail=f'LLM extraction failed for {step_name}: {exc}'
-            ) from exc
-        except TimeoutError as exc:
-            raise HTTPException(
-                status_code=504, detail=f'LLM extraction timed out for {step_name}'
-            ) from exc
-
-    slots = await asyncio.gather(
-        *(extract_one(i, text) for i, text in enumerate(step_texts))
-    )
-
-    try:
-        archive = assemble(info, list(slots))
-    except ValueError as exc:
-        # e.g. a narration names a sample label the form did not declare
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    step_types = [slot['step_type'] for slot in slots]
-    grid, sheet_issues = to_sheet(archive)
-    xlsx = grid_to_xlsx_bytes(grid)
-    sheet = DerivedSheet(
-        xlsx=xlsx,
-        xlsx_mainfile=DERIVED_SHEET_MAINFILE,
-        extraction={
-            'archive': archive,
-            'xlsx_sha256': hashlib.sha256(xlsx).hexdigest(),
-            'extracted_at': datetime.now(timezone.utc).isoformat(),
-            'input_entry_ids': [i.entry_id for i in inputs],
-        },
-        extraction_mainfile=EXTRACTED_JSON_MAINFILE,
-    )
-    try:
-        async with voice.build_client(token) as client:
-            derived, replaced_edits = await voice.add_derived_sheet(
-                client,
-                upload_id,
-                sheet,
-                collection_entry_id=collection_entry_id,
-            )
-    except NomadAPIError as exc:
-        raise _http_error(exc) from exc
-
-    warnings = []
-    if replaced_edits:
-        warnings.append(
-            'the sheet had manual edits (it did not match the recorded '
-            'hash); this extraction replaced them'
-        )
-    return HysprintExtractResponse(
-        archive=archive,
-        step_types=step_types,
-        derived_entry=InputCollectionResponse(
-            **_entry_response(voice, derived.upload_id, derived.entry_id)
-        ),
-        sheet_issues=sheet_issues,
-        warnings=warnings,
-    )

@@ -5,6 +5,9 @@ class SandAPIEntryPoint(APIEntryPoint):
     nomad_base_url: str = 'https://nomad-lab.eu/prod/v1/api/v1'
 
     llm_model_name: str = 'gemini/gemini-2.5-flash'
+    # Deprecated, unused: the key lives in the action worker's environment
+    # (LiteLLM provider var, e.g. GEMINI_API_KEY). Kept so existing
+    # nomad.yaml files still load.
     llm_api_key: str = ''
 
     # Live transcription while recording (empty key = feature off).
