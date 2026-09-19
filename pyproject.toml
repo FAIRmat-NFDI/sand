@@ -136,3 +136,4 @@ sand = ["apis/static/*", "schemas/*"]
 
 [project.entry-points.'nomad.plugin']
 sand_api = "sand.apis:sand_api"
+sand_extract_action = "sand.actions.extract:extract_action_entry_point"

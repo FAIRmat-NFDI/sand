@@ -81,7 +81,7 @@ plugins:
   entry_points:
     include:
       - sand.apis:sand_api
-      # plus the voice-eln entry points, see the nomad-voice-eln README
+      - sand.actions.extract:extract_action_entry_point
     options:
       sand.apis:sand_api:
         llm_model_name: 'gemini/gemini-2.5-flash'  # LiteLLM notation

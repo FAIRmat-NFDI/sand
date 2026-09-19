@@ -370,6 +370,35 @@ class VoiceElnService:
         await self._resolve_collection_mainfile(client, upload_id, collection_entry_id)
         return await self._writer.read_raw_file(client, upload_id, sheet_mainfile)
 
+    async def write_status_file(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        mainfile: str,
+        payload: dict,
+    ) -> None:
+        """Write a small JSON bookkeeping file into the upload."""
+        await self._writer.upload_raw_file(
+            client,
+            upload_id,
+            mainfile,
+            json.dumps(payload, ensure_ascii=False).encode(),
+            'application/json',
+        )
+
+    async def read_status_file(
+        self, client: httpx.AsyncClient, upload_id: str, mainfile: str
+    ) -> dict | None:
+        """The bookkeeping workflow status file's JSON"""
+        raw = await self._writer.read_raw_file(client, upload_id, mainfile)
+        if raw is None:
+            return None
+        try:
+            payload = json.loads(raw)
+        except ValueError:
+            return None
+        return payload if isinstance(payload, dict) else None
+
     async def add_derived_sheet(
         self,
         client: httpx.AsyncClient,
