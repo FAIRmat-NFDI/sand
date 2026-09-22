@@ -1,0 +1,13 @@
+{
+  "job_id": "sand.actions.extract:extract_action_entry_point-b35a6768-df0b-4183-822b-6b490c4bbacb-2cffc4af-df36-4a73-aadb-fe498b3d9039",
+  "collection_entry_id": "cdTv9hHmc3zC_YqdghQL5q_IUQ4S",
+  "updated_at": "2026-09-19T13:49:34.453264+00:00",
+  "phase": "completed",
+  "derived_entry_id": "clsJXfGr8L3L3HGmWHGWu10wfB9d",
+  "step_types": [
+    "Cleaning UV-Ozone",
+    "Spin Coating"
+  ],
+  "sheet_issues": [],
+  "warnings": []
+}

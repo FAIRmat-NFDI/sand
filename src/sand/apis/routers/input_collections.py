@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime, timezone
 
@@ -75,6 +76,19 @@ async def _read_upload(file: UploadFile) -> bytes:
 # A crashed worker can leave a non-terminal status behind; after this long
 # without an update the guard stops trusting it and allows a fresh start.
 STALE_EXTRACTION_S = 30 * 60
+
+# Serializes check-then-start per upload within this process, and the
+# 'starting' reservation snapshot covers the window until the workflow's
+# first own snapshot. A multi-process deployment could still race in the
+# instant between two processes' checks - accepted for the lab scale.
+_start_locks: dict[str, asyncio.Lock] = {}
+
+
+def _start_lock(upload_id: str) -> asyncio.Lock:
+    lock = _start_locks.get(upload_id)
+    if lock is None:
+        lock = _start_locks[upload_id] = asyncio.Lock()
+    return lock
 
 
 def _extraction_running(status: dict | None, collection_entry_id: str) -> bool:
@@ -349,41 +363,80 @@ async def start_extract_async(
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
-    try:
-        async with voice.build_client(token) as client:
-            status = await voice.read_status_file(
-                client, upload_id, EXTRACTION_STATUS_MAINFILE
-            )
-            if _extraction_running(status, collection_entry_id):
-                raise HTTPException(
-                    status_code=409,
-                    detail='an extraction is already running for this '
-                    'experiment; wait for it to finish',
+    async with _start_lock(upload_id):
+        try:
+            async with voice.build_client(token) as client:
+                status = await voice.read_status_file(
+                    client, upload_id, EXTRACTION_STATUS_MAINFILE
                 )
-            # validates the collection (and the token) before starting
-            await voice.collect_inputs(
-                client, upload_id, collection_entry_id=collection_entry_id
+                if _extraction_running(status, collection_entry_id):
+                    raise HTTPException(
+                        status_code=409,
+                        detail='an extraction is already running for this '
+                        'experiment; wait for it to finish',
+                    )
+                # validates the collection (and the token) before starting
+                await voice.collect_inputs(
+                    client, upload_id, collection_entry_id=collection_entry_id
+                )
+                me = await client.get('/users/me')
+                check_response(me, step='whoami')
+                user_id = me.json()['user_id']
+                # reservation: visible to any check until the workflow's
+                # first own snapshot replaces it
+                await voice.write_status_file(
+                    client,
+                    upload_id,
+                    EXTRACTION_STATUS_MAINFILE,
+                    {
+                        'job_id': 'starting',
+                        'phase': 'starting',
+                        'collection_entry_id': collection_entry_id,
+                        'updated_at': datetime.now(timezone.utc).isoformat(),
+                        'steps': [],
+                    },
+                )
+        except NomadAPIError as exc:
+            raise _http_error(exc) from exc
+
+        # the async variant: the sync one blocks the API event loop while
+        # it sets up its Mongo/Temporal infrastructure
+        from nomad.actions.manager import start_action_async
+
+        from sand.actions.extract.models import ExtractInput
+
+        try:
+            job_id = await start_action_async(
+                action_id='sand.actions.extract:extract_action_entry_point',
+                data=ExtractInput(
+                    upload_id=upload_id,
+                    user_id=user_id,
+                    collection_entry_id=collection_entry_id,
+                ),
             )
-            me = await client.get('/users/me')
-            check_response(me, step='whoami')
-            user_id = me.json()['user_id']
-    except NomadAPIError as exc:
-        raise _http_error(exc) from exc
-
-    # the async variant: the sync one blocks the API event loop while it
-    # sets up its Mongo/Temporal infrastructure
-    from nomad.actions.manager import start_action_async
-
-    from sand.actions.extract.models import ExtractInput
-
-    job_id = await start_action_async(
-        action_id='sand.actions.extract:extract_action_entry_point',
-        data=ExtractInput(
-            upload_id=upload_id,
-            user_id=user_id,
-            collection_entry_id=collection_entry_id,
-        ),
-    )
+        except Exception as exc:
+            # release the reservation, or the guard would block retries
+            # until the staleness timeout
+            try:
+                async with voice.build_client(token) as client:
+                    await voice.write_status_file(
+                        client,
+                        upload_id,
+                        EXTRACTION_STATUS_MAINFILE,
+                        {
+                            'job_id': 'starting',
+                            'phase': 'failed',
+                            'error': f'could not start the extraction: {exc}',
+                            'collection_entry_id': collection_entry_id,
+                            'updated_at': datetime.now(timezone.utc).isoformat(),
+                            'steps': [],
+                        },
+                    )
+            except NomadAPIError:
+                pass
+            raise HTTPException(
+                status_code=502, detail=f'could not start the extraction: {exc}'
+            ) from exc
     return ExtractJobResponse(job_id=job_id)
 
 

@@ -160,7 +160,7 @@ async function loadExperiments(selectEntryId) {
   // restoring the selection fires no 'change' event: resume the polling
   // of an unfinished extraction explicitly (reload-proof progress)
   const restored = selectedExperiment();
-  if (restored) pollExtraction(restored);
+  if (restored) startExtractPolling(restored);
 }
 
 experimentSelect.addEventListener("change", () => {
@@ -652,7 +652,6 @@ const extractBtn = document.getElementById("extract-btn");
 const extractStatus = document.getElementById("extract-status");
 const extractResult = document.getElementById("extract-result");
 const extractSummary = document.getElementById("extract-summary");
-const extractJson = document.getElementById("extract-json");
 const derivedEntryEl = document.getElementById("derived-entry");
 const sheetIssuesEl = document.getElementById("sheet-issues");
 
@@ -663,6 +662,9 @@ const sheetIssuesEl = document.getElementById("sheet-issues");
 // polling - no job id needs to survive in the browser.
 
 let extractPollTimer = null;
+// bumped whenever polling (re)starts or stops: in-flight responses from
+// a superseded poll are ignored instead of repainting the new selection
+let extractPollGeneration = 0;
 
 function entryUrlFor(experiment, entryId) {
   // .../upload/id/<upload>/entry/id/<entry> - swap the entry id
@@ -670,8 +672,16 @@ function entryUrlFor(experiment, entryId) {
 }
 
 function stopExtractPolling() {
+  extractPollGeneration += 1;
   if (extractPollTimer) clearTimeout(extractPollTimer);
   extractPollTimer = null;
+}
+
+function startExtractPolling(experiment, delayMs) {
+  stopExtractPolling();
+  const generation = extractPollGeneration;
+  extractPollTimer = setTimeout(
+    () => pollExtraction(experiment, generation), delayMs || 0);
 }
 
 function describePhase(status) {
@@ -687,7 +697,6 @@ function renderExtractResult(experiment, status) {
   extractSummary.textContent = (status.step_types || []).length
     ? "Steps: " + status.step_types.join(" \u2192 ")
     : "";
-  extractJson.textContent = "";
   derivedEntryEl.replaceChildren();
   derivedEntryEl.style.display = "none";
   if (status.derived_entry_id) {
@@ -708,8 +717,8 @@ function renderExtractResult(experiment, status) {
   extractResult.hidden = false;
 }
 
-async function pollExtraction(experiment) {
-  stopExtractPolling();
+async function pollExtraction(experiment, generation) {
+  if (generation !== extractPollGeneration) return; // superseded
   extractBtn.disabled = true;
   let res;
   try {
@@ -718,9 +727,11 @@ async function pollExtraction(experiment) {
       + "/extract-status?collection_entry_id=" + encodeURIComponent(experiment.entry_id));
   } catch (err) {
     // transient network problem: keep polling
-    extractPollTimer = setTimeout(() => pollExtraction(experiment), 3000);
+    if (generation !== extractPollGeneration) return;
+    extractPollTimer = setTimeout(() => pollExtraction(experiment, generation), 3000);
     return;
   }
+  if (generation !== extractPollGeneration) return; // selection changed mid-flight
   if (res.status === 404) {
     // no extraction for this collection (or none yet)
     extractBtn.disabled = false;
@@ -728,8 +739,9 @@ async function pollExtraction(experiment) {
     return;
   }
   const status = await res.json().catch(() => null);
+  if (generation !== extractPollGeneration) return;
   if (!status) {
-    extractPollTimer = setTimeout(() => pollExtraction(experiment), 3000);
+    extractPollTimer = setTimeout(() => pollExtraction(experiment, generation), 3000);
     return;
   }
   if (status.phase === "completed") {
@@ -745,7 +757,7 @@ async function pollExtraction(experiment) {
     return;
   }
   extractStatus.textContent = describePhase(status);
-  extractPollTimer = setTimeout(() => pollExtraction(experiment), 3000);
+  extractPollTimer = setTimeout(() => pollExtraction(experiment, generation), 3000);
 }
 
 // selecting an experiment resumes the polling of an unfinished job
@@ -755,7 +767,7 @@ experimentSelect.addEventListener("change", () => {
   extractStatus.textContent = "";
   extractResult.hidden = true;
   const experiment = selectedExperiment();
-  if (experiment) pollExtraction(experiment);
+  if (experiment) startExtractPolling(experiment);
 });
 
 extractBtn.addEventListener("click", async () => {
@@ -777,7 +789,7 @@ extractBtn.addEventListener("click", async () => {
       return;
     }
     // the job id is not kept: the status file is found by experiment
-    extractPollTimer = setTimeout(() => pollExtraction(experiment), 2000);
+    startExtractPolling(experiment, 2000);
   } catch (err) {
     showError("Network error: " + err.message);
     extractBtn.disabled = false;
