@@ -720,27 +720,9 @@ class VoiceElnService:
         withdraws the correction, per that field's semantics. Note: the
         text IS human text, so it is overwritten directly - empty raises.
         """
-        collection_mainfile = await self._resolve_collection_mainfile(
-            client, upload_id, collection_entry_id
+        mainfile, archive = await self._locate_input(
+            client, upload_id, entry_id, collection_entry_id, step='revise_input'
         )
-        collection = await self._writer.read_archive(
-            client, upload_id, collection_mainfile
-        )
-        data = collection.get('data') or {}
-        referenced = {
-            entry_id_from_ref(ref)
-            for field in ('audios', 'notes')
-            for ref in (data.get(field) or [])
-        }
-        if entry_id not in referenced:
-            raise NomadAPIError(
-                HTTPStatus.NOT_FOUND,
-                f'entry {entry_id} is not an input of this collection',
-                step='revise_input',
-            )
-
-        mainfile = await self._entry_mainfile(client, upload_id, entry_id)
-        archive = await self._writer.read_archive(client, upload_id, mainfile)
         section = archive.get('data') or {}
         m_def = str(section.get('m_def') or '')
         text = text.strip()
@@ -765,6 +747,78 @@ class VoiceElnService:
         archive['data'] = section
         await self._writer.write_archive(client, upload_id, mainfile, archive)
         return kind
+
+    async def revise_input_datetime(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        entry_id: str,
+        datetime_value: str,
+        collection_entry_id: str,
+    ) -> str:
+        """Move one input on the timeline; returns its kind.
+
+        The inputs list (and so the extraction narration order) follows
+        these datetimes, so editing one reorders the inputs.
+        """
+        parsed = _parse_input_datetime(datetime_value)
+        if parsed is None:
+            raise ValueError(f'not a valid datetime: {datetime_value!r}')
+        mainfile, archive = await self._locate_input(
+            client,
+            upload_id,
+            entry_id,
+            collection_entry_id,
+            step='revise_input_datetime',
+        )
+        section = archive.get('data') or {}
+        m_def = str(section.get('m_def') or '')
+        if m_def.endswith('AudioInput'):
+            kind = 'audio'
+        elif m_def.endswith('WrittenNote'):
+            kind = 'note'
+        else:
+            raise NomadAPIError(
+                HTTPStatus.NOT_FOUND,
+                f'entry {entry_id} is not a revisable input',
+                step='revise_input_datetime',
+            )
+        section['datetime'] = parsed.isoformat()
+        archive['data'] = section
+        await self._writer.write_archive(client, upload_id, mainfile, archive)
+        return kind
+
+    async def _locate_input(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        entry_id: str,
+        collection_entry_id: str,
+        step: str,
+    ) -> tuple[str, dict]:
+        """Mainfile and archive of one input; 404 unless the collection
+        references the entry (revisions must stay within the experiment)."""
+        collection_mainfile = await self._resolve_collection_mainfile(
+            client, upload_id, collection_entry_id
+        )
+        collection = await self._writer.read_archive(
+            client, upload_id, collection_mainfile
+        )
+        data = collection.get('data') or {}
+        referenced = {
+            entry_id_from_ref(ref)
+            for field in ('audios', 'notes')
+            for ref in (data.get(field) or [])
+        }
+        if entry_id not in referenced:
+            raise NomadAPIError(
+                HTTPStatus.NOT_FOUND,
+                f'entry {entry_id} is not an input of this collection',
+                step=step,
+            )
+        mainfile = await self._entry_mainfile(client, upload_id, entry_id)
+        archive = await self._writer.read_archive(client, upload_id, mainfile)
+        return mainfile, archive
 
     async def _entry_mainfile(
         self, client: httpx.AsyncClient, upload_id: str, entry_id: str

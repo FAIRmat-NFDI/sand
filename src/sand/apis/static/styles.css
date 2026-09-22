@@ -400,6 +400,22 @@ body {
   letter-spacing: 0.02em;
 }
 
+.input-meta .input-when {
+  cursor: pointer;
+}
+
+.input-meta .input-when:hover {
+  color: #424242;
+  text-decoration: underline dotted;
+}
+
+.input-meta .input-time-edit {
+  font-size: 0.78rem;
+  border: 1px solid #f9a825;
+  border-radius: 4px;
+  padding: 0 2px;
+}
+
 .input-meta .input-badge {
   color: #2e7d32;
 }

@@ -19,6 +19,7 @@ from sand.models.input_collections import (
     InputCollectionSummaryModel,
     InputItemModel,
     InputListResponse,
+    ReviseDatetimeRequest,
     ReviseInputRequest,
     ReviseInputResponse,
     SheetUploadResponse,
@@ -330,6 +331,38 @@ async def revise_input(
                 upload_id,
                 entry_id,
                 body.text,
+                collection_entry_id=collection_entry_id,
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return ReviseInputResponse(kind=kind)
+
+
+@router.post(
+    '/input-collections/{upload_id}/inputs/{entry_id}/datetime',
+    response_model=ReviseInputResponse,
+)
+async def revise_input_datetime(
+    upload_id: str,
+    entry_id: str,
+    body: ReviseDatetimeRequest,
+    request: Request,
+    collection_entry_id: str,
+) -> ReviseInputResponse:
+    """Set the datetime of one input, reordering it on the timeline."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    try:
+        async with voice.build_client(token) as client:
+            kind = await voice.revise_input_datetime(
+                client,
+                upload_id,
+                entry_id,
+                body.datetime,
                 collection_entry_id=collection_entry_id,
             )
     except ValueError as exc:

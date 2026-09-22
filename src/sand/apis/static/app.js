@@ -700,6 +700,74 @@ function inputTime(item) {
   return parsed.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + time;
 }
 
+// while a time editor is open, list re-renders are held off so the
+// input field is not wiped mid-edit
+let timeEditing = false;
+
+function toLocalInputValue(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
+    + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+}
+
+function beginTimeEdit(whenSpan, item, experiment) {
+  if (timeEditing) return;
+  timeEditing = true;
+  const editor = document.createElement("input");
+  editor.type = "datetime-local";
+  editor.className = "input-time-edit";
+  editor.value = toLocalInputValue(item.datetime);
+  editor.addEventListener("click", (e) => e.stopPropagation());
+  let done = false;
+  const finish = (refresh) => {
+    if (done) return;
+    done = true;
+    timeEditing = false;
+    editor.replaceWith(whenSpan);
+    if (refresh) startInputsRefresh(experiment, 800);
+  };
+  const commit = async () => {
+    if (done) return;
+    if (!editor.value || toLocalInputValue(item.datetime) === editor.value) {
+      finish(false);
+      return;
+    }
+    const iso = new Date(editor.value).toISOString();
+    clearError();
+    editor.disabled = true;
+    try {
+      const res = await authFetch(
+        "api/input-collections/" + experiment.upload_id
+        + "/inputs/" + encodeURIComponent(item.entry_id)
+        + "/datetime?collection_entry_id=" + encodeURIComponent(experiment.entry_id),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ datetime: iso }),
+        });
+      if (!res.ok) {
+        showError("Could not change the time: " + await errorDetail(res));
+        finish(false);
+        return;
+      }
+      finish(true);
+    } catch (err) {
+      showError("Network error: " + err.message);
+      finish(false);
+    }
+  };
+  editor.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") commit();
+    if (e.key === "Escape") finish(false);
+  });
+  editor.addEventListener("blur", commit);
+  whenSpan.replaceWith(editor);
+  editor.focus();
+}
+
 function inputDescription(item) {
   return (item.kind === "audio" ? "recording" : "note")
     + (inputTime(item) ? " from " + inputTime(item) : "");
@@ -821,12 +889,16 @@ function renderInputs(experiment, items) {
     kind.className = "input-kind";
     kind.textContent = item.kind === "audio" ? "Recording" : "Note";
     meta.append(icon, kind);
+    const when = document.createElement("span");
+    when.className = "input-when";
     const time = inputTime(item);
-    if (time) {
-      const when = document.createElement("span");
-      when.textContent = "\u00b7 " + time;
-      meta.append(when);
-    }
+    when.textContent = "\u00b7 " + (time || "set time");
+    when.title = "Click to change the time (reorders the inputs)";
+    when.addEventListener("click", (e) => {
+      e.stopPropagation();
+      beginTimeEdit(when, item, experiment);
+    });
+    meta.append(when);
     if (item.corrected) {
       const badge = document.createElement("span");
       badge.className = "input-badge";
@@ -874,6 +946,11 @@ async function loadInputs(experiment, generation) {
   if (!res.ok) return;
   const data = await res.json().catch(() => null);
   if (generation !== inputsGeneration || !data) return;
+  if (timeEditing) {
+    // don't wipe an open time editor; try again shortly
+    inputsRefreshTimer = setTimeout(() => loadInputs(experiment, generation), 3000);
+    return;
+  }
   renderInputs(experiment, data.inputs);
   // keep refreshing while any audio still has no text and no failure
   if (data.inputs.some((i) => i.kind === "audio" && !i.text && i.status !== "FAILED")) {

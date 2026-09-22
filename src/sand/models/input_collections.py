@@ -77,6 +77,10 @@ class ReviseInputResponse(BaseModel):
     kind: str  # which field was written: audio -> corrected_transcript, note -> text
 
 
+class ReviseDatetimeRequest(BaseModel):
+    datetime: str  # ISO 8601; reorders the input on the experiment timeline
+
+
 class ExtractJobResponse(BaseModel):
     job_id: str  # the action workflow id; poll /extract-status for progress
 
