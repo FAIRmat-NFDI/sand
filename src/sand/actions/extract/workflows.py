@@ -74,23 +74,39 @@ class ExtractHysprintWorkflow:
     @workflow.run
     async def run(self, data: ExtractInput) -> dict:
         job_id = workflow.info().workflow_id
+        # one entry per finished step, in completion order; carried in
+        # every snapshot so the final (or failed) status still shows
+        # which steps got through
+        finished_steps: list[dict] = []
+        # Steps complete concurrently: the lock serializes snapshot
+        # builds AND writes, so an older snapshot can never land after
+        # (and overwrite) a newer one. The terminal latch keeps
+        # still-running step tasks from writing past completed/failed.
+        status_lock = asyncio.Lock()
+        terminal_written = False
 
-        async def status(payload: dict) -> None:
-            await workflow.execute_activity(
-                write_extraction_status,
-                WriteStatusInput(
-                    upload_id=data.upload_id,
-                    user_id=data.user_id,
-                    status={
-                        'job_id': job_id,
-                        'collection_entry_id': data.collection_entry_id,
-                        'updated_at': workflow.now().isoformat(),
-                        **payload,
-                    },
-                ),
-                start_to_close_timeout=timedelta(minutes=2),
-                retry_policy=RetryPolicy(maximum_attempts=3),
-            )
+        async def status(payload: dict, final: bool = False) -> None:
+            nonlocal terminal_written
+            async with status_lock:
+                if terminal_written:
+                    return
+                terminal_written = final
+                await workflow.execute_activity(
+                    write_extraction_status,
+                    WriteStatusInput(
+                        upload_id=data.upload_id,
+                        user_id=data.user_id,
+                        status={
+                            'job_id': job_id,
+                            'collection_entry_id': data.collection_entry_id,
+                            'updated_at': workflow.now().isoformat(),
+                            'steps': list(finished_steps),
+                            **payload,
+                        },
+                    ),
+                    start_to_close_timeout=timedelta(minutes=2),
+                    retry_policy=RetryPolicy(maximum_attempts=3),
+                )
 
         try:
             await status({'phase': 'collecting'})
@@ -155,6 +171,13 @@ class ExtractHysprintWorkflow:
                         non_retryable=True,
                     ) from exc
                 done += 1
+                finished_steps.append(
+                    {
+                        'step': index + 1,
+                        'step_type': step_type,
+                        'finished_at': workflow.now().isoformat(),
+                    }
+                )
                 await status(
                     {'phase': 'extracting', 'steps_done': done, 'steps_total': total}
                 )
@@ -180,14 +203,16 @@ class ExtractHysprintWorkflow:
                 start_to_close_timeout=timedelta(minutes=15),
                 retry_policy=RetryPolicy(maximum_attempts=3),
             )
-            await status({'phase': 'completed', **stored})
+            await status({'phase': 'completed', **stored}, final=True)
             return {'job_id': job_id, **stored}
         except Exception as exc:
             # Compensation, not error handling (the voice-eln pattern): make
             # the failure visible to the poll, then re-raise so Temporal
             # records the real error. Best-effort - never masks the original.
             try:
-                await status({'phase': 'failed', 'error': _error_message(exc)})
+                await status(
+                    {'phase': 'failed', 'error': _error_message(exc)}, final=True
+                )
             except Exception:
                 workflow.logger.exception('could not write the failed status')
             raise
