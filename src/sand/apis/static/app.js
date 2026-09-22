@@ -694,9 +694,10 @@ function stopInputsRefresh() {
 function inputTime(item) {
   if (!item.datetime) return "";
   const parsed = new Date(item.datetime);
-  return Number.isNaN(parsed.getTime())
-    ? ""
-    : parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (Number.isNaN(parsed.getTime())) return "";
+  const time = parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (parsed.toDateString() === new Date().toDateString()) return time;
+  return parsed.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + time;
 }
 
 function inputDescription(item) {
@@ -748,10 +749,10 @@ function endRevision() {
 }
 
 function highlightSelectedRow() {
-  for (const row of inputsList.querySelectorAll(".input-row")) {
-    row.classList.toggle(
+  for (const tile of inputsList.querySelectorAll(".input-tile")) {
+    tile.classList.toggle(
       "selected",
-      Boolean(revising) && row.dataset.entryId === revising.item.entry_id
+      Boolean(revising) && tile.dataset.entryId === revising.item.entry_id
     );
   }
 }
@@ -808,31 +809,29 @@ function renderInputs(experiment, items) {
   }
   for (const item of items) {
     const li = document.createElement("li");
-    const row = document.createElement("div");
-    row.className = "input-row";
-    row.dataset.entryId = item.entry_id;
+    li.className = "input-tile";
+    li.dataset.entryId = item.entry_id;
 
+    const meta = document.createElement("div");
+    meta.className = "input-meta";
     const icon = document.createElement("span");
     icon.className = "material-icons";
     icon.textContent = item.kind === "audio" ? "mic" : "edit_note";
-    const time = document.createElement("span");
-    time.className = "input-time";
-    time.textContent = inputTime(item);
-    const preview = document.createElement("span");
-    preview.className = "input-preview";
-    if (item.text) {
-      preview.textContent = item.text;
-    } else {
-      preview.textContent =
-        item.status === "FAILED" ? "transcription failed" : "transcribing...";
-      preview.classList.add("input-pending");
+    const kind = document.createElement("span");
+    kind.className = "input-kind";
+    kind.textContent = item.kind === "audio" ? "Recording" : "Note";
+    meta.append(icon, kind);
+    const time = inputTime(item);
+    if (time) {
+      const when = document.createElement("span");
+      when.textContent = "\u00b7 " + time;
+      meta.append(when);
     }
-    row.append(icon, time, preview);
     if (item.corrected) {
       const badge = document.createElement("span");
       badge.className = "input-badge";
-      badge.textContent = "\u270e corrected";
-      row.append(badge);
+      badge.textContent = "\u00b7 \u270e corrected";
+      meta.append(badge);
     }
     const nomadLink = document.createElement("a");
     nomadLink.href = item.entry_url;
@@ -842,10 +841,20 @@ function renderInputs(experiment, items) {
     nomadLink.textContent = "open_in_new";
     nomadLink.title = "View on NOMAD";
     nomadLink.addEventListener("click", (e) => e.stopPropagation());
-    row.append(nomadLink);
+    meta.append(nomadLink);
 
-    row.addEventListener("click", () => beginRevision(item, experiment));
-    li.append(row);
+    const text = document.createElement("div");
+    text.className = "input-text";
+    if (item.text) {
+      text.textContent = item.text;
+    } else {
+      text.textContent =
+        item.status === "FAILED" ? "transcription failed" : "transcribing...";
+      text.classList.add("input-pending");
+    }
+
+    li.append(meta, text);
+    li.addEventListener("click", () => beginRevision(item, experiment));
     inputsList.append(li);
   }
   highlightSelectedRow();
