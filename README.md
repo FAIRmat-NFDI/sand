@@ -85,7 +85,9 @@ plugins:
     options:
       sand.apis:sand_api:
         llm_model_name: 'gemini/gemini-2.5-flash'  # LiteLLM notation
-        llm_api_key: '<your-llm-api-key>'          # required: step extraction
+        # The LLM key is NOT configured here: set the provider env var
+        # (e.g. GEMINI_API_KEY for gemini/* models) in the environment of
+        # the cpu action worker, next to voice-eln's GROQ_API_KEY.
         # Base URL of the NOMAD API the app uploads to. For a local instance:
         nomad_base_url: 'http://localhost:8000/nomad-oasis/api/v1'
         # Live transcription while recording (optional). Empty key = feature
