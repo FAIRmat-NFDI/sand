@@ -131,6 +131,10 @@ class CollectedInput:
     text: str | None
     label: str
     datetime: str | None
+    # a human revision exists (audio: corrected_transcript is set)
+    corrected: bool = False
+    # audio transcription_status (PENDING/COMPLETED/FAILED); None for notes
+    status: str | None = None
 
 
 _TRANSCRIPT_FIELDS = (
@@ -686,13 +690,103 @@ class VoiceElnService:
             raw = section.get('text')
             text = str(raw).strip() if raw and str(raw).strip() else None
 
+        corrected = bool(
+            section.get('corrected_transcript')
+            and str(section['corrected_transcript']).strip()
+        )
         return CollectedInput(
             entry_id=entry_id,
             kind=kind,
             text=text,
             label=str(section.get('label') or ''),
             datetime=section.get('datetime'),
+            corrected=corrected,
+            status=section.get('transcription_status') if kind == 'audio' else None,
         )
+
+    async def revise_input(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        entry_id: str,
+        text: str,
+        collection_entry_id: str,
+    ) -> str:
+        """Save a human revision of one input; returns its kind.
+
+        Audio: the machine transcript stays untouched, the revision goes
+        to corrected_transcript (voice-eln's normalizer stamps
+        corrected_at and the fingerprint on reprocess); an empty text
+        withdraws the correction, per that field's semantics. Note: the
+        text IS human text, so it is overwritten directly - empty raises.
+        """
+        collection_mainfile = await self._resolve_collection_mainfile(
+            client, upload_id, collection_entry_id
+        )
+        collection = await self._writer.read_archive(
+            client, upload_id, collection_mainfile
+        )
+        data = collection.get('data') or {}
+        referenced = {
+            entry_id_from_ref(ref)
+            for field in ('audios', 'notes')
+            for ref in (data.get(field) or [])
+        }
+        if entry_id not in referenced:
+            raise NomadAPIError(
+                HTTPStatus.NOT_FOUND,
+                f'entry {entry_id} is not an input of this collection',
+                step='revise_input',
+            )
+
+        mainfile = await self._entry_mainfile(client, upload_id, entry_id)
+        archive = await self._writer.read_archive(client, upload_id, mainfile)
+        section = archive.get('data') or {}
+        m_def = str(section.get('m_def') or '')
+        text = text.strip()
+
+        if m_def.endswith('AudioInput'):
+            if text:
+                section['corrected_transcript'] = text
+            else:
+                section.pop('corrected_transcript', None)
+            kind = 'audio'
+        elif m_def.endswith('WrittenNote'):
+            if not text:
+                raise ValueError('a note cannot be empty')
+            section['text'] = text
+            kind = 'note'
+        else:
+            raise NomadAPIError(
+                HTTPStatus.NOT_FOUND,
+                f'entry {entry_id} is not a revisable input',
+                step='revise_input',
+            )
+        archive['data'] = section
+        await self._writer.write_archive(client, upload_id, mainfile, archive)
+        return kind
+
+    async def _entry_mainfile(
+        self, client: httpx.AsyncClient, upload_id: str, entry_id: str
+    ) -> str:
+        response = await client.post(
+            '/entries/query',
+            json={
+                'owner': 'visible',
+                'query': {'entry_id': entry_id, 'upload_id': upload_id},
+                'required': {'include': ['mainfile']},
+                'pagination': {'page_size': 1},
+            },
+        )
+        check_response(response, step='find_input_entry')
+        entries = response.json().get('data', [])
+        if not entries:
+            raise NomadAPIError(
+                HTTPStatus.NOT_FOUND,
+                f'No entry {entry_id} found in upload {upload_id}',
+                step='find_input_entry',
+            )
+        return entries[0]['mainfile']
 
     async def _append_to_collection(
         self,

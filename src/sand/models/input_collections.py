@@ -54,6 +54,29 @@ class HysprintExtractResponse(BaseModel):
     warnings: list[str] = []  # e.g. a hand-edited sheet was replaced
 
 
+class InputItemModel(BaseModel):
+    entry_id: str
+    entry_url: str
+    kind: str  # 'audio' | 'note'
+    label: str
+    datetime: str | None
+    text: str | None  # effective text (intended > corrected > transcript)
+    corrected: bool  # a human revision exists
+    status: str | None  # audio transcription status; None for notes
+
+
+class InputListResponse(BaseModel):
+    inputs: list[InputItemModel]
+
+
+class ReviseInputRequest(BaseModel):
+    text: str
+
+
+class ReviseInputResponse(BaseModel):
+    kind: str  # which field was written: audio -> corrected_transcript, note -> text
+
+
 class ExtractJobResponse(BaseModel):
     job_id: str  # the action workflow id; poll /extract-status for progress
 

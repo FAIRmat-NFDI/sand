@@ -160,7 +160,10 @@ async function loadExperiments(selectEntryId) {
   // restoring the selection fires no 'change' event: resume the polling
   // of an unfinished extraction explicitly (reload-proof progress)
   const restored = selectedExperiment();
-  if (restored) startExtractPolling(restored);
+  if (restored) {
+    startExtractPolling(restored);
+    startInputsRefresh(restored);
+  }
 }
 
 experimentSelect.addEventListener("change", () => {
@@ -575,6 +578,10 @@ async function handleEntryResponse(fetchPromise, failPrefix, message, linkText) 
   }
   const data = await res.json();
   showEntryLink(message, data.entry_url, linkText);
+  // a new input exists: show it in the list (audio rows start as
+  // "transcribing..." and the list keeps refreshing until text arrives)
+  const experiment = selectedExperiment();
+  if (experiment) startInputsRefresh(experiment, 1000);
   return true;
 }
 
@@ -654,6 +661,199 @@ const extractResult = document.getElementById("extract-result");
 const extractSummary = document.getElementById("extract-summary");
 const derivedEntryEl = document.getElementById("derived-entry");
 const sheetIssuesEl = document.getElementById("sheet-issues");
+
+// --- inputs list: every recording/note, click to expand and revise ------
+// Rows come in extraction order. Audio revisions go to
+// corrected_transcript (clearing withdraws them); note revisions
+// overwrite the note text. The list refreshes itself while any audio is
+// still transcribing, and a generation guard drops stale responses.
+
+const inputsList = document.getElementById("inputs-list");
+const inputsCount = document.getElementById("inputs-count");
+const refreshInputsBtn = document.getElementById("refresh-inputs-btn");
+
+let inputsGeneration = 0;
+let inputsRefreshTimer = null;
+let expandedInputId = null;
+
+function stopInputsRefresh() {
+  inputsGeneration += 1;
+  if (inputsRefreshTimer) clearTimeout(inputsRefreshTimer);
+  inputsRefreshTimer = null;
+}
+
+function inputTime(item) {
+  if (!item.datetime) return "";
+  const parsed = new Date(item.datetime);
+  return Number.isNaN(parsed.getTime())
+    ? ""
+    : parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function renderInputs(experiment, items) {
+  inputsCount.textContent = "(" + items.length + ")";
+  inputsList.replaceChildren();
+  for (const item of items) {
+    const li = document.createElement("li");
+
+    const row = document.createElement("div");
+    row.className = "input-row";
+    const icon = document.createElement("span");
+    icon.className = "material-icons";
+    icon.textContent = item.kind === "audio" ? "mic" : "edit_note";
+    const time = document.createElement("span");
+    time.className = "input-time";
+    time.textContent = inputTime(item);
+    const preview = document.createElement("span");
+    preview.className = "input-preview";
+    if (item.text) {
+      preview.textContent = item.text;
+    } else {
+      preview.textContent =
+        item.status === "FAILED" ? "transcription failed" : "transcribing...";
+      preview.classList.add("input-pending");
+    }
+    row.append(icon, time, preview);
+    if (item.corrected) {
+      const badge = document.createElement("span");
+      badge.className = "input-badge";
+      badge.textContent = "\u270e corrected";
+      row.append(badge);
+    }
+    const nomadLink = document.createElement("a");
+    nomadLink.href = item.entry_url;
+    nomadLink.target = "_blank";
+    nomadLink.rel = "noopener noreferrer";
+    nomadLink.className = "material-icons";
+    nomadLink.style.fontSize = "16px";
+    nomadLink.style.textDecoration = "none";
+    nomadLink.textContent = "open_in_new";
+    nomadLink.title = "View on NOMAD";
+    nomadLink.addEventListener("click", (e) => e.stopPropagation());
+    row.append(nomadLink);
+    li.append(row);
+
+    const editor = document.createElement("div");
+    editor.className = "input-editor";
+    editor.hidden = true;
+    li.append(editor);
+
+    row.addEventListener("click", () => {
+      if (expandedInputId === item.entry_id) {
+        expandedInputId = null;
+        editor.hidden = true;
+        editor.replaceChildren();
+        return;
+      }
+      // collapse any other open editor by re-rendering on next refresh;
+      // cheap version: close them all now
+      for (const other of inputsList.querySelectorAll(".input-editor")) {
+        other.hidden = true;
+        other.replaceChildren();
+      }
+      expandedInputId = item.entry_id;
+      openInputEditor(experiment, item, editor);
+    });
+
+    inputsList.append(li);
+  }
+}
+
+function openInputEditor(experiment, item, editor) {
+  const textarea = document.createElement("textarea");
+  textarea.value = item.text || "";
+  const controls = document.createElement("div");
+  controls.className = "controls";
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "btn btn-primary";
+  saveBtn.type = "button";
+  saveBtn.textContent = "Save revision";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.className = "btn btn-outlined";
+  cancelBtn.type = "button";
+  cancelBtn.textContent = "Cancel";
+  controls.append(saveBtn, cancelBtn);
+  editor.replaceChildren(textarea, controls);
+  editor.hidden = false;
+  textarea.focus();
+
+  cancelBtn.addEventListener("click", () => {
+    expandedInputId = null;
+    editor.hidden = true;
+    editor.replaceChildren();
+  });
+
+  saveBtn.addEventListener("click", async () => {
+    const text = textarea.value.trim();
+    if (text === (item.text || "").trim()) {
+      // unchanged: save nothing - a stored revision must mean a human
+      // actually changed something
+      cancelBtn.click();
+      return;
+    }
+    clearError();
+    saveBtn.disabled = true;
+    try {
+      const res = await authFetch(
+        "api/input-collections/" + experiment.upload_id
+        + "/inputs/" + encodeURIComponent(item.entry_id)
+        + "/text?collection_entry_id=" + encodeURIComponent(experiment.entry_id),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+      if (!res.ok) {
+        showError("Could not save the revision: " + await errorDetail(res));
+        return;
+      }
+      expandedInputId = null;
+      editor.hidden = true;
+      editor.replaceChildren();
+      // the entry reprocesses asynchronously; refresh shortly so the
+      // row shows the effective text (withdrawn corrections included)
+      startInputsRefresh(experiment, 1500);
+    } catch (err) {
+      showError("Network error: " + err.message);
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+}
+
+async function loadInputs(experiment, generation) {
+  if (generation !== inputsGeneration) return;
+  let res;
+  try {
+    res = await authFetch(
+      "api/input-collections/" + experiment.upload_id
+      + "/inputs?collection_entry_id=" + encodeURIComponent(experiment.entry_id));
+  } catch (err) {
+    return; // next manual refresh or upload will retry
+  }
+  if (generation !== inputsGeneration) return;
+  if (!res.ok) return;
+  const data = await res.json().catch(() => null);
+  if (generation !== inputsGeneration || !data) return;
+  renderInputs(experiment, data.inputs);
+  // keep refreshing while any audio still has no text and no failure
+  if (data.inputs.some((i) => i.kind === "audio" && !i.text && i.status !== "FAILED")) {
+    inputsRefreshTimer = setTimeout(() => loadInputs(experiment, generation), 5000);
+  }
+}
+
+function startInputsRefresh(experiment, delayMs) {
+  stopInputsRefresh();
+  expandedInputId = null;
+  const generation = inputsGeneration;
+  inputsRefreshTimer = setTimeout(
+    () => loadInputs(experiment, generation), delayMs || 0);
+}
+
+refreshInputsBtn.addEventListener("click", () => {
+  const experiment = selectedExperiment();
+  if (experiment) startInputsRefresh(experiment);
+});
 
 // --- asynchronous extraction (issue #19) --------------------------------
 // Extract starts a workflow and returns a job id; progress lives in a
@@ -767,7 +967,12 @@ experimentSelect.addEventListener("change", () => {
   extractStatus.textContent = "";
   extractResult.hidden = true;
   const experiment = selectedExperiment();
-  if (experiment) startExtractPolling(experiment);
+  inputsList.replaceChildren();
+  inputsCount.textContent = "";
+  if (experiment) {
+    startExtractPolling(experiment);
+    startInputsRefresh(experiment);
+  }
 });
 
 extractBtn.addEventListener("click", async () => {
