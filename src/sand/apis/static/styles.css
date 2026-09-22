@@ -339,7 +339,9 @@ body {
   color: #444;
 }
 
-/* Inputs list: one row per recording/note, click to expand and revise */
+/* Inputs card: one hairline row per recording/note; click to revise in
+   the Input text box above. The list scrolls internally so it never
+   pushes anything below it. */
 .inputs-header {
   display: flex;
   align-items: center;
@@ -350,35 +352,53 @@ body {
   list-style: none;
   margin: 4px 0 0;
   padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
 }
 
 .inputs-list li {
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
-  margin-bottom: 6px;
+  border-bottom: 1px solid #eeeeee;
+}
+
+.inputs-list li:last-child {
+  border-bottom: none;
+}
+
+.inputs-list .inputs-empty {
+  color: #888;
+  font-size: 0.9rem;
+  padding: 10px 4px;
 }
 
 .input-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: 10px;
+  padding: 9px 6px;
   cursor: pointer;
   font-size: 0.9rem;
+  border-left: 3px solid transparent;
 }
 
 .input-row:hover {
-  background: #f5f5f5;
+  background: #fafafa;
+}
+
+.input-row.selected {
+  background: #fff8e1;
+  border-left-color: #f9a825;
 }
 
 .input-row .material-icons {
   font-size: 18px;
-  color: #666;
+  color: #757575;
 }
 
 .input-row .input-time {
-  color: #888;
+  color: #9e9e9e;
+  font-size: 0.8rem;
   white-space: nowrap;
+  min-width: 42px;
 }
 
 .input-row .input-preview {
@@ -389,7 +409,7 @@ body {
 }
 
 .input-row .input-pending {
-  color: #888;
+  color: #9e9e9e;
   font-style: italic;
 }
 
@@ -399,21 +419,20 @@ body {
   white-space: nowrap;
 }
 
-.input-editor {
-  padding: 0 10px 10px;
+.input-row .input-nomad-link {
+  color: #9e9e9e;
+  text-decoration: none;
+  font-size: 16px;
+  display: none;
 }
 
-.input-editor textarea {
-  width: 100%;
-  min-height: 90px;
-  box-sizing: border-box;
-  font: inherit;
-  font-size: 0.9rem;
-  padding: 6px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
+.input-row:hover .input-nomad-link {
+  display: inline;
 }
 
-.input-editor .controls {
-  margin-top: 6px;
+/* The Input text box doubles as the revision editor: the mode is made
+   unmistakable by the label, the swapped buttons, and this accent. */
+.text-field.revising {
+  border-color: #f9a825;
+  background: #fffdf5;
 }

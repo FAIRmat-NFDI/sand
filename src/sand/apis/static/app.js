@@ -431,6 +431,7 @@ function stopLiveTranscript(conn, detach = false) {
 
 const storeLiveLabel = document.getElementById("store-live-label");
 const storeLiveToggle = document.getElementById("store-live-toggle");
+let storeLiveConfigured = false;
 const STORE_LIVE_KEY = "sand.storeLiveTranscript";
 
 async function initUiConfig() {
@@ -442,6 +443,7 @@ async function initUiConfig() {
     try { remembered = localStorage.getItem(STORE_LIVE_KEY); } catch { /* ignore */ }
     storeLiveToggle.checked =
       remembered === null ? Boolean(cfg.store_live_transcript) : remembered === "true";
+    storeLiveConfigured = true;
     storeLiveLabel.hidden = false;
   } catch { /* toggle stays hidden; recording works without it */ }
 }
@@ -662,19 +664,26 @@ const extractSummary = document.getElementById("extract-summary");
 const derivedEntryEl = document.getElementById("derived-entry");
 const sheetIssuesEl = document.getElementById("sheet-issues");
 
-// --- inputs list: every recording/note, click to expand and revise ------
-// Rows come in extraction order. Audio revisions go to
+// --- inputs card: every recording/note, click to revise ----------------
+// Rows come in extraction order. Clicking a row loads its text into the
+// big Input text box as an explicit "revising" mode: the label and
+// buttons swap, and any unsaved note draft is stashed and restored on
+// exit - no data loss, no second cramped editor. Audio revisions go to
 // corrected_transcript (clearing withdraws them); note revisions
-// overwrite the note text. The list refreshes itself while any audio is
-// still transcribing, and a generation guard drops stale responses.
+// overwrite the note text.
 
+const inputsCard = document.getElementById("inputs-card");
 const inputsList = document.getElementById("inputs-list");
 const inputsCount = document.getElementById("inputs-count");
 const refreshInputsBtn = document.getElementById("refresh-inputs-btn");
+const textLabel = document.getElementById("text-label");
+const saveRevisionBtn = document.getElementById("save-revision-btn");
+const cancelRevisionBtn = document.getElementById("cancel-revision-btn");
 
 let inputsGeneration = 0;
 let inputsRefreshTimer = null;
-let expandedInputId = null;
+// {item, experiment, draftBackup} while the text box is in revising mode
+let revising = null;
 
 function stopInputsRefresh() {
   inputsGeneration += 1;
@@ -690,14 +699,119 @@ function inputTime(item) {
     : parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function inputDescription(item) {
+  return (item.kind === "audio" ? "recording" : "note")
+    + (inputTime(item) ? " from " + inputTime(item) : "");
+}
+
+function beginRevision(item, experiment) {
+  if (revising && revising.item.entry_id === item.entry_id) return;
+  // entering revision mode is non-destructive: a note draft is stashed
+  // and restored on exit. Only switching rows with unsaved revision
+  // edits would lose something - ask then.
+  if (revising && textArea.value.trim() !== (revising.item.text || "").trim()
+      && !window.confirm("Discard the unsaved revision and open this input?")) {
+    return;
+  }
+  const draftBackup = revising ? revising.draftBackup : textArea.value;
+  revising = { item, experiment, draftBackup };
+  textArea.value = item.text || "";
+  textArea.classList.add("revising");
+  textLabel.textContent = "Revising the " + inputDescription(item)
+    + (item.kind === "audio" ? " (saved as corrected transcript)" : "");
+  recordBtn.hidden = true;
+  uploadBtn.hidden = true;
+  saveNoteBtn.hidden = true;
+  storeLiveLabel.hidden = true;
+  saveRevisionBtn.hidden = false;
+  cancelRevisionBtn.hidden = false;
+  highlightSelectedRow();
+  textArea.focus();
+  textArea.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function endRevision() {
+  if (!revising) return;
+  textArea.value = revising.draftBackup;
+  revising = null;
+  textArea.classList.remove("revising");
+  textLabel.textContent = "Input text";
+  recordBtn.hidden = false;
+  uploadBtn.hidden = false;
+  saveNoteBtn.hidden = false;
+  // the toggle only exists when the relay is configured; initUiConfig
+  // decides, so just restore what it decided
+  storeLiveLabel.hidden = !storeLiveConfigured;
+  saveRevisionBtn.hidden = true;
+  cancelRevisionBtn.hidden = true;
+  highlightSelectedRow();
+}
+
+function highlightSelectedRow() {
+  for (const row of inputsList.querySelectorAll(".input-row")) {
+    row.classList.toggle(
+      "selected",
+      Boolean(revising) && row.dataset.entryId === revising.item.entry_id
+    );
+  }
+}
+
+cancelRevisionBtn.addEventListener("click", endRevision);
+
+saveRevisionBtn.addEventListener("click", async () => {
+  if (!revising) return;
+  const { item, experiment } = revising;
+  const text = textArea.value.trim();
+  if (text === (item.text || "").trim()) {
+    // unchanged: save nothing - a stored revision must mean a human
+    // actually changed something
+    endRevision();
+    return;
+  }
+  clearError();
+  saveRevisionBtn.disabled = true;
+  try {
+    const res = await authFetch(
+      "api/input-collections/" + experiment.upload_id
+      + "/inputs/" + encodeURIComponent(item.entry_id)
+      + "/text?collection_entry_id=" + encodeURIComponent(experiment.entry_id),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+    if (!res.ok) {
+      showError("Could not save the revision: " + await errorDetail(res));
+      return;
+    }
+    endRevision();
+    // the entry reprocesses asynchronously; refresh shortly so the row
+    // shows the effective text (withdrawn corrections included)
+    startInputsRefresh(experiment, 1500);
+  } catch (err) {
+    showError("Network error: " + err.message);
+  } finally {
+    saveRevisionBtn.disabled = false;
+  }
+});
+
 function renderInputs(experiment, items) {
+  inputsCard.hidden = false;
   inputsCount.textContent = "(" + items.length + ")";
   inputsList.replaceChildren();
+  if (!items.length) {
+    const li = document.createElement("li");
+    li.className = "inputs-empty";
+    li.textContent = "No inputs yet - record or type a note above.";
+    inputsList.append(li);
+    return;
+  }
   for (const item of items) {
     const li = document.createElement("li");
-
     const row = document.createElement("div");
     row.className = "input-row";
+    row.dataset.entryId = item.entry_id;
+
     const icon = document.createElement("span");
     icon.className = "material-icons";
     icon.textContent = item.kind === "audio" ? "mic" : "edit_note";
@@ -724,101 +838,17 @@ function renderInputs(experiment, items) {
     nomadLink.href = item.entry_url;
     nomadLink.target = "_blank";
     nomadLink.rel = "noopener noreferrer";
-    nomadLink.className = "material-icons";
-    nomadLink.style.fontSize = "16px";
-    nomadLink.style.textDecoration = "none";
+    nomadLink.className = "material-icons input-nomad-link";
     nomadLink.textContent = "open_in_new";
     nomadLink.title = "View on NOMAD";
     nomadLink.addEventListener("click", (e) => e.stopPropagation());
     row.append(nomadLink);
+
+    row.addEventListener("click", () => beginRevision(item, experiment));
     li.append(row);
-
-    const editor = document.createElement("div");
-    editor.className = "input-editor";
-    editor.hidden = true;
-    li.append(editor);
-
-    row.addEventListener("click", () => {
-      if (expandedInputId === item.entry_id) {
-        expandedInputId = null;
-        editor.hidden = true;
-        editor.replaceChildren();
-        return;
-      }
-      // collapse any other open editor by re-rendering on next refresh;
-      // cheap version: close them all now
-      for (const other of inputsList.querySelectorAll(".input-editor")) {
-        other.hidden = true;
-        other.replaceChildren();
-      }
-      expandedInputId = item.entry_id;
-      openInputEditor(experiment, item, editor);
-    });
-
     inputsList.append(li);
   }
-}
-
-function openInputEditor(experiment, item, editor) {
-  const textarea = document.createElement("textarea");
-  textarea.value = item.text || "";
-  const controls = document.createElement("div");
-  controls.className = "controls";
-  const saveBtn = document.createElement("button");
-  saveBtn.className = "btn btn-primary";
-  saveBtn.type = "button";
-  saveBtn.textContent = "Save revision";
-  const cancelBtn = document.createElement("button");
-  cancelBtn.className = "btn btn-outlined";
-  cancelBtn.type = "button";
-  cancelBtn.textContent = "Cancel";
-  controls.append(saveBtn, cancelBtn);
-  editor.replaceChildren(textarea, controls);
-  editor.hidden = false;
-  textarea.focus();
-
-  cancelBtn.addEventListener("click", () => {
-    expandedInputId = null;
-    editor.hidden = true;
-    editor.replaceChildren();
-  });
-
-  saveBtn.addEventListener("click", async () => {
-    const text = textarea.value.trim();
-    if (text === (item.text || "").trim()) {
-      // unchanged: save nothing - a stored revision must mean a human
-      // actually changed something
-      cancelBtn.click();
-      return;
-    }
-    clearError();
-    saveBtn.disabled = true;
-    try {
-      const res = await authFetch(
-        "api/input-collections/" + experiment.upload_id
-        + "/inputs/" + encodeURIComponent(item.entry_id)
-        + "/text?collection_entry_id=" + encodeURIComponent(experiment.entry_id),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
-        });
-      if (!res.ok) {
-        showError("Could not save the revision: " + await errorDetail(res));
-        return;
-      }
-      expandedInputId = null;
-      editor.hidden = true;
-      editor.replaceChildren();
-      // the entry reprocesses asynchronously; refresh shortly so the
-      // row shows the effective text (withdrawn corrections included)
-      startInputsRefresh(experiment, 1500);
-    } catch (err) {
-      showError("Network error: " + err.message);
-    } finally {
-      saveBtn.disabled = false;
-    }
-  });
+  highlightSelectedRow();
 }
 
 async function loadInputs(experiment, generation) {
@@ -844,7 +874,6 @@ async function loadInputs(experiment, generation) {
 
 function startInputsRefresh(experiment, delayMs) {
   stopInputsRefresh();
-  expandedInputId = null;
   const generation = inputsGeneration;
   inputsRefreshTimer = setTimeout(
     () => loadInputs(experiment, generation), delayMs || 0);
@@ -967,8 +996,10 @@ experimentSelect.addEventListener("change", () => {
   extractStatus.textContent = "";
   extractResult.hidden = true;
   const experiment = selectedExperiment();
+  endRevision();
   inputsList.replaceChildren();
   inputsCount.textContent = "";
+  inputsCard.hidden = true;
   if (experiment) {
     startExtractPolling(experiment);
     startInputsRefresh(experiment);
