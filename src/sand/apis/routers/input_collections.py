@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Form, HTTPException, Request, Response, UploadFile
 
 from sand.apis.deps import get_bearer_token
+from sand.hysprint import EXPERIMENT_INFO_LABEL, EXPERIMENT_INFO_MAINFILE
 from sand.hysprint.sheet import (
     DERIVED_SHEET_MAINFILE,
     EXTRACTED_JSON_MAINFILE,
@@ -27,7 +28,6 @@ from sand.models.input_collections import (
 from sand.services.nomad_api import NomadAPIError, NomadAuthError, check_response
 from sand.services.voice_eln import (
     AUDIO_EXTENSIONS,
-    EXPERIMENT_INFO_LABEL,
     AudioUpload,
     DerivedSheet,
     VoiceElnService,
@@ -164,11 +164,13 @@ async def create_hysprint_input_collection(
         async with voice.build_client(token) as client:
             result = await voice.create_input_collection(client, name)
             if info:
-                await voice.add_experiment_info(
+                await voice.add_written_note(
                     client,
                     result.upload_id,
                     json.dumps(info),
                     collection_entry_id=result.entry_id,
+                    label=EXPERIMENT_INFO_LABEL,
+                    mainfile=EXPERIMENT_INFO_MAINFILE,
                 )
     except NomadAPIError as exc:
         raise _http_error(exc) from exc

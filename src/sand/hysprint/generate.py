@@ -3,8 +3,9 @@
 import json
 import re
 
+from sand.hysprint import EXPERIMENT_INFO_LABEL
 from sand.hysprint.archive import build_samples, canonicalize, compose_experiment
-from sand.services.voice_eln import EXPERIMENT_INFO_LABEL, CollectedInput
+from sand.services.voice_eln import CollectedInput
 
 # the LAST number in a name is the sample counter: 'project_2_s_1_niox' -> 2
 _LAST_NUMBER_RE = re.compile(r'(\d+)(?=\D*$)')
