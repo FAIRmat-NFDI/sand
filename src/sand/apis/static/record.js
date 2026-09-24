@@ -18,6 +18,7 @@ const discardBtn = document.getElementById("discard-btn");
 const uploadBtn = document.getElementById("upload-btn");
 const uploadInput = document.getElementById("upload-input");
 const statusEl = document.getElementById("status");
+const labelInput = document.getElementById("record-label");
 const audioEntryEl = document.getElementById("audio-entry");
 
 // Keep in sync with MAX_UPLOAD_BYTES in apis/routers/input_collections.py.
@@ -107,6 +108,7 @@ async function startRecording() {
     // the toggle state at stop time decides whether the live text is
     // stored; either way the panel keeps showing it
     const storeLive = storeLiveChosen();
+    const label = labelInput.value.trim();
     statusEl.textContent = "Finishing transcript...";
     const liveTranscript = await stopLiveTranscript(myConn);
     const blob = new Blob(recorded, { type: mimeType });
@@ -116,7 +118,7 @@ async function startRecording() {
       uploadBtn.disabled = false;
       return;
     }
-    await uploadAudio(blob, experiment, storeLive ? liveTranscript : "");
+    await uploadAudio(blob, experiment, storeLive ? liveTranscript : "", label);
   };
 
   const myConn = startLiveTranscript();
@@ -144,7 +146,7 @@ function stopRecording() {
   recordBtn.classList.add("btn-primary");
 }
 
-async function uploadAudio(blobOrFile, experiment, transcript) {
+async function uploadAudio(blobOrFile, experiment, transcript, label) {
   if (!experiment) return;
   recordBtn.disabled = true;
   uploadBtn.disabled = true;
@@ -163,15 +165,18 @@ async function uploadAudio(blobOrFile, experiment, transcript) {
   // the live transcription result: the entry is created pre-transcribed
   // and the automatic whisper run is skipped
   if (transcript) form.append("transcript", transcript);
+  if (label) form.append("label", label);
 
   try {
-    await reportNewInput(
+    const saved = await reportNewInput(
       audioEntryEl,
       authFetch(experimentUrl(experiment, "audio"), { method: "POST", body: form }),
       "Audio upload failed",
       "Audio added to " + experiment.name + ".",
       "View audio entry on NOMAD"
     );
+    // a label typed meanwhile for the next recording is kept
+    if (saved && labelInput.value.trim() === label) labelInput.value = "";
   } catch (err) {
     showError("Network error: " + err.message);
   } finally {
@@ -193,7 +198,7 @@ async function uploadAudioFile() {
     showError("File too large (max 25 MB).");
     return;
   }
-  await uploadAudio(file, experiment);
+  await uploadAudio(file, experiment, "", labelInput.value.trim());
 }
 
 export function initRecord() {

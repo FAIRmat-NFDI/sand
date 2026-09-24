@@ -265,7 +265,7 @@ async def test_add_audio_without_collection_stores_no_file():
 
 
 @pytest.mark.asyncio
-async def test_add_note_writes_step_note_and_references_it():
+async def test_add_note_writes_labeled_note_and_references_it():
     fake = _FakeNomad()
 
     async with _client(fake) as client:
@@ -276,13 +276,14 @@ async def test_add_note_writes_step_note_and_references_it():
             UPLOAD_ID,
             'spun coat at 2000 rpm',
             collection_entry_id=SAND_COLLECTION_ID,
+            label='spin coating',
         )
 
     note_files = [n for n in fake.raw_files if n.startswith('note_')]
     assert len(note_files) == 1
     note = fake.archive(note_files[0])['data']
     assert note['text'] == 'spun coat at 2000 rpm'
-    assert note['label'] == 'step'
+    assert note['label'] == 'spin coating'
     assert result.entry_id == generate_entry_id(UPLOAD_ID, note_files[0])
     collection = fake.archive(EXPERIMENT_MAINFILE)['data']
     assert collection['notes'] == [entry_ref(UPLOAD_ID, result.entry_id)]

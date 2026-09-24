@@ -7,9 +7,10 @@ Voice/text AI assistant for extracting structured lab process data into NOMAD.
 ```
 create an experiment in the SAND UI (with the experiment-info form)
   -> one NOMAD upload with an InputCollection entry
-     (+ a WrittenNote labeled 'experiment_info' holding the form JSON)
+     (+ a WrittenNote at experiment_info.archive.json holding the form JSON)
 
-record audio / save a step note in the SAND UI (experiment selected)
+record audio / save a step note in the SAND UI (experiment selected,
+optionally with a free-text label)
   -> the file/note goes into the experiment upload
        -> the voice-eln plugin creates an AudioInput entry
           and transcribes it (Whisper, inside NOMAD)

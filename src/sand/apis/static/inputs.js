@@ -1,6 +1,7 @@
 // The Inputs card: every recording/note of the experiment, in extraction
 // order. Clicking a row turns its text into an editor in place (one row
-// at a time); clicking its time moves it on the timeline. Audio
+// at a time); clicking its time moves it on the timeline, clicking its
+// label renames it (free text, for scanning the list). Audio
 // revisions go to corrected_transcript (clearing withdraws them); note
 // revisions overwrite the note text.
 
@@ -16,9 +17,9 @@ let inputsGeneration = 0;
 let inputsRefreshTimer = null;
 // {item, experiment, li, textEl, editor, saveBtn} while a row is edited
 let revising = null;
-// while a time editor is open, list re-renders are held off so the
-// input field is not wiped mid-edit (same for a revision editor)
-let timeEditing = false;
+// while a time or label editor is open, list re-renders are held off so
+// the input field is not wiped mid-edit (same for a revision editor)
+let inlineEditing = false;
 
 function inputUrl(experiment, item, path) {
   return experimentUrl(experiment, "inputs/" + encodeURIComponent(item.entry_id) + "/" + path);
@@ -50,8 +51,8 @@ function toLocalInputValue(iso) {
 }
 
 function beginTimeEdit(whenSpan, item, experiment) {
-  if (timeEditing) return;
-  timeEditing = true;
+  if (inlineEditing) return;
+  inlineEditing = true;
   const editor = document.createElement("input");
   editor.type = "datetime-local";
   editor.className = "input-time-edit";
@@ -62,7 +63,7 @@ function beginTimeEdit(whenSpan, item, experiment) {
   const finish = (refresh) => {
     if (done) return;
     done = true;
-    timeEditing = false;
+    inlineEditing = false;
     editor.replaceWith(whenSpan);
     // the server returns once NOMAD reprocessed the entry
     if (refresh) startInputsRefresh(experiment);
@@ -102,6 +103,65 @@ function beginTimeEdit(whenSpan, item, experiment) {
   });
   editor.addEventListener("blur", commit);
   whenSpan.replaceWith(editor);
+  editor.focus();
+}
+
+// --- label edit ------------------------------------------------------------
+
+function beginLabelEdit(labelBtn, item, experiment) {
+  if (inlineEditing) return;
+  inlineEditing = true;
+  const editor = document.createElement("input");
+  editor.type = "text";
+  editor.className = "input-label-edit";
+  editor.placeholder = "Label";
+  editor.setAttribute("aria-label", "Label of the " + inputDescription(item));
+  editor.value = item.label || "";
+  editor.addEventListener("click", (e) => e.stopPropagation());
+  let done = false;
+  const finish = (refresh) => {
+    if (done) return;
+    done = true;
+    inlineEditing = false;
+    editor.replaceWith(labelBtn);
+    // the server returns once NOMAD reprocessed the entry
+    if (refresh) startInputsRefresh(experiment);
+  };
+  let saving = false;
+  const commit = async () => {
+    // disabling the focused editor below fires blur -> commit again
+    if (done || saving) return;
+    const label = editor.value.trim();
+    if (label === (item.label || "")) {
+      finish(false);
+      return;
+    }
+    clearError();
+    saving = true;
+    editor.disabled = true;
+    try {
+      const res = await authFetch(inputUrl(experiment, item, "label"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label }),
+      });
+      if (!res.ok) {
+        showError("Could not change the label: " + await errorDetail(res));
+        finish(false);
+        return;
+      }
+      finish(true);
+    } catch (err) {
+      showError("Network error: " + err.message);
+      finish(false);
+    }
+  };
+  editor.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") commit();
+    if (e.key === "Escape") finish(false);
+  });
+  editor.addEventListener("blur", commit);
+  labelBtn.replaceWith(editor);
   editor.focus();
 }
 
@@ -240,6 +300,16 @@ function renderInputs(experiment, items) {
     kind.className = "input-kind";
     kind.textContent = item.kind === "audio" ? "Recording" : "Note";
     meta.append(icon, kind);
+    const labelBtn = document.createElement("button");
+    labelBtn.type = "button";
+    labelBtn.className = "input-label" + (item.label ? "" : " empty");
+    labelBtn.textContent = item.label || "+ label";
+    labelBtn.title = "Click to change the label";
+    labelBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      beginLabelEdit(labelBtn, item, experiment);
+    });
+    meta.append(labelBtn);
     const when = document.createElement("button");
     when.type = "button";
     when.className = "input-when";
@@ -312,7 +382,7 @@ async function loadInputs(experiment, generation) {
   if (!res.ok) return;
   const data = await res.json().catch(() => null);
   if (!inputsStillWanted(experiment, generation) || !data) return;
-  if (timeEditing || revising) {
+  if (inlineEditing || revising) {
     // don't wipe an open editor; try again shortly
     inputsRefreshTimer = setTimeout(() => loadInputs(experiment, generation), 3000);
     return;

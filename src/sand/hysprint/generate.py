@@ -3,7 +3,9 @@
 import json
 import re
 
-from sand.hysprint import EXPERIMENT_INFO_LABEL
+from nomad.utils import generate_entry_id
+
+from sand.hysprint import EXPERIMENT_INFO_MAINFILE
 from sand.hysprint.archive import build_samples, canonicalize, compose_experiment
 from sand.services.voice_eln import CollectedInput
 
@@ -23,23 +25,22 @@ class HysprintInputError(ValueError):
     """The collection's inputs cannot feed hysprint generation."""
 
 
-def route_inputs(inputs: list[CollectedInput]) -> tuple[dict, list[str]]:
+def route_inputs(
+    inputs: list[CollectedInput], upload_id: str
+) -> tuple[dict, list[str]]:
     """(experiment-info form, ordered step texts) from the collected inputs.
 
-    The input labeled 'experiment_info' carries the form as JSON and is not
-    a step; every other input is a step narration (an experiment may have
-    none). An input without text (audio not transcribed / entry not
+    The form note is found by its fixed mainfile, not its label: labels are
+    user-editable. It carries the form as JSON and is not a step; every other
+    input is a step narration (an experiment may have none). An input without text (audio not transcribed / entry not
     processed) makes generation impossible, so it raises rather than being
     silently dropped.
     """
+    info_entry_id = generate_entry_id(upload_id, EXPERIMENT_INFO_MAINFILE)
     info = None
     steps: list[str] = []
     for item in inputs:
-        if item.label == EXPERIMENT_INFO_LABEL:
-            if info is not None:
-                raise HysprintInputError(
-                    'more than one experiment_info input in this collection'
-                )
+        if item.entry_id == info_entry_id:
             if item.text is None:
                 raise HysprintInputError(
                     f'experiment_info input {item.entry_id} has no text'
@@ -59,9 +60,7 @@ def route_inputs(inputs: list[CollectedInput]) -> tuple[dict, list[str]]:
         steps.append(item.text)
 
     if info is None:
-        raise HysprintInputError(
-            "no input labeled 'experiment_info' in this collection"
-        )
+        raise HysprintInputError('no experiment_info input in this collection')
     if not isinstance(info, dict):
         raise HysprintInputError('the experiment_info JSON must be an object')
     missing = [field for field in REQUIRED_INFO_FIELDS if not info.get(field)]

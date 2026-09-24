@@ -6,6 +6,7 @@ import { reportNewInput } from "./inputs.js";
 import { clearEntryLink, clearError, showError } from "./ui.js";
 
 const textArea = document.getElementById("text");
+const labelInput = document.getElementById("note-label");
 const saveNoteBtn = document.getElementById("save-note-btn");
 const noteEntryEl = document.getElementById("note-entry");
 
@@ -14,6 +15,7 @@ async function saveNote() {
   const experiment = requireExperiment();
   if (!experiment) return;
   const text = textArea.value.trim();
+  const label = labelInput.value.trim();
   if (!text) {
     showError("Nothing to save. Type a step note first.");
     return;
@@ -26,13 +28,16 @@ async function saveNote() {
       authFetch(experimentUrl(experiment, "notes"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, label }),
       }),
       "Saving the note failed",
       "Note added to " + experiment.name + ".",
       "View note on NOMAD"
     );
-    if (saved) textArea.value = "";
+    if (saved) {
+      textArea.value = "";
+      labelInput.value = "";
+    }
   } catch (err) {
     showError("Network error: " + err.message);
   } finally {
