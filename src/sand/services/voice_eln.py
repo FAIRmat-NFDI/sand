@@ -17,6 +17,7 @@ from sand.services.nomad_api import (
     check_response,
     create_upload,
     entry_id_from_ref,
+    entry_mainfile,
     entry_ref,
     gui_entry_url,
 )
@@ -824,31 +825,11 @@ class VoiceElnService:
                 f'entry {entry_id} is not an input of this collection',
                 step=step,
             )
-        mainfile = await self._entry_mainfile(client, upload_id, entry_id)
+        mainfile = await entry_mainfile(
+            client, upload_id, entry_id, step='find_input_entry'
+        )
         archive = await self._writer.read_archive(client, upload_id, mainfile)
         return mainfile, archive
-
-    async def _entry_mainfile(
-        self, client: httpx.AsyncClient, upload_id: str, entry_id: str
-    ) -> str:
-        response = await client.post(
-            '/entries/query',
-            json={
-                'owner': 'visible',
-                'query': {'entry_id': entry_id, 'upload_id': upload_id},
-                'required': {'include': ['mainfile']},
-                'pagination': {'page_size': 1},
-            },
-        )
-        check_response(response, step='find_input_entry')
-        entries = response.json().get('data', [])
-        if not entries:
-            raise NomadAPIError(
-                HTTPStatus.NOT_FOUND,
-                f'No entry {entry_id} found in upload {upload_id}',
-                step='find_input_entry',
-            )
-        return entries[0]['mainfile']
 
     async def _append_to_collection(
         self,
@@ -891,24 +872,9 @@ class VoiceElnService:
         """return mainfile path"""
         if collection_entry_id == generate_entry_id(upload_id, EXPERIMENT_MAINFILE):
             return EXPERIMENT_MAINFILE
-        response = await client.post(
-            '/entries/query',
-            json={
-                'owner': 'visible',
-                'query': {'entry_id': collection_entry_id, 'upload_id': upload_id},
-                'required': {'include': ['mainfile']},
-                'pagination': {'page_size': 1},
-            },
+        return await entry_mainfile(
+            client, upload_id, collection_entry_id, step='find_collection'
         )
-        check_response(response, step='find_collection')
-        entries = response.json().get('data', [])
-        if not entries:
-            raise NomadAPIError(
-                HTTPStatus.NOT_FOUND,
-                f'No entry {collection_entry_id} found in upload {upload_id}',
-                step='find_collection',
-            )
-        return entries[0]['mainfile']
 
 
 def _utc_now_iso() -> str:
