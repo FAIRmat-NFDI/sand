@@ -275,8 +275,8 @@ async def list_inputs(
     request: Request,
     collection_entry_id: str,
 ) -> InputListResponse:
-    """The experiment's inputs in extraction order (the experiment_info
-    form note is not listed - it is edited through the form)."""
+    """All of the experiment's inputs in extraction order, including the
+    experiment_info form note."""
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
@@ -301,7 +301,6 @@ async def list_inputs(
                 status=item.status,
             )
             for item in inputs
-            if item.label != EXPERIMENT_INFO_LABEL
         ]
     )
 
