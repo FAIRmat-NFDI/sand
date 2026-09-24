@@ -3,6 +3,7 @@ import json
 import pytest
 
 from sand.hysprint.steps import (
+    NO_STEP,
     fill_schema,
     normalize_variants,
     select_schema,
@@ -18,9 +19,12 @@ def test_step_types_come_from_the_schema_artifact():
     assert len(types) >= MIN_STEP_TYPES
 
 
-def test_select_schema_enumerates_all_step_types():
+def test_select_schema_enumerates_all_step_types_and_no_step():
+    # NO_STEP lets an input that is only a greeting ("hi sand, let's
+    # record") be skipped instead of forced into some step type
     schema = select_schema()
-    assert schema['properties']['step_type']['enum'] == list(step_types())
+    assert schema['properties']['step_type']['enum'] == [*step_types(), NO_STEP]
+    assert NO_STEP not in step_types()
     assert schema['required'] == ['step_type']
 
 
