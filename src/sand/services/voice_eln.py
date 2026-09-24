@@ -18,8 +18,10 @@ from sand.services.nomad_api import (
     create_upload,
     entry_id_from_ref,
     entry_mainfile,
+    entry_mainfiles,
     entry_ref,
     gui_entry_url,
+    processed_entry_ids,
 )
 
 INPUT_COLLECTION_M_DEF = (
@@ -156,7 +158,7 @@ class VoiceElnService:
         write_timeout_s: float = 60.0,
     ) -> None:
         self._base_url = base_url
-        self._writer = RawFileWriter(retry_interval_s, write_timeout_s)
+        self.writer = RawFileWriter(retry_interval_s, write_timeout_s)
         # Revisions read-modify-write the whole input archive; concurrent
         # ones on the same entry (a time edit and a text save) would drop
         # each other's change. Per-process only: enough for one app worker.
@@ -217,7 +219,7 @@ class VoiceElnService:
         self, client: httpx.AsyncClient, name: str
     ) -> EntryHandle:
         upload_id = await create_upload(client, upload_name=name)
-        await self._writer.write_archive(
+        await self.writer.write_archive(
             client,
             upload_id,
             EXPERIMENT_MAINFILE,
@@ -264,7 +266,7 @@ class VoiceElnService:
         collection_mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
-        await self._writer.write_archive(
+        await self.writer.write_archive(
             client,
             upload_id,
             note.mainfile,
@@ -310,7 +312,7 @@ class VoiceElnService:
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
-        await self._writer.read_archive(client, upload_id, mainfile)
+        await self.writer.read_archive(client, upload_id, mainfile)
 
         # Timestamp prefix: recordings all arrive as e.g. 'recording.webm',
         # and a second file with the same name would overwrite the first.
@@ -319,7 +321,7 @@ class VoiceElnService:
 
         if upload.transcript and upload.transcript.strip():
             now = _utc_now_iso()
-            await self._writer.write_archive(
+            await self.writer.write_archive(
                 client,
                 upload_id,
                 companion,
@@ -338,7 +340,7 @@ class VoiceElnService:
                 },
             )
 
-        await self._writer.upload_raw_file(
+        await self.writer.upload_raw_file(
             client, upload_id, stored_name, upload.audio, 'application/octet-stream'
         )
 
@@ -359,36 +361,7 @@ class VoiceElnService:
     ) -> bytes | None:
         """The stored sheet's bytes; None when nothing was extracted yet."""
         await self._resolve_collection_mainfile(client, upload_id, collection_entry_id)
-        return await self._writer.read_raw_file(client, upload_id, sheet_mainfile)
-
-    async def write_status_file(
-        self,
-        client: httpx.AsyncClient,
-        upload_id: str,
-        mainfile: str,
-        payload: dict,
-    ) -> None:
-        """Write a small JSON bookkeeping file into the upload."""
-        await self._writer.upload_raw_file(
-            client,
-            upload_id,
-            mainfile,
-            json.dumps(payload, ensure_ascii=False).encode(),
-            'application/json',
-        )
-
-    async def read_status_file(
-        self, client: httpx.AsyncClient, upload_id: str, mainfile: str
-    ) -> dict | None:
-        """The bookkeeping workflow status file's JSON"""
-        raw = await self._writer.read_raw_file(client, upload_id, mainfile)
-        if raw is None:
-            return None
-        try:
-            payload = json.loads(raw)
-        except ValueError:
-            return None
-        return payload if isinstance(payload, dict) else None
+        return await self.writer.read_raw_file(client, upload_id, sheet_mainfile)
 
     async def add_derived_sheet(
         self,
@@ -408,20 +381,22 @@ class VoiceElnService:
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
-        await self._writer.read_archive(client, upload_id, mainfile)
+        await self.writer.read_archive(client, upload_id, mainfile)
 
         entry_id = generate_entry_id(upload_id, sheet.xlsx_mainfile)
-        current = await self._writer.read_raw_file(
+        current = await self.writer.read_raw_file(
             client, upload_id, sheet.xlsx_mainfile
         )
         replaced_edits = False
         old_ids: list[str] = []
         if current is not None:
-            stored_extraction = await self._writer.read_raw_file(
+            stored_extraction = await self.writer.read_raw_file(
                 client, upload_id, sheet.extraction_mainfile
             )
             replaced_edits = not _sheet_hash_matches(current, stored_extraction)
-            old_ids = await self._processed_entry_ids(client, entry_id, attempts=1)
+            old_ids = await processed_entry_ids(
+                client, entry_id, 1, self.writer.retry_interval_s
+            )
 
         await self._reparse_sheet(client, upload_id, sheet, old_ids, mainfile)
         return EntryHandle(upload_id=upload_id, entry_id=entry_id), replaced_edits
@@ -445,10 +420,10 @@ class VoiceElnService:
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
-        await self._writer.read_archive(client, upload_id, mainfile)
+        await self.writer.read_archive(client, upload_id, mainfile)
 
         entry_id = generate_entry_id(upload_id, sheet.xlsx_mainfile)
-        current = await self._writer.read_raw_file(
+        current = await self.writer.read_raw_file(
             client, upload_id, sheet.xlsx_mainfile
         )
         handle = EntryHandle(upload_id=upload_id, entry_id=entry_id)
@@ -456,7 +431,9 @@ class VoiceElnService:
 
         old_ids: list[str] = []
         if not changed:
-            parsed_ids = await self._processed_entry_ids(client, entry_id)
+            parsed_ids = await processed_entry_ids(
+                client, entry_id, 5, self.writer.retry_interval_s
+            )
             if parsed_ids:
                 await self._set_collection_refs(
                     client,
@@ -468,7 +445,9 @@ class VoiceElnService:
                 return False, handle
             # same bytes but no parse output: repair with a full reparse
         elif current is not None:
-            old_ids = await self._processed_entry_ids(client, entry_id, attempts=1)
+            old_ids = await processed_entry_ids(
+                client, entry_id, 1, self.writer.retry_interval_s
+            )
 
         await self._reparse_sheet(client, upload_id, sheet, old_ids, mainfile)
         return changed, handle
@@ -484,18 +463,17 @@ class VoiceElnService:
         """Delete the previous parse output, write the sheet files, wait
         out the parse, and point derived_entries at the result."""
         if old_ids:
-            await self._delete_entry_files(
-                client,
-                upload_id,
-                old_ids,
-                keep={
-                    sheet.xlsx_mainfile,
-                    sheet.extraction_mainfile,
-                    collection_mainfile,
-                },
+            # delete the raw files behind stale parsed entries (NOMAD drops
+            # the entries on reprocess); never sand's own mainfiles
+            keep = {sheet.xlsx_mainfile, sheet.extraction_mainfile, collection_mainfile}
+            stale = await entry_mainfiles(
+                client, upload_id, old_ids, step='find_stale_entries'
             )
+            for target in stale:
+                if target not in keep:
+                    await self.writer.delete_raw_file(client, upload_id, target)
 
-        await self._writer.upload_raw_file(
+        await self.writer.upload_raw_file(
             client,
             upload_id,
             sheet.xlsx_mainfile,
@@ -503,7 +481,7 @@ class VoiceElnService:
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
         if sheet.extraction is not None:
-            await self._writer.upload_raw_file(
+            await self.writer.upload_raw_file(
                 client,
                 upload_id,
                 sheet.extraction_mainfile,
@@ -514,14 +492,16 @@ class VoiceElnService:
         # The parsed entries exist only once the upload finished processing
         # the sheet; the writer waits before each write, but the last PUT
         # just re-triggered processing, so wait again.
-        await self._writer.wait_until_writable(
+        await self.writer.wait_until_writable(
             client,
             upload_id,
-            time.monotonic() + self._writer.write_timeout_s,
+            time.monotonic() + self.writer.write_timeout_s,
             sheet.xlsx_mainfile,
         )
         entry_id = generate_entry_id(upload_id, sheet.xlsx_mainfile)
-        parsed_ids = await self._processed_entry_ids(client, entry_id)
+        parsed_ids = await processed_entry_ids(
+            client, entry_id, 5, self.writer.retry_interval_s
+        )
         await self._set_collection_refs(
             client,
             upload_id,
@@ -529,52 +509,6 @@ class VoiceElnService:
             [entry_id, *parsed_ids],
             collection_mainfile,
         )
-
-    async def _delete_entry_files(
-        self,
-        client: httpx.AsyncClient,
-        upload_id: str,
-        entry_ids: list[str],
-        keep: set[str],
-    ) -> None:
-        """Delete the raw files behind stale parsed entries (NOMAD drops
-        the entries on reprocess). `keep` shields sand's own mainfiles."""
-        response = await client.post(
-            '/entries/query',
-            json={
-                'owner': 'visible',
-                'query': {'upload_id': upload_id, 'entry_id:any': entry_ids},
-                'required': {'include': ['entry_id', 'mainfile']},
-                'pagination': {'page_size': len(entry_ids)},
-            },
-        )
-        check_response(response, step='find_stale_entries')
-        for entry in response.json().get('data', []):
-            target = entry.get('mainfile')
-            if target and target not in keep:
-                await self._writer.delete_raw_file(client, upload_id, target)
-
-    async def _processed_entry_ids(
-        self, client: httpx.AsyncClient, sheet_entry_id: str, attempts: int = 5
-    ) -> list[str]:
-        """Entry ids the sheet's parse created (its processed_archive)."""
-        for attempt in range(attempts):
-            response = await client.get(f'/entries/{sheet_entry_id}/archive')
-            if response.status_code != HTTPStatus.NOT_FOUND:
-                check_response(response, step='read_derived_entries')
-                try:
-                    body = response.json()
-                except ValueError:
-                    body = {}
-                section = ((body.get('data') or {}).get('archive') or {}).get(
-                    'data'
-                ) or {}
-                refs = section.get('processed_archive')
-                if isinstance(refs, list) and refs:
-                    return [entry_id_from_ref(ref) for ref in refs]
-            if attempt < attempts - 1:
-                await asyncio.sleep(self._writer.retry_interval_s)
-        return []
 
     async def _set_collection_refs(
         self,
@@ -585,7 +519,7 @@ class VoiceElnService:
         mainfile: str,
     ) -> None:
         """Replace the field's references with the xlxs file and its parsed entries"""
-        archive = await self._writer.read_archive(client, upload_id, mainfile)
+        archive = await self.writer.read_archive(client, upload_id, mainfile)
         data = archive.get('data')
         if not isinstance(data, dict):
             raise NomadAPIError(
@@ -596,7 +530,7 @@ class VoiceElnService:
         refs = [entry_ref(upload_id, entry_id) for entry_id in entry_ids]
         if data.get(field) != refs:
             data[field] = refs
-            await self._writer.write_archive(client, upload_id, mainfile, archive)
+            await self.writer.write_archive(client, upload_id, mainfile, archive)
 
     async def collect_inputs(
         self,
@@ -615,7 +549,7 @@ class VoiceElnService:
         mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
-        archive = await self._writer.read_archive(client, upload_id, mainfile)
+        archive = await self.writer.read_archive(client, upload_id, mainfile)
         data = archive.get('data')
         if not isinstance(data, dict):
             raise NomadAPIError(
@@ -789,11 +723,11 @@ class VoiceElnService:
     ) -> None:
         """Write a revised input and wait for NOMAD to reprocess it, so a
         list read right after the request already sees the change."""
-        await self._writer.write_archive(client, upload_id, mainfile, archive)
-        await self._writer.wait_until_writable(
+        await self.writer.write_archive(client, upload_id, mainfile, archive)
+        await self.writer.wait_until_writable(
             client,
             upload_id,
-            time.monotonic() + self._writer.write_timeout_s,
+            time.monotonic() + self.writer.write_timeout_s,
             mainfile,
         )
 
@@ -810,7 +744,7 @@ class VoiceElnService:
         collection_mainfile = await self._resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
-        collection = await self._writer.read_archive(
+        collection = await self.writer.read_archive(
             client, upload_id, collection_mainfile
         )
         data = collection.get('data') or {}
@@ -828,7 +762,7 @@ class VoiceElnService:
         mainfile = await entry_mainfile(
             client, upload_id, entry_id, step='find_input_entry'
         )
-        archive = await self._writer.read_archive(client, upload_id, mainfile)
+        archive = await self.writer.read_archive(client, upload_id, mainfile)
         return mainfile, archive
 
     async def _append_to_collection(
@@ -845,7 +779,7 @@ class VoiceElnService:
         the same experiment can race here (accepted for now, see the design
         discussion).
         """
-        archive = await self._writer.read_archive(client, upload_id, mainfile)
+        archive = await self.writer.read_archive(client, upload_id, mainfile)
         data = archive.get('data')
         if not isinstance(data, dict):
             raise NomadAPIError(
@@ -861,7 +795,7 @@ class VoiceElnService:
         ref = entry_ref(upload_id, entry_id)
         if ref not in refs:
             refs.append(ref)
-            await self._writer.write_archive(client, upload_id, mainfile, archive)
+            await self.writer.write_archive(client, upload_id, mainfile, archive)
 
     async def _resolve_collection_mainfile(
         self,
