@@ -162,6 +162,10 @@ class VoiceElnService:
     ) -> None:
         self._base_url = base_url
         self._writer = RawFileWriter(retry_interval_s, write_timeout_s)
+        # Revisions read-modify-write the whole input archive; concurrent
+        # ones on the same entry (a time edit and a text save) would drop
+        # each other's change. Per-process only: enough for one app worker.
+        self._input_locks: dict[str, asyncio.Lock] = {}
 
     def build_client(self, token: str) -> httpx.AsyncClient:
         return build_client(self._base_url, token)
@@ -259,7 +263,7 @@ class VoiceElnService:
         collection_entry_id: str,
     ) -> EntryHandle:
         """Store the experiment-info form JSON as its dedicated
-        WrittenNote (label routing, see docs/handover.md §8)."""
+        WrittenNote."""
         note = _Note(
             text=info_json,
             label=EXPERIMENT_INFO_LABEL,
@@ -721,33 +725,34 @@ class VoiceElnService:
         withdraws the correction, per that field's semantics. Note: the
         text IS human text, so it is overwritten directly - empty raises.
         """
-        mainfile, archive = await self._locate_input(
-            client, upload_id, entry_id, collection_entry_id, step='revise_input'
-        )
-        section = archive.get('data') or {}
-        m_def = str(section.get('m_def') or '')
-        text = text.strip()
-
-        if m_def.endswith('AudioInput'):
-            if text:
-                section['corrected_transcript'] = text
-            else:
-                section.pop('corrected_transcript', None)
-            kind = 'audio'
-        elif m_def.endswith('WrittenNote'):
-            if not text:
-                raise ValueError('a note cannot be empty')
-            section['text'] = text
-            kind = 'note'
-        else:
-            raise NomadAPIError(
-                HTTPStatus.NOT_FOUND,
-                f'entry {entry_id} is not a revisable input',
-                step='revise_input',
+        async with self._input_lock(entry_id):
+            mainfile, archive = await self._locate_input(
+                client, upload_id, entry_id, collection_entry_id, step='revise_input'
             )
-        archive['data'] = section
-        await self._writer.write_archive(client, upload_id, mainfile, archive)
-        return kind
+            section = archive.get('data') or {}
+            m_def = str(section.get('m_def') or '')
+            text = text.strip()
+
+            if m_def.endswith('AudioInput'):
+                if text:
+                    section['corrected_transcript'] = text
+                else:
+                    section.pop('corrected_transcript', None)
+                kind = 'audio'
+            elif m_def.endswith('WrittenNote'):
+                if not text:
+                    raise ValueError('a note cannot be empty')
+                section['text'] = text
+                kind = 'note'
+            else:
+                raise NomadAPIError(
+                    HTTPStatus.NOT_FOUND,
+                    f'entry {entry_id} is not a revisable input',
+                    step='revise_input',
+                )
+            archive['data'] = section
+            await self._write_input(client, upload_id, mainfile, archive)
+            return kind
 
     async def revise_input_datetime(
         self,
@@ -765,37 +770,50 @@ class VoiceElnService:
         parsed = _parse_input_datetime(datetime_value)
         if parsed is None:
             raise ValueError(f'not a valid datetime: {datetime_value!r}')
-        mainfile, archive = await self._locate_input(
-            client,
-            upload_id,
-            entry_id,
-            collection_entry_id,
-            step='revise_input_datetime',
-        )
-        section = archive.get('data') or {}
-        m_def = str(section.get('m_def') or '')
-        if m_def.endswith('AudioInput'):
-            kind = 'audio'
-        elif m_def.endswith('WrittenNote'):
-            kind = 'note'
-        else:
-            raise NomadAPIError(
-                HTTPStatus.NOT_FOUND,
-                f'entry {entry_id} is not a revisable input',
+        async with self._input_lock(entry_id):
+            mainfile, archive = await self._locate_input(
+                client,
+                upload_id,
+                entry_id,
+                collection_entry_id,
                 step='revise_input_datetime',
             )
-        section['datetime'] = parsed.isoformat()
-        archive['data'] = section
+            section = archive.get('data') or {}
+            m_def = str(section.get('m_def') or '')
+            if m_def.endswith('AudioInput'):
+                kind = 'audio'
+            elif m_def.endswith('WrittenNote'):
+                kind = 'note'
+            else:
+                raise NomadAPIError(
+                    HTTPStatus.NOT_FOUND,
+                    f'entry {entry_id} is not a revisable input',
+                    step='revise_input_datetime',
+                )
+            section['datetime'] = parsed.isoformat()
+            archive['data'] = section
+            await self._write_input(client, upload_id, mainfile, archive)
+            return kind
+
+    def _input_lock(self, entry_id: str) -> asyncio.Lock:
+        return self._input_locks.setdefault(entry_id, asyncio.Lock())
+
+    async def _write_input(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        mainfile: str,
+        archive: dict,
+    ) -> None:
+        """Write a revised input and wait for NOMAD to reprocess it, so a
+        list read right after the request already sees the change."""
         await self._writer.write_archive(client, upload_id, mainfile, archive)
-        # The PUT only triggers reprocessing: wait for it, so a list read
-        # right after this returns already sees the new datetime.
         await self._writer.wait_until_writable(
             client,
             upload_id,
             time.monotonic() + self._writer.write_timeout_s,
             mainfile,
         )
-        return kind
 
     async def _locate_input(
         self,
