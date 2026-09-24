@@ -31,13 +31,8 @@ AUDIO_INPUT_M_DEF = 'nomad_voice_eln.schema_packages.schema_package.AudioInput'
 # Mainfile of the InputCollection entry in an experiment upload created by sand.
 EXPERIMENT_MAINFILE = 'experiment.archive.json'
 
-# Label routing (see docs/handover.md §8): the experiment-info form JSON is a
-# WrittenNote labeled 'experiment_info'; step narrations are labeled 'step'.
-EXPERIMENT_INFO_LABEL = 'experiment_info'
+# Label routing (see docs/handover.md §8): step narrations are labeled 'step'.
 STEP_LABEL = 'step'
-
-# Where the experiment-info form note is stored in the experiment upload.
-EXPERIMENT_INFO_MAINFILE = 'experiment_info.archive.json'
 
 # Audio types the nomad-voice-eln parser matches (its mainfile_name_re);
 # a file with any other extension is stored but never becomes an audio entry.
@@ -239,36 +234,23 @@ class VoiceElnService:
             entry_id=generate_entry_id(upload_id, EXPERIMENT_MAINFILE),
         )
 
-    async def add_written_note(
+    async def add_written_note(  # noqa: PLR0913
         self,
         client: httpx.AsyncClient,
         upload_id: str,
         text: str,
         collection_entry_id: str,
+        *,
+        label: str = STEP_LABEL,
+        mainfile: str | None = None,
     ) -> EntryHandle:
-        """Add a typed step note (WrittenNote labeled 'step').
+        """Add a WrittenNote, by default a timestamped step note.
 
         collection_entry_id names the exact InputCollection entry the
         note is attached to (an upload can hold more than one).
         """
-        mainfile = f'note_{_utc_now_stamp()}.archive.json'
-        note = _Note(text=text, label=STEP_LABEL, mainfile=mainfile)
-        return await self._add_note(client, upload_id, note, collection_entry_id)
-
-    async def add_experiment_info(
-        self,
-        client: httpx.AsyncClient,
-        upload_id: str,
-        info_json: str,
-        collection_entry_id: str,
-    ) -> EntryHandle:
-        """Store the experiment-info form JSON as its dedicated
-        WrittenNote."""
-        note = _Note(
-            text=info_json,
-            label=EXPERIMENT_INFO_LABEL,
-            mainfile=EXPERIMENT_INFO_MAINFILE,
-        )
+        mainfile = mainfile or f'note_{_utc_now_stamp()}.archive.json'
+        note = _Note(text=text, label=label, mainfile=mainfile)
         return await self._add_note(client, upload_id, note, collection_entry_id)
 
     async def _add_note(

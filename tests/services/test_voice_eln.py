@@ -6,6 +6,7 @@ import httpx
 import pytest
 from nomad.utils import generate_entry_id
 
+from sand.hysprint import EXPERIMENT_INFO_LABEL, EXPERIMENT_INFO_MAINFILE
 from sand.services.nomad_api import NomadAPIError, NomadAuthError, entry_ref
 from sand.services.voice_eln import (
     AUDIO_INPUT_M_DEF,
@@ -145,8 +146,13 @@ async def test_create_experiment_writes_collection_and_info_note():
     async with _client(fake) as client:
         service = _service()
         result = await service.create_input_collection(client, 'perov_B1_a')
-        await service.add_experiment_info(
-            client, UPLOAD_ID, json.dumps(INFO), collection_entry_id=SAND_COLLECTION_ID
+        await service.add_written_note(
+            client,
+            UPLOAD_ID,
+            json.dumps(INFO),
+            collection_entry_id=SAND_COLLECTION_ID,
+            label=EXPERIMENT_INFO_LABEL,
+            mainfile=EXPERIMENT_INFO_MAINFILE,
         )
 
     assert result.upload_id == UPLOAD_ID
@@ -361,8 +367,13 @@ async def test_write_waits_for_processing_and_sends_body_once():
     async with _client(fake) as client:
         service = _service()
         result = await service.create_input_collection(client, 'perov_B1_a')
-        await service.add_experiment_info(
-            client, UPLOAD_ID, json.dumps(INFO), collection_entry_id=SAND_COLLECTION_ID
+        await service.add_written_note(
+            client,
+            UPLOAD_ID,
+            json.dumps(INFO),
+            collection_entry_id=SAND_COLLECTION_ID,
+            label=EXPERIMENT_INFO_LABEL,
+            mainfile=EXPERIMENT_INFO_MAINFILE,
         )
 
     assert result.upload_id == UPLOAD_ID
