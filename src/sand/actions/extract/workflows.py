@@ -20,6 +20,7 @@ Inside ExtractHysprintWorkflow (this file):
     status "extracting 0/n"
       per step, n in PARALLEL:
         child ExtractionWorkflow(SELECT) ─▶ step_type
+        (NO_STEP, e.g. only a greeting: skipped, reported as a warning)
         activity make_fill_schema(step_type)
         child ExtractionWorkflow(FILL)   ─▶ slot ─▶ normalize_variants
         status "extracting k/n"
@@ -48,7 +49,12 @@ with workflow.unsafe.imports_passed_through():
         write_extraction_status,
     )
     from sand.actions.extract.models import ExtractInput, StoreInput, WriteStatusInput
-    from sand.hysprint.steps import FILL_SYSTEM, SELECT_SYSTEM, normalize_variants
+    from sand.hysprint.steps import (
+        FILL_SYSTEM,
+        NO_STEP,
+        SELECT_SYSTEM,
+        normalize_variants,
+    )
 
 # nomad-llm-extraction registers its ExtractionWorkflow here; children are
 # started BY NAME so sand never imports the peer plugin.
@@ -62,6 +68,21 @@ def _error_message(exc: BaseException) -> str:
     while getattr(cause, 'cause', None) is not None:
         cause = cause.cause
     return getattr(cause, 'message', None) or str(cause)
+
+
+def _drop_skipped(
+    step_texts: list[str], results: list[dict | None]
+) -> tuple[list[dict], list[str]]:
+    """(slots without the NO_STEP inputs, a warning per skipped input).
+    A wrong skip would silently drop a step, so each one is reported."""
+    slots = [slot for slot in results if slot is not None]
+    warnings = [
+        f'input {i + 1} ({step_texts[i][:60]!r}) describes no fabrication '
+        'step; it was left out'
+        for i, slot in enumerate(results)
+        if slot is None
+    ]
+    return slots, warnings
 
 
 @workflow.defn
@@ -146,7 +167,7 @@ class ExtractHysprintWorkflow:
                     raise ApplicationError(result['err_message'], non_retryable=True)
                 return result.get('extracted_data') or {}
 
-            async def extract_one(index: int, text: str) -> dict:
+            async def extract_one(index: int, text: str) -> dict | None:
                 nonlocal done
                 step_name = f'step {index + 1} ({text[:60]!r})'
                 try:
@@ -155,15 +176,10 @@ class ExtractHysprintWorkflow:
                         f'{job_id}-step{index + 1}-select',
                     )
                     step_type = selected['step_type']
-                    fill = await workflow.execute_activity(
-                        make_fill_schema,
-                        step_type,
-                        start_to_close_timeout=timedelta(minutes=1),
-                        retry_policy=RetryPolicy(maximum_attempts=2),
-                    )
-                    slot = await run_child(
-                        child_input(text, fill, FILL_SYSTEM, f'STEP TYPE: {step_type}'),
-                        f'{job_id}-step{index + 1}-fill',
+                    slot = (
+                        None
+                        if step_type == NO_STEP
+                        else await fill_one(index, text, step_type)
                     )
                 except Exception as exc:
                     raise ApplicationError(
@@ -181,13 +197,25 @@ class ExtractHysprintWorkflow:
                 await status(
                     {'phase': 'extracting', 'steps_done': done, 'steps_total': total}
                 )
+                return slot
+
+            async def fill_one(index: int, text: str, step_type: str) -> dict:
+                fill = await workflow.execute_activity(
+                    make_fill_schema,
+                    step_type,
+                    start_to_close_timeout=timedelta(minutes=1),
+                    retry_policy=RetryPolicy(maximum_attempts=2),
+                )
+                slot = await run_child(
+                    child_input(text, fill, FILL_SYSTEM, f'STEP TYPE: {step_type}'),
+                    f'{job_id}-step{index + 1}-fill',
+                )
                 return normalize_variants(slot)
 
-            slots = list(
-                await asyncio.gather(
-                    *(extract_one(i, text) for i, text in enumerate(step_texts))
-                )
+            results = await asyncio.gather(
+                *(extract_one(i, text) for i, text in enumerate(step_texts))
             )
+            slots, skipped = _drop_skipped(step_texts, results)
 
             await status({'phase': 'writing-sheet'})
             stored = await workflow.execute_activity(
@@ -203,6 +231,7 @@ class ExtractHysprintWorkflow:
                 start_to_close_timeout=timedelta(minutes=15),
                 retry_policy=RetryPolicy(maximum_attempts=3),
             )
+            stored['warnings'] = [*skipped, *stored['warnings']]
             await status({'phase': 'completed', **stored}, final=True)
             return {'job_id': job_id, **stored}
         except Exception as exc:

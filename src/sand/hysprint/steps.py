@@ -10,14 +10,29 @@ import re
 from functools import lru_cache
 from importlib import resources
 
-SELECT_SYSTEM = (
-    "You classify ONE fabrication step from a researcher's description of it. "
-    'Output ONLY JSON of the form {"step_type": "<one of the step types the '
-    'schema allows>"}.'
-)
+# Inputs are narrations addressed to the assistant (SAND), mostly spoken:
+# greetings and recording chatter must not become steps, samples or values.
+NARRATION_CONTEXT = """The text is a researcher's narration, usually spoken to the lab assistant \
+"SAND" and transcribed, sometimes typed. Besides the step it can contain talk that is not data: \
+greetings and addressing the assistant ("hi sand", "hello SAND, how are you"), recording remarks \
+("let's record", "okay, starting now", "that's it", "thanks"), filler and small talk. Ignore all of it: \
+it never names a step, a sample or a value, and "sand" there is the assistant, not a material."""
 
-FILL_SYSTEM = """You transcribe ONE fabrication step done to a batch of perovskite solar-cell samples \
+# SELECT's answer for an input that describes no step at all (only
+# greetings or remarks): the workflow skips it instead of inventing one.
+NO_STEP = 'No Fabrication Step'
+
+SELECT_SYSTEM = f"""You classify ONE fabrication step from a researcher's description of it.
+
+{NARRATION_CONTEXT}
+
+Output ONLY JSON of the form {{"step_type": "<one of the step types the schema allows>"}}. Answer \
+"{NO_STEP}" only if the text describes no fabrication step at all."""
+
+FILL_SYSTEM = f"""You transcribe ONE fabrication step done to a batch of perovskite solar-cell samples \
 into JSON.
+
+{NARRATION_CONTEXT}
 
 Output ONLY a JSON object matching the provided schema. One `variants` entry per GROUP of samples that \
 got the SAME parameters at this step; each entry has "samples" (a list of the BARE sample labels — just \
@@ -48,13 +63,16 @@ def step_types() -> tuple[str, ...]:
 
 
 def select_schema() -> dict:
-    """The SELECT extraction target: exactly one of the known step types.
-    The enum makes the pipeline's validation reject off-list answers."""
+    """The SELECT extraction target: exactly one of the known step types,
+    or NO_STEP. The enum makes the pipeline's validation reject off-list
+    answers."""
     return {
         'type': 'object',
         'additionalProperties': False,
         'required': ['step_type'],
-        'properties': {'step_type': {'type': 'string', 'enum': list(step_types())}},
+        'properties': {
+            'step_type': {'type': 'string', 'enum': [*step_types(), NO_STEP]}
+        },
     }
 
 
