@@ -100,6 +100,29 @@ async def create_upload(
         )
 
 
+async def entry_mainfile(
+    client: httpx.AsyncClient, upload_id: str, entry_id: str, step: str
+) -> str:
+    response = await client.post(
+        '/entries/query',
+        json={
+            'owner': 'visible',
+            'query': {'entry_id': entry_id, 'upload_id': upload_id},
+            'required': {'include': ['mainfile']},
+            'pagination': {'page_size': 1},
+        },
+    )
+    check_response(response, step=step)
+    entries = response.json().get('data', [])
+    if not entries:
+        raise NomadAPIError(
+            HTTPStatus.NOT_FOUND,
+            f'No entry {entry_id} found in upload {upload_id}',
+            step=step,
+        )
+    return entries[0]['mainfile']
+
+
 @dataclass(frozen=True)
 class RawFileWriter:
     """Raw-file writes that wait out NOMAD's upload processing.

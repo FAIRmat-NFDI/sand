@@ -1,3 +1,4 @@
+import asyncio
 import json
 from http import HTTPStatus
 
@@ -7,7 +8,9 @@ from nomad.utils import generate_entry_id
 
 from sand.services.nomad_api import NomadAPIError, NomadAuthError, entry_ref
 from sand.services.voice_eln import (
+    AUDIO_INPUT_M_DEF,
     EXPERIMENT_MAINFILE,
+    WRITTEN_NOTE_M_DEF,
     AudioUpload,
     VoiceElnService,
     normalize_audio_filename,
@@ -30,6 +33,9 @@ def _client(handler) -> httpx.AsyncClient:
 class _FakeNomad:
     """Programmable NOMAD API: upload status, raw files, and entry queries.
 
+    `entries` maps entry ids to mainfiles: an entry-id query finds its
+    mainfile and the entry's archive is that raw file, as if processed.
+
     `processing_polls` makes that many status GETs report process_running
     before the upload goes idle. `blocked_writes` rejects that many PUTs
     with NOMAD's processing-lock error (the check-then-PUT race).
@@ -44,6 +50,7 @@ class _FakeNomad:
         upload_exists=True,
     ):
         self.raw_files: dict[str, bytes] = {}
+        self.entries: dict[str, str] = {}
         self.query_results = query_results or []
         self.processing_polls = processing_polls
         self.blocked_writes = blocked_writes
@@ -89,6 +96,21 @@ class _FakeNomad:
             return httpx.Response(404, json={'detail': 'not found'})
         return httpx.Response(200, content=self.raw_files[name])
 
+    def _entries(self, request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == 'POST' and path.endswith('/entries/query'):
+            entry_id = json.loads(request.content)['query'].get('entry_id')
+            if not (self.entries and entry_id):
+                return httpx.Response(200, json={'data': self.query_results})
+            found = self.entries.get(entry_id)
+            data = [{'mainfile': found}] if found else []
+            return httpx.Response(200, json={'data': data})
+        mainfile = self.entries.get(path.split('/entries/')[1].split('/')[0])
+        if request.method != 'GET' or mainfile not in self.raw_files:
+            return httpx.Response(404, json={'detail': f'unexpected {path}'})
+        archive = json.loads(self.raw_files[mainfile])
+        return httpx.Response(200, json={'data': {'archive': archive}})
+
     def __call__(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
         if request.method == 'POST' and path.endswith('/uploads'):
@@ -99,8 +121,8 @@ class _FakeNomad:
             if path.endswith('/uploads/' + UPLOAD_ID):
                 return self._status()
             return httpx.Response(404, json={'detail': 'upload not found'})
-        if request.method == 'POST' and path.endswith('/entries/query'):
-            return httpx.Response(200, json={'data': self.query_results})
+        if '/entries/' in path:
+            return self._entries(request)
         return httpx.Response(404, json={'detail': f'unexpected {path}'})
 
     def archive(self, mainfile: str) -> dict:
@@ -464,3 +486,163 @@ def test_normalize_audio_filename():
     assert normalize_audio_filename('a.webm') == 'a.webm'
     assert normalize_audio_filename('notes.txt') is None
     assert normalize_audio_filename('no_extension') is None
+
+
+def _fake_with_inputs(audio: dict, note: dict) -> _FakeNomad:
+    """An experiment whose collection references one audio and one note;
+    entry 'x1' exists in the upload but is not an input of it."""
+    fake = _FakeNomad()
+    fake.raw_files[EXPERIMENT_MAINFILE] = json.dumps(
+        {
+            'data': {
+                'audios': [entry_ref(UPLOAD_ID, 'a1')],
+                'notes': [entry_ref(UPLOAD_ID, 'n1')],
+            }
+        }
+    ).encode()
+    for entry_id, data in (
+        ('a1', {'m_def': AUDIO_INPUT_M_DEF, **audio}),
+        ('n1', {'m_def': WRITTEN_NOTE_M_DEF, **note}),
+        ('x1', {'m_def': WRITTEN_NOTE_M_DEF, 'text': 'elsewhere'}),
+    ):
+        fake.entries[entry_id] = f'{entry_id}.archive.json'
+        fake.raw_files[f'{entry_id}.archive.json'] = json.dumps({'data': data}).encode()
+    return fake
+
+
+@pytest.mark.asyncio
+async def test_collect_inputs_takes_the_most_human_text_and_orders_by_time():
+    fake = _fake_with_inputs(
+        audio={
+            'transcript': 'machine',
+            'corrected_transcript': 'said',
+            'intended_transcript': 'meant',
+            'transcription_status': 'COMPLETED',
+            'datetime': '2026-09-22T10:00:00+00:00',
+        },
+        note={'text': 'a note', 'datetime': '2026-09-22T09:00:00+00:00'},
+    )
+
+    async with _client(fake) as client:
+        inputs = await _service().collect_inputs(client, UPLOAD_ID, SAND_COLLECTION_ID)
+
+    assert [i.entry_id for i in inputs] == ['n1', 'a1']
+    audio = inputs[1]
+    assert (audio.text, audio.corrected, audio.status) == ('meant', True, 'COMPLETED')
+    assert inputs[0].status is None
+
+
+@pytest.mark.asyncio
+async def test_collect_inputs_reports_untranscribed_audio_without_text():
+    fake = _fake_with_inputs(
+        audio={'transcription_status': 'PENDING'}, note={'text': 'a note'}
+    )
+
+    async with _client(fake) as client:
+        inputs = await _service().collect_inputs(client, UPLOAD_ID, SAND_COLLECTION_ID)
+
+    audio = next(i for i in inputs if i.kind == 'audio')
+    assert (audio.text, audio.corrected, audio.status) == (None, False, 'PENDING')
+
+
+@pytest.mark.asyncio
+async def test_revise_audio_sets_and_withdraws_the_correction():
+    fake = _fake_with_inputs(audio={'transcript': 'machine'}, note={'text': 'n'})
+
+    async with _client(fake) as client:
+        service = _service()
+        await service.revise_input(
+            client, UPLOAD_ID, 'a1', 'fixed', collection_entry_id=SAND_COLLECTION_ID
+        )
+        assert fake.archive('a1.archive.json')['data']['corrected_transcript'] == (
+            'fixed'
+        )
+        await service.revise_input(
+            client, UPLOAD_ID, 'a1', '  ', collection_entry_id=SAND_COLLECTION_ID
+        )
+
+    audio = fake.archive('a1.archive.json')['data']
+    assert 'corrected_transcript' not in audio
+    assert audio['transcript'] == 'machine'
+
+
+@pytest.mark.asyncio
+async def test_revise_note_rejects_empty_text():
+    fake = _fake_with_inputs(audio={}, note={'text': 'keep me'})
+
+    async with _client(fake) as client:
+        with pytest.raises(ValueError):
+            await _service().revise_input(
+                client, UPLOAD_ID, 'n1', ' ', collection_entry_id=SAND_COLLECTION_ID
+            )
+
+    assert fake.archive('n1.archive.json')['data']['text'] == 'keep me'
+
+
+@pytest.mark.asyncio
+async def test_revise_rejects_an_entry_outside_the_collection():
+    fake = _fake_with_inputs(audio={}, note={'text': 'n'})
+    puts_before = fake.put_attempts
+
+    async with _client(fake) as client:
+        with pytest.raises(NomadAPIError) as excinfo:
+            await _service().revise_input(
+                client,
+                UPLOAD_ID,
+                'x1',
+                'hijack',
+                collection_entry_id=SAND_COLLECTION_ID,
+            )
+
+    assert excinfo.value.status_code == HTTPStatus.NOT_FOUND
+    assert fake.put_attempts == puts_before
+
+
+@pytest.mark.asyncio
+async def test_revise_datetime_reorders_the_inputs():
+    fake = _fake_with_inputs(
+        audio={'datetime': '2026-09-22T10:00:00+00:00'},
+        note={'text': 'n', 'datetime': '2026-09-22T09:00:00+00:00'},
+    )
+
+    async with _client(fake) as client:
+        service = _service()
+        await service.revise_input_datetime(
+            client,
+            UPLOAD_ID,
+            'n1',
+            '2026-09-22T11:00:00Z',
+            collection_entry_id=SAND_COLLECTION_ID,
+        )
+        inputs = await service.collect_inputs(client, UPLOAD_ID, SAND_COLLECTION_ID)
+
+    assert [i.entry_id for i in inputs] == ['a1', 'n1']
+
+
+@pytest.mark.asyncio
+async def test_concurrent_revisions_of_one_input_keep_both_changes():
+    fake = _fake_with_inputs(audio={'transcript': 'machine'}, note={'text': 'n'})
+
+    async def interleaving(request: httpx.Request) -> httpx.Response:
+        # yield on every request so the two revisions actually overlap
+        await asyncio.sleep(0)
+        return fake(request)
+
+    async with _client(interleaving) as client:
+        service = _service()
+        await asyncio.gather(
+            service.revise_input(
+                client, UPLOAD_ID, 'a1', 'fixed', collection_entry_id=SAND_COLLECTION_ID
+            ),
+            service.revise_input_datetime(
+                client,
+                UPLOAD_ID,
+                'a1',
+                '2026-09-22T11:00:00Z',
+                collection_entry_id=SAND_COLLECTION_ID,
+            ),
+        )
+
+    audio = fake.archive('a1.archive.json')['data']
+    assert audio['corrected_transcript'] == 'fixed'
+    assert audio['datetime'] == '2026-09-22T11:00:00+00:00'

@@ -338,3 +338,124 @@ body {
   font-size: 0.85rem;
   color: #444;
 }
+
+/* Inputs card: one tile per recording/note, time-ordered (the
+   extraction order). A tile = a small meta header + a few lines of
+   text; click it to revise in the Input text box above. The list
+   scrolls internally so it never pushes anything below it. */
+.inputs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.inputs-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 2px;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.inputs-list .inputs-empty {
+  color: #888;
+  font-size: 0.9rem;
+  padding: 10px 4px;
+}
+
+.input-tile {
+  background: #fafafa;
+  border: 1px solid #e8e8e8;
+  border-left: 3px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.input-tile:hover {
+  background: #f2f2f2;
+}
+
+.input-tile.selected {
+  background: #fff8e1;
+  border-left-color: #f9a825;
+}
+
+.input-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: #757575;
+}
+
+.input-meta .material-icons {
+  font-size: 16px;
+  color: #757575;
+}
+
+.input-meta .input-kind {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.input-meta .input-when {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.input-meta .input-when:hover {
+  color: #424242;
+  text-decoration: underline dotted;
+}
+
+.input-meta .input-time-edit {
+  font-size: 0.78rem;
+  border: 1px solid #f9a825;
+  border-radius: 4px;
+  padding: 0 2px;
+}
+
+.input-meta .input-badge {
+  color: #2e7d32;
+}
+
+.input-meta .input-nomad-link {
+  margin-left: auto;
+  color: #9e9e9e;
+  text-decoration: none;
+  font-size: 16px;
+  visibility: hidden;
+}
+
+.input-tile:hover .input-nomad-link,
+.input-tile:focus-within .input-nomad-link {
+  visibility: visible;
+}
+
+.input-text {
+  margin-top: 6px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.input-text.input-pending {
+  color: #9e9e9e;
+  font-style: italic;
+}
+
+/* The Input text box doubles as the revision editor: the mode is made
+   unmistakable by the label, the swapped buttons, and this accent. */
+.text-field.revising {
+  border-color: #f9a825;
+  background: #fffdf5;
+}

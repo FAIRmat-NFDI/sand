@@ -7,7 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/keycloak-js@25/dist/keycloak.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-  <link rel="stylesheet" href="static/styles.css">
+  <link rel="stylesheet" href="static/styles.css?v=5">
 </head>
 <body>
   <div class="app-bar">
@@ -64,7 +64,7 @@
 
         <hr class="divider">
 
-        <label class="text-field-label" for="text">Input text</label>
+        <label class="text-field-label" for="text" id="text-label">Input text</label>
         <textarea class="text-field" id="text" placeholder="Type a step note here and save it to the selected experiment, or record audio."></textarea>
 
         <div class="controls">
@@ -83,6 +83,13 @@
           <button class="btn btn-outlined" id="save-note-btn" type="button">
             <span class="material-icons">note_add</span>
             Save note
+          </button>
+          <button class="btn btn-primary" id="save-revision-btn" type="button" hidden>
+            <span class="material-icons">save</span>
+            Save revision
+          </button>
+          <button class="btn btn-outlined" id="cancel-revision-btn" type="button" hidden>
+            Cancel
           </button>
           <input type="file" id="upload-input" accept="audio/wav,audio/mp3,audio/mpeg,audio/mp4,audio/x-m4a,audio/webm,audio/ogg,audio/flac" hidden>
           <span class="status-text" id="status"></span>
@@ -122,6 +129,16 @@
         <p class="error-text" id="error" role="alert"></p>
       </div>
 
+      <div class="card" id="inputs-card" hidden>
+        <div class="inputs-header">
+          <div class="results-title">Inputs <span id="inputs-count"></span></div>
+          <button class="btn btn-text" id="refresh-inputs-btn" type="button" title="Refresh">
+            <span class="material-icons">refresh</span>
+          </button>
+        </div>
+        <ul class="inputs-list" id="inputs-list"></ul>
+      </div>
+
       <div class="card" id="extract-result" hidden>
         <div class="results-title">Extracted experiment</div>
         <p class="audio-entry-text" id="derived-entry"></p>
@@ -131,6 +148,6 @@
     </div>
   </div>
 
-  <script src="static/app.js" defer></script>
+  <script src="static/app.js?v=5" defer></script>
 </body>
 </html>

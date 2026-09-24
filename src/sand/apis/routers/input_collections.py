@@ -17,11 +17,17 @@ from sand.models.input_collections import (
     InputCollectionListResponse,
     InputCollectionResponse,
     InputCollectionSummaryModel,
+    InputItemModel,
+    InputListResponse,
+    ReviseDatetimeRequest,
+    ReviseInputRequest,
+    ReviseInputResponse,
     SheetUploadResponse,
 )
 from sand.services.nomad_api import NomadAPIError, NomadAuthError, check_response
 from sand.services.voice_eln import (
     AUDIO_EXTENSIONS,
+    EXPERIMENT_INFO_LABEL,
     AudioUpload,
     DerivedSheet,
     VoiceElnService,
@@ -259,6 +265,112 @@ async def add_note(
     return InputCollectionResponse(
         **_entry_response(voice, result.upload_id, result.entry_id)
     )
+
+
+@router.get('/input-collections/{upload_id}/inputs', response_model=InputListResponse)
+async def list_inputs(
+    upload_id: str,
+    request: Request,
+    collection_entry_id: str,
+) -> InputListResponse:
+    """The experiment's inputs in extraction order (the experiment_info
+    form note is not listed - it is edited through the form)."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    try:
+        async with voice.build_client(token) as client:
+            inputs = await voice.collect_inputs(
+                client, upload_id, collection_entry_id=collection_entry_id
+            )
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return InputListResponse(
+        inputs=[
+            InputItemModel(
+                entry_id=item.entry_id,
+                entry_url=voice.entry_url(upload_id, item.entry_id),
+                kind=item.kind,
+                label=item.label,
+                datetime=item.datetime,
+                text=item.text,
+                corrected=item.corrected,
+                status=item.status,
+            )
+            for item in inputs
+            if item.label != EXPERIMENT_INFO_LABEL
+        ]
+    )
+
+
+@router.post(
+    '/input-collections/{upload_id}/inputs/{entry_id}/text',
+    response_model=ReviseInputResponse,
+)
+async def revise_input(
+    upload_id: str,
+    entry_id: str,
+    body: ReviseInputRequest,
+    request: Request,
+    collection_entry_id: str,
+) -> ReviseInputResponse:
+    """Save a human revision of one input.
+
+    Audio -> corrected_transcript (empty text withdraws the correction,
+    the machine transcript stays); note -> the text itself (empty is
+    rejected). Only entries referenced by the collection are revisable.
+    """
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    try:
+        async with voice.build_client(token) as client:
+            kind = await voice.revise_input(
+                client,
+                upload_id,
+                entry_id,
+                body.text,
+                collection_entry_id=collection_entry_id,
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return ReviseInputResponse(kind=kind)
+
+
+@router.post(
+    '/input-collections/{upload_id}/inputs/{entry_id}/datetime',
+    response_model=ReviseInputResponse,
+)
+async def revise_input_datetime(
+    upload_id: str,
+    entry_id: str,
+    body: ReviseDatetimeRequest,
+    request: Request,
+    collection_entry_id: str,
+) -> ReviseInputResponse:
+    """Set the datetime of one input, reordering it on the timeline."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    try:
+        async with voice.build_client(token) as client:
+            kind = await voice.revise_input_datetime(
+                client,
+                upload_id,
+                entry_id,
+                body.datetime,
+                collection_entry_id=collection_entry_id,
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return ReviseInputResponse(kind=kind)
 
 
 XLSX_MEDIA_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'

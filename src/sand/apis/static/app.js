@@ -160,7 +160,10 @@ async function loadExperiments(selectEntryId) {
   // restoring the selection fires no 'change' event: resume the polling
   // of an unfinished extraction explicitly (reload-proof progress)
   const restored = selectedExperiment();
-  if (restored) startExtractPolling(restored);
+  if (restored) {
+    startExtractPolling(restored);
+    startInputsRefresh(restored);
+  }
 }
 
 experimentSelect.addEventListener("change", () => {
@@ -246,10 +249,9 @@ document.getElementById("create-experiment-btn").addEventListener("click", async
     // asynchronously, so an immediate list refetch would not have it.
     addExperimentOption(created);
     experimentSelect.value = created.entry_id;
-    try {
-      localStorage.setItem(SELECTED_EXPERIMENT_KEY, created.entry_id);
-    } catch { /* ignore */ }
-    updateExperimentLink();
+    // setting .value fires no 'change': dispatch it so the new selection
+    // gets the same reset (inputs, polling, stored choice, link)
+    experimentSelect.dispatchEvent(new Event("change"));
   } catch (err) {
     showError("Network error: " + err.message);
   }
@@ -428,6 +430,7 @@ function stopLiveTranscript(conn, detach = false) {
 
 const storeLiveLabel = document.getElementById("store-live-label");
 const storeLiveToggle = document.getElementById("store-live-toggle");
+let storeLiveConfigured = false;
 const STORE_LIVE_KEY = "sand.storeLiveTranscript";
 
 async function initUiConfig() {
@@ -439,6 +442,7 @@ async function initUiConfig() {
     try { remembered = localStorage.getItem(STORE_LIVE_KEY); } catch { /* ignore */ }
     storeLiveToggle.checked =
       remembered === null ? Boolean(cfg.store_live_transcript) : remembered === "true";
+    storeLiveConfigured = true;
     storeLiveLabel.hidden = false;
   } catch { /* toggle stays hidden; recording works without it */ }
 }
@@ -575,6 +579,10 @@ async function handleEntryResponse(fetchPromise, failPrefix, message, linkText) 
   }
   const data = await res.json();
   showEntryLink(message, data.entry_url, linkText);
+  // a new input exists: show it in the list (audio rows start as
+  // "transcribing..." and the list keeps refreshing until text arrives)
+  const experiment = selectedExperiment();
+  if (experiment) startInputsRefresh(experiment, 1000);
   return true;
 }
 
@@ -654,6 +662,333 @@ const extractResult = document.getElementById("extract-result");
 const extractSummary = document.getElementById("extract-summary");
 const derivedEntryEl = document.getElementById("derived-entry");
 const sheetIssuesEl = document.getElementById("sheet-issues");
+
+// --- inputs card: every recording/note, click to revise ----------------
+// Rows come in extraction order. Clicking a row loads its text into the
+// big Input text box as an explicit "revising" mode: the label and
+// buttons swap, and any unsaved note draft is stashed and restored on
+// exit - no data loss, no second cramped editor. Audio revisions go to
+// corrected_transcript (clearing withdraws them); note revisions
+// overwrite the note text.
+
+const inputsCard = document.getElementById("inputs-card");
+const inputsList = document.getElementById("inputs-list");
+const inputsCount = document.getElementById("inputs-count");
+const refreshInputsBtn = document.getElementById("refresh-inputs-btn");
+const textLabel = document.getElementById("text-label");
+const saveRevisionBtn = document.getElementById("save-revision-btn");
+const cancelRevisionBtn = document.getElementById("cancel-revision-btn");
+
+let inputsGeneration = 0;
+let inputsRefreshTimer = null;
+// {item, experiment, draftBackup} while the text box is in revising mode
+let revising = null;
+
+function stopInputsRefresh() {
+  inputsGeneration += 1;
+  if (inputsRefreshTimer) clearTimeout(inputsRefreshTimer);
+  inputsRefreshTimer = null;
+}
+
+function inputTime(item) {
+  if (!item.datetime) return "";
+  const parsed = new Date(item.datetime);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const time = parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (parsed.toDateString() === new Date().toDateString()) return time;
+  return parsed.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + time;
+}
+
+// while a time editor is open, list re-renders are held off so the
+// input field is not wiped mid-edit
+let timeEditing = false;
+
+function toLocalInputValue(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
+    + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+}
+
+function beginTimeEdit(whenSpan, item, experiment) {
+  if (timeEditing) return;
+  timeEditing = true;
+  const editor = document.createElement("input");
+  editor.type = "datetime-local";
+  editor.className = "input-time-edit";
+  editor.setAttribute("aria-label", "Time of this input (reorders the inputs)");
+  editor.value = toLocalInputValue(item.datetime);
+  editor.addEventListener("click", (e) => e.stopPropagation());
+  let done = false;
+  const finish = (refresh) => {
+    if (done) return;
+    done = true;
+    timeEditing = false;
+    editor.replaceWith(whenSpan);
+    // the server returns once NOMAD reprocessed the entry
+    if (refresh) startInputsRefresh(experiment);
+  };
+  let saving = false;
+  const commit = async () => {
+    // disabling the focused editor below fires blur -> commit again
+    if (done || saving) return;
+    if (!editor.value || toLocalInputValue(item.datetime) === editor.value) {
+      finish(false);
+      return;
+    }
+    const iso = new Date(editor.value).toISOString();
+    clearError();
+    saving = true;
+    editor.disabled = true;
+    try {
+      const res = await authFetch(
+        "api/input-collections/" + experiment.upload_id
+        + "/inputs/" + encodeURIComponent(item.entry_id)
+        + "/datetime?collection_entry_id=" + encodeURIComponent(experiment.entry_id),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ datetime: iso }),
+        });
+      if (!res.ok) {
+        showError("Could not change the time: " + await errorDetail(res));
+        finish(false);
+        return;
+      }
+      finish(true);
+    } catch (err) {
+      showError("Network error: " + err.message);
+      finish(false);
+    }
+  };
+  editor.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") commit();
+    if (e.key === "Escape") finish(false);
+  });
+  editor.addEventListener("blur", commit);
+  whenSpan.replaceWith(editor);
+  editor.focus();
+}
+
+function inputDescription(item) {
+  return (item.kind === "audio" ? "recording" : "note")
+    + (inputTime(item) ? " from " + inputTime(item) : "");
+}
+
+function beginRevision(item, experiment) {
+  if (revising && revising.item.entry_id === item.entry_id) return;
+  // entering revision mode is non-destructive: a note draft is stashed
+  // and restored on exit. Only switching rows with unsaved revision
+  // edits would lose something - ask then.
+  if (revising && textArea.value.trim() !== (revising.item.text || "").trim()
+      && !window.confirm("Discard the unsaved revision and open this input?")) {
+    return;
+  }
+  const draftBackup = revising ? revising.draftBackup : textArea.value;
+  revising = { item, experiment, draftBackup };
+  textArea.value = item.text || "";
+  textArea.classList.add("revising");
+  textLabel.textContent = "Revising the " + inputDescription(item)
+    + (item.kind === "audio" ? " (saved as corrected transcript)" : "");
+  recordBtn.hidden = true;
+  uploadBtn.hidden = true;
+  saveNoteBtn.hidden = true;
+  storeLiveLabel.hidden = true;
+  saveRevisionBtn.hidden = false;
+  cancelRevisionBtn.hidden = false;
+  highlightSelectedRow();
+  textArea.focus();
+  textArea.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function endRevision() {
+  if (!revising) return;
+  textArea.value = revising.draftBackup;
+  revising = null;
+  textArea.classList.remove("revising");
+  textLabel.textContent = "Input text";
+  recordBtn.hidden = false;
+  uploadBtn.hidden = false;
+  saveNoteBtn.hidden = false;
+  // the toggle only exists when the relay is configured; initUiConfig
+  // decides, so just restore what it decided
+  storeLiveLabel.hidden = !storeLiveConfigured;
+  saveRevisionBtn.hidden = true;
+  cancelRevisionBtn.hidden = true;
+  highlightSelectedRow();
+}
+
+function highlightSelectedRow() {
+  for (const tile of inputsList.querySelectorAll(".input-tile")) {
+    tile.classList.toggle(
+      "selected",
+      Boolean(revising) && tile.dataset.entryId === revising.item.entry_id
+    );
+  }
+}
+
+cancelRevisionBtn.addEventListener("click", endRevision);
+
+saveRevisionBtn.addEventListener("click", async () => {
+  if (!revising) return;
+  const { item, experiment } = revising;
+  const text = textArea.value.trim();
+  if (text === (item.text || "").trim()) {
+    // unchanged: save nothing - a stored revision must mean a human
+    // actually changed something
+    endRevision();
+    return;
+  }
+  clearError();
+  saveRevisionBtn.disabled = true;
+  try {
+    const res = await authFetch(
+      "api/input-collections/" + experiment.upload_id
+      + "/inputs/" + encodeURIComponent(item.entry_id)
+      + "/text?collection_entry_id=" + encodeURIComponent(experiment.entry_id),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+    if (!res.ok) {
+      showError("Could not save the revision: " + await errorDetail(res));
+      return;
+    }
+    endRevision();
+    // the server returns once NOMAD reprocessed the entry
+    startInputsRefresh(experiment);
+  } catch (err) {
+    showError("Network error: " + err.message);
+  } finally {
+    saveRevisionBtn.disabled = false;
+  }
+});
+
+function renderInputs(experiment, items) {
+  inputsCard.hidden = false;
+  inputsCount.textContent = "(" + items.length + ")";
+  inputsList.replaceChildren();
+  if (!items.length) {
+    const li = document.createElement("li");
+    li.className = "inputs-empty";
+    li.textContent = "No inputs yet - record or type a note above.";
+    inputsList.append(li);
+    return;
+  }
+  for (const item of items) {
+    const li = document.createElement("li");
+    li.className = "input-tile";
+    li.dataset.entryId = item.entry_id;
+
+    const meta = document.createElement("div");
+    meta.className = "input-meta";
+    const icon = document.createElement("span");
+    icon.className = "material-icons";
+    icon.textContent = item.kind === "audio" ? "mic" : "edit_note";
+    const kind = document.createElement("span");
+    kind.className = "input-kind";
+    kind.textContent = item.kind === "audio" ? "Recording" : "Note";
+    meta.append(icon, kind);
+    const when = document.createElement("button");
+    when.type = "button";
+    when.className = "input-when";
+    const time = inputTime(item);
+    when.textContent = "\u00b7 " + (time || "set time");
+    when.title = "Click to change the time (reorders the inputs)";
+    when.addEventListener("click", (e) => {
+      e.stopPropagation();
+      beginTimeEdit(when, item, experiment);
+    });
+    meta.append(when);
+    if (item.corrected) {
+      const badge = document.createElement("span");
+      badge.className = "input-badge";
+      badge.textContent = "\u00b7 \u270e corrected";
+      meta.append(badge);
+    }
+    const nomadLink = document.createElement("a");
+    nomadLink.href = item.entry_url;
+    nomadLink.target = "_blank";
+    nomadLink.rel = "noopener noreferrer";
+    nomadLink.className = "material-icons input-nomad-link";
+    nomadLink.textContent = "open_in_new";
+    nomadLink.title = "View on NOMAD";
+    nomadLink.addEventListener("click", (e) => e.stopPropagation());
+    meta.append(nomadLink);
+
+    const text = document.createElement("div");
+    text.className = "input-text";
+    if (item.text) {
+      text.textContent = item.text;
+    } else {
+      text.textContent =
+        item.status === "FAILED" ? "transcription failed" : "transcribing...";
+      text.classList.add("input-pending");
+    }
+
+    li.append(meta, text);
+    li.tabIndex = 0;
+    li.setAttribute("aria-label", "Revise the " + inputDescription(item));
+    li.addEventListener("click", () => beginRevision(item, experiment));
+    li.addEventListener("keydown", (e) => {
+      // only the tile itself: Enter/Space on its time button or link
+      // must keep their own action
+      if (e.target !== li || (e.key !== "Enter" && e.key !== " ")) return;
+      e.preventDefault();
+      beginRevision(item, experiment);
+    });
+    inputsList.append(li);
+  }
+  highlightSelectedRow();
+}
+
+// a refresh can outlive its experiment (a save finishing after the user
+// switched), so check the selection as well as the generation
+function inputsStillWanted(experiment, generation) {
+  return generation === inputsGeneration
+    && selectedExperiment()?.entry_id === experiment.entry_id;
+}
+
+async function loadInputs(experiment, generation) {
+  if (!inputsStillWanted(experiment, generation)) return;
+  let res;
+  try {
+    res = await authFetch(
+      "api/input-collections/" + experiment.upload_id
+      + "/inputs?collection_entry_id=" + encodeURIComponent(experiment.entry_id));
+  } catch (err) {
+    return; // next manual refresh or upload will retry
+  }
+  if (!inputsStillWanted(experiment, generation)) return;
+  if (!res.ok) return;
+  const data = await res.json().catch(() => null);
+  if (!inputsStillWanted(experiment, generation) || !data) return;
+  if (timeEditing) {
+    // don't wipe an open time editor; try again shortly
+    inputsRefreshTimer = setTimeout(() => loadInputs(experiment, generation), 3000);
+    return;
+  }
+  renderInputs(experiment, data.inputs);
+  // keep refreshing while any audio still has no text and no failure
+  if (data.inputs.some((i) => i.kind === "audio" && !i.text && i.status !== "FAILED")) {
+    inputsRefreshTimer = setTimeout(() => loadInputs(experiment, generation), 5000);
+  }
+}
+
+function startInputsRefresh(experiment, delayMs) {
+  stopInputsRefresh();
+  const generation = inputsGeneration;
+  inputsRefreshTimer = setTimeout(
+    () => loadInputs(experiment, generation), delayMs || 0);
+}
+
+refreshInputsBtn.addEventListener("click", () => {
+  const experiment = selectedExperiment();
+  if (experiment) startInputsRefresh(experiment);
+});
 
 // --- asynchronous extraction (issue #19) --------------------------------
 // Extract starts a workflow and returns a job id; progress lives in a
@@ -767,7 +1102,14 @@ experimentSelect.addEventListener("change", () => {
   extractStatus.textContent = "";
   extractResult.hidden = true;
   const experiment = selectedExperiment();
-  if (experiment) startExtractPolling(experiment);
+  endRevision();
+  inputsList.replaceChildren();
+  inputsCount.textContent = "";
+  inputsCard.hidden = true;
+  if (experiment) {
+    startExtractPolling(experiment);
+    startInputsRefresh(experiment);
+  }
 });
 
 extractBtn.addEventListener("click", async () => {

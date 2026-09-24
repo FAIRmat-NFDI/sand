@@ -17,6 +17,7 @@ from sand.services.nomad_api import (
     check_response,
     create_upload,
     entry_id_from_ref,
+    entry_mainfile,
     entry_ref,
     gui_entry_url,
 )
@@ -131,6 +132,10 @@ class CollectedInput:
     text: str | None
     label: str
     datetime: str | None
+    # a human revision exists (audio: corrected_transcript is set)
+    corrected: bool = False
+    # audio transcription_status (PENDING/COMPLETED/FAILED); None for notes
+    status: str | None = None
 
 
 _TRANSCRIPT_FIELDS = (
@@ -157,6 +162,10 @@ class VoiceElnService:
     ) -> None:
         self._base_url = base_url
         self._writer = RawFileWriter(retry_interval_s, write_timeout_s)
+        # Revisions read-modify-write the whole input archive; concurrent
+        # ones on the same entry (a time edit and a text save) would drop
+        # each other's change. Per-process only: enough for one app worker.
+        self._input_locks: dict[str, asyncio.Lock] = {}
 
     def build_client(self, token: str) -> httpx.AsyncClient:
         return build_client(self._base_url, token)
@@ -254,7 +263,7 @@ class VoiceElnService:
         collection_entry_id: str,
     ) -> EntryHandle:
         """Store the experiment-info form JSON as its dedicated
-        WrittenNote (label routing, see docs/handover.md §8)."""
+        WrittenNote."""
         note = _Note(
             text=info_json,
             label=EXPERIMENT_INFO_LABEL,
@@ -686,13 +695,159 @@ class VoiceElnService:
             raw = section.get('text')
             text = str(raw).strip() if raw and str(raw).strip() else None
 
+        corrected = bool(
+            section.get('corrected_transcript')
+            and str(section['corrected_transcript']).strip()
+        )
         return CollectedInput(
             entry_id=entry_id,
             kind=kind,
             text=text,
             label=str(section.get('label') or ''),
             datetime=section.get('datetime'),
+            corrected=corrected,
+            status=section.get('transcription_status') if kind == 'audio' else None,
         )
+
+    async def revise_input(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        entry_id: str,
+        text: str,
+        collection_entry_id: str,
+    ) -> str:
+        """Save a human revision of one input; returns its kind.
+
+        Audio: the machine transcript stays untouched, the revision goes
+        to corrected_transcript (voice-eln's normalizer stamps
+        corrected_at and the fingerprint on reprocess); an empty text
+        withdraws the correction, per that field's semantics. Note: the
+        text IS human text, so it is overwritten directly - empty raises.
+        """
+        async with self._input_lock(entry_id):
+            mainfile, archive = await self._locate_input(
+                client, upload_id, entry_id, collection_entry_id, step='revise_input'
+            )
+            section = archive.get('data') or {}
+            m_def = str(section.get('m_def') or '')
+            text = text.strip()
+
+            if m_def.endswith('AudioInput'):
+                if text:
+                    section['corrected_transcript'] = text
+                else:
+                    section.pop('corrected_transcript', None)
+                kind = 'audio'
+            elif m_def.endswith('WrittenNote'):
+                if not text:
+                    raise ValueError('a note cannot be empty')
+                section['text'] = text
+                kind = 'note'
+            else:
+                raise NomadAPIError(
+                    HTTPStatus.NOT_FOUND,
+                    f'entry {entry_id} is not a revisable input',
+                    step='revise_input',
+                )
+            archive['data'] = section
+            await self._write_input(client, upload_id, mainfile, archive)
+            return kind
+
+    async def revise_input_datetime(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        entry_id: str,
+        datetime_value: str,
+        collection_entry_id: str,
+    ) -> str:
+        """Move one input on the timeline; returns its kind.
+
+        The inputs list (and so the extraction narration order) follows
+        these datetimes, so editing one reorders the inputs.
+        """
+        parsed = _parse_input_datetime(datetime_value)
+        if parsed is None:
+            raise ValueError(f'not a valid datetime: {datetime_value!r}')
+        async with self._input_lock(entry_id):
+            mainfile, archive = await self._locate_input(
+                client,
+                upload_id,
+                entry_id,
+                collection_entry_id,
+                step='revise_input_datetime',
+            )
+            section = archive.get('data') or {}
+            m_def = str(section.get('m_def') or '')
+            if m_def.endswith('AudioInput'):
+                kind = 'audio'
+            elif m_def.endswith('WrittenNote'):
+                kind = 'note'
+            else:
+                raise NomadAPIError(
+                    HTTPStatus.NOT_FOUND,
+                    f'entry {entry_id} is not a revisable input',
+                    step='revise_input_datetime',
+                )
+            section['datetime'] = parsed.isoformat()
+            archive['data'] = section
+            await self._write_input(client, upload_id, mainfile, archive)
+            return kind
+
+    def _input_lock(self, entry_id: str) -> asyncio.Lock:
+        return self._input_locks.setdefault(entry_id, asyncio.Lock())
+
+    async def _write_input(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        mainfile: str,
+        archive: dict,
+    ) -> None:
+        """Write a revised input and wait for NOMAD to reprocess it, so a
+        list read right after the request already sees the change."""
+        await self._writer.write_archive(client, upload_id, mainfile, archive)
+        await self._writer.wait_until_writable(
+            client,
+            upload_id,
+            time.monotonic() + self._writer.write_timeout_s,
+            mainfile,
+        )
+
+    async def _locate_input(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        entry_id: str,
+        collection_entry_id: str,
+        step: str,
+    ) -> tuple[str, dict]:
+        """Mainfile and archive of one input; 404 unless the collection
+        references the entry (revisions must stay within the experiment)."""
+        collection_mainfile = await self._resolve_collection_mainfile(
+            client, upload_id, collection_entry_id
+        )
+        collection = await self._writer.read_archive(
+            client, upload_id, collection_mainfile
+        )
+        data = collection.get('data') or {}
+        referenced = {
+            entry_id_from_ref(ref)
+            for field in ('audios', 'notes')
+            for ref in (data.get(field) or [])
+        }
+        if entry_id not in referenced:
+            raise NomadAPIError(
+                HTTPStatus.NOT_FOUND,
+                f'entry {entry_id} is not an input of this collection',
+                step=step,
+            )
+        mainfile = await entry_mainfile(
+            client, upload_id, entry_id, step='find_input_entry'
+        )
+        archive = await self._writer.read_archive(client, upload_id, mainfile)
+        return mainfile, archive
 
     async def _append_to_collection(
         self,
@@ -735,24 +890,9 @@ class VoiceElnService:
         """return mainfile path"""
         if collection_entry_id == generate_entry_id(upload_id, EXPERIMENT_MAINFILE):
             return EXPERIMENT_MAINFILE
-        response = await client.post(
-            '/entries/query',
-            json={
-                'owner': 'visible',
-                'query': {'entry_id': collection_entry_id, 'upload_id': upload_id},
-                'required': {'include': ['mainfile']},
-                'pagination': {'page_size': 1},
-            },
+        return await entry_mainfile(
+            client, upload_id, collection_entry_id, step='find_collection'
         )
-        check_response(response, step='find_collection')
-        entries = response.json().get('data', [])
-        if not entries:
-            raise NomadAPIError(
-                HTTPStatus.NOT_FOUND,
-                f'No entry {collection_entry_id} found in upload {upload_id}',
-                step='find_collection',
-            )
-        return entries[0]['mainfile']
 
 
 def _utc_now_iso() -> str:
