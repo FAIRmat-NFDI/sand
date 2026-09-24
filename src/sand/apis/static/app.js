@@ -249,10 +249,9 @@ document.getElementById("create-experiment-btn").addEventListener("click", async
     // asynchronously, so an immediate list refetch would not have it.
     addExperimentOption(created);
     experimentSelect.value = created.entry_id;
-    try {
-      localStorage.setItem(SELECTED_EXPERIMENT_KEY, created.entry_id);
-    } catch { /* ignore */ }
-    updateExperimentLink();
+    // setting .value fires no 'change': dispatch it so the new selection
+    // gets the same reset (inputs, polling, stored choice, link)
+    experimentSelect.dispatchEvent(new Event("change"));
   } catch (err) {
     showError("Network error: " + err.message);
   }
@@ -719,6 +718,7 @@ function beginTimeEdit(whenSpan, item, experiment) {
   const editor = document.createElement("input");
   editor.type = "datetime-local";
   editor.className = "input-time-edit";
+  editor.setAttribute("aria-label", "Time of this input (reorders the inputs)");
   editor.value = toLocalInputValue(item.datetime);
   editor.addEventListener("click", (e) => e.stopPropagation());
   let done = false;
@@ -858,9 +858,8 @@ saveRevisionBtn.addEventListener("click", async () => {
       return;
     }
     endRevision();
-    // the entry reprocesses asynchronously; refresh shortly so the row
-    // shows the effective text (withdrawn corrections included)
-    startInputsRefresh(experiment, 1500);
+    // the server returns once NOMAD reprocessed the entry
+    startInputsRefresh(experiment);
   } catch (err) {
     showError("Network error: " + err.message);
   } finally {
@@ -893,7 +892,8 @@ function renderInputs(experiment, items) {
     kind.className = "input-kind";
     kind.textContent = item.kind === "audio" ? "Recording" : "Note";
     meta.append(icon, kind);
-    const when = document.createElement("span");
+    const when = document.createElement("button");
+    when.type = "button";
     when.className = "input-when";
     const time = inputTime(item);
     when.textContent = "\u00b7 " + (time || "set time");
@@ -930,14 +930,30 @@ function renderInputs(experiment, items) {
     }
 
     li.append(meta, text);
+    li.tabIndex = 0;
+    li.setAttribute("aria-label", "Revise the " + inputDescription(item));
     li.addEventListener("click", () => beginRevision(item, experiment));
+    li.addEventListener("keydown", (e) => {
+      // only the tile itself: Enter/Space on its time button or link
+      // must keep their own action
+      if (e.target !== li || (e.key !== "Enter" && e.key !== " ")) return;
+      e.preventDefault();
+      beginRevision(item, experiment);
+    });
     inputsList.append(li);
   }
   highlightSelectedRow();
 }
 
+// a refresh can outlive its experiment (a save finishing after the user
+// switched), so check the selection as well as the generation
+function inputsStillWanted(experiment, generation) {
+  return generation === inputsGeneration
+    && selectedExperiment()?.entry_id === experiment.entry_id;
+}
+
 async function loadInputs(experiment, generation) {
-  if (generation !== inputsGeneration) return;
+  if (!inputsStillWanted(experiment, generation)) return;
   let res;
   try {
     res = await authFetch(
@@ -946,10 +962,10 @@ async function loadInputs(experiment, generation) {
   } catch (err) {
     return; // next manual refresh or upload will retry
   }
-  if (generation !== inputsGeneration) return;
+  if (!inputsStillWanted(experiment, generation)) return;
   if (!res.ok) return;
   const data = await res.json().catch(() => null);
-  if (generation !== inputsGeneration || !data) return;
+  if (!inputsStillWanted(experiment, generation) || !data) return;
   if (timeEditing) {
     // don't wipe an open time editor; try again shortly
     inputsRefreshTimer = setTimeout(() => loadInputs(experiment, generation), 3000);
