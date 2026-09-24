@@ -479,7 +479,7 @@ async def start_extract_async(
     async with _start_lock(upload_id):
         try:
             async with voice.build_client(token) as client:
-                status = await voice.read_status_file(
+                status = await voice.writer.read_json(
                     client, upload_id, EXTRACTION_STATUS_MAINFILE
                 )
                 if _extraction_running(status, collection_entry_id):
@@ -497,7 +497,7 @@ async def start_extract_async(
                 user_id = me.json()['user_id']
                 # reservation: visible to any check until the workflow's
                 # first own snapshot replaces it
-                await voice.write_status_file(
+                await voice.writer.write_json(
                     client,
                     upload_id,
                     EXTRACTION_STATUS_MAINFILE,
@@ -532,7 +532,7 @@ async def start_extract_async(
             # until the staleness timeout
             try:
                 async with voice.build_client(token) as client:
-                    await voice.write_status_file(
+                    await voice.writer.write_json(
                         client,
                         upload_id,
                         EXTRACTION_STATUS_MAINFILE,
@@ -566,7 +566,7 @@ async def extract_status(
 
     try:
         async with voice.build_client(token) as client:
-            status = await voice.read_status_file(
+            status = await voice.writer.read_json(
                 client, upload_id, EXTRACTION_STATUS_MAINFILE
             )
     except NomadAPIError as exc:

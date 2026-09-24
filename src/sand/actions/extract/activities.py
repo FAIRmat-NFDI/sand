@@ -139,6 +139,6 @@ async def write_extraction_status(data: WriteStatusInput) -> None:
 
     voice = _voice_service()
     async with voice.build_client(_user_token(data.user_id)) as client:
-        await voice.write_status_file(
+        await voice.writer.write_json(
             client, data.upload_id, EXTRACTION_STATUS_MAINFILE, data.status
         )

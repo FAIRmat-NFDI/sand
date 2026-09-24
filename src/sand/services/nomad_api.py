@@ -123,6 +123,55 @@ async def entry_mainfile(
     return entries[0]['mainfile']
 
 
+async def entry_mainfiles(
+    client: httpx.AsyncClient, upload_id: str, entry_ids: list[str], step: str
+) -> list[str]:
+    """Mainfiles of the given entries; ids with no entry are skipped."""
+    response = await client.post(
+        '/entries/query',
+        json={
+            'owner': 'visible',
+            'query': {'upload_id': upload_id, 'entry_id:any': entry_ids},
+            'required': {'include': ['entry_id', 'mainfile']},
+            'pagination': {'page_size': len(entry_ids)},
+        },
+    )
+    check_response(response, step=step)
+    return [
+        entry['mainfile']
+        for entry in response.json().get('data', [])
+        if entry.get('mainfile')
+    ]
+
+
+async def processed_entry_ids(
+    client: httpx.AsyncClient,
+    entry_id: str,
+    attempts: int,
+    retry_interval_s: float,
+) -> list[str]:
+    """Entry ids in the entry's processed_archive (what its parse created).
+
+    Retries while the archive is missing or empty: the parse may not have
+    finished yet.
+    """
+    for attempt in range(attempts):
+        response = await client.get(f'/entries/{entry_id}/archive')
+        if response.status_code != HTTPStatus.NOT_FOUND:
+            check_response(response, step='read_derived_entries')
+            try:
+                body = response.json()
+            except ValueError:
+                body = {}
+            section = ((body.get('data') or {}).get('archive') or {}).get('data') or {}
+            refs = section.get('processed_archive')
+            if isinstance(refs, list) and refs:
+                return [entry_id_from_ref(ref) for ref in refs]
+        if attempt < attempts - 1:
+            await asyncio.sleep(retry_interval_s)
+    return []
+
+
 @dataclass(frozen=True)
 class RawFileWriter:
     """Raw-file writes that wait out NOMAD's upload processing.
@@ -239,6 +288,30 @@ class RawFileWriter:
                 continue
             check_response(response, step='delete_raw_file')
             return
+
+    async def write_json(
+        self, client: httpx.AsyncClient, upload_id: str, file_name: str, payload: dict
+    ) -> None:
+        await self.upload_raw_file(
+            client,
+            upload_id,
+            file_name,
+            json.dumps(payload, ensure_ascii=False).encode(),
+            'application/json',
+        )
+
+    async def read_json(
+        self, client: httpx.AsyncClient, upload_id: str, file_name: str
+    ) -> dict | None:
+        """The raw file's JSON object; None if absent or not a JSON object."""
+        raw = await self.read_raw_file(client, upload_id, file_name)
+        if raw is None:
+            return None
+        try:
+            payload = json.loads(raw)
+        except ValueError:
+            return None
+        return payload if isinstance(payload, dict) else None
 
     async def write_archive(
         self, client: httpx.AsyncClient, upload_id: str, mainfile: str, archive: dict
