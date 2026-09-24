@@ -727,16 +727,20 @@ function beginTimeEdit(whenSpan, item, experiment) {
     done = true;
     timeEditing = false;
     editor.replaceWith(whenSpan);
-    if (refresh) startInputsRefresh(experiment, 800);
+    // the server returns once NOMAD reprocessed the entry
+    if (refresh) startInputsRefresh(experiment);
   };
+  let saving = false;
   const commit = async () => {
-    if (done) return;
+    // disabling the focused editor below fires blur -> commit again
+    if (done || saving) return;
     if (!editor.value || toLocalInputValue(item.datetime) === editor.value) {
       finish(false);
       return;
     }
     const iso = new Date(editor.value).toISOString();
     clearError();
+    saving = true;
     editor.disabled = true;
     try {
       const res = await authFetch(

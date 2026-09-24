@@ -786,6 +786,14 @@ class VoiceElnService:
         section['datetime'] = parsed.isoformat()
         archive['data'] = section
         await self._writer.write_archive(client, upload_id, mainfile, archive)
+        # The PUT only triggers reprocessing: wait for it, so a list read
+        # right after this returns already sees the new datetime.
+        await self._writer.wait_until_writable(
+            client,
+            upload_id,
+            time.monotonic() + self._writer.write_timeout_s,
+            mainfile,
+        )
         return kind
 
     async def _locate_input(
