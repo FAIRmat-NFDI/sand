@@ -36,7 +36,7 @@ from sand.services.voice_eln import (
 
 router = APIRouter()
 
-# Keep in sync with MAX_SIZE in apis/static/index.html.
+# Keep in sync with MAX_UPLOAD_SIZE in apis/static/record.js.
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 CLIENT_ERROR_STATUSES = (400, 404, 409)
