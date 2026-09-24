@@ -240,6 +240,7 @@ class VoiceElnService:
         upload_id: str,
         text: str,
         collection_entry_id: str,
+        *,
         label: str = STEP_LABEL,
         mainfile: str | None = None,
     ) -> EntryHandle:
