@@ -7,7 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/keycloak-js@25/dist/keycloak.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-  <link rel="stylesheet" href="static/styles.css?v=11">
+  <link rel="stylesheet" href="static/styles.css">
 </head>
 <body>
   <div class="app-bar">
@@ -108,6 +108,8 @@
               Save note
             </button>
           </div>
+
+          <p class="audio-entry-text" id="note-entry"></p>
         </section>
 
         <section class="card section section-inputs" id="inputs-card">
@@ -153,6 +155,6 @@
     </div>
   </div>
 
-  <script src="static/app.js?v=8" defer></script>
+  <script type="module" src="static/main.js"></script>
 </body>
 </html>

@@ -15,6 +15,18 @@ from sand.services.voice_eln import VoiceElnService
 require_login = Depends(get_current_user({}, allow_anonymous=False))
 
 STATIC_DIR = Path(__file__).parent / 'static'
+# Browsers revalidate the UI files on every load (a cheap 304 when
+# unchanged), so edits show up without versioned URLs - which ES module
+# imports could not carry anyway.
+NO_CACHE = {'Cache-Control': 'no-cache'}
+
+
+class RevalidatedStaticFiles(StaticFiles):
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers.update(NO_CACHE)
+        return response
+
 
 sand_api_entry_point = config.get_plugin_entry_point('sand.apis:sand_api')
 
@@ -66,7 +78,7 @@ async def auth_config():
 
 @app.get('/')
 async def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / 'index.html')
+    return FileResponse(STATIC_DIR / 'index.html', headers=NO_CACHE)
 
 
-app.mount('/static', StaticFiles(directory=STATIC_DIR), name='static')
+app.mount('/static', RevalidatedStaticFiles(directory=STATIC_DIR), name='static')
