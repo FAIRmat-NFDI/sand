@@ -73,8 +73,7 @@ def _error_message(exc: BaseException) -> str:
 def _drop_skipped(
     step_texts: list[str], results: list[dict | None]
 ) -> tuple[list[dict], list[str]]:
-    """(slots without the NO_STEP inputs, a warning per skipped input).
-    A wrong skip would silently drop a step, so each one is reported."""
+    """A wrong skip would silently drop a step, so each one is reported."""
     slots = [slot for slot in results if slot is not None]
     warnings = [
         f'input {i + 1} ({step_texts[i][:60]!r}) describes no fabrication '
