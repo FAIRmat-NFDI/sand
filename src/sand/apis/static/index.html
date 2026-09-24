@@ -7,7 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/keycloak-js@25/dist/keycloak.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-  <link rel="stylesheet" href="static/styles.css?v=5">
+  <link rel="stylesheet" href="static/styles.css?v=11">
 </head>
 <body>
   <div class="app-bar">
@@ -27,7 +27,7 @@
     <div id="app-content">
       <div class="card">
         <label class="text-field-label" for="experiment-select">Experiment</label>
-        <div class="controls" style="margin-top: 0;">
+        <div class="controls" style="margin: 0;">
           <select class="select-field" id="experiment-select">
             <option value="">— select an experiment —</option>
           </select>
@@ -62,92 +62,97 @@
           </div>
         </div>
 
-        <hr class="divider">
-
-        <label class="text-field-label" for="text" id="text-label">Input text</label>
-        <textarea class="text-field" id="text" placeholder="Type a step note here and save it to the selected experiment, or record audio."></textarea>
-
-        <div class="controls">
-          <button class="btn btn-primary" id="record-btn">
-            <span class="material-icons">mic</span>
-            Record
-          </button>
-          <button class="btn btn-outlined" id="discard-btn" type="button" hidden>
-            <span class="material-icons">delete</span>
-            Discard
-          </button>
-          <button class="btn btn-outlined" id="upload-btn" type="button">
-            <span class="material-icons">upload_file</span>
-            Upload audio file
-          </button>
-          <button class="btn btn-outlined" id="save-note-btn" type="button">
-            <span class="material-icons">note_add</span>
-            Save note
-          </button>
-          <button class="btn btn-primary" id="save-revision-btn" type="button" hidden>
-            <span class="material-icons">save</span>
-            Save revision
-          </button>
-          <button class="btn btn-outlined" id="cancel-revision-btn" type="button" hidden>
-            Cancel
-          </button>
-          <input type="file" id="upload-input" accept="audio/wav,audio/mp3,audio/mpeg,audio/mp4,audio/x-m4a,audio/webm,audio/ogg,audio/flac" hidden>
-          <span class="status-text" id="status"></span>
-        </div>
-
-        <label class="toggle-label" id="store-live-label" hidden>
-          <input type="checkbox" id="store-live-toggle">
-          Save the live transcript (skip whisper transcription)
-        </label>
-
-        <p class="live-transcript" id="live-transcript" aria-live="polite" hidden>
-          <span id="live-final"></span>
-          <span id="live-interim" class="interim"></span>
-        </p>
-
-        <p class="audio-entry-text" id="audio-entry"></p>
-
-        <hr class="divider">
-
-        <div class="controls">
-          <button class="btn btn-secondary" id="extract-btn" type="button">
-            <span class="material-icons">science</span>
-            Extract hysprint experiment
-          </button>
-          <button class="btn btn-outlined" id="download-sheet-btn" type="button">
-            <span class="material-icons">download</span>
-            Download sheet
-          </button>
-          <button class="btn btn-outlined" id="upload-sheet-btn" type="button">
-            <span class="material-icons">upload</span>
-            Upload edited sheet
-          </button>
-          <input type="file" id="upload-sheet-input" accept=".xlsx" hidden>
-          <span class="status-text" id="extract-status"></span>
-        </div>
-
-        <p class="error-text" id="error" role="alert"></p>
       </div>
 
-      <div class="card" id="inputs-card" hidden>
-        <div class="inputs-header">
-          <div class="results-title">Inputs <span id="inputs-count"></span></div>
-          <button class="btn btn-text" id="refresh-inputs-btn" type="button" title="Refresh">
-            <span class="material-icons">refresh</span>
-          </button>
-        </div>
-        <ul class="inputs-list" id="inputs-list"></ul>
-      </div>
+      <p class="error-banner error-text" id="error" role="alert"></p>
 
-      <div class="card" id="extract-result" hidden>
-        <div class="results-title">Extracted experiment</div>
-        <p class="audio-entry-text" id="derived-entry"></p>
-        <p class="status-text" id="extract-summary"></p>
-        <p class="error-text" id="sheet-issues"></p>
+      <div class="workspace">
+        <section class="card section section-record">
+          <h2 class="section-title"><span class="material-icons">mic</span>Record</h2>
+          <div class="controls">
+            <button class="btn btn-primary" id="record-btn">
+              <span class="material-icons">mic</span>
+              Record
+            </button>
+            <button class="btn btn-outlined" id="discard-btn" type="button" hidden>
+              <span class="material-icons">delete</span>
+              Discard
+            </button>
+            <button class="btn btn-outlined" id="upload-btn" type="button">
+              <span class="material-icons">upload_file</span>
+              Upload audio file
+            </button>
+            <input type="file" id="upload-input" accept="audio/wav,audio/mp3,audio/mpeg,audio/mp4,audio/x-m4a,audio/webm,audio/ogg,audio/flac" hidden>
+            <span class="status-text" id="status"></span>
+          </div>
+
+          <label class="toggle-label" id="store-live-label" hidden>
+            <input type="checkbox" id="store-live-toggle">
+            Save the live transcript (skip whisper transcription)
+          </label>
+
+          <p class="live-transcript" id="live-transcript" aria-live="polite" hidden>
+            <span id="live-final"></span>
+            <span id="live-interim" class="interim"></span>
+          </p>
+
+          <p class="audio-entry-text" id="audio-entry"></p>
+        </section>
+
+        <section class="card section section-note">
+          <h2 class="section-title"><span class="material-icons">edit_note</span><label for="text">Note</label></h2>
+          <textarea class="text-field" id="text" placeholder="Type a step note and save it to the selected experiment."></textarea>
+          <div class="controls">
+            <button class="btn btn-outlined" id="save-note-btn" type="button">
+              <span class="material-icons">note_add</span>
+              Save note
+            </button>
+          </div>
+        </section>
+
+        <section class="card section section-inputs" id="inputs-card">
+          <div class="inputs-header">
+            <h2 class="section-title"><span class="material-icons">timeline</span>Inputs <span class="section-count" id="inputs-count"></span></h2>
+            <button class="btn btn-icon" id="refresh-inputs-btn" type="button" title="Refresh" aria-label="Refresh the inputs">
+              <span class="material-icons">refresh</span>
+            </button>
+          </div>
+          <p class="section-hint">Time-ordered, as the extraction reads them. Click one to revise it in place; click its time to move it.</p>
+          <ul class="inputs-list" id="inputs-list">
+            <li class="inputs-empty">Select an experiment to see its inputs.</li>
+          </ul>
+        </section>
+
+        <section class="card section section-extract">
+          <h2 class="section-title"><span class="material-icons">science</span>Extraction</h2>
+          <div class="controls">
+            <button class="btn btn-secondary" id="extract-btn" type="button">
+              <span class="material-icons">science</span>
+              Extract hysprint experiment
+            </button>
+            <button class="btn btn-outlined" id="download-sheet-btn" type="button">
+              <span class="material-icons">download</span>
+              Download sheet
+            </button>
+            <button class="btn btn-outlined" id="upload-sheet-btn" type="button" title="Upload an edited sheet">
+              <span class="material-icons">upload</span>
+              Upload sheet
+            </button>
+            <input type="file" id="upload-sheet-input" accept=".xlsx" hidden>
+            <span class="status-text" id="extract-status"></span>
+          </div>
+
+          <div class="extract-result" id="extract-result" hidden>
+            <hr class="divider">
+            <p class="audio-entry-text" id="derived-entry"></p>
+            <p class="status-text" id="extract-summary"></p>
+            <p class="error-text" id="sheet-issues"></p>
+          </div>
+        </section>
       </div>
     </div>
   </div>
 
-  <script src="static/app.js?v=5" defer></script>
+  <script src="static/app.js?v=7" defer></script>
 </body>
 </html>
