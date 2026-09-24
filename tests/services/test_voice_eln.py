@@ -4,13 +4,6 @@ from http import HTTPStatus
 
 import httpx
 import pytest
-from fake_nomad import (
-    SAND_COLLECTION_ID,
-    UPLOAD_ID,
-    FakeNomad,
-    fake_client,
-    voice_service,
-)
 from nomad.utils import generate_entry_id
 
 from sand.hysprint import EXPERIMENT_INFO_LABEL, EXPERIMENT_INFO_MAINFILE
@@ -20,8 +13,122 @@ from sand.services.voice_eln import (
     EXPERIMENT_MAINFILE,
     WRITTEN_NOTE_M_DEF,
     AudioUpload,
+    VoiceElnService,
     normalize_audio_filename,
 )
+
+BASE_URL = 'http://localhost:8000/nomad-oasis/api/v1'
+UPLOAD_ID = 'up-123'
+SAND_COLLECTION_ID = generate_entry_id(UPLOAD_ID, EXPERIMENT_MAINFILE)
+
+
+def _service() -> VoiceElnService:
+    # retry_interval_s=0: no sleeps in tests
+    return VoiceElnService(BASE_URL, retry_interval_s=0, write_timeout_s=5)
+
+
+def _client(handler) -> httpx.AsyncClient:
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=BASE_URL)
+
+
+class _FakeNomad:
+    """Programmable NOMAD API: upload status, raw files, and entry queries.
+
+    `entries` maps entry ids to mainfiles: an entry-id query finds its
+    mainfile and the entry's archive is that raw file, as if processed.
+
+    `processing_polls` makes that many status GETs report process_running
+    before the upload goes idle. `blocked_writes` rejects that many PUTs
+    with NOMAD's processing-lock error (the check-then-PUT race).
+    """
+
+    def __init__(
+        self,
+        query_results=None,
+        processing_polls=0,
+        blocked_writes=0,
+        published=False,
+        upload_exists=True,
+    ):
+        self.raw_files: dict[str, bytes] = {}
+        self.entries: dict[str, str] = {}
+        self.query_results = query_results or []
+        self.processing_polls = processing_polls
+        self.blocked_writes = blocked_writes
+        self.published = published
+        self.upload_exists = upload_exists
+        self.put_attempts = 0
+
+    def _status(self) -> httpx.Response:
+        if not self.upload_exists:
+            return httpx.Response(404, json={'detail': 'upload not found'})
+        running = self.processing_polls > 0
+        if running:
+            self.processing_polls -= 1
+        return httpx.Response(
+            200,
+            json={'data': {'process_running': running, 'published': self.published}},
+        )
+
+    def _put_raw(self, request: httpx.Request) -> httpx.Response:
+        self.put_attempts += 1
+        if self.blocked_writes > 0:
+            self.blocked_writes -= 1
+            # after a blocked PUT the service re-checks the status; report
+            # processing once so it retries instead of failing
+            self.processing_polls = max(self.processing_polls, 1)
+            return httpx.Response(
+                400,
+                json={'detail': 'The upload is currently blocked by another process.'},
+            )
+        name = request.url.params['file_name']
+        if '/' in name:
+            return httpx.Response(400, json={'detail': 'Bad file name provided.'})
+        directory = request.url.path.split('/raw/', 1)[1].strip('/')
+        full_name = f'{directory}/{name}' if directory else name
+        self.raw_files[full_name] = request.content
+        return httpx.Response(200, json={})
+
+    def _raw(self, request: httpx.Request) -> httpx.Response:
+        if request.method == 'PUT':
+            return self._put_raw(request)
+        name = request.url.path.split('/raw/', 1)[1]
+        if name not in self.raw_files:
+            return httpx.Response(404, json={'detail': 'not found'})
+        return httpx.Response(200, content=self.raw_files[name])
+
+    def _entries(self, request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == 'POST' and path.endswith('/entries/query'):
+            entry_id = json.loads(request.content)['query'].get('entry_id')
+            if not (self.entries and entry_id):
+                return httpx.Response(200, json={'data': self.query_results})
+            found = self.entries.get(entry_id)
+            data = [{'mainfile': found}] if found else []
+            return httpx.Response(200, json={'data': data})
+        mainfile = self.entries.get(path.split('/entries/')[1].split('/')[0])
+        if request.method != 'GET' or mainfile not in self.raw_files:
+            return httpx.Response(404, json={'detail': f'unexpected {path}'})
+        archive = json.loads(self.raw_files[mainfile])
+        return httpx.Response(200, json={'data': {'archive': archive}})
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == 'POST' and path.endswith('/uploads'):
+            return httpx.Response(200, json={'upload_id': UPLOAD_ID})
+        if f'/uploads/{UPLOAD_ID}/raw/' in path:
+            return self._raw(request)
+        if request.method == 'GET' and '/uploads/' in path:
+            if path.endswith('/uploads/' + UPLOAD_ID):
+                return self._status()
+            return httpx.Response(404, json={'detail': 'upload not found'})
+        if '/entries/' in path:
+            return self._entries(request)
+        return httpx.Response(404, json={'detail': f'unexpected {path}'})
+
+    def archive(self, mainfile: str) -> dict:
+        return json.loads(self.raw_files[mainfile])
+
 
 INFO = {
     'project_name': 'perov',
@@ -34,10 +141,10 @@ INFO = {
 
 @pytest.mark.asyncio
 async def test_create_experiment_writes_collection_and_info_note():
-    fake = FakeNomad()
+    fake = _FakeNomad()
 
-    async with fake_client(fake) as client:
-        service = voice_service()
+    async with _client(fake) as client:
+        service = _service()
         result = await service.create_input_collection(client, 'perov_B1_a')
         await service.add_written_note(
             client,
@@ -64,10 +171,10 @@ async def test_create_experiment_writes_collection_and_info_note():
 
 @pytest.mark.asyncio
 async def test_create_experiment_without_info_has_no_notes():
-    fake = FakeNomad()
+    fake = _FakeNomad()
 
-    async with fake_client(fake) as client:
-        await voice_service().create_input_collection(client, 'scratch')
+    async with _client(fake) as client:
+        await _service().create_input_collection(client, 'scratch')
 
     collection = fake.archive(EXPERIMENT_MAINFILE)['data']
     assert 'notes' not in collection
@@ -76,10 +183,10 @@ async def test_create_experiment_without_info_has_no_notes():
 
 @pytest.mark.asyncio
 async def test_add_audio_stores_file_and_references_it_from_collection():
-    fake = FakeNomad()
+    fake = _FakeNomad()
 
-    async with fake_client(fake) as client:
-        service = voice_service()
+    async with _client(fake) as client:
+        service = _service()
         await service.create_input_collection(client, 'perov_B1_a')
         result = await service.add_audio(
             client,
@@ -106,10 +213,10 @@ async def test_add_audio_with_transcript_writes_pretranscribed_companion():
     # the companion is written by sand BEFORE the audio: the voice-eln
     # parser skips an existing companion, and a present transcript keeps
     # its normalizer from starting the automatic (paid) transcription
-    fake = FakeNomad()
+    fake = _FakeNomad()
 
-    async with fake_client(fake) as client:
-        service = voice_service()
+    async with _client(fake) as client:
+        service = _service()
         await service.create_input_collection(client, 'perov_B1_a')
         result = await service.add_audio(
             client,
@@ -142,11 +249,11 @@ async def test_add_audio_with_transcript_writes_pretranscribed_companion():
 async def test_add_audio_without_collection_stores_no_file():
     # fail before storing the audio: an orphaned file could never be
     # referenced, and retries would deposit more copies
-    fake = FakeNomad()
+    fake = _FakeNomad()
 
-    async with fake_client(fake) as client:
+    async with _client(fake) as client:
         with pytest.raises(NomadAPIError) as excinfo:
-            await voice_service().add_audio(
+            await _service().add_audio(
                 client,
                 UPLOAD_ID,
                 AudioUpload(audio=b'AUDIO', filename='rec.m4a'),
@@ -159,10 +266,10 @@ async def test_add_audio_without_collection_stores_no_file():
 
 @pytest.mark.asyncio
 async def test_add_note_writes_step_note_and_references_it():
-    fake = FakeNomad()
+    fake = _FakeNomad()
 
-    async with fake_client(fake) as client:
-        service = voice_service()
+    async with _client(fake) as client:
+        service = _service()
         await service.create_input_collection(client, 'perov_B1_a')
         result = await service.add_written_note(
             client,
@@ -185,13 +292,13 @@ async def test_add_note_writes_step_note_and_references_it():
 async def test_append_writes_back_nested_mainfile():
     # PUT raw takes the directory in the URL and a bare basename in
     # file_name; a nested mainfile must be split, not passed verbatim
-    fake = FakeNomad(query_results=[{'mainfile': 'exp/my_collection.archive.json'}])
+    fake = _FakeNomad(query_results=[{'mainfile': 'exp/my_collection.archive.json'}])
     fake.raw_files['exp/my_collection.archive.json'] = json.dumps(
         {'data': {'m_def': 'x', 'name': 'manual'}}
     ).encode()
 
-    async with fake_client(fake) as client:
-        result = await voice_service().add_written_note(
+    async with _client(fake) as client:
+        result = await _service().add_written_note(
             client, UPLOAD_ID, 'a step', collection_entry_id='e-nested'
         )
 
@@ -203,13 +310,13 @@ async def test_append_writes_back_nested_mainfile():
 async def test_append_handles_null_refs_field():
     # NOMAD deserializes explicit nulls (its "unset" value); appending to
     # a collection with '"notes": null' must not crash with a TypeError
-    fake = FakeNomad()
+    fake = _FakeNomad()
     fake.raw_files[EXPERIMENT_MAINFILE] = json.dumps(
         {'data': {'m_def': 'x', 'name': 'n', 'notes': None}}
     ).encode()
 
-    async with fake_client(fake) as client:
-        result = await voice_service().add_written_note(
+    async with _client(fake) as client:
+        result = await _service().add_written_note(
             client, UPLOAD_ID, 'a step', collection_entry_id=SAND_COLLECTION_ID
         )
 
@@ -219,19 +326,19 @@ async def test_append_handles_null_refs_field():
 
 @pytest.mark.asyncio
 async def test_append_rejects_collection_without_data_section():
-    fake = FakeNomad()
+    fake = _FakeNomad()
     fake.raw_files[EXPERIMENT_MAINFILE] = json.dumps({'data': [1, 2]}).encode()
 
-    async with fake_client(fake) as client:
+    async with _client(fake) as client:
         with pytest.raises(NomadAPIError, match='no data section'):
-            await voice_service().add_written_note(
+            await _service().add_written_note(
                 client, UPLOAD_ID, 'a step', collection_entry_id=SAND_COLLECTION_ID
             )
 
 
 @pytest.mark.asyncio
 async def test_list_input_collections_returns_summaries():
-    fake = FakeNomad(
+    fake = _FakeNomad(
         query_results=[
             {
                 'upload_id': UPLOAD_ID,
@@ -241,8 +348,8 @@ async def test_list_input_collections_returns_summaries():
         ]
     )
 
-    async with fake_client(fake) as client:
-        experiments = await voice_service().list_input_collections(client)
+    async with _client(fake) as client:
+        experiments = await _service().list_input_collections(client)
 
     assert len(experiments) == 1
     assert experiments[0].upload_id == UPLOAD_ID
@@ -255,10 +362,10 @@ async def test_write_waits_for_processing_and_sends_body_once():
     # the first PUT triggers processing; the service polls the upload's
     # process_running state and PUTs each file exactly once (no re-sending
     # the body against NOMAD's processing lock)
-    fake = FakeNomad(processing_polls=2)
+    fake = _FakeNomad(processing_polls=2)
 
-    async with fake_client(fake) as client:
-        service = voice_service()
+    async with _client(fake) as client:
+        service = _service()
         result = await service.create_input_collection(client, 'perov_B1_a')
         await service.add_written_note(
             client,
@@ -280,21 +387,21 @@ async def test_write_waits_for_processing_and_sends_body_once():
 async def test_write_retries_when_processing_starts_after_the_idle_check():
     # the check-then-PUT race: NOMAD rejects the PUT although the upload
     # looked idle; the service re-checks the status and retries
-    fake = FakeNomad(blocked_writes=1)
+    fake = _FakeNomad(blocked_writes=1)
 
-    async with fake_client(fake) as client:
-        await voice_service().create_input_collection(client, 'x')
+    async with _client(fake) as client:
+        await _service().create_input_collection(client, 'x')
 
     assert EXPERIMENT_MAINFILE in fake.raw_files
 
 
 @pytest.mark.asyncio
 async def test_write_to_unknown_upload_raises_not_found():
-    fake = FakeNomad(upload_exists=False)
+    fake = _FakeNomad(upload_exists=False)
 
-    async with fake_client(fake) as client:
+    async with _client(fake) as client:
         with pytest.raises(NomadAPIError) as excinfo:
-            await voice_service().add_written_note(
+            await _service().add_written_note(
                 client, UPLOAD_ID, 'a step', collection_entry_id=SAND_COLLECTION_ID
             )
 
@@ -306,10 +413,10 @@ async def test_write_to_unknown_upload_raises_not_found():
 async def test_collection_entry_id_resolves_sand_mainfile_without_index():
     # sand's own experiments resolve deterministically, so adding to a
     # just-created (not yet indexed) experiment works with an entry id
-    fake = FakeNomad()
+    fake = _FakeNomad()
 
-    async with fake_client(fake) as client:
-        service = voice_service()
+    async with _client(fake) as client:
+        service = _service()
         created = await service.create_input_collection(client, 'perov_B1_a')
         result = await service.add_written_note(
             client, UPLOAD_ID, 'a step', collection_entry_id=created.entry_id
@@ -323,13 +430,13 @@ async def test_collection_entry_id_resolves_sand_mainfile_without_index():
 async def test_collection_entry_id_resolves_foreign_mainfile_by_query():
     # two collections in one upload: the entry id pins the chosen one
     # instead of falling back to the oldest
-    fake = FakeNomad(query_results=[{'mainfile': 'second.archive.json'}])
+    fake = _FakeNomad(query_results=[{'mainfile': 'second.archive.json'}])
     fake.raw_files['second.archive.json'] = json.dumps(
         {'data': {'m_def': 'x', 'name': 'second'}}
     ).encode()
 
-    async with fake_client(fake) as client:
-        result = await voice_service().add_written_note(
+    async with _client(fake) as client:
+        result = await _service().add_written_note(
             client, UPLOAD_ID, 'a step', collection_entry_id='e-second'
         )
 
@@ -339,11 +446,11 @@ async def test_collection_entry_id_resolves_foreign_mainfile_by_query():
 
 @pytest.mark.asyncio
 async def test_unknown_collection_entry_id_raises_not_found():
-    fake = FakeNomad(query_results=[])
+    fake = _FakeNomad(query_results=[])
 
-    async with fake_client(fake) as client:
+    async with _client(fake) as client:
         with pytest.raises(NomadAPIError) as excinfo:
-            await voice_service().add_audio(
+            await _service().add_audio(
                 client,
                 UPLOAD_ID,
                 AudioUpload(audio=b'AUDIO', filename='rec.m4a'),
@@ -356,11 +463,11 @@ async def test_unknown_collection_entry_id_raises_not_found():
 
 @pytest.mark.asyncio
 async def test_write_to_published_upload_is_rejected():
-    fake = FakeNomad(published=True)
+    fake = _FakeNomad(published=True)
 
-    async with fake_client(fake) as client:
+    async with _client(fake) as client:
         with pytest.raises(NomadAPIError, match='published'):
-            await voice_service().add_written_note(
+            await _service().add_written_note(
                 client, UPLOAD_ID, 'a step', collection_entry_id=SAND_COLLECTION_ID
             )
 
@@ -372,13 +479,13 @@ async def test_invalid_token_raises_auth_error():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(401, json={'detail': 'unauthorized'})
 
-    async with fake_client(handler) as client:
+    async with _client(handler) as client:
         with pytest.raises(NomadAuthError):
-            await voice_service().create_input_collection(client, 'x')
+            await _service().create_input_collection(client, 'x')
 
 
 def test_build_client_sends_bearer_token():
-    client = voice_service().build_client('tok-1')
+    client = _service().build_client('tok-1')
     assert client.headers['Authorization'] == 'Bearer tok-1'
 
 
@@ -392,10 +499,10 @@ def test_normalize_audio_filename():
     assert normalize_audio_filename('no_extension') is None
 
 
-def _fake_with_inputs(audio: dict, note: dict) -> FakeNomad:
+def _fake_with_inputs(audio: dict, note: dict) -> _FakeNomad:
     """An experiment whose collection references one audio and one note;
     entry 'x1' exists in the upload but is not an input of it."""
-    fake = FakeNomad()
+    fake = _FakeNomad()
     fake.raw_files[EXPERIMENT_MAINFILE] = json.dumps(
         {
             'data': {
@@ -427,10 +534,8 @@ async def test_collect_inputs_takes_the_most_human_text_and_orders_by_time():
         note={'text': 'a note', 'datetime': '2026-09-22T09:00:00+00:00'},
     )
 
-    async with fake_client(fake) as client:
-        inputs = await voice_service().collect_inputs(
-            client, UPLOAD_ID, SAND_COLLECTION_ID
-        )
+    async with _client(fake) as client:
+        inputs = await _service().collect_inputs(client, UPLOAD_ID, SAND_COLLECTION_ID)
 
     assert [i.entry_id for i in inputs] == ['n1', 'a1']
     audio = inputs[1]
@@ -444,10 +549,8 @@ async def test_collect_inputs_reports_untranscribed_audio_without_text():
         audio={'transcription_status': 'PENDING'}, note={'text': 'a note'}
     )
 
-    async with fake_client(fake) as client:
-        inputs = await voice_service().collect_inputs(
-            client, UPLOAD_ID, SAND_COLLECTION_ID
-        )
+    async with _client(fake) as client:
+        inputs = await _service().collect_inputs(client, UPLOAD_ID, SAND_COLLECTION_ID)
 
     audio = next(i for i in inputs if i.kind == 'audio')
     assert (audio.text, audio.corrected, audio.status) == (None, False, 'PENDING')
@@ -457,8 +560,8 @@ async def test_collect_inputs_reports_untranscribed_audio_without_text():
 async def test_revise_audio_sets_and_withdraws_the_correction():
     fake = _fake_with_inputs(audio={'transcript': 'machine'}, note={'text': 'n'})
 
-    async with fake_client(fake) as client:
-        service = voice_service()
+    async with _client(fake) as client:
+        service = _service()
         await service.revise_input(
             client, UPLOAD_ID, 'a1', 'fixed', collection_entry_id=SAND_COLLECTION_ID
         )
@@ -478,9 +581,9 @@ async def test_revise_audio_sets_and_withdraws_the_correction():
 async def test_revise_note_rejects_empty_text():
     fake = _fake_with_inputs(audio={}, note={'text': 'keep me'})
 
-    async with fake_client(fake) as client:
+    async with _client(fake) as client:
         with pytest.raises(ValueError):
-            await voice_service().revise_input(
+            await _service().revise_input(
                 client, UPLOAD_ID, 'n1', ' ', collection_entry_id=SAND_COLLECTION_ID
             )
 
@@ -492,9 +595,9 @@ async def test_revise_rejects_an_entry_outside_the_collection():
     fake = _fake_with_inputs(audio={}, note={'text': 'n'})
     puts_before = fake.put_attempts
 
-    async with fake_client(fake) as client:
+    async with _client(fake) as client:
         with pytest.raises(NomadAPIError) as excinfo:
-            await voice_service().revise_input(
+            await _service().revise_input(
                 client,
                 UPLOAD_ID,
                 'x1',
@@ -513,8 +616,8 @@ async def test_revise_datetime_reorders_the_inputs():
         note={'text': 'n', 'datetime': '2026-09-22T09:00:00+00:00'},
     )
 
-    async with fake_client(fake) as client:
-        service = voice_service()
+    async with _client(fake) as client:
+        service = _service()
         await service.revise_input_datetime(
             client,
             UPLOAD_ID,
@@ -536,8 +639,8 @@ async def test_concurrent_revisions_of_one_input_keep_both_changes():
         await asyncio.sleep(0)
         return fake(request)
 
-    async with fake_client(interleaving) as client:
-        service = voice_service()
+    async with _client(interleaving) as client:
+        service = _service()
         await asyncio.gather(
             service.revise_input(
                 client, UPLOAD_ID, 'a1', 'fixed', collection_entry_id=SAND_COLLECTION_ID
