@@ -1,5 +1,8 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* classes like .btn set display, which would override the hidden attribute */
+[hidden] { display: none !important; }
+
 body {
   font-family: 'Titillium Web', sans-serif;
   font-weight: 400;
@@ -112,7 +115,7 @@ body {
 
 /* Container */
 .container {
-  max-width: 640px;
+  max-width: 1180px;
   margin: 0 auto;
   padding: 24px 16px;
 }
@@ -270,6 +273,116 @@ body {
   overflow-y: auto;
 }
 
+/* Sections: Record, Note and Extraction on the left, the Inputs
+   timeline beside them on wide screens; one column otherwise. */
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "record" "note" "inputs" "extract";
+  gap: 16px;
+  align-items: start;
+}
+
+.workspace .card {
+  margin-bottom: 0;
+}
+
+.section-record { grid-area: record; }
+.section-note { grid-area: note; }
+.section-inputs { grid-area: inputs; }
+.section-extract { grid-area: extract; }
+
+@media (min-width: 960px) {
+  .workspace {
+    grid-template-columns: minmax(0, 8fr) minmax(0, 5fr);
+    /* a tall Inputs card grows the last row only, so the left cards
+       stay packed */
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas:
+      "record inputs"
+      "note inputs"
+      "extract inputs";
+  }
+
+  /* the timeline stays in view while working in the left column */
+  .section-inputs {
+    position: sticky;
+    top: 16px;
+  }
+
+  .section-inputs .inputs-list {
+    max-height: calc(100vh - 170px);
+  }
+}
+
+.section {
+  padding: 20px 24px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 12px;
+}
+
+.section-title .material-icons {
+  font-size: 18px;
+  color: #2A4CDF;
+}
+
+.section-title label {
+  cursor: inherit;
+}
+
+.section-count {
+  color: #888;
+  font-weight: 400;
+}
+
+.section-hint {
+  font-size: 0.8rem;
+  color: #777;
+  margin: 6px 0 4px;
+}
+
+.section .controls {
+  margin: 0;
+}
+
+.section .text-field + .controls {
+  margin-top: 12px;
+}
+
+.section .toggle-label {
+  margin-top: 12px;
+}
+
+.btn-icon {
+  background: transparent;
+  color: #757575;
+  padding: 4px;
+  border-radius: 50%;
+}
+
+.btn-icon:hover {
+  background: #f0f0f0;
+  color: #2A4CDF;
+}
+
+.error-text.error-banner {
+  background: #fdecea;
+  border-left: 3px solid #d32f2f;
+  border-radius: 4px;
+  padding: 10px 14px;
+  margin: 0 0 16px;
+}
+
 /* Error */
 .error-text {
   color: #d32f2f;
@@ -341,12 +454,16 @@ body {
 
 /* Inputs card: one tile per recording/note, time-ordered (the
    extraction order). A tile = a small meta header + a few lines of
-   text; click it to revise in the Input text box above. The list
+   text; click it to revise it in place. The list
    scrolls internally so it never pushes anything below it. */
 .inputs-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.inputs-header .section-title {
+  margin-bottom: 0;
 }
 
 .inputs-list {
@@ -453,9 +570,48 @@ body {
   font-style: italic;
 }
 
-/* The Input text box doubles as the revision editor: the mode is made
-   unmistakable by the label, the swapped buttons, and this accent. */
-.text-field.revising {
-  border-color: #f9a825;
-  background: #fffdf5;
+/* In-place revision editor inside a tile */
+.input-tile.selected {
+  cursor: default;
+}
+
+.input-revise {
+  margin-top: 6px;
+}
+
+.input-revise-text {
+  width: 100%;
+  min-height: 80px;
+  max-height: 50vh;
+  padding: 8px 10px;
+  font-family: 'Titillium Web', sans-serif;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  border: 1px solid #f9a825;
+  border-radius: 4px;
+  background: #fff;
+  resize: vertical;
+}
+
+.input-revise-text:focus {
+  outline: none;
+  box-shadow: 0 0 0 1px #f9a825;
+}
+
+.input-revise-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.input-revise-hint {
+  font-size: 0.75rem;
+  color: #757575;
+}
+
+.btn-small {
+  padding: 4px 12px;
+  font-size: 0.8rem;
 }

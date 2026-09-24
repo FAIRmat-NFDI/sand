@@ -430,7 +430,6 @@ function stopLiveTranscript(conn, detach = false) {
 
 const storeLiveLabel = document.getElementById("store-live-label");
 const storeLiveToggle = document.getElementById("store-live-toggle");
-let storeLiveConfigured = false;
 const STORE_LIVE_KEY = "sand.storeLiveTranscript";
 
 async function initUiConfig() {
@@ -442,7 +441,6 @@ async function initUiConfig() {
     try { remembered = localStorage.getItem(STORE_LIVE_KEY); } catch { /* ignore */ }
     storeLiveToggle.checked =
       remembered === null ? Boolean(cfg.store_live_transcript) : remembered === "true";
-    storeLiveConfigured = true;
     storeLiveLabel.hidden = false;
   } catch { /* toggle stays hidden; recording works without it */ }
 }
@@ -664,24 +662,18 @@ const derivedEntryEl = document.getElementById("derived-entry");
 const sheetIssuesEl = document.getElementById("sheet-issues");
 
 // --- inputs card: every recording/note, click to revise ----------------
-// Rows come in extraction order. Clicking a row loads its text into the
-// big Input text box as an explicit "revising" mode: the label and
-// buttons swap, and any unsaved note draft is stashed and restored on
-// exit - no data loss, no second cramped editor. Audio revisions go to
+// Rows come in extraction order. Clicking a row turns its text into an
+// editor in place (one row at a time). Audio revisions go to
 // corrected_transcript (clearing withdraws them); note revisions
 // overwrite the note text.
 
-const inputsCard = document.getElementById("inputs-card");
 const inputsList = document.getElementById("inputs-list");
 const inputsCount = document.getElementById("inputs-count");
 const refreshInputsBtn = document.getElementById("refresh-inputs-btn");
-const textLabel = document.getElementById("text-label");
-const saveRevisionBtn = document.getElementById("save-revision-btn");
-const cancelRevisionBtn = document.getElementById("cancel-revision-btn");
 
 let inputsGeneration = 0;
 let inputsRefreshTimer = null;
-// {item, experiment, draftBackup} while the text box is in revising mode
+// {item, experiment, li, textEl, editor, saveBtn} while a row is edited
 let revising = null;
 
 function stopInputsRefresh() {
@@ -700,7 +692,7 @@ function inputTime(item) {
 }
 
 // while a time editor is open, list re-renders are held off so the
-// input field is not wiped mid-edit
+// input field is not wiped mid-edit (same for a revision editor)
 let timeEditing = false;
 
 function toLocalInputValue(iso) {
@@ -777,72 +769,82 @@ function inputDescription(item) {
     + (inputTime(item) ? " from " + inputTime(item) : "");
 }
 
-function beginRevision(item, experiment) {
+function beginRevision(item, experiment, li, textEl) {
   if (revising && revising.item.entry_id === item.entry_id) return;
-  // entering revision mode is non-destructive: a note draft is stashed
-  // and restored on exit. Only switching rows with unsaved revision
-  // edits would lose something - ask then.
-  if (revising && textArea.value.trim() !== (revising.item.text || "").trim()
+  // a revision already being saved is not lost by switching: no prompt
+  if (revising && !revising.saveBtn.disabled
+      && revising.editor.value.trim() !== (revising.item.text || "").trim()
       && !window.confirm("Discard the unsaved revision and open this input?")) {
     return;
   }
-  const draftBackup = revising ? revising.draftBackup : textArea.value;
-  revising = { item, experiment, draftBackup };
-  textArea.value = item.text || "";
-  textArea.classList.add("revising");
-  textLabel.textContent = "Revising the " + inputDescription(item)
-    + (item.kind === "audio" ? " (saved as corrected transcript)" : "");
-  recordBtn.hidden = true;
-  uploadBtn.hidden = true;
-  saveNoteBtn.hidden = true;
-  storeLiveLabel.hidden = true;
-  saveRevisionBtn.hidden = false;
-  cancelRevisionBtn.hidden = false;
-  highlightSelectedRow();
-  textArea.focus();
-  textArea.scrollIntoView({ behavior: "smooth", block: "center" });
+  endRevision();
+
+  const box = document.createElement("div");
+  box.className = "input-revise";
+  // clicks inside must not re-trigger the tile's own click
+  box.addEventListener("click", (e) => e.stopPropagation());
+
+  const editor = document.createElement("textarea");
+  editor.className = "input-revise-text";
+  editor.value = item.text || "";
+  editor.setAttribute("aria-label", "Revise the " + inputDescription(item));
+
+  const actions = document.createElement("div");
+  actions.className = "input-revise-actions";
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "btn btn-primary btn-small";
+  saveBtn.textContent = "Save";
+  saveBtn.addEventListener("click", saveRevision);
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "btn btn-outlined btn-small";
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.addEventListener("click", () => endRevision(true));
+  const hint = document.createElement("span");
+  hint.className = "input-revise-hint";
+  hint.textContent = item.kind === "audio"
+    ? "Saved as corrected transcript; empty withdraws the correction."
+    : "";
+  actions.append(saveBtn, cancelBtn, hint);
+
+  editor.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") endRevision(true);
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) saveRevision();
+  });
+
+  box.append(editor, actions);
+  textEl.replaceWith(box);
+  li.classList.add("selected");
+  revising = { item, experiment, li, textEl, editor, saveBtn };
+  // fit the whole text, capped by the CSS max-height
+  editor.style.height = editor.scrollHeight + 2 + "px";
+  editor.focus();
 }
 
-function endRevision() {
+// refocus: the editor held focus, so keyboard users would otherwise
+// fall back to the page start (not wanted when switching tiles)
+function endRevision(refocus = false) {
   if (!revising) return;
-  textArea.value = revising.draftBackup;
+  const { li, textEl, editor } = revising;
   revising = null;
-  textArea.classList.remove("revising");
-  textLabel.textContent = "Input text";
-  recordBtn.hidden = false;
-  uploadBtn.hidden = false;
-  saveNoteBtn.hidden = false;
-  // the toggle only exists when the relay is configured; initUiConfig
-  // decides, so just restore what it decided
-  storeLiveLabel.hidden = !storeLiveConfigured;
-  saveRevisionBtn.hidden = true;
-  cancelRevisionBtn.hidden = true;
-  highlightSelectedRow();
+  editor.parentElement.replaceWith(textEl);
+  li.classList.remove("selected");
+  if (refocus && li.isConnected) li.focus();
 }
 
-function highlightSelectedRow() {
-  for (const tile of inputsList.querySelectorAll(".input-tile")) {
-    tile.classList.toggle(
-      "selected",
-      Boolean(revising) && tile.dataset.entryId === revising.item.entry_id
-    );
-  }
-}
-
-cancelRevisionBtn.addEventListener("click", endRevision);
-
-saveRevisionBtn.addEventListener("click", async () => {
-  if (!revising) return;
-  const { item, experiment } = revising;
-  const text = textArea.value.trim();
+async function saveRevision() {
+  if (!revising || revising.saveBtn.disabled) return;
+  const { item, experiment, editor, saveBtn } = revising;
+  const text = editor.value.trim();
   if (text === (item.text || "").trim()) {
     // unchanged: save nothing - a stored revision must mean a human
     // actually changed something
-    endRevision();
+    endRevision(true);
     return;
   }
   clearError();
-  saveRevisionBtn.disabled = true;
+  saveBtn.disabled = true;
   try {
     const res = await authFetch(
       "api/input-collections/" + experiment.upload_id
@@ -857,27 +859,37 @@ saveRevisionBtn.addEventListener("click", async () => {
       showError("Could not save the revision: " + await errorDetail(res));
       return;
     }
-    endRevision();
+    // the save can outlive its editor (cancelled or another tile opened
+    // meanwhile): only close the editor it came from
+    if (revising?.editor === editor) endRevision(true);
     // the server returns once NOMAD reprocessed the entry
     startInputsRefresh(experiment);
   } catch (err) {
     showError("Network error: " + err.message);
   } finally {
-    saveRevisionBtn.disabled = false;
+    saveBtn.disabled = false;
   }
-});
+}
+
+function showInputsPlaceholder(message) {
+  const li = document.createElement("li");
+  li.className = "inputs-empty";
+  li.textContent = message;
+  inputsList.replaceChildren(li);
+  inputsCount.textContent = "";
+}
 
 function renderInputs(experiment, items) {
-  inputsCard.hidden = false;
-  inputsCount.textContent = "(" + items.length + ")";
-  inputsList.replaceChildren();
   if (!items.length) {
-    const li = document.createElement("li");
-    li.className = "inputs-empty";
-    li.textContent = "No inputs yet - record or type a note above.";
-    inputsList.append(li);
+    showInputsPlaceholder("No inputs yet - record or write a note.");
     return;
   }
+  // a re-render replaces the tiles: keep keyboard focus on the same one
+  const focusedId = inputsList.contains(document.activeElement)
+    ? document.activeElement.closest(".input-tile")?.dataset.entryId
+    : null;
+  inputsList.replaceChildren();
+  inputsCount.textContent = "(" + items.length + ")";
   for (const item of items) {
     const li = document.createElement("li");
     li.className = "input-tile";
@@ -932,17 +944,17 @@ function renderInputs(experiment, items) {
     li.append(meta, text);
     li.tabIndex = 0;
     li.setAttribute("aria-label", "Revise the " + inputDescription(item));
-    li.addEventListener("click", () => beginRevision(item, experiment));
+    li.addEventListener("click", () => beginRevision(item, experiment, li, text));
     li.addEventListener("keydown", (e) => {
-      // only the tile itself: Enter/Space on its time button or link
-      // must keep their own action
+      // only the tile itself: Enter/Space on its time button, link or
+      // editor must keep their own action
       if (e.target !== li || (e.key !== "Enter" && e.key !== " ")) return;
       e.preventDefault();
-      beginRevision(item, experiment);
+      beginRevision(item, experiment, li, text);
     });
     inputsList.append(li);
+    if (item.entry_id === focusedId) li.focus();
   }
-  highlightSelectedRow();
 }
 
 // a refresh can outlive its experiment (a save finishing after the user
@@ -966,8 +978,8 @@ async function loadInputs(experiment, generation) {
   if (!res.ok) return;
   const data = await res.json().catch(() => null);
   if (!inputsStillWanted(experiment, generation) || !data) return;
-  if (timeEditing) {
-    // don't wipe an open time editor; try again shortly
+  if (timeEditing || revising) {
+    // don't wipe an open editor; try again shortly
     inputsRefreshTimer = setTimeout(() => loadInputs(experiment, generation), 3000);
     return;
   }
@@ -1103,9 +1115,7 @@ experimentSelect.addEventListener("change", () => {
   extractResult.hidden = true;
   const experiment = selectedExperiment();
   endRevision();
-  inputsList.replaceChildren();
-  inputsCount.textContent = "";
-  inputsCard.hidden = true;
+  showInputsPlaceholder(experiment ? "Loading..." : "Select an experiment to see its inputs.");
   if (experiment) {
     startExtractPolling(experiment);
     startInputsRefresh(experiment);
