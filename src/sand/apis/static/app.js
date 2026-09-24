@@ -771,7 +771,9 @@ function inputDescription(item) {
 
 function beginRevision(item, experiment, li, textEl) {
   if (revising && revising.item.entry_id === item.entry_id) return;
-  if (revising && revising.editor.value.trim() !== (revising.item.text || "").trim()
+  // a revision already being saved is not lost by switching: no prompt
+  if (revising && !revising.saveBtn.disabled
+      && revising.editor.value.trim() !== (revising.item.text || "").trim()
       && !window.confirm("Discard the unsaved revision and open this input?")) {
     return;
   }
@@ -798,7 +800,7 @@ function beginRevision(item, experiment, li, textEl) {
   cancelBtn.type = "button";
   cancelBtn.className = "btn btn-outlined btn-small";
   cancelBtn.textContent = "Cancel";
-  cancelBtn.addEventListener("click", endRevision);
+  cancelBtn.addEventListener("click", () => endRevision(true));
   const hint = document.createElement("span");
   hint.className = "input-revise-hint";
   hint.textContent = item.kind === "audio"
@@ -807,7 +809,7 @@ function beginRevision(item, experiment, li, textEl) {
   actions.append(saveBtn, cancelBtn, hint);
 
   editor.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") endRevision();
+    if (e.key === "Escape") endRevision(true);
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) saveRevision();
   });
 
@@ -820,12 +822,15 @@ function beginRevision(item, experiment, li, textEl) {
   editor.focus();
 }
 
-function endRevision() {
+// refocus: the editor held focus, so keyboard users would otherwise
+// fall back to the page start (not wanted when switching tiles)
+function endRevision(refocus = false) {
   if (!revising) return;
   const { li, textEl, editor } = revising;
   revising = null;
   editor.parentElement.replaceWith(textEl);
   li.classList.remove("selected");
+  if (refocus && li.isConnected) li.focus();
 }
 
 async function saveRevision() {
@@ -835,7 +840,7 @@ async function saveRevision() {
   if (text === (item.text || "").trim()) {
     // unchanged: save nothing - a stored revision must mean a human
     // actually changed something
-    endRevision();
+    endRevision(true);
     return;
   }
   clearError();
@@ -854,7 +859,9 @@ async function saveRevision() {
       showError("Could not save the revision: " + await errorDetail(res));
       return;
     }
-    endRevision();
+    // the save can outlive its editor (cancelled or another tile opened
+    // meanwhile): only close the editor it came from
+    if (revising?.editor === editor) endRevision(true);
     // the server returns once NOMAD reprocessed the entry
     startInputsRefresh(experiment);
   } catch (err) {
@@ -877,6 +884,10 @@ function renderInputs(experiment, items) {
     showInputsPlaceholder("No inputs yet - record or write a note.");
     return;
   }
+  // a re-render replaces the tiles: keep keyboard focus on the same one
+  const focusedId = inputsList.contains(document.activeElement)
+    ? document.activeElement.closest(".input-tile")?.dataset.entryId
+    : null;
   inputsList.replaceChildren();
   inputsCount.textContent = "(" + items.length + ")";
   for (const item of items) {
@@ -942,6 +953,7 @@ function renderInputs(experiment, items) {
       beginRevision(item, experiment, li, text);
     });
     inputsList.append(li);
+    if (item.entry_id === focusedId) li.focus();
   }
 }
 
