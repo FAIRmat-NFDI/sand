@@ -365,9 +365,7 @@ class VoiceElnService:
 
         Ordered by the entry's datetime — user-editable in NOMAD, so
         researchers can correct or arrange the timeline. Entries without
-        one sort last; ties break by entry id. Caveat: AudioInput
-        datetimes are the NOMAD server's local time until
-        nomad-voice-eln#41 is fixed.
+        one sort last; ties break by entry id.
         """
         mainfile = await self.resolve_collection_mainfile(
             client, upload_id, collection_entry_id
