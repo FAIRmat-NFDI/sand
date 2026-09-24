@@ -1,6 +1,3 @@
-import hashlib
-from datetime import datetime, timezone
-
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
@@ -81,13 +78,8 @@ def make_fill_schema(step_type: str) -> dict:
 async def assemble_and_store(data: StoreInput) -> dict:
     """Slots + form -> archive -> sheet -> upload, reparse, relink."""
     from sand.hysprint.generate import assemble
-    from sand.hysprint.sheet import (
-        DERIVED_SHEET_MAINFILE,
-        EXTRACTED_JSON_MAINFILE,
-        grid_to_xlsx_bytes,
-        to_sheet,
-    )
-    from sand.services.voice_eln import DerivedSheet
+    from sand.hysprint.sheet import grid_to_xlsx_bytes, to_sheet
+    from sand.hysprint.sheet_store import SheetStore
 
     try:
         archive = assemble(data.info, [dict(slot) for slot in data.slots])
@@ -97,25 +89,15 @@ async def assemble_and_store(data: StoreInput) -> dict:
 
     grid, sheet_issues = to_sheet(archive)
     xlsx = grid_to_xlsx_bytes(grid)
-    sheet = DerivedSheet(
-        xlsx=xlsx,
-        xlsx_mainfile=DERIVED_SHEET_MAINFILE,
-        extraction={
-            'archive': archive,
-            'xlsx_sha256': hashlib.sha256(xlsx).hexdigest(),
-            'extracted_at': datetime.now(timezone.utc).isoformat(),
-            'input_entry_ids': data.input_entry_ids,
-        },
-        extraction_mainfile=EXTRACTED_JSON_MAINFILE,
-    )
-
     voice = _voice_service()
     async with voice.build_client(_user_token(data.user_id)) as client:
-        handle, replaced_edits = await voice.add_derived_sheet(
+        handle, replaced_edits = await SheetStore(voice).store_extracted(
             client,
             data.upload_id,
-            sheet,
-            collection_entry_id=data.collection_entry_id,
+            xlsx,
+            data.collection_entry_id,
+            archive=archive,
+            input_entry_ids=data.input_entry_ids,
         )
 
     warnings = []

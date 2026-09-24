@@ -1,6 +1,4 @@
 import asyncio
-import hashlib
-import json
 import posixpath
 import time
 from dataclasses import dataclass
@@ -18,10 +16,8 @@ from sand.services.nomad_api import (
     create_upload,
     entry_id_from_ref,
     entry_mainfile,
-    entry_mainfiles,
     entry_ref,
     gui_entry_url,
-    processed_entry_ids,
 )
 
 INPUT_COLLECTION_M_DEF = (
@@ -69,35 +65,10 @@ def _parse_input_datetime(value) -> datetime | None:
     return parsed
 
 
-def _sheet_hash_matches(current_xlsx: bytes, extraction: bytes | None) -> bool:
-    """check current xlsx in the upload matches the recorded xlsx_sha256 in
-    hysprint_experiment.extracted.json"""
-    if extraction is None:
-        return True
-    try:
-        stored = json.loads(extraction).get('xlsx_sha256')
-    except ValueError:
-        return True
-    return not stored or hashlib.sha256(current_xlsx).hexdigest() == stored
-
-
 @dataclass
 class EntryHandle:
     upload_id: str
     entry_id: str
-
-
-@dataclass(frozen=True)
-class DerivedSheet:
-    xlsx: bytes
-    # file name: hysprint_experiment.xlsx
-    xlsx_mainfile: str
-    # {archive, xlsx_sha256, extracted_at, input_entry_ids} — the pristine
-    # result; the hash detects hand-edited sheets. None for a user-uploaded
-    # sheet: only extraction writes the extraction file.
-    extraction: dict | None
-    # file name: hysprint_experiment.extracted.json
-    extraction_mainfile: str
 
 
 @dataclass(frozen=True)
@@ -263,7 +234,7 @@ class VoiceElnService:
         collection_entry_id: str,
     ) -> EntryHandle:
         """Create the WrittenNote entry and reference it from the collection."""
-        collection_mainfile = await self._resolve_collection_mainfile(
+        collection_mainfile = await self.resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
         await self.writer.write_archive(
@@ -309,7 +280,7 @@ class VoiceElnService:
         present.
         """
 
-        mainfile = await self._resolve_collection_mainfile(
+        mainfile = await self.resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
         await self.writer.read_archive(client, upload_id, mainfile)
@@ -352,173 +323,14 @@ class VoiceElnService:
         )
         return EntryHandle(upload_id=upload_id, entry_id=entry_id)
 
-    async def read_derived_sheet(
+    async def set_derived_entries(
         self,
         client: httpx.AsyncClient,
         upload_id: str,
-        sheet_mainfile: str,
-        collection_entry_id: str,
-    ) -> bytes | None:
-        """The stored sheet's bytes; None when nothing was extracted yet."""
-        await self._resolve_collection_mainfile(client, upload_id, collection_entry_id)
-        return await self.writer.read_raw_file(client, upload_id, sheet_mainfile)
-
-    async def add_derived_sheet(
-        self,
-        client: httpx.AsyncClient,
-        upload_id: str,
-        sheet: DerivedSheet,
-        collection_entry_id: str,
-    ) -> tuple[EntryHandle, bool]:
-        """Replace the sheet, reparse, and update the derived entries;
-        always regenerating keeps the path self-healing — every retry
-        redoes the full work (issue #34).
-
-        Returns (handle, replaced_edits): True when the stored xlsx no
-        longer matched the recorded hash, i.e. this regenerate discarded
-        hand edits — the caller warns, it never blocks.
-        """
-        mainfile = await self._resolve_collection_mainfile(
-            client, upload_id, collection_entry_id
-        )
-        await self.writer.read_archive(client, upload_id, mainfile)
-
-        entry_id = generate_entry_id(upload_id, sheet.xlsx_mainfile)
-        current = await self.writer.read_raw_file(
-            client, upload_id, sheet.xlsx_mainfile
-        )
-        replaced_edits = False
-        old_ids: list[str] = []
-        if current is not None:
-            stored_extraction = await self.writer.read_raw_file(
-                client, upload_id, sheet.extraction_mainfile
-            )
-            replaced_edits = not _sheet_hash_matches(current, stored_extraction)
-            old_ids = await processed_entry_ids(
-                client, entry_id, 1, self.writer.retry_interval_s
-            )
-
-        await self._reparse_sheet(client, upload_id, sheet, old_ids, mainfile)
-        return EntryHandle(upload_id=upload_id, entry_id=entry_id), replaced_edits
-
-    async def replace_derived_sheet(
-        self,
-        client: httpx.AsyncClient,
-        upload_id: str,
-        sheet: DerivedSheet,
-        collection_entry_id: str,
-    ) -> tuple[bool, EntryHandle]:
-        """Store a user-edited sheet (sheet.extraction is None: the
-        extraction file stays the pristine machine record, so its hash
-        diverging from the new xlsx marks the sheet as hand-edited).
-
-        Returns (changed, handle): whether the sheet content differs from
-        what was stored. Unchanged bytes skip the rewrite, but the derived
-        state is still verified: a missing or failed previous parse falls
-        through to a repair reparse (still reported as unchanged).
-        """
-        mainfile = await self._resolve_collection_mainfile(
-            client, upload_id, collection_entry_id
-        )
-        await self.writer.read_archive(client, upload_id, mainfile)
-
-        entry_id = generate_entry_id(upload_id, sheet.xlsx_mainfile)
-        current = await self.writer.read_raw_file(
-            client, upload_id, sheet.xlsx_mainfile
-        )
-        handle = EntryHandle(upload_id=upload_id, entry_id=entry_id)
-        changed = current != sheet.xlsx
-
-        old_ids: list[str] = []
-        if not changed:
-            parsed_ids = await processed_entry_ids(
-                client, entry_id, 5, self.writer.retry_interval_s
-            )
-            if parsed_ids:
-                await self._set_collection_refs(
-                    client,
-                    upload_id,
-                    'derived_entries',
-                    [entry_id, *parsed_ids],
-                    mainfile,
-                )
-                return False, handle
-            # same bytes but no parse output: repair with a full reparse
-        elif current is not None:
-            old_ids = await processed_entry_ids(
-                client, entry_id, 1, self.writer.retry_interval_s
-            )
-
-        await self._reparse_sheet(client, upload_id, sheet, old_ids, mainfile)
-        return changed, handle
-
-    async def _reparse_sheet(
-        self,
-        client: httpx.AsyncClient,
-        upload_id: str,
-        sheet: DerivedSheet,
-        old_ids: list[str],
-        collection_mainfile: str,
-    ) -> None:
-        """Delete the previous parse output, write the sheet files, wait
-        out the parse, and point derived_entries at the result."""
-        if old_ids:
-            # delete the raw files behind stale parsed entries (NOMAD drops
-            # the entries on reprocess); never sand's own mainfiles
-            keep = {sheet.xlsx_mainfile, sheet.extraction_mainfile, collection_mainfile}
-            stale = await entry_mainfiles(
-                client, upload_id, old_ids, step='find_stale_entries'
-            )
-            for target in stale:
-                if target not in keep:
-                    await self.writer.delete_raw_file(client, upload_id, target)
-
-        await self.writer.upload_raw_file(
-            client,
-            upload_id,
-            sheet.xlsx_mainfile,
-            sheet.xlsx,
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        )
-        if sheet.extraction is not None:
-            await self.writer.upload_raw_file(
-                client,
-                upload_id,
-                sheet.extraction_mainfile,
-                json.dumps(sheet.extraction, ensure_ascii=False).encode(),
-                'application/json',
-            )
-
-        # The parsed entries exist only once the upload finished processing
-        # the sheet; the writer waits before each write, but the last PUT
-        # just re-triggered processing, so wait again.
-        await self.writer.wait_until_writable(
-            client,
-            upload_id,
-            time.monotonic() + self.writer.write_timeout_s,
-            sheet.xlsx_mainfile,
-        )
-        entry_id = generate_entry_id(upload_id, sheet.xlsx_mainfile)
-        parsed_ids = await processed_entry_ids(
-            client, entry_id, 5, self.writer.retry_interval_s
-        )
-        await self._set_collection_refs(
-            client,
-            upload_id,
-            'derived_entries',
-            [entry_id, *parsed_ids],
-            collection_mainfile,
-        )
-
-    async def _set_collection_refs(
-        self,
-        client: httpx.AsyncClient,
-        upload_id: str,
-        field: str,
         entry_ids: list[str],
         mainfile: str,
     ) -> None:
-        """Replace the field's references with the xlxs file and its parsed entries"""
+        """Replace the collection's derived_entries references."""
         archive = await self.writer.read_archive(client, upload_id, mainfile)
         data = archive.get('data')
         if not isinstance(data, dict):
@@ -528,8 +340,8 @@ class VoiceElnService:
                 step='read_collection',
             )
         refs = [entry_ref(upload_id, entry_id) for entry_id in entry_ids]
-        if data.get(field) != refs:
-            data[field] = refs
+        if data.get('derived_entries') != refs:
+            data['derived_entries'] = refs
             await self.writer.write_archive(client, upload_id, mainfile, archive)
 
     async def collect_inputs(
@@ -546,7 +358,7 @@ class VoiceElnService:
         datetimes are the NOMAD server's local time until
         nomad-voice-eln#41 is fixed.
         """
-        mainfile = await self._resolve_collection_mainfile(
+        mainfile = await self.resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
         archive = await self.writer.read_archive(client, upload_id, mainfile)
@@ -741,7 +553,7 @@ class VoiceElnService:
     ) -> tuple[str, dict]:
         """Mainfile and archive of one input; 404 unless the collection
         references the entry (revisions must stay within the experiment)."""
-        collection_mainfile = await self._resolve_collection_mainfile(
+        collection_mainfile = await self.resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
         collection = await self.writer.read_archive(
@@ -797,7 +609,7 @@ class VoiceElnService:
             refs.append(ref)
             await self.writer.write_archive(client, upload_id, mainfile, archive)
 
-    async def _resolve_collection_mainfile(
+    async def resolve_collection_mainfile(
         self,
         client: httpx.AsyncClient,
         upload_id: str,

@@ -6,11 +6,8 @@ from fastapi import APIRouter, Form, HTTPException, Request, Response, UploadFil
 
 from sand.apis.deps import get_bearer_token
 from sand.hysprint import EXPERIMENT_INFO_LABEL, EXPERIMENT_INFO_MAINFILE
-from sand.hysprint.sheet import (
-    DERIVED_SHEET_MAINFILE,
-    EXTRACTED_JSON_MAINFILE,
-    EXTRACTION_STATUS_MAINFILE,
-)
+from sand.hysprint.sheet import DERIVED_SHEET_MAINFILE, EXTRACTION_STATUS_MAINFILE
+from sand.hysprint.sheet_store import SheetStore
 from sand.models.input_collections import (
     CreateHysprintExperimentRequest,
     CreateNoteRequest,
@@ -29,7 +26,6 @@ from sand.services.nomad_api import NomadAPIError, NomadAuthError, check_respons
 from sand.services.voice_eln import (
     AUDIO_EXTENSIONS,
     AudioUpload,
-    DerivedSheet,
     VoiceElnService,
     normalize_audio_filename,
 )
@@ -389,12 +385,7 @@ async def download_sheet(
 
     try:
         async with voice.build_client(token) as client:
-            xlsx = await voice.read_derived_sheet(
-                client,
-                upload_id,
-                DERIVED_SHEET_MAINFILE,
-                collection_entry_id=collection_entry_id,
-            )
+            xlsx = await SheetStore(voice).read(client, upload_id, collection_entry_id)
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
@@ -434,19 +425,10 @@ async def upload_sheet(
         raise HTTPException(status_code=415, detail='Upload an .xlsx file')
     xlsx = await _read_upload(file)
 
-    sheet = DerivedSheet(
-        xlsx=xlsx,
-        xlsx_mainfile=DERIVED_SHEET_MAINFILE,
-        extraction=None,
-        extraction_mainfile=EXTRACTED_JSON_MAINFILE,
-    )
     try:
         async with voice.build_client(token) as client:
-            changed, handle = await voice.replace_derived_sheet(
-                client,
-                upload_id,
-                sheet,
-                collection_entry_id=collection_entry_id,
+            handle, changed = await SheetStore(voice).store_uploaded(
+                client, upload_id, xlsx, collection_entry_id
             )
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
