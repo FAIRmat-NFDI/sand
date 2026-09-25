@@ -1,5 +1,7 @@
 import asyncio
 import json
+from email.parser import BytesParser
+from email.policy import default
 from http import HTTPStatus
 
 import httpx
@@ -31,6 +33,16 @@ def _client(handler) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=BASE_URL)
 
 
+def _multipart_files(request: httpx.Request) -> dict[str, bytes]:
+    """File name -> content of a multipart/form-data request body."""
+    head = f'Content-Type: {request.headers["content-type"]}\r\n\r\n'.encode()
+    message = BytesParser(policy=default).parsebytes(head + request.content)
+    return {
+        part.get_filename(): part.get_payload(decode=True)
+        for part in message.iter_parts()
+    }
+
+
 class _FakeNomad:
     """Programmable NOMAD API: upload status, raw files, and entry queries.
 
@@ -58,6 +70,8 @@ class _FakeNomad:
         self.published = published
         self.upload_exists = upload_exists
         self.put_attempts = 0
+        # file names of each accepted PUT, to see which files arrived together
+        self.put_files: list[list[str]] = []
 
     def _status(self) -> httpx.Response:
         if not self.upload_exists:
@@ -81,12 +95,17 @@ class _FakeNomad:
                 400,
                 json={'detail': 'The upload is currently blocked by another process.'},
             )
-        name = request.url.params['file_name']
-        if '/' in name:
-            return httpx.Response(400, json={'detail': 'Bad file name provided.'})
         directory = request.url.path.split('/raw/', 1)[1].strip('/')
-        full_name = f'{directory}/{name}' if directory else name
-        self.raw_files[full_name] = request.content
+        if 'file_name' in request.url.params:
+            uploaded = {request.url.params['file_name']: request.content}
+        else:
+            uploaded = _multipart_files(request)
+        for name, content in uploaded.items():
+            if '/' in name:
+                return httpx.Response(400, json={'detail': 'Bad file name provided.'})
+            full_name = f'{directory}/{name}' if directory else name
+            self.raw_files[full_name] = content
+        self.put_files.append(sorted(uploaded))
         return httpx.Response(200, json={})
 
     def _raw(self, request: httpx.Request) -> httpx.Response:
@@ -182,7 +201,7 @@ async def test_create_experiment_without_info_has_no_notes():
 
 
 @pytest.mark.asyncio
-async def test_add_audio_stores_file_and_references_it_from_collection():
+async def test_add_audio_uploads_companion_and_audio_together():
     fake = _FakeNomad()
 
     async with _client(fake) as client:
@@ -191,16 +210,25 @@ async def test_add_audio_stores_file_and_references_it_from_collection():
         result = await service.add_audio(
             client,
             UPLOAD_ID,
-            AudioUpload(audio=b'AUDIO', filename='rec.m4a'),
+            AudioUpload(audio=b'AUDIO', filename='rec.m4a', label='cleaning'),
             collection_entry_id=SAND_COLLECTION_ID,
         )
 
     audio_files = [n for n in fake.raw_files if n.endswith('_rec.m4a')]
     assert len(audio_files) == 1
     assert fake.raw_files[audio_files[0]] == b'AUDIO'
-    # without a transcript, the companion is the parser's job (whisper runs)
-    assert f'{audio_files[0]}.archive.json' not in fake.raw_files
-    # the entry id matches the parser's deterministic companion mainfile
+    companion_file = f'{audio_files[0]}.archive.json'
+    # one PUT, so NOMAD processes both in the same run: the parser skips the
+    # existing companion and transcription starts with the audio present
+    assert sorted([audio_files[0], companion_file]) in fake.put_files
+    companion = fake.archive(companion_file)['data']
+    assert companion['raw_audio'] == audio_files[0]
+    assert companion['label'] == 'cleaning'
+    assert companion['datetime']
+    # no transcript: the voice-eln normalizer starts the transcription
+    assert 'transcript' not in companion
+    assert 'transcription_status' not in companion
+    # the entry id is the companion's
     assert result.entry_id == generate_entry_id(
         UPLOAD_ID, f'{audio_files[0]}.archive.json'
     )
@@ -210,9 +238,8 @@ async def test_add_audio_stores_file_and_references_it_from_collection():
 
 @pytest.mark.asyncio
 async def test_add_audio_with_transcript_writes_pretranscribed_companion():
-    # the companion is written by sand BEFORE the audio: the voice-eln
-    # parser skips an existing companion, and a present transcript keeps
-    # its normalizer from starting the automatic (paid) transcription
+    # a present transcript keeps the voice-eln normalizer from starting
+    # the automatic (paid) transcription
     fake = _FakeNomad()
 
     async with _client(fake) as client:
