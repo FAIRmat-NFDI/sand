@@ -33,7 +33,7 @@ sand_api = SandDashboardEntryPoint(
     id_url_safe='sand',
     name='SAND',
     description='Structured Audio NOMAD Data - voice/text AI assistant for extracting lab process data.',
-    # Not 'embedded' yet: sand's own Keycloak login page cannot be shown
-    # inside NOMAD's iframe.
-    launch_modes=['tab'],
+    # Tab first: a full window suits recording in the lab. Embedded, sand
+    # uses NOMAD's session cookie instead of its own Keycloak login.
+    launch_modes=['tab', 'embedded'],  # todo change here later
 )

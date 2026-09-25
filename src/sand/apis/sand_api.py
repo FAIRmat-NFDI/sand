@@ -1,12 +1,14 @@
 import os
+from http import HTTPStatus
 from pathlib import Path
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from nomad.app.v1.routers.auth import get_current_user
 from nomad.config import config
 
+from sand.apis.deps import get_bearer_token
 from sand.apis.routers.input_collections import router as input_collections_router
 from sand.apis.routers.live_transcript import router as live_transcript_router
 from sand.services.voice_eln import VoiceElnService
@@ -64,6 +66,20 @@ async def ui_config():
         'live_transcript_available': bool(app.state.deepgram_api_key),
         'store_live_transcript': app.state.store_live_transcript,
     }
+
+
+@app.get('/api/me')
+async def me(request: Request) -> dict:
+    """The logged-in user's display name. Without an Authorization header
+    this answers only when NOMAD's cookie reached sand, so the UI uses it to
+    decide between NOMAD's session and its own Keycloak login."""
+    token = get_bearer_token(request)
+    async with app.state.voice_eln.build_client(token) as client:
+        response = await client.get('/users/me')
+    if response.status_code != HTTPStatus.OK:
+        raise HTTPException(status_code=401, detail='Not logged in to NOMAD')
+    user = response.json()
+    return {'name': user.get('username') or user.get('name') or ''}
 
 
 @app.get('/auth/config')

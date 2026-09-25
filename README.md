@@ -126,9 +126,9 @@ uv run poe gui start
 
 ### 4. Open the app
 
-SAND is a NOMAD **dashboard** plugin: it is listed on the NOMAD GUI's
-*Dashboards* page and opens in a new tab. It is mounted at (**note the
-trailing slash**):
+SAND is a NOMAD **dashboard** plugin: it is listed on the (new) NOMAD GUI's
+*Dashboards* page and opens in a new tab or embedded in the GUI. It is mounted
+at (**note the trailing slash**):
 
 ```
 http://localhost:8000/nomad-oasis/dashboards/sand/
@@ -143,10 +143,13 @@ dashboard's `sand` id appended. Dashboards need `nomad-lab>=1.4.3`.
 | `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/` | The SAND UI (`static/index.html`) |
 | `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/docs` | FastAPI Swagger / OpenAPI docs |
 | `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/auth/config` | Keycloak config for the frontend |
+| `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/api/me` | The logged-in user's name |
 | `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/api/input-collections` | The user's unpublished experiments |
 | `POST` | `http://localhost:8000/nomad-oasis/dashboards/sand/api/input-collections` | Create an experiment (optionally with the info form) |
 | `POST` | `http://localhost:8000/nomad-oasis/dashboards/sand/api/input-collections/{upload_id}/audio` | Add a recording (→ AudioInput entry) |
 | `POST` | `http://localhost:8000/nomad-oasis/dashboards/sand/api/input-collections/{upload_id}/notes` | Add a typed step note (→ WrittenNote entry) |
 
-The `input-collections` routes require a logged-in
-user, so you must authenticate through Keycloak before calling them.
+The `api/` routes require a logged-in NOMAD user. The token is taken from the
+`Authorization` header, or else from NOMAD's `Authorization` cookie. Opened in
+a tab, the UI logs in with Keycloak itself and sends the header; embedded in
+the NOMAD GUI, it uses the GUI's session cookie, which the GUI keeps fresh.
