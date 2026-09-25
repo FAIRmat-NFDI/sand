@@ -29,7 +29,7 @@ voice-eln entries.
 
 ## Running the SAND app
 
-SAND is not a standalone application — it is a **NOMAD plugin**. It is mounted onto NOMAD's API server under the `sand/` prefix. To run it you
+SAND is not a standalone application — it is a **NOMAD dashboard plugin**. NOMAD mounts it onto its API server under `dashboards/sand/`. To run it you
 start a NOMAD instance with this plugin installed and configured. The easiest way
 to do this for development is via the
 [`nomad-distro-dev`](https://github.com/FAIRmat-NFDI/nomad-distro-dev) repository.
@@ -74,7 +74,7 @@ distribution's `pyproject.toml` (with `nomad-sand = { workspace = true }`).
 
 The `uv run poe setup` step (below) creates a `nomad.yaml` in the root of your
 `nomad-distro-dev` checkout if one does not exist yet. You must edit it to
-**enable** the SAND API entry point and **provide your API keys**, otherwise the
+**enable** the SAND dashboard entry point and **provide your API keys**, otherwise the
 app will load but the AI features will not work:
 
 ```yaml
@@ -126,27 +126,27 @@ uv run poe gui start
 
 ### 4. Open the app
 
-With the default `/nomad-oasis/api` base path, the SAND app is available at:
-
-The app is mounted at the base URL (**note the trailing slash**):
+SAND is a NOMAD **dashboard** plugin: it is listed on the NOMAD GUI's
+*Dashboards* page and opens in a new tab. It is mounted at (**note the
+trailing slash**):
 
 ```
-http://localhost:8000/nomad-oasis/sand/
+http://localhost:8000/nomad-oasis/dashboards/sand/
 ```
 
-The general form is `<api_base_path>/sand/`, i.e. NOMAD's API base path
-(`config.services.api_base_path`, default `/nomad-oasis`) with the plugin's `sand`
-prefix appended.
+The general form is `<api_base_path>/dashboards/sand/`, i.e. NOMAD's API base
+path (`config.services.api_base_path`, default `/nomad-oasis`) with the
+dashboard's `sand` id appended. Dashboards need `nomad-lab>=1.4.3`.
 
 | Method | URL | Description |
 |--------|-----|-------------|
-| `GET`  | `http://localhost:8000/nomad-oasis/sand/` | The SAND UI (`static/index.html`) |
-| `GET`  | `http://localhost:8000/nomad-oasis/sand/docs` | FastAPI Swagger / OpenAPI docs |
-| `GET`  | `http://localhost:8000/nomad-oasis/sand/auth/config` | Keycloak config for the frontend |
-| `GET`  | `http://localhost:8000/nomad-oasis/sand/api/input-collections` | The user's unpublished experiments |
-| `POST` | `http://localhost:8000/nomad-oasis/sand/api/input-collections` | Create an experiment (optionally with the info form) |
-| `POST` | `http://localhost:8000/nomad-oasis/sand/api/input-collections/{upload_id}/audio` | Add a recording (→ AudioInput entry) |
-| `POST` | `http://localhost:8000/nomad-oasis/sand/api/input-collections/{upload_id}/notes` | Add a typed step note (→ WrittenNote entry) |
+| `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/` | The SAND UI (`static/index.html`) |
+| `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/docs` | FastAPI Swagger / OpenAPI docs |
+| `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/auth/config` | Keycloak config for the frontend |
+| `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/api/input-collections` | The user's unpublished experiments |
+| `POST` | `http://localhost:8000/nomad-oasis/dashboards/sand/api/input-collections` | Create an experiment (optionally with the info form) |
+| `POST` | `http://localhost:8000/nomad-oasis/dashboards/sand/api/input-collections/{upload_id}/audio` | Add a recording (→ AudioInput entry) |
+| `POST` | `http://localhost:8000/nomad-oasis/dashboards/sand/api/input-collections/{upload_id}/notes` | Add a typed step note (→ WrittenNote entry) |
 
 The `input-collections` routes require a logged-in
 user, so you must authenticate through Keycloak before calling them.

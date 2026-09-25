@@ -33,7 +33,7 @@ sand_api_entry_point = config.get_plugin_entry_point('sand.apis:sand_api')
 app = FastAPI(
     title='SAND',
     version='0.1.0',
-    root_path=f'{config.services.api_base_path}/{sand_api_entry_point.prefix}',
+    root_path=f'{config.services.api_base_path}/dashboards/{sand_api_entry_point.id_url_safe}',
 )
 
 # Read config from the entry point (configured in nomad.yaml)
