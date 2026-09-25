@@ -29,9 +29,6 @@ AUDIO_INPUT_M_DEF = 'nomad_voice_eln.schema_packages.schema_package.AudioInput'
 # Mainfile of the InputCollection entry in an experiment upload created by sand.
 EXPERIMENT_MAINFILE = 'experiment.archive.json'
 
-# Label routing (see docs/handover.md §8): step narrations are labeled 'step'.
-STEP_LABEL = 'step'
-
 # Audio types the nomad-voice-eln parser matches (its mainfile_name_re);
 # a file with any other extension is stored but never becomes an audio entry.
 AUDIO_EXTENSIONS = frozenset({'wav', 'mp3', 'm4a', 'flac', 'ogg', 'webm', 'opus'})
@@ -77,6 +74,7 @@ class AudioUpload:
     filename: str
     transcript: str | None = None
     stt_model: str | None = None
+    label: str = ''
 
 
 @dataclass(frozen=True)
@@ -214,10 +212,10 @@ class VoiceElnService:
         text: str,
         collection_entry_id: str,
         *,
-        label: str = STEP_LABEL,
+        label: str = '',
         mainfile: str | None = None,
     ) -> EntryHandle:
-        """Add a WrittenNote, by default a timestamped step note.
+        """Add a WrittenNote, by default at a timestamped mainfile.
 
         collection_entry_id names the exact InputCollection entry the
         note is attached to (an upload can hold more than one).
@@ -244,7 +242,7 @@ class VoiceElnService:
             {
                 'data': {
                     'm_def': WRITTEN_NOTE_M_DEF,
-                    'name': note.label,
+                    'name': note.label or 'note',
                     'datetime': _utc_now_iso(),
                     'text': note.text,
                     'label': note.label,
@@ -277,7 +275,11 @@ class VoiceElnService:
         writes the companion archive itself BEFORE the audio: the
         voice-eln parser skips an existing companion, and its normalizer
         skips the automatic transcription when a transcript is
-        present.
+        present. The label goes into that companion.
+
+        Without a transcript the parser creates the companion, so a label
+        is added afterwards by read-modify-write; this can race with the
+        transcription writing its result into the same file (issue #67).
         """
 
         mainfile = await self.resolve_collection_mainfile(
@@ -289,8 +291,10 @@ class VoiceElnService:
         # and a second file with the same name would overwrite the first.
         stored_name = f'{_utc_now_stamp()}_{posixpath.basename(upload.filename)}'
         companion = f'{stored_name}.archive.json'
+        label = upload.label.strip()
+        pre_transcribed = bool(upload.transcript and upload.transcript.strip())
 
-        if upload.transcript and upload.transcript.strip():
+        if pre_transcribed:
             now = _utc_now_iso()
             await self.writer.write_archive(
                 client,
@@ -307,6 +311,7 @@ class VoiceElnService:
                             'stt_model': upload.stt_model,
                             'transcribed_at': now,
                         },
+                        **({'label': label} if label else {}),
                     }
                 },
             )
@@ -321,6 +326,12 @@ class VoiceElnService:
         await self._append_to_collection(
             client, upload_id, 'audios', entry_id, mainfile
         )
+
+        if label and not pre_transcribed:
+            async with self._input_lock(entry_id):
+                archive = await self.writer.read_archive(client, upload_id, companion)
+                archive.setdefault('data', {})['label'] = label
+                await self._write_input(client, upload_id, companion, archive)
         return EntryHandle(upload_id=upload_id, entry_id=entry_id)
 
     async def set_derived_entries(
@@ -354,9 +365,7 @@ class VoiceElnService:
 
         Ordered by the entry's datetime — user-editable in NOMAD, so
         researchers can correct or arrange the timeline. Entries without
-        one sort last; ties break by entry id. Caveat: AudioInput
-        datetimes are the NOMAD server's local time until
-        nomad-voice-eln#41 is fixed.
+        one sort last; ties break by entry id.
         """
         mainfile = await self.resolve_collection_mainfile(
             client, upload_id, collection_entry_id
@@ -519,6 +528,44 @@ class VoiceElnService:
                     step='revise_input_datetime',
                 )
             section['datetime'] = parsed.isoformat()
+            archive['data'] = section
+            await self._write_input(client, upload_id, mainfile, archive)
+            return kind
+
+    async def revise_input_label(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        entry_id: str,
+        label: str,
+        collection_entry_id: str,
+    ) -> str:
+        """Set one input's free-text label (empty clears it); returns its kind."""
+        async with self._input_lock(entry_id):
+            mainfile, archive = await self._locate_input(
+                client,
+                upload_id,
+                entry_id,
+                collection_entry_id,
+                step='revise_input_label',
+            )
+            section = archive.get('data') or {}
+            m_def = str(section.get('m_def') or '')
+            if m_def.endswith('AudioInput'):
+                kind = 'audio'
+            elif m_def.endswith('WrittenNote'):
+                kind = 'note'
+            else:
+                raise NomadAPIError(
+                    HTTPStatus.NOT_FOUND,
+                    f'entry {entry_id} is not a revisable input',
+                    step='revise_input_label',
+                )
+            label = label.strip()
+            if label:
+                section['label'] = label
+            else:
+                section.pop('label', None)
             archive['data'] = section
             await self._write_input(client, upload_id, mainfile, archive)
             return kind

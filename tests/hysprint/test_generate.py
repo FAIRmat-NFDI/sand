@@ -1,7 +1,9 @@
 import json
 
 import pytest
+from nomad.utils import generate_entry_id
 
+from sand.hysprint import EXPERIMENT_INFO_MAINFILE
 from sand.hysprint.generate import (
     HysprintInputError,
     assemble,
@@ -9,6 +11,9 @@ from sand.hysprint.generate import (
     route_inputs,
 )
 from sand.services.voice_eln import CollectedInput
+
+UPLOAD_ID = 'up-1'
+INFO_ENTRY_ID = generate_entry_id(UPLOAD_ID, EXPERIMENT_INFO_MAINFILE)
 
 INFO = {
     'project_name': 'perov',
@@ -26,7 +31,7 @@ def _input(entry_id, text, label='', kind='note'):
 
 
 def _info_input(info=INFO):
-    return _input('n-info', json.dumps(info), label='experiment_info')
+    return _input(INFO_ENTRY_ID, json.dumps(info), label='experiment_info')
 
 
 def test_route_inputs_separates_info_from_ordered_steps():
@@ -36,21 +41,34 @@ def test_route_inputs_separates_info_from_ordered_steps():
         _input('n-1', 'spin coated NiOx'),
     ]
 
-    info, steps = route_inputs(inputs)
+    info, steps = route_inputs(inputs, UPLOAD_ID)
 
     assert info == INFO
     assert steps == ['cleaned the substrates', 'spin coated NiOx']
 
 
+def test_route_inputs_ignores_user_labels():
+    # the form is found by its mainfile, so labels can be anything
+    inputs = [
+        _input(INFO_ENTRY_ID, json.dumps(INFO), label='my form'),
+        _input('n-1', 'spin coated NiOx', label='experiment_info'),
+    ]
+
+    info, steps = route_inputs(inputs, UPLOAD_ID)
+
+    assert info == INFO
+    assert steps == ['spin coated NiOx']
+
+
 def test_route_inputs_requires_experiment_info():
     with pytest.raises(HysprintInputError, match='experiment_info'):
-        route_inputs([_input('n-1', 'a step')])
+        route_inputs([_input('n-1', 'a step')], UPLOAD_ID)
 
 
 def test_route_inputs_rejects_invalid_info_json():
-    inputs = [_input('n-info', 'not json', label='experiment_info')]
+    inputs = [_input(INFO_ENTRY_ID, 'not json')]
     with pytest.raises(HysprintInputError, match='not valid JSON'):
-        route_inputs(inputs)
+        route_inputs(inputs, UPLOAD_ID)
 
 
 def test_route_inputs_rejects_incomplete_info():
@@ -59,29 +77,31 @@ def test_route_inputs_rejects_incomplete_info():
         _input('n-1', 'a step'),
     ]
     with pytest.raises(HysprintInputError, match='missing fields'):
-        route_inputs(inputs)
+        route_inputs(inputs, UPLOAD_ID)
 
 
 def test_route_inputs_rejects_textless_input():
     inputs = [_info_input(), _input('a-1', None, kind='audio')]
     with pytest.raises(HysprintInputError, match='no text yet'):
-        route_inputs(inputs)
+        route_inputs(inputs, UPLOAD_ID)
 
 
 def test_route_inputs_allows_experiment_without_steps():
-    info, steps = route_inputs([_info_input()])
+    info, steps = route_inputs([_info_input()], UPLOAD_ID)
     assert info['project_name'] == 'perov'
     assert steps == []
 
 
 def test_route_inputs_coerces_n_samples_to_int():
-    info, _ = route_inputs([_info_input({**INFO, 'n_samples': str(INFO['n_samples'])})])
+    info, _ = route_inputs(
+        [_info_input({**INFO, 'n_samples': str(INFO['n_samples'])})], UPLOAD_ID
+    )
     assert info['n_samples'] == INFO['n_samples']
 
 
 def test_route_inputs_rejects_non_numeric_n_samples():
     with pytest.raises(HysprintInputError, match='whole number'):
-        route_inputs([_info_input({**INFO, 'n_samples': 'many'})])
+        route_inputs([_info_input({**INFO, 'n_samples': 'many'})], UPLOAD_ID)
 
 
 def test_assemble_builds_the_canonical_archive():

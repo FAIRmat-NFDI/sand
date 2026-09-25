@@ -226,6 +226,7 @@ async def test_add_audio_with_transcript_writes_pretranscribed_companion():
                 filename='rec.m4a',
                 transcript='UV ozone clean for all samples',
                 stt_model='deepgram/nova-3',
+                label='cleaning',
             ),
             collection_entry_id=SAND_COLLECTION_ID,
         )
@@ -238,6 +239,7 @@ async def test_add_audio_with_transcript_writes_pretranscribed_companion():
     assert companion['transcription_status'] == 'COMPLETED'
     assert companion['transcription_meta']['stt_model'] == 'deepgram/nova-3'
     assert companion['transcription_meta']['transcribed_at']
+    assert companion['label'] == 'cleaning'
     assert result.entry_id == generate_entry_id(
         UPLOAD_ID, f'{audio_files[0]}.archive.json'
     )
@@ -265,7 +267,7 @@ async def test_add_audio_without_collection_stores_no_file():
 
 
 @pytest.mark.asyncio
-async def test_add_note_writes_step_note_and_references_it():
+async def test_add_note_writes_labeled_note_and_references_it():
     fake = _FakeNomad()
 
     async with _client(fake) as client:
@@ -276,13 +278,14 @@ async def test_add_note_writes_step_note_and_references_it():
             UPLOAD_ID,
             'spun coat at 2000 rpm',
             collection_entry_id=SAND_COLLECTION_ID,
+            label='spin coating',
         )
 
     note_files = [n for n in fake.raw_files if n.startswith('note_')]
     assert len(note_files) == 1
     note = fake.archive(note_files[0])['data']
     assert note['text'] == 'spun coat at 2000 rpm'
-    assert note['label'] == 'step'
+    assert note['label'] == 'spin coating'
     assert result.entry_id == generate_entry_id(UPLOAD_ID, note_files[0])
     collection = fake.archive(EXPERIMENT_MAINFILE)['data']
     assert collection['notes'] == [entry_ref(UPLOAD_ID, result.entry_id)]
@@ -598,6 +601,55 @@ async def test_revise_rejects_an_entry_outside_the_collection():
     async with _client(fake) as client:
         with pytest.raises(NomadAPIError) as excinfo:
             await _service().revise_input(
+                client,
+                UPLOAD_ID,
+                'x1',
+                'hijack',
+                collection_entry_id=SAND_COLLECTION_ID,
+            )
+
+    assert excinfo.value.status_code == HTTPStatus.NOT_FOUND
+    assert fake.put_attempts == puts_before
+
+
+@pytest.mark.asyncio
+async def test_revise_label_sets_and_clears_on_both_input_kinds():
+    fake = _fake_with_inputs(audio={'transcript': 'machine'}, note={'text': 'n'})
+
+    async with _client(fake) as client:
+        service = _service()
+        for entry_id, kind in (('a1', 'audio'), ('n1', 'note')):
+            assert (
+                await service.revise_input_label(
+                    client,
+                    UPLOAD_ID,
+                    entry_id,
+                    '  spin coating ',
+                    collection_entry_id=SAND_COLLECTION_ID,
+                )
+                == kind
+            )
+            data = fake.archive(f'{entry_id}.archive.json')['data']
+            assert data['label'] == 'spin coating'
+
+            await service.revise_input_label(
+                client, UPLOAD_ID, entry_id, '', collection_entry_id=SAND_COLLECTION_ID
+            )
+            assert 'label' not in fake.archive(f'{entry_id}.archive.json')['data']
+
+    # the label edit leaves the input's content alone
+    assert fake.archive('a1.archive.json')['data']['transcript'] == 'machine'
+    assert fake.archive('n1.archive.json')['data']['text'] == 'n'
+
+
+@pytest.mark.asyncio
+async def test_revise_label_rejects_an_entry_outside_the_collection():
+    fake = _fake_with_inputs(audio={}, note={'text': 'n'})
+    puts_before = fake.put_attempts
+
+    async with _client(fake) as client:
+        with pytest.raises(NomadAPIError) as excinfo:
+            await _service().revise_input_label(
                 client,
                 UPLOAD_ID,
                 'x1',

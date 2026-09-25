@@ -48,7 +48,7 @@ async def collect_and_route(data: ExtractInput) -> dict:
             non_retryable=True,
         )
     try:
-        info, step_texts = route_inputs(inputs)
+        info, step_texts = route_inputs(inputs, data.upload_id)
     except HysprintInputError as exc:
         raise ApplicationError(str(exc), non_retryable=True) from exc
 

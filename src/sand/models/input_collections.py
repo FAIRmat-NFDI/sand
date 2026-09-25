@@ -44,6 +44,7 @@ class InputCollectionListResponse(BaseModel):
 
 class CreateNoteRequest(BaseModel):
     text: str
+    label: str = ''  # optional free text for the user
 
 
 class HysprintExtractResponse(BaseModel):
@@ -75,6 +76,10 @@ class ReviseInputRequest(BaseModel):
 
 class ReviseInputResponse(BaseModel):
     kind: str  # which field was written: audio -> corrected_transcript, note -> text
+
+
+class ReviseLabelRequest(BaseModel):
+    label: str  # empty clears the label
 
 
 class ReviseDatetimeRequest(BaseModel):

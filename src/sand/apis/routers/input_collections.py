@@ -20,6 +20,7 @@ from sand.models.input_collections import (
     ReviseDatetimeRequest,
     ReviseInputRequest,
     ReviseInputResponse,
+    ReviseLabelRequest,
     SheetUploadResponse,
 )
 from sand.services.nomad_api import NomadAPIError, NomadAuthError, check_response
@@ -179,14 +180,16 @@ async def create_hysprint_input_collection(
 @router.post(
     '/input-collections/{upload_id}/audio', response_model=InputCollectionResponse
 )
-async def add_audio(
+async def add_audio(  # noqa: PLR0913
     upload_id: str,
     file: UploadFile,
     request: Request,
     collection_entry_id: str,
+    *,
     transcript: str | None = Form(None),
+    label: str = Form(''),
 ) -> InputCollectionResponse:
-    """Add audio to an InputCollection entry.
+    """Add audio to an InputCollection entry, optionally labeled.
 
     collection_entry_id names the target collection exactly (an upload
     can hold more than one). `transcript` carries the live transcription
@@ -218,6 +221,7 @@ async def add_audio(
                     filename=filename,
                     transcript=transcript,
                     stt_model=f'deepgram/{request.app.state.deepgram_model}',
+                    label=label,
                 ),
                 collection_entry_id=collection_entry_id,
             )
@@ -238,7 +242,7 @@ async def add_note(
     request: Request,
     collection_entry_id: str,
 ) -> InputCollectionResponse:
-    """Add a typed step note (WrittenNote labeled 'step') to the experiment.
+    """Add a typed note (WrittenNote, optionally labeled) to the experiment.
 
     collection_entry_id names the target collection exactly (an upload
     can hold more than one).
@@ -256,6 +260,7 @@ async def add_note(
                 upload_id,
                 body.text,
                 collection_entry_id=collection_entry_id,
+                label=body.label.strip(),
             )
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
@@ -364,6 +369,36 @@ async def revise_input_datetime(
             )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return ReviseInputResponse(kind=kind)
+
+
+@router.post(
+    '/input-collections/{upload_id}/inputs/{entry_id}/label',
+    response_model=ReviseInputResponse,
+)
+async def revise_input_label(
+    upload_id: str,
+    entry_id: str,
+    body: ReviseLabelRequest,
+    request: Request,
+    collection_entry_id: str,
+) -> ReviseInputResponse:
+    """Set the free-text label of one input; empty clears it."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    try:
+        async with voice.build_client(token) as client:
+            kind = await voice.revise_input_label(
+                client,
+                upload_id,
+                entry_id,
+                body.label,
+                collection_entry_id=collection_entry_id,
+            )
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
