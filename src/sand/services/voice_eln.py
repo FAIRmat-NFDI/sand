@@ -1,4 +1,5 @@
 import asyncio
+import json
 import posixpath
 import time
 from dataclasses import dataclass
@@ -267,19 +268,14 @@ class VoiceElnService:
     ) -> EntryHandle:
         """Add a recording to an experiment.
 
-        Uploads the audio file into the experiment upload (the voice-eln
-        parser turns it into an AudioInput entry) and references the entry
-        from the experiment's InputCollection.
-
-        With `upload.transcript` (live transcription already happened), sand
-        writes the companion archive itself BEFORE the audio: the
-        voice-eln parser skips an existing companion, and its normalizer
-        skips the automatic transcription when a transcript is
-        present. The label goes into that companion.
-
-        Without a transcript the parser creates the companion, so a label
-        is added afterwards by read-modify-write; this can race with the
-        transcription writing its result into the same file (issue #67).
+        sand writes the AudioInput companion archive itself (raw_audio,
+        datetime, label, and the live transcript if any) and uploads it
+        together with the audio in ONE request, so NOMAD processes both in
+        the same run: the voice-eln parser skips the existing companion,
+        and its normalizer starts the transcription only when there is no
+        transcript, with the audio already present. sand never patches the
+        companion after the transcription started, so nothing races with
+        the transcription writing its result (issue #67).
         """
 
         mainfile = await self.resolve_collection_mainfile(
@@ -291,47 +287,31 @@ class VoiceElnService:
         # and a second file with the same name would overwrite the first.
         stored_name = f'{_utc_now_stamp()}_{posixpath.basename(upload.filename)}'
         companion = f'{stored_name}.archive.json'
-        label = upload.label.strip()
-        pre_transcribed = bool(upload.transcript and upload.transcript.strip())
+        now = _utc_now_iso()
+        data = {'m_def': AUDIO_INPUT_M_DEF, 'raw_audio': stored_name, 'datetime': now}
+        if upload.label.strip():
+            data['label'] = upload.label.strip()
+        if upload.transcript and upload.transcript.strip():
+            data['transcript'] = upload.transcript.strip()
+            data['transcription_status'] = 'COMPLETED'
+            data['transcription_meta'] = {
+                'stt_model': upload.stt_model,
+                'transcribed_at': now,
+            }
 
-        if pre_transcribed:
-            now = _utc_now_iso()
-            await self.writer.write_archive(
-                client,
-                upload_id,
-                companion,
-                {
-                    'data': {
-                        'm_def': AUDIO_INPUT_M_DEF,
-                        'raw_audio': stored_name,
-                        'datetime': now,
-                        'transcript': upload.transcript.strip(),
-                        'transcription_status': 'COMPLETED',
-                        'transcription_meta': {
-                            'stt_model': upload.stt_model,
-                            'transcribed_at': now,
-                        },
-                        **({'label': label} if label else {}),
-                    }
-                },
-            )
-
-        await self.writer.upload_raw_file(
-            client, upload_id, stored_name, upload.audio, 'application/octet-stream'
+        await self.writer.upload_raw_files(
+            client,
+            upload_id,
+            [
+                (companion, json.dumps({'data': data}).encode(), 'application/json'),
+                (stored_name, upload.audio, 'application/octet-stream'),
+            ],
         )
 
-        # The companion mainfile is deterministic (written above, or created
-        # by the parser), so the entry id is known before the entry exists.
         entry_id = generate_entry_id(upload_id, companion)
         await self._append_to_collection(
             client, upload_id, 'audios', entry_id, mainfile
         )
-
-        if label and not pre_transcribed:
-            async with self._input_lock(entry_id):
-                archive = await self.writer.read_archive(client, upload_id, companion)
-                archive.setdefault('data', {})['label'] = label
-                await self._write_input(client, upload_id, companion, archive)
         return EntryHandle(upload_id=upload_id, entry_id=entry_id)
 
     async def set_derived_entries(

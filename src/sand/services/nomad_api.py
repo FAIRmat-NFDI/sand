@@ -194,19 +194,53 @@ class RawFileWriter:
         content: bytes,
         content_type: str,
     ) -> None:
-        """PUT a raw file once the upload is idle. A 400 caused by
-        processing that started between the check and the PUT is retried."""
-        deadline = time.monotonic() + self.write_timeout_s
+        """PUT a raw file once the upload is idle."""
         # PUT raw only accepts a bare basename in file_name; the directory
         # goes into the URL path.
         directory, _, base_name = file_name.rpartition('/')
+        await self._put_raw(
+            client,
+            upload_id,
+            directory,
+            file_name,
+            params={'file_name': base_name},
+            content=content,
+            headers={'Content-Type': content_type},
+        )
+
+    async def upload_raw_files(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        files: list[tuple[str, bytes, str]],
+    ) -> None:
+        """PUT several top-level raw files (name, content, content type) in
+        one multipart request, so NOMAD processes them in the same run."""
+        if any('/' in name for name, _, _ in files):
+            raise ValueError('upload_raw_files takes top-level file names only')
+        await self._put_raw(
+            client,
+            upload_id,
+            '',
+            ', '.join(name for name, _, _ in files),
+            files=[('file', (name, content, ctype)) for name, content, ctype in files],
+        )
+
+    async def _put_raw(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        directory: str,
+        description: str,
+        **request: object,
+    ) -> None:
+        """PUT once the upload is idle. A 400 caused by processing that
+        started between the check and the PUT is retried."""
+        deadline = time.monotonic() + self.write_timeout_s
         while True:
-            await self.wait_until_writable(client, upload_id, deadline, file_name)
+            await self.wait_until_writable(client, upload_id, deadline, description)
             response = await client.put(
-                f'/uploads/{upload_id}/raw/{directory}',
-                params={'file_name': base_name},
-                content=content,
-                headers={'Content-Type': content_type},
+                f'/uploads/{upload_id}/raw/{directory}', **request
             )
             if (
                 response.status_code == HTTPStatus.BAD_REQUEST
