@@ -2,6 +2,8 @@
 
 Protocol (client side):
   1. connect, send {"token": "<NOMAD bearer token>"} as the first message
+     (an empty token: authenticate with NOMAD's Authorization cookie,
+     which the browser sends with the handshake)
   2. wait for {"type": "relay-ready"};
   3. send audio chunks as binary frames;
   4. send {"type": "relay-stop"} (or just close) - sand tells Deepgram to
@@ -22,6 +24,8 @@ from http import HTTPStatus
 
 import websockets
 from fastapi import APIRouter, WebSocket
+
+from sand.apis.deps import token_from_cookie
 
 router = APIRouter()
 
@@ -90,7 +94,9 @@ async def live_transcript(browser_ws: WebSocket) -> None:
         first = await asyncio.wait_for(
             browser_ws.receive_text(), timeout=AUTH_TIMEOUT_S
         )
-        token = json.loads(first).get('token', '')
+        token = json.loads(first).get('token', '') or token_from_cookie(
+            browser_ws.cookies
+        )
     except Exception:
         await browser_ws.close(code=4401, reason='expected an auth message first')
         return

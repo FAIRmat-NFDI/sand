@@ -16,7 +16,7 @@ function showLoginPrompt() {
   document.getElementById("auth-area").innerHTML = "";
 }
 
-function showApp(userName) {
+function showApp(userName, { canLogout }) {
   document.getElementById("login-prompt").style.display = "none";
   document.getElementById("app-content").style.display = "block";
 
@@ -33,7 +33,8 @@ function showApp(userName) {
   logoutBtn.appendChild(icon);
   logoutBtn.addEventListener("click", logout);
 
-  document.getElementById("auth-area").replaceChildren(nameEl, logoutBtn);
+  document.getElementById("auth-area").replaceChildren(
+    ...(canLogout ? [nameEl, logoutBtn] : [nameEl]));
 
   loadExperiments().catch((err) => {
     showError("Could not load experiments: " + err.message);
