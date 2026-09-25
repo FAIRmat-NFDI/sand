@@ -29,7 +29,7 @@ voice-eln entries.
 
 ## Running the SAND app
 
-SAND is not a standalone application — it is a **NOMAD plugin**. It is mounted onto NOMAD's API server under the `sand/` prefix. To run it you
+SAND is not a standalone application — it is a **NOMAD dashboard plugin**. NOMAD mounts it onto its API server under `dashboards/sand/`. To run it you
 start a NOMAD instance with this plugin installed and configured. The easiest way
 to do this for development is via the
 [`nomad-distro-dev`](https://github.com/FAIRmat-NFDI/nomad-distro-dev) repository.
