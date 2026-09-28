@@ -135,20 +135,6 @@ trailing slash**):
 http://localhost:8000/nomad-oasis/dashboards/sand/
 ```
 
-The general form is `<api_base_path>/dashboards/sand/`, i.e. NOMAD's API base
-path (`config.services.api_base_path`, default `/nomad-oasis`) with the
-dashboard's `sand` id appended. Dashboards need `nomad-lab>=1.4.3`.
-
-| Method | URL | Description |
-|--------|-----|-------------|
-| `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/` | The SAND UI (`static/index.html`) |
-| `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/docs` | FastAPI Swagger / OpenAPI docs |
-| `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/api/me` | The logged-in user's name |
-| `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/api/input-collections` | The user's unpublished experiments |
-| `POST` | `http://localhost:8000/nomad-oasis/dashboards/sand/api/input-collections` | Create an experiment (optionally with the info form) |
-| `POST` | `http://localhost:8000/nomad-oasis/dashboards/sand/api/input-collections/{upload_id}/audio` | Add a recording (→ AudioInput entry) |
-| `POST` | `http://localhost:8000/nomad-oasis/dashboards/sand/api/input-collections/{upload_id}/notes` | Add a typed step note (→ WrittenNote entry) |
-
 SAND has no login of its own: it uses the login of the NOMAD GUI, which renews
 the token in the cookie while it is open. So SAND works only while the NOMAD
 GUI is open in another tab of the same browser. SAND watches the token and warns when it is about to
