@@ -40,6 +40,9 @@ Before you can run the SAND app you need a few things in place:
 
 - A working [`nomad-distro-dev`](https://github.com/FAIRmat-NFDI/nomad-distro-dev)
   checkout with its [basic infra prerequisites](https://github.com/FAIRmat-NFDI/nomad-distro-dev#basic-infra)
+- The new NOMAD GUI (the `nomad-gui` package) **installed and enabled in the
+  same NOMAD**. Only the new GUI lists dashboards, and SAND has no login of
+  its own: it uses the GUI's.
 - The [`nomad-voice-eln`](https://github.com/FAIRmat-NFDI/nomad-voice-eln) plugin
   **installed and enabled in the same NOMAD** — it owns audio entries and
   transcription. Follow its README for setup, including `GROQ_API_KEY` in the
@@ -48,9 +51,13 @@ Before you can run the SAND app you need a few things in place:
   plugin **installed and enabled in the same NOMAD** — its action entry point
   registers the extraction workflows on NOMAD's action worker; SAND only starts
   them there.
+- The [`nomad-hysprint`](https://github.com/nomad-hzb/nomad-hysprint) plugin
+  **installed and enabled in the same NOMAD** — its batch parser turns the
+  sheet SAND writes into NOMAD entries.
 - An **LLM API key** for the extraction model (Gemini by default; any LiteLLM
-  model works). Configured in SAND's plugin options — it travels inside the
-  workflow input, not the worker's environment.
+  model works), set as the provider's environment variable (e.g.
+  `GEMINI_API_KEY`) in the **action worker's environment**. It is not
+  configured in `nomad.yaml`.
 
 ### 1. Add the plugin to a NOMAD dev distribution
 
@@ -74,8 +81,8 @@ distribution's `pyproject.toml` (with `nomad-sand = { workspace = true }`).
 
 The `uv run poe setup` step (below) creates a `nomad.yaml` in the root of your
 `nomad-distro-dev` checkout if one does not exist yet. You must edit it to
-**enable** the SAND dashboard entry point and **provide your API keys**, otherwise the
-app will load but the AI features will not work:
+**enable** the entry points of SAND and of the plugins it builds on, and to set
+SAND's options:
 
 ```yaml
 plugins:
@@ -83,6 +90,18 @@ plugins:
     include:
       - sand.apis:sand_api
       - sand.actions.extract:extract_action_entry_point
+      # the new NOMAD GUI: lists the dashboard, SAND uses its login
+      - nomad_gui.apis:gui_api
+      # audio and note entries, transcription
+      - nomad_voice_eln.schema_packages:schema_package_entry_point
+      - nomad_voice_eln.parsers:parser_entry_point
+      - nomad_voice_eln.actions.transcribe:transcribe_action_entry_point
+      - nomad_voice_eln.actions.record_note:record_note_action_entry_point
+      # extraction
+      - nomad_llm_extraction.actions:llm_extractor_action_entry_point
+      # the sheet SAND writes is parsed into hysprint entries
+      - nomad_hysprint.schema_packages:hysprint_package
+      - nomad_hysprint.parsers:hysprint_experiment_parser
     options:
       sand.apis:sand_api:
         llm_model_name: 'gemini/gemini-2.5-flash'  # LiteLLM notation
@@ -98,7 +117,13 @@ plugins:
         # default of the GUI toggle "save live transcript instead of
         # running whisper" (the user decides per recording; default off)
         # store_live_transcript: true
+        # SAND opens in a browser tab (also the default). It does not work
+        # embedded in the GUI: the iframe blocks downloads.
+        launch_modes: ['tab']
 ```
+
+`include` is a whitelist: once it is set, NOMAD loads only the entry points
+listed, so other plugins you use have to be listed too.
 
 There is no Groq/Whisper configuration in SAND anymore: speech-to-text is done
 by the voice-eln transcription action, and its `GROQ_API_KEY` lives in the
@@ -121,8 +146,17 @@ uv sync
 
 uv run poe start
 
+# in a second terminal: the action worker (transcription, extraction),
+# with GROQ_API_KEY and the LLM key (e.g. GEMINI_API_KEY) in its environment
+uv run poe cpuworker
+
+# optional, in a third terminal: the old GUI on port 3000. SAND's
+# "View in NOMAD" links still point to it.
 uv run poe gui start
 ```
+
+The new GUI needs no command of its own: NOMAD serves it at
+`http://localhost:8000/nomad-oasis/gui/v2/`.
 
 ### 4. Open the app
 

@@ -247,6 +247,21 @@ body {
   text-decoration: underline;
 }
 
+/* A recording whose upload failed */
+.unsent-recording {
+  background: #fff8e1;
+  border-left: 3px solid #f9a825;
+  border-radius: 4px;
+  padding: 10px 14px;
+  margin-top: 12px;
+  font-size: 0.875rem;
+  color: #333;
+}
+
+.unsent-recording .controls {
+  margin: 8px 0 0;
+}
+
 /* Extract result card */
 .results-title {
   font-size: 1rem;
