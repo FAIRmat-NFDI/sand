@@ -35,8 +35,12 @@ let recordingExperiment = null;
 // Recordings whose upload failed. They exist only in this tab's memory:
 // kept until uploaded or discarded, lost when the tab closes.
 let unsent = [];
-let uploading = false;
 const UNSENT_CHECK_MS = 5000;
+// Uploads run one after another: each owns the buttons and the status line.
+let uploadQueue = Promise.resolve();
+let pendingUploads = 0;
+// Stopped recordings that still wait for their transcript before uploading.
+let finalizing = 0;
 
 function formatTime(ms) {
   const seconds = Math.floor(ms / 1000);
@@ -122,7 +126,15 @@ async function startRecording() {
     const storeLive = storeLiveChosen();
     const label = labelInput.value.trim();
     statusEl.textContent = "Finishing transcript...";
-    const liveTranscript = await stopLiveTranscript(myConn);
+    finalizing += 1;
+    renderUnsent();
+    let liveTranscript;
+    try {
+      liveTranscript = await stopLiveTranscript(myConn);
+    } finally {
+      finalizing -= 1;
+      renderUnsent();
+    }
     const blob = new Blob(recorded, { type: mimeType });
     if (blob.size === 0) {
       showError("No audio recorded.");
@@ -173,8 +185,29 @@ function audioExtension(blob) {
 // "failed". Shows the error itself, except for "login".
 async function uploadAudio(blobOrFile, experiment, transcript, label) {
   if (!experiment) return "failed";
-  uploading = true;
+  pendingUploads += 1;
   renderUnsent();
+  const previous = uploadQueue;
+  let finished;
+  uploadQueue = new Promise((resolve) => {
+    finished = resolve;
+  });
+  await previous;
+  try {
+    return await sendAudio(blobOrFile, experiment, transcript, label);
+  } finally {
+    pendingUploads -= 1;
+    if (pendingUploads === 0) {
+      recordBtn.disabled = false;
+      uploadBtn.disabled = false;
+      statusEl.textContent = "";
+    }
+    renderUnsent();
+    finished();
+  }
+}
+
+async function sendAudio(blobOrFile, experiment, transcript, label) {
   recordBtn.disabled = true;
   uploadBtn.disabled = true;
   statusEl.textContent = "Uploading audio to NOMAD...";
@@ -208,12 +241,6 @@ async function uploadAudio(blobOrFile, experiment, transcript, label) {
   } catch (err) {
     showError("Network error: " + err.message);
     return "failed";
-  } finally {
-    uploading = false;
-    renderUnsent();
-    recordBtn.disabled = false;
-    uploadBtn.disabled = false;
-    statusEl.textContent = "";
   }
 }
 
@@ -247,13 +274,19 @@ function isRecording() {
   return Boolean(mediaRecorder) && mediaRecorder.state === "recording";
 }
 
+// A retry waits for a recording to finish: an upload takes over the record
+// button and the status line.
+function busy() {
+  return isRecording() || finalizing > 0 || pendingUploads > 0;
+}
+
 function retryUnsent(item) {
   clearError();
-  // an upload takes over the record button and the status line
   if (isRecording()) {
     showError("Stop the recording before you retry.");
     return;
   }
+  if (busy()) return;
   uploadRecording(item);
 }
 
@@ -267,7 +300,14 @@ function saveUnsentAsFile(item) {
 }
 
 async function discardUnsent(item) {
-  if (!await confirmDialog("Discard this recording? It was not uploaded.", "Discard")) return;
+  // no automatic retry behind the open dialog: it would upload a
+  // recording the user is about to discard
+  const waited = item.waitsForLogin;
+  item.waitsForLogin = false;
+  if (!await confirmDialog("Discard this recording? It was not uploaded.", "Discard")) {
+    item.waitsForLogin = waited;
+    return;
+  }
   unsent = unsent.filter((other) => other !== item);
   renderUnsent();
 }
@@ -277,7 +317,7 @@ function unsentButton(text, className, onClick) {
   button.type = "button";
   button.className = "btn btn-small " + className;
   button.textContent = text;
-  button.disabled = uploading;
+  button.disabled = finalizing > 0 || pendingUploads > 0;
   button.addEventListener("click", onClick);
   return button;
 }
@@ -347,7 +387,7 @@ export function initRecord() {
   uploadInput.addEventListener("change", uploadAudioFile);
 
   setInterval(() => {
-    if (uploading || isRecording() || sessionState() !== "ok") return;
+    if (busy() || sessionState() !== "ok") return;
     const item = unsent.find((other) => other.waitsForLogin);
     if (item) uploadRecording(item);
   }, UNSENT_CHECK_MS);
@@ -355,8 +395,11 @@ export function initRecord() {
   window.addEventListener("beforeunload", (event) => {
     // the browser asks before leaving: the recordings would be lost
     if (unsent.length > 0) event.preventDefault();
-    if (mediaRecorder && mediaRecorder.state === "recording") {
-      mediaRecorder.stream.getTracks().forEach((t) => t.stop());
-    }
+  });
+
+  // not in beforeunload: the user may choose to stay, and the recording
+  // has to go on then
+  window.addEventListener("pagehide", () => {
+    if (isRecording()) mediaRecorder.stream.getTracks().forEach((t) => t.stop());
   });
 }
