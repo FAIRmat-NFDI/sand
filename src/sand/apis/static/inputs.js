@@ -5,9 +5,9 @@
 // revisions go to corrected_transcript (clearing withdraws them); note
 // revisions overwrite the note text.
 
-import { authFetch, errorDetail, experimentUrl } from "./api.js";
+import { errorDetail, experimentUrl } from "./api.js";
 import { selectedExperiment } from "./experiments.js";
-import { clearError, showEntryLink, showError } from "./ui.js";
+import { clearError, confirmDialog, showEntryLink, showError } from "./ui.js";
 
 const inputsList = document.getElementById("inputs-list");
 const inputsCount = document.getElementById("inputs-count");
@@ -81,7 +81,7 @@ function beginTimeEdit(whenSpan, item, experiment) {
     saving = true;
     editor.disabled = true;
     try {
-      const res = await authFetch(inputUrl(experiment, item, "datetime"), {
+      const res = await fetch(inputUrl(experiment, item, "datetime"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ datetime: iso }),
@@ -140,7 +140,7 @@ function beginLabelEdit(labelBtn, item, experiment) {
     saving = true;
     editor.disabled = true;
     try {
-      const res = await authFetch(inputUrl(experiment, item, "label"), {
+      const res = await fetch(inputUrl(experiment, item, "label"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ label }),
@@ -167,12 +167,12 @@ function beginLabelEdit(labelBtn, item, experiment) {
 
 // --- revision in place -----------------------------------------------------
 
-function beginRevision(item, experiment, li, textEl) {
+async function beginRevision(item, experiment, li, textEl) {
   if (revising && revising.item.entry_id === item.entry_id) return;
   // a revision already being saved is not lost by switching: no prompt
   if (revising && !revising.saveBtn.disabled
       && revising.editor.value.trim() !== (revising.item.text || "").trim()
-      && !window.confirm("Discard the unsaved revision and open this input?")) {
+      && !await confirmDialog("Discard the unsaved revision and open this input?", "Discard")) {
     return;
   }
   endRevision();
@@ -244,7 +244,7 @@ async function saveRevision() {
   clearError();
   saveBtn.disabled = true;
   try {
-    const res = await authFetch(inputUrl(experiment, item, "text"), {
+    const res = await fetch(inputUrl(experiment, item, "text"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
@@ -374,7 +374,7 @@ async function loadInputs(experiment, generation) {
   if (!inputsStillWanted(experiment, generation)) return;
   let res;
   try {
-    res = await authFetch(experimentUrl(experiment, "inputs"));
+    res = await fetch(experimentUrl(experiment, "inputs"));
   } catch (err) {
     return; // next manual refresh or upload will retry
   }

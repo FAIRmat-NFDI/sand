@@ -127,8 +127,9 @@ uv run poe gui start
 ### 4. Open the app
 
 SAND is a NOMAD **dashboard** plugin: it is listed on the (new) NOMAD GUI's
-*Dashboards* page and opens in a new tab or embedded in the GUI. It is mounted
-at (**note the trailing slash**):
+*Dashboards* page and opens in a new tab. It does not run embedded in the GUI,
+whose iframe blocks downloads (the sheet). It is mounted at (**note the
+trailing slash**):
 
 ```
 http://localhost:8000/nomad-oasis/dashboards/sand/
@@ -142,7 +143,6 @@ dashboard's `sand` id appended. Dashboards need `nomad-lab>=1.4.3`.
 |--------|-----|-------------|
 | `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/` | The SAND UI (`static/index.html`) |
 | `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/docs` | FastAPI Swagger / OpenAPI docs |
-| `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/auth/config` | Keycloak config for the frontend |
 | `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/api/me` | The logged-in user's name |
 | `GET`  | `http://localhost:8000/nomad-oasis/dashboards/sand/api/input-collections` | The user's unpublished experiments |
 | `POST` | `http://localhost:8000/nomad-oasis/dashboards/sand/api/input-collections` | Create an experiment (optionally with the info form) |
@@ -150,6 +150,10 @@ dashboard's `sand` id appended. Dashboards need `nomad-lab>=1.4.3`.
 | `POST` | `http://localhost:8000/nomad-oasis/dashboards/sand/api/input-collections/{upload_id}/notes` | Add a typed step note (→ WrittenNote entry) |
 
 The `api/` routes require a logged-in NOMAD user. The token is taken from the
-`Authorization` header, or else from NOMAD's `Authorization` cookie. Opened in
-a tab, the UI logs in with Keycloak itself and sends the header; embedded in
-the NOMAD GUI, it uses the GUI's session cookie, which the GUI keeps fresh.
+`Authorization` header (scripts), or else from NOMAD's `Authorization` cookie
+(the UI).
+
+SAND has no login of its own: it uses the login of the NOMAD GUI, which renews
+the token in the cookie while it is open. So SAND works only while the NOMAD
+GUI is open in another tab of the same browser. SAND watches the token and warns when it is about to
+expire or has expired; it then does not start a new recording.

@@ -2,8 +2,6 @@
 // sand's Deepgram relay in parallel with the local accumulation; if the
 // relay is off or fails, recording works unchanged.
 
-import { authToken } from "./api.js";
-
 // One object per relay connection: handlers close over it, so a socket
 // that outlives its recording (draining finals) or a stale callback from
 // a quickly-restarted recording can never touch the next recording's
@@ -54,7 +52,6 @@ export function startLiveTranscript() {
   });
   liveConn = conn;
 
-  ws.onopen = () => ws.send(JSON.stringify({ token: authToken() }));
   ws.onmessage = (event) => {
     let msg;
     try {

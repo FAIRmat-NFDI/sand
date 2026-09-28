@@ -1,7 +1,7 @@
 // The Record card: recording (with live transcript), discard, and
 // uploading an audio file.
 
-import { authFetch, experimentUrl } from "./api.js";
+import { experimentUrl, sessionState } from "./api.js";
 import { lockExperimentSelect, requireExperiment } from "./experiments.js";
 import { reportNewInput } from "./inputs.js";
 import {
@@ -11,7 +11,7 @@ import {
   stopLiveTranscript,
   storeLiveChosen,
 } from "./live-transcript.js";
-import { clearEntryLink, clearError, showError } from "./ui.js";
+import { clearEntryLink, clearError, confirmDialog, showError } from "./ui.js";
 
 const recordBtn = document.getElementById("record-btn");
 const discardBtn = document.getElementById("discard-btn");
@@ -55,6 +55,12 @@ async function startRecording() {
   clearError();
   const experiment = requireExperiment();
   if (!experiment) return;
+  // a recording lives only in memory until uploaded: do not start one
+  // that cannot be saved
+  if (sessionState() !== "ok") {
+    showError("Log in to NOMAD again before you record: the recording could not be saved.");
+    return;
+  }
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -170,7 +176,7 @@ async function uploadAudio(blobOrFile, experiment, transcript, label) {
   try {
     const saved = await reportNewInput(
       audioEntryEl,
-      authFetch(experimentUrl(experiment, "audio"), { method: "POST", body: form }),
+      fetch(experimentUrl(experiment, "audio"), { method: "POST", body: form }),
       "Audio upload failed",
       "Audio added to " + experiment.name + ".",
       "View audio entry on NOMAD"
@@ -210,12 +216,15 @@ export function initRecord() {
     }
   });
 
-  discardBtn.addEventListener("click", () => {
-    if (!mediaRecorder || mediaRecorder.state !== "recording") return;
-    if (!window.confirm("Discard this recording? Nothing will be saved.")) return;
+  discardBtn.addEventListener("click", async () => {
+    const recorder = mediaRecorder;
+    if (!recorder || recorder.state !== "recording") return;
+    // the recording keeps running while the dialog is open
+    if (!await confirmDialog("Discard this recording? Nothing will be saved.", "Discard")) return;
+    if (mediaRecorder !== recorder || recorder.state !== "recording") return;
     // intent rides on THIS recorder object: a quick discard-then-redo
     // creates a new recorder and cannot re-route or reset it
-    mediaRecorder.discardRequested = true;
+    recorder.discardRequested = true;
     stopRecording();
   });
 

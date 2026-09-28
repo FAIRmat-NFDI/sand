@@ -14,8 +14,8 @@ def token_from_cookie(cookies: dict[str, str]) -> str:
 
 
 def get_bearer_token(request: Request) -> str:
-    """The NOMAD token: from the Authorization header (sand's own Keycloak
-    login), else from NOMAD's cookie (opened from the NOMAD GUI)."""
+    """The NOMAD token: from NOMAD's cookie (the UI), or from the
+    Authorization header (scripts and other API clients)."""
     auth = request.headers.get('Authorization', '')
     if auth.startswith('Bearer '):
         return auth.removeprefix('Bearer ')

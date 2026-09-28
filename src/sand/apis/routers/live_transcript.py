@@ -1,9 +1,8 @@
 """Live transcription relay: browser audio -> Deepgram -> transcript.
 
 Protocol (client side):
-  1. connect, send {"token": "<NOMAD bearer token>"} as the first message
-     (an empty token: authenticate with NOMAD's Authorization cookie,
-     which the browser sends with the handshake)
+  1. connect: the browser sends NOMAD's Authorization cookie with the
+     handshake, which authenticates the socket;
   2. wait for {"type": "relay-ready"};
   3. send audio chunks as binary frames;
   4. send {"type": "relay-stop"} (or just close) - sand tells Deepgram to
@@ -33,7 +32,6 @@ DEEPGRAM_LIVE_URL = 'wss://api.deepgram.com/v1/listen'
 
 # How long to wait for Deepgram's remaining finals after CloseStream.
 DRAIN_TIMEOUT_S = 10.0
-AUTH_TIMEOUT_S = 10.0
 
 
 async def _token_is_valid(app, token: str) -> bool:
@@ -90,16 +88,7 @@ async def live_transcript(browser_ws: WebSocket) -> None:
         await browser_ws.close(code=4503, reason='live transcription not configured')
         return
 
-    try:
-        first = await asyncio.wait_for(
-            browser_ws.receive_text(), timeout=AUTH_TIMEOUT_S
-        )
-        token = json.loads(first).get('token', '') or token_from_cookie(
-            browser_ws.cookies
-        )
-    except Exception:
-        await browser_ws.close(code=4401, reason='expected an auth message first')
-        return
+    token = token_from_cookie(browser_ws.cookies)
     if not await _token_is_valid(app, token):
         await browser_ws.close(code=4401, reason='invalid NOMAD token')
         return
