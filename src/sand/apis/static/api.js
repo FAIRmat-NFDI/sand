@@ -20,7 +20,8 @@ function sessionSecondsLeft() {
   try {
     const token = decodeURIComponent(match[1]).replace(/^Bearer /, "");
     const payload = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-    return JSON.parse(atob(payload)).exp - Date.now() / 1000;
+    const exp = JSON.parse(atob(payload)).exp;
+    return Number.isFinite(exp) ? exp - Date.now() / 1000 : 0;
   } catch {
     return 0;
   }
@@ -33,18 +34,27 @@ export function sessionState() {
   return left < EXPIRING_S ? "expiring" : "ok";
 }
 
+// null: not logged in. Throws when NOMAD fails, which is not a logout.
 async function loggedInName() {
   const res = await fetch("api/me");
-  return res.ok ? (await res.json()).name : null;
+  if (res.status === 401) return null;
+  if (!res.ok) throw new Error(await errorDetail(res));
+  return (await res.json()).name;
 }
 
+// onLogout(problem) gets a message when NOMAD failed instead of answering.
 // onSession(state) fires on every change of sessionState() after login.
 export async function initAuth({ onLogin, onLogout, onSession }) {
   nomadGuiUrl = (await (await fetch("ui-config")).json()).nomad_gui_url;
 
-  let name = await loggedInName();
-  if (name === null) onLogout();
-  else onLogin(name);
+  let name = null;
+  try {
+    name = await loggedInName();
+    if (name === null) onLogout("");
+  } catch (err) {
+    onLogout("Could not check your NOMAD login: " + err.message);
+  }
+  if (name !== null) onLogin(name);
 
   let state = "ok";
   let checking = false;
@@ -56,7 +66,7 @@ export async function initAuth({ onLogin, onLogout, onSession }) {
       checking = true;
       try {
         name = await loggedInName();
-      } catch { /* network error: try again next time */ }
+      } catch { /* NOMAD still failing: try again next time */ }
       checking = false;
       if (name !== null) onLogin(name);
       return;

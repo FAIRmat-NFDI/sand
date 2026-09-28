@@ -10,7 +10,10 @@ import { initNotes } from "./notes.js";
 import { initRecord } from "./record.js";
 import { showError } from "./ui.js";
 
-function showLoginPrompt() {
+function showLoginPrompt(problem = "") {
+  const problemEl = document.getElementById("login-problem");
+  problemEl.textContent = problem;
+  problemEl.style.display = problem ? "block" : "none";
   document.getElementById("login-prompt").style.display = "block";
   document.getElementById("app-content").style.display = "none";
   document.getElementById("auth-area").innerHTML = "";
@@ -71,5 +74,5 @@ document.getElementById("login-btn").addEventListener("click", login);
 
 initAuth({ onLogin: showApp, onLogout: showLoginPrompt, onSession: showSession }).catch((err) => {
   console.error("Auth init failed:", err);
-  showLoginPrompt();
+  showLoginPrompt("Could not reach SAND: " + err.message);
 });

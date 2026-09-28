@@ -2,6 +2,7 @@ import os
 from http import HTTPStatus
 from pathlib import Path
 
+import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -77,10 +78,19 @@ async def me(request: Request) -> dict:
     """The logged-in user's display name; 401 tells the UI to show its
     login prompt."""
     token = get_bearer_token(request)
-    async with app.state.voice_eln.build_client(token) as client:
-        response = await client.get('/users/me')
-    if response.status_code != HTTPStatus.OK:
+    try:
+        async with app.state.voice_eln.build_client(token) as client:
+            response = await client.get('/users/me')
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502, detail=f'NOMAD is not reachable: {exc}'
+        ) from exc
+    if response.status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
         raise HTTPException(status_code=401, detail='Not logged in to NOMAD')
+    if response.status_code != HTTPStatus.OK:
+        raise HTTPException(
+            status_code=502, detail=f'NOMAD answered {response.status_code}'
+        )
     user = response.json()
     return {'name': user.get('username') or user.get('name') or ''}
 
