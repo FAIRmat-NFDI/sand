@@ -58,7 +58,7 @@ export async function initAuth({ onLogin, onLogout, onSession }) {
 
   let state = "ok";
   let checking = false;
-  setInterval(async () => {
+  const check = async () => {
     const next = sessionState();
     if (name === null) {
       // logged in to NOMAD meanwhile (e.g. in the tab login() opened)
@@ -75,7 +75,14 @@ export async function initAuth({ onLogin, onLogout, onSession }) {
       state = next;
       onSession(state);
     }
-  }, SESSION_CHECK_MS);
+  };
+  setInterval(check, SESSION_CHECK_MS);
+  // Browsers slow the timer down in a background tab: check at once when
+  // the user comes back, typically from logging in to NOMAD.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") check();
+  });
+  window.addEventListener("focus", check);
 }
 
 // Opening the GUI is enough when NOMAD's login is still alive: the GUI
