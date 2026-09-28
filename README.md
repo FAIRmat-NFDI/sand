@@ -149,10 +149,6 @@ dashboard's `sand` id appended. Dashboards need `nomad-lab>=1.4.3`.
 | `POST` | `http://localhost:8000/nomad-oasis/dashboards/sand/api/input-collections/{upload_id}/audio` | Add a recording (→ AudioInput entry) |
 | `POST` | `http://localhost:8000/nomad-oasis/dashboards/sand/api/input-collections/{upload_id}/notes` | Add a typed step note (→ WrittenNote entry) |
 
-The `api/` routes require a logged-in NOMAD user. The token is taken from the
-`Authorization` header (scripts), or else from NOMAD's `Authorization` cookie
-(the UI).
-
 SAND has no login of its own: it uses the login of the NOMAD GUI, which renews
 the token in the cookie while it is open. So SAND works only while the NOMAD
 GUI is open in another tab of the same browser. SAND watches the token and warns when it is about to
