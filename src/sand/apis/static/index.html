@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SAND</title>
-  <script src="https://cdn.jsdelivr.net/npm/keycloak-js@25/dist/keycloak.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <link rel="stylesheet" href="static/styles.css">
@@ -17,10 +16,12 @@
 
   <div class="container">
     <div id="login-prompt">
-      <p>Log in with your NOMAD account to use SAND.</p>
+      <p>Log in to NOMAD to use SAND, and keep NOMAD open in this browser
+        while you work. This page continues once you are logged in.</p>
+      <p class="error-text" id="login-problem" role="alert"></p>
       <button class="btn btn-primary" id="login-btn">
         <span class="material-icons">login</span>
-        Log in
+        Open NOMAD
       </button>
     </div>
 
@@ -64,6 +65,7 @@
 
       </div>
 
+      <p class="error-banner error-text" id="session-warning" role="alert"></p>
       <p class="error-banner error-text" id="error" role="alert"></p>
 
       <div class="workspace">
@@ -156,6 +158,14 @@
       </div>
     </div>
   </div>
+
+  <dialog class="confirm-dialog" id="confirm-dialog" aria-labelledby="confirm-message">
+    <p id="confirm-message"></p>
+    <div class="controls">
+      <button class="btn btn-outlined" id="confirm-cancel" type="button">Cancel</button>
+      <button class="btn btn-primary" id="confirm-ok" type="button">OK</button>
+    </div>
+  </dialog>
 
   <script type="module" src="static/main.js"></script>
 </body>

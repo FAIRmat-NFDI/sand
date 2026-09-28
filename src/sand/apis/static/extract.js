@@ -6,9 +6,9 @@
 // selecting an experiment checks for an unfinished job and resumes the
 // polling - no job id needs to survive in the browser.
 
-import { authFetch, errorDetail, experimentUrl } from "./api.js";
+import { errorDetail, experimentUrl } from "./api.js";
 import { requireExperiment } from "./experiments.js";
-import { clearError, showError } from "./ui.js";
+import { clearError, confirmDialog, showError } from "./ui.js";
 
 const extractBtn = document.getElementById("extract-btn");
 const extractStatus = document.getElementById("extract-status");
@@ -81,7 +81,7 @@ async function pollExtraction(experiment, generation) {
   extractBtn.disabled = true;
   let res;
   try {
-    res = await authFetch(experimentUrl(experiment, "extract-status"));
+    res = await fetch(experimentUrl(experiment, "extract-status"));
   } catch (err) {
     // transient network problem: keep polling
     if (generation !== extractPollGeneration) return;
@@ -135,7 +135,7 @@ async function startExtraction() {
   extractResult.hidden = true;
   extractStatus.textContent = "Starting extraction...";
   try {
-    const res = await authFetch(experimentUrl(experiment, "extract-async"), { method: "POST" });
+    const res = await fetch(experimentUrl(experiment, "extract-async"), { method: "POST" });
     if (!res.ok) {
       showError("Extract failed: " + await errorDetail(res));
       extractBtn.disabled = false;
@@ -157,7 +157,7 @@ async function downloadSheet() {
   if (!experiment) return;
   downloadSheetBtn.disabled = true;
   try {
-    const res = await authFetch(experimentUrl(experiment, "sheet"));
+    const res = await fetch(experimentUrl(experiment, "sheet"));
     if (!res.ok) {
       showError("Download failed: " + await errorDetail(res));
       return;
@@ -183,14 +183,14 @@ async function uploadSheet() {
   clearError();
   const experiment = requireExperiment();
   if (!experiment) return;
-  if (!window.confirm("Replace the sheet on NOMAD with this file?")) return;
+  if (!await confirmDialog("Replace the sheet on NOMAD with this file?", "Replace")) return;
 
   uploadSheetBtn.disabled = true;
   extractStatus.textContent = "Uploading sheet...";
   try {
     const form = new FormData();
     form.append("file", file);
-    const res = await authFetch(experimentUrl(experiment, "sheet"), { method: "PUT", body: form });
+    const res = await fetch(experimentUrl(experiment, "sheet"), { method: "PUT", body: form });
     if (!res.ok) {
       showError("Sheet upload failed: " + await errorDetail(res));
       return;

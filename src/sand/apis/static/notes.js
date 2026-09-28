@@ -1,6 +1,6 @@
 // The Note card: save a typed step note to the selected experiment.
 
-import { authFetch, experimentUrl } from "./api.js";
+import { experimentUrl } from "./api.js";
 import { requireExperiment } from "./experiments.js";
 import { reportNewInput } from "./inputs.js";
 import { clearEntryLink, clearError, showError } from "./ui.js";
@@ -25,7 +25,7 @@ async function saveNote() {
   try {
     const saved = await reportNewInput(
       noteEntryEl,
-      authFetch(experimentUrl(experiment, "notes"), {
+      fetch(experimentUrl(experiment, "notes"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, label }),

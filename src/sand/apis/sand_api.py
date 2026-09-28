@@ -1,12 +1,15 @@
 import os
+from http import HTTPStatus
 from pathlib import Path
 
-from fastapi import Depends, FastAPI
+import httpx
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from nomad.app.v1.routers.auth import get_current_user
 from nomad.config import config
 
+from sand.apis.deps import get_bearer_token
 from sand.apis.routers.input_collections import router as input_collections_router
 from sand.apis.routers.live_transcript import router as live_transcript_router
 from sand.services.voice_eln import VoiceElnService
@@ -19,6 +22,9 @@ STATIC_DIR = Path(__file__).parent / 'static'
 # unchanged), so edits show up without versioned URLs - which ES module
 # imports could not carry anyway.
 NO_CACHE = {'Cache-Control': 'no-cache'}
+# The new NOMAD GUI (the nomad-gui plugin's mount): sand has no login of its
+# own, the user logs in there and the GUI sets the Authorization cookie.
+NOMAD_GUI_URL = f'{config.services.api_base_path.rstrip("/")}/gui/v2/'
 
 
 class RevalidatedStaticFiles(StaticFiles):
@@ -51,29 +57,42 @@ app.state.store_live_transcript = sand_api_entry_point.store_live_transcript
 app.include_router(
     input_collections_router, prefix='/api', dependencies=[require_login]
 )
-# No require_login here: browsers cannot send an Authorization header on a
-# WebSocket, so the endpoint authenticates in-band (first message = token).
+# No require_login here: NOMAD's dependency needs an HTTP request, so the
+# socket checks the cookie of its handshake itself.
 app.include_router(live_transcript_router, prefix='/api')
 
 
 @app.get('/ui-config')
 async def ui_config():
-    """Frontend defaults: whether live transcription exists at all, and
-    the default state of the save-live-transcript toggle."""
+    """Frontend defaults: whether live transcription exists at all, the
+    default state of the save-live-transcript toggle, and where to log in."""
     return {
+        'nomad_gui_url': NOMAD_GUI_URL,
         'live_transcript_available': bool(app.state.deepgram_api_key),
         'store_live_transcript': app.state.store_live_transcript,
     }
 
 
-@app.get('/auth/config')
-async def auth_config():
-    """Return Keycloak config so the frontend can initialize authentication."""
-    return {
-        'keycloak_url': config.keycloak.public_server_url,
-        'keycloak_realm': config.keycloak.realm_name,
-        'keycloak_client_id': config.keycloak.client_id,
-    }
+@app.get('/api/me')
+async def me(request: Request) -> dict:
+    """The logged-in user's display name; 401 tells the UI to show its
+    login prompt."""
+    token = get_bearer_token(request)
+    try:
+        async with app.state.voice_eln.build_client(token) as client:
+            response = await client.get('/users/me')
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502, detail=f'NOMAD is not reachable: {exc}'
+        ) from exc
+    if response.status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
+        raise HTTPException(status_code=401, detail='Not logged in to NOMAD')
+    if response.status_code != HTTPStatus.OK:
+        raise HTTPException(
+            status_code=502, detail=f'NOMAD answered {response.status_code}'
+        )
+    user = response.json()
+    return {'name': user.get('username') or user.get('name') or ''}
 
 
 @app.get('/')

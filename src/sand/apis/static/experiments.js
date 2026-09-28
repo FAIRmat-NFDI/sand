@@ -1,7 +1,7 @@
 // The experiment dropdown and the new-experiment form. Other parts react
 // to the selection through the handler set with onExperimentSelected.
 
-import { authFetch, errorDetail } from "./api.js";
+import { errorDetail } from "./api.js";
 import { clearError, showError } from "./ui.js";
 
 const experimentSelect = document.getElementById("experiment-select");
@@ -65,7 +65,7 @@ function addExperimentOption(experiment) {
 }
 
 export async function loadExperiments() {
-  const res = await authFetch("api/input-collections");
+  const res = await fetch("api/input-collections");
   if (!res.ok) {
     showError("Could not load experiments: " + await errorDetail(res));
     return;
@@ -140,7 +140,7 @@ async function createExperiment() {
   ].every(Boolean);
   if (!numbersOk) return;
   try {
-    const res = await authFetch("api/input-collections", {
+    const res = await fetch("api/input-collections", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ info }),
