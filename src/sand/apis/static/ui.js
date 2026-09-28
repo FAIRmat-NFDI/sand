@@ -35,14 +35,21 @@ const confirmEl = document.getElementById("confirm-dialog");
 export function confirmDialog(message, okText) {
   document.getElementById("confirm-message").textContent = message;
   document.getElementById("confirm-ok").textContent = okText;
-  confirmEl.returnValue = "";
   confirmEl.showModal();
-  // Escape closes without a returnValue: a cancel
   return new Promise((resolve) => {
-    confirmEl.addEventListener("close", () => resolve(confirmEl.returnValue === "ok"),
-      { once: true });
+    answer = resolve;
   });
 }
 
-document.getElementById("confirm-ok").addEventListener("click", () => confirmEl.close("ok"));
-document.getElementById("confirm-cancel").addEventListener("click", () => confirmEl.close());
+let answer = () => {};
+
+// The buttons answer themselves: the close event is held back while the
+// tab is hidden. It only serves Escape, and is void after a button.
+function closeConfirm(confirmed) {
+  answer(confirmed);
+  confirmEl.close();
+}
+
+document.getElementById("confirm-ok").addEventListener("click", () => closeConfirm(true));
+document.getElementById("confirm-cancel").addEventListener("click", () => closeConfirm(false));
+confirmEl.addEventListener("close", () => answer(false));

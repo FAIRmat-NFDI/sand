@@ -1,5 +1,5 @@
-// The Record card: recording (with live transcript), discard, and
-// uploading an audio file.
+// The Record card: recording (with live transcript), discard, uploading
+// an audio file, and keeping a recording whose upload failed.
 
 import { experimentUrl, sessionState } from "./api.js";
 import { lockExperimentSelect, requireExperiment } from "./experiments.js";
@@ -20,6 +20,7 @@ const uploadInput = document.getElementById("upload-input");
 const statusEl = document.getElementById("status");
 const labelInput = document.getElementById("record-label");
 const audioEntryEl = document.getElementById("audio-entry");
+const unsentEl = document.getElementById("unsent-recordings");
 
 // Keep in sync with MAX_UPLOAD_BYTES in apis/routers/input_collections.py.
 const MAX_UPLOAD_SIZE = 25 * 1024 * 1024;
@@ -31,6 +32,11 @@ let startTime = 0;
 // The experiment chosen when recording started: the upload must go
 // there even if the dropdown changes while recording.
 let recordingExperiment = null;
+// Recordings whose upload failed. They exist only in this tab's memory:
+// kept until uploaded or discarded, lost when the tab closes.
+let unsent = [];
+let uploading = false;
+const UNSENT_CHECK_MS = 5000;
 
 function formatTime(ms) {
   const seconds = Math.floor(ms / 1000);
@@ -124,7 +130,13 @@ async function startRecording() {
       uploadBtn.disabled = false;
       return;
     }
-    await uploadAudio(blob, experiment, storeLive ? liveTranscript : "", label);
+    await uploadRecording({
+      blob,
+      experiment,
+      transcript: storeLive ? liveTranscript : "",
+      label,
+      time: new Date(),
+    });
   };
 
   const myConn = startLiveTranscript();
@@ -152,8 +164,17 @@ function stopRecording() {
   recordBtn.classList.add("btn-primary");
 }
 
+function audioExtension(blob) {
+  const mimeSubtype = blob.type ? blob.type.split(";")[0].split("/")[1] : null;
+  return mimeSubtype || "wav";
+}
+
+// Resolves to "saved", "login" (NOMAD did not accept the login) or
+// "failed". Shows the error itself, except for "login".
 async function uploadAudio(blobOrFile, experiment, transcript, label) {
-  if (!experiment) return;
+  if (!experiment) return "failed";
+  uploading = true;
+  renderUnsent();
   recordBtn.disabled = true;
   uploadBtn.disabled = true;
   statusEl.textContent = "Uploading audio to NOMAD...";
@@ -164,9 +185,7 @@ async function uploadAudio(blobOrFile, experiment, transcript, label) {
   if (blobOrFile instanceof File) {
     form.append("file", blobOrFile);
   } else {
-    const mimeSubtype = blobOrFile.type ? blobOrFile.type.split(";")[0].split("/")[1] : null;
-    const ext = mimeSubtype || "wav";
-    form.append("file", blobOrFile, "recording." + ext);
+    form.append("file", blobOrFile, "recording." + audioExtension(blobOrFile));
   }
   // the live transcription result: the entry is created pre-transcribed
   // and the automatic whisper run is skipped
@@ -174,22 +193,116 @@ async function uploadAudio(blobOrFile, experiment, transcript, label) {
   if (label) form.append("label", label);
 
   try {
+    const res = await fetch(experimentUrl(experiment, "audio"), { method: "POST", body: form });
+    if (res.status === 401) return "login";
     const saved = await reportNewInput(
       audioEntryEl,
-      fetch(experimentUrl(experiment, "audio"), { method: "POST", body: form }),
+      res,
       "Audio upload failed",
       "Audio added to " + experiment.name + ".",
       "View audio entry on NOMAD"
     );
     // a label typed meanwhile for the next recording is kept
     if (saved && labelInput.value.trim() === label) labelInput.value = "";
+    return saved ? "saved" : "failed";
   } catch (err) {
     showError("Network error: " + err.message);
+    return "failed";
   } finally {
+    uploading = false;
+    renderUnsent();
     recordBtn.disabled = false;
     uploadBtn.disabled = false;
     statusEl.textContent = "";
   }
+}
+
+// --- recordings whose upload failed ------------------------------------
+
+async function uploadRecording(item) {
+  const result = await uploadAudio(item.blob, item.experiment, item.transcript, item.label);
+  if (result === "saved") {
+    unsent = unsent.filter((other) => other !== item);
+  } else {
+    if (!unsent.includes(item)) {
+      unsent.push(item);
+      // the label went with this recording, not with the next one
+      if (labelInput.value.trim() === item.label) labelInput.value = "";
+    }
+    // Retried by itself once the login is back. Not when the token looks
+    // valid and NOMAD still refuses it: that would retry without end.
+    item.waitsForLogin = result === "login" && sessionState() !== "ok";
+    if (item.waitsForLogin) {
+      item.problem = "Waiting for your NOMAD login: it uploads by itself once you are logged in.";
+    } else if (result === "login") {
+      item.problem = "NOMAD did not accept your login. Log in to NOMAD again, then retry.";
+    } else {
+      item.problem = "The upload failed.";
+    }
+  }
+  renderUnsent();
+}
+
+function isRecording() {
+  return Boolean(mediaRecorder) && mediaRecorder.state === "recording";
+}
+
+function retryUnsent(item) {
+  clearError();
+  // an upload takes over the record button and the status line
+  if (isRecording()) {
+    showError("Stop the recording before you retry.");
+    return;
+  }
+  uploadRecording(item);
+}
+
+function saveUnsentAsFile(item) {
+  const stamp = item.time.toISOString().slice(0, 16).replace(/[T:]/g, "-");
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(item.blob);
+  link.download = "sand_recording_" + stamp + "." + audioExtension(item.blob);
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
+async function discardUnsent(item) {
+  if (!await confirmDialog("Discard this recording? It was not uploaded.", "Discard")) return;
+  unsent = unsent.filter((other) => other !== item);
+  renderUnsent();
+}
+
+function unsentButton(text, className, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "btn btn-small " + className;
+  button.textContent = text;
+  button.disabled = uploading;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function renderUnsent() {
+  unsentEl.replaceChildren(...unsent.map((item) => {
+    const time = item.time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const text = document.createElement("p");
+    text.textContent = "Not uploaded: recording of " + time
+      + (item.label ? ' ("' + item.label + '")' : "")
+      + " for " + item.experiment.name + ". " + item.problem;
+
+    const actions = document.createElement("div");
+    actions.className = "controls";
+    actions.append(
+      unsentButton("Retry", "btn-primary", () => retryUnsent(item)),
+      unsentButton("Save as file", "btn-outlined", () => saveUnsentAsFile(item)),
+      unsentButton("Discard", "btn-outlined", () => discardUnsent(item)),
+    );
+
+    const row = document.createElement("div");
+    row.className = "unsent-recording";
+    row.append(text, actions);
+    return row;
+  }));
 }
 
 async function uploadAudioFile() {
@@ -204,7 +317,9 @@ async function uploadAudioFile() {
     showError("File too large (max 25 MB).");
     return;
   }
-  await uploadAudio(file, experiment, "", labelInput.value.trim());
+  // not kept for a retry: the file is still on the user's disk
+  const result = await uploadAudio(file, experiment, "", labelInput.value.trim());
+  if (result === "login") showError("Log in to NOMAD again, then upload the file again.");
 }
 
 export function initRecord() {
@@ -231,7 +346,15 @@ export function initRecord() {
   uploadBtn.addEventListener("click", () => uploadInput.click());
   uploadInput.addEventListener("change", uploadAudioFile);
 
-  window.addEventListener("beforeunload", () => {
+  setInterval(() => {
+    if (uploading || isRecording() || sessionState() !== "ok") return;
+    const item = unsent.find((other) => other.waitsForLogin);
+    if (item) uploadRecording(item);
+  }, UNSENT_CHECK_MS);
+
+  window.addEventListener("beforeunload", (event) => {
+    // the browser asks before leaving: the recordings would be lost
+    if (unsent.length > 0) event.preventDefault();
     if (mediaRecorder && mediaRecorder.state === "recording") {
       mediaRecorder.stream.getTracks().forEach((t) => t.stop());
     }

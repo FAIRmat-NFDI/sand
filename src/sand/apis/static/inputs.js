@@ -418,8 +418,9 @@ export function showInputs(experiment) {
 // For the Record and Note cards: report the new entry's link in `el`
 // and show the input in the list (audio rows start as "transcribing..."
 // and the list keeps refreshing until text arrives).
-export async function reportNewInput(el, fetchPromise, failPrefix, message, linkText) {
-  const res = await fetchPromise;
+// `response`: the fetch's Response, or the promise of it.
+export async function reportNewInput(el, response, failPrefix, message, linkText) {
+  const res = await response;
   if (!res.ok) {
     showError(failPrefix + ": " + await errorDetail(res));
     return false;
