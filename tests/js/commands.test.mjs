@@ -33,6 +33,14 @@ test("other talk is no command", () => {
   }
 });
 
+test("the words of a command in another order, or alone, are no command", () => {
+  // as the recognizer reported them for ordinary talk
+  for (const text of ["stop sand hey", "[unk] stop [unk]", "start [unk] record",
+    "sand sand record", "hey [unk] sand stop", "hey sand [unk] stop"]) {
+    assert.equal(commandIn(text), null, text);
+  }
+});
+
 test("the grammar holds every phrase and the unknown word", () => {
   assert.ok(GRAMMAR.includes("[unk]"));
   for (const phrase of Object.values(COMMANDS).flat()) assert.ok(GRAMMAR.includes(phrase));

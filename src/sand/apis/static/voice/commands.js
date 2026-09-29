@@ -16,7 +16,11 @@ export const COMMANDS = {
 };
 
 // "[unk]" stands for any other word: without it the recognizer would
-// force all talk onto the phrases.
+// force all talk onto the words of the phrases.
+//
+// Vosk takes from the phrases only their words: it also reports them in
+// another order ("stop sand hey") or alone ("[unk] stop [unk]"). That the
+// words form a command is checked here, in commandIn.
 export const GRAMMAR = [...Object.values(COMMANDS).flat(), "[unk]"];
 
 // The longest phrase first: "hey sand stop recording" also ends with
