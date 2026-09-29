@@ -695,19 +695,94 @@ body {
   margin: 24px 0 0;
 }
 
-/* Voice mode */
-.section .voice-mode {
-  margin-bottom: 16px;
+/* Record section: the title and the voice mode switch, the label with
+   the Record button, then the less used controls */
+.record-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 12px;
 }
 
+.record-header .section-title {
+  margin-bottom: 0;
+  margin-right: auto;
+}
+
+.record-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.record-main .form-input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+@media (max-width: 600px) {
+  /* the label on a row of its own, so Stop and Discard stay together */
+  .record-main .form-input {
+    flex-basis: 100%;
+  }
+}
+
+.record-status {
+  margin-top: 8px;
+}
+
+.record-status:empty {
+  display: none;
+}
+
+.record-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 8px;
+}
+
+.section .record-footer .toggle-label {
+  margin: 0;
+}
+
+.record-footer .btn-quiet {
+  margin-left: auto;
+  /* the text ends where the Record button ends */
+  margin-right: -8px;
+}
+
+.btn-quiet {
+  background: transparent;
+  color: #555;
+  padding: 4px 8px;
+}
+
+.btn-quiet:hover:not(:disabled) {
+  background: #f0f0f0;
+  color: #2A4CDF;
+}
+
+/* Voice mode */
 .voice-status {
-  font-weight: 600;
-  padding: 4px 12px;
-  border-radius: 4px;
+  font-size: 0.875rem;
+  color: #666;
 }
 
 .voice-status:empty {
   display: none;
+}
+
+/* a row of their own below the title */
+.voice-listening,
+.voice-recording {
+  order: 1;
+  flex-basis: 100%;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 4px;
 }
 
 /* large and colored: read from the glove box */
@@ -741,7 +816,7 @@ body {
 
 .voice-checks {
   list-style: none;
-  margin: -4px 0 16px;
+  margin: 0 0 12px;
   font-size: 0.875rem;
   color: #666;
 }
