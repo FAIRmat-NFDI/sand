@@ -132,7 +132,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-sand = ["apis/static/*", "apis/static/voice/*", "apis/static/voice/clips/*", "schemas/*"]
+sand = ["apis/static/*", "apis/static/voice/*", "schemas/*"]
 
 [project.entry-points.'nomad.plugin']
 sand_api = "sand.apis:sand_api"

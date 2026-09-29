@@ -8,7 +8,7 @@
 import { sessionState } from "../api.js";
 import { selectedExperiment } from "../experiments.js";
 import { isRecording, startRecording, stopRecording } from "../record.js";
-import { beep, closeFeedback, loadFeedback, say } from "./feedback.js";
+import { beep, closeFeedback, openFeedback } from "./feedback.js";
 
 const voiceBtn = document.getElementById("voice-btn");
 const statusEl = document.getElementById("voice-status");
@@ -27,7 +27,7 @@ let renderInterval = null;
 
 function render() {
   voiceBtn.disabled = state === "checking";
-  voiceBtn.lastChild.textContent = state === "off" ? " Voice mode on" : " Voice mode off";
+  voiceBtn.lastChild.textContent = state === "on" ? " Voice mode off" : " Voice mode on";
   statusEl.className = "voice-status";
   if (state === "off") {
     statusEl.textContent = "";
@@ -106,7 +106,7 @@ function showCheck(label) {
 }
 
 // All checks run, so the user sees every problem at once.
-async function runChecks(sounds) {
+async function runChecks() {
   checksEl.replaceChildren();
   checksEl.hidden = false;
   let failed = false;
@@ -114,7 +114,6 @@ async function runChecks(sounds) {
     ["Experiment", checkExperiment],
     ["NOMAD login", checkLogin],
     ["Microphone (say a few words)", checkMicrophone],
-    ["Sounds", () => sounds.then(() => "", (err) => err.message)],
   ];
   for (const [label, check] of checks) {
     const done = showCheck(label);
@@ -130,10 +129,10 @@ async function runChecks(sounds) {
 
 async function turnOn() {
   // before any await: audio needs the click
-  const sounds = loadFeedback();
+  openFeedback();
   state = "checking";
   render();
-  if (!await runChecks(sounds)) {
+  if (!await runChecks()) {
     closeFeedback();
     state = "off";
     render();
@@ -160,18 +159,13 @@ function turnOff() {
 }
 
 // --- commands ------------------------------------------------------------
+// The beeps: rising = recording runs, falling = stopped, one high = saved,
+// two low = it did not work. The screen shows why.
 
 async function start() {
   const outcome = await startRecording();
   render();
-  if (outcome === "started") {
-    await beep("start");
-    return;
-  }
-  await beep("error");
-  await say(outcome === "busy" ? "still_saving" : "cannot_record");
-  if (outcome === "no-experiment") await say("no_experiment");
-  if (outcome === "login") await say("no_connection");
+  await beep(outcome === "started" ? "start" : "error");
 }
 
 async function stop() {
@@ -179,19 +173,7 @@ async function stop() {
   render();
   await beep("stop");
   const outcome = await saving;
-  if (outcome === "discarded") return;
-  const saved = outcome === "saved";
-  // a spoken clip would end up in the next recording
-  if (isRecording()) {
-    await beep(saved ? "ok" : "error");
-    return;
-  }
-  if (saved) {
-    await say("saved");
-    return;
-  }
-  await beep("error");
-  if (outcome === "unsent") await say("upload_failed");
+  if (outcome !== "discarded") await beep(outcome === "saved" ? "ok" : "error");
 }
 
 // For the recognizer. intent: "start" or "stop"
