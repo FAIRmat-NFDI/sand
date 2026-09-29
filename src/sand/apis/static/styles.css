@@ -694,3 +694,65 @@ body {
   justify-content: flex-end;
   margin: 24px 0 0;
 }
+
+/* Voice mode */
+.section .voice-mode {
+  margin-bottom: 16px;
+}
+
+.voice-status {
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 4px;
+}
+
+.voice-status:empty {
+  display: none;
+}
+
+/* large and colored: read from the glove box */
+.voice-listening {
+  background: #e0f2f1;
+  color: #00695c;
+  font-size: 1.25rem;
+}
+
+.voice-recording {
+  background: #d32f2f;
+  color: #fff;
+  font-size: 1.25rem;
+}
+
+.voice-listening::before,
+.voice-recording::before {
+  content: "";
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  margin-right: 0.5em;
+  border-radius: 50%;
+  background: currentColor;
+  animation: voice-blink 1.2s ease-in-out infinite;
+}
+
+@keyframes voice-blink {
+  50% { opacity: 0.2; }
+}
+
+.voice-checks {
+  list-style: none;
+  margin: -4px 0 16px;
+  font-size: 0.875rem;
+  color: #666;
+}
+
+.voice-checks li::before {
+  content: "\2026";
+  display: inline-block;
+  width: 1.5em;
+}
+
+.voice-check-ok::before { content: "\2713" !important; color: #00695c; }
+.voice-check-warning::before { content: "!" !important; color: #ef6c00; }
+.voice-check-failed::before { content: "\2717" !important; color: #d32f2f; }
+.voice-check-failed { color: #d32f2f; }

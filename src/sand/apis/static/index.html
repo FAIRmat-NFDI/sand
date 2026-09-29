@@ -71,6 +71,14 @@
       <div class="workspace">
         <section class="card section section-record">
           <h2 class="section-title"><span class="material-icons">mic</span>Record</h2>
+          <div class="controls voice-mode">
+            <button class="btn btn-outlined" id="voice-btn" type="button">
+              <span class="material-icons">record_voice_over</span>
+              Voice mode on
+            </button>
+            <span class="voice-status" id="voice-status" role="status"></span>
+          </div>
+          <ul class="voice-checks" id="voice-checks" hidden></ul>
           <input class="form-input label-input" id="record-label" placeholder="Label (optional)" aria-label="Label for the next recording or audio file">
           <div class="controls">
             <button class="btn btn-primary" id="record-btn">

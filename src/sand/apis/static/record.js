@@ -61,22 +61,32 @@ function stopTimer() {
   timerInterval = null;
 }
 
-async function startRecording() {
+// Resolves to "started", or to why not: "busy", "no-experiment", "login"
+// or "mic". Shows the error itself, except for "busy".
+export async function startRecording() {
+  // the record button is disabled then; a voice command is not
+  if (isRecording() || pendingUploads > 0) return "busy";
   clearError();
   const experiment = requireExperiment();
-  if (!experiment) return;
+  if (!experiment) return "no-experiment";
   // a recording lives only in memory until uploaded: do not start one
   // that cannot be saved
   if (sessionState() !== "ok") {
     showError("Log in to NOMAD again before you record: the recording could not be saved.");
-    return;
+    return "login";
   }
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (err) {
     showError("Microphone access denied. Check your browser permissions.");
-    return;
+    return "mic";
+  }
+  // another start may have passed the check above while this one waited
+  // for the microphone
+  if (isRecording() || pendingUploads > 0) {
+    stream.getTracks().forEach((t) => t.stop());
+    return "busy";
   }
 
   recordingExperiment = experiment;
@@ -84,6 +94,10 @@ async function startRecording() {
   chunks = [];
   const recorder = new MediaRecorder(stream);
   mediaRecorder = recorder;
+  // what became of this recording, known only after the upload
+  recorder.outcome = new Promise((resolve) => {
+    recorder.resolveOutcome = resolve;
+  });
 
   recorder.ondataavailable = (e) => {
     if (e.data.size > 0) {
@@ -107,6 +121,7 @@ async function startRecording() {
         statusEl.textContent = "Recording discarded.";
         uploadBtn.disabled = false;
       }
+      recorder.resolveOutcome("discarded");
       return;
     }
     // snapshot this recording's state BEFORE any await: the record
@@ -140,15 +155,29 @@ async function startRecording() {
       showError("No audio recorded.");
       statusEl.textContent = "";
       uploadBtn.disabled = false;
+      recorder.resolveOutcome("empty");
       return;
     }
-    await uploadRecording({
+    const item = {
       blob,
       experiment,
       transcript: storeLive ? liveTranscript : "",
       label,
       time: new Date(),
-    });
+    };
+    let outcome = "unsent";
+    try {
+      outcome = await uploadRecording(item);
+    } catch (err) {
+      // not expected: the recording is kept, and whoever waits for the
+      // outcome gets one
+      console.error(err);
+      if (!unsent.includes(item)) unsent.push(item);
+      item.problem = "The upload failed.";
+      renderUnsent();
+    } finally {
+      recorder.resolveOutcome(outcome);
+    }
   };
 
   const myConn = startLiveTranscript();
@@ -161,10 +190,15 @@ async function startRecording() {
   recordBtn.classList.add("btn-recording");
   uploadBtn.disabled = true;
   startTimer();
+  return "started";
 }
 
-function stopRecording() {
+// Returns a promise of what became of the recording: "saved", "unsent"
+// (kept for a retry), "discarded" or "empty". null when none was running.
+export function stopRecording() {
+  let outcome = null;
   if (mediaRecorder && mediaRecorder.state === "recording") {
+    outcome = mediaRecorder.outcome;
     mediaRecorder.stop();
   } else {
     stopLiveTranscript();
@@ -174,6 +208,7 @@ function stopRecording() {
   recordBtn.innerHTML = '<span class="material-icons">mic</span> Record';
   recordBtn.classList.remove("btn-recording");
   recordBtn.classList.add("btn-primary");
+  return outcome;
 }
 
 function audioExtension(blob) {
@@ -246,6 +281,7 @@ async function sendAudio(blobOrFile, experiment, transcript, label) {
 
 // --- recordings whose upload failed ------------------------------------
 
+// Resolves to "saved" or "unsent".
 async function uploadRecording(item) {
   const result = await uploadAudio(item.blob, item.experiment, item.transcript, item.label);
   if (result === "saved") {
@@ -268,9 +304,10 @@ async function uploadRecording(item) {
     }
   }
   renderUnsent();
+  return result === "saved" ? "saved" : "unsent";
 }
 
-function isRecording() {
+export function isRecording() {
   return Boolean(mediaRecorder) && mediaRecorder.state === "recording";
 }
 
