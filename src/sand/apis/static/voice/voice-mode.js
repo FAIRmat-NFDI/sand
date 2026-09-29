@@ -90,7 +90,7 @@ async function checkMicrophone() {
     return "The microphone could not be tested.";
   } finally {
     stream.getTracks().forEach((track) => track.stop());
-    if (ctx) ctx.close();
+    if (ctx) ctx.close().catch(() => {});
   }
 }
 
@@ -104,7 +104,7 @@ async function keepScreenOn() {
 }
 
 function letScreenTurnOff() {
-  if (wakeLock) wakeLock.release();
+  if (wakeLock) wakeLock.release().catch(() => {});
   wakeLock = null;
 }
 
@@ -212,9 +212,8 @@ export function initVoiceMode() {
     if (state === "on" && document.visibilityState === "visible") keepScreenOn();
   });
 
-  // voice mode never survives a reload: it starts off
-  window.addEventListener("pagehide", () => {
-    if (state === "on") closeFeedback();
-  });
+  // Voice mode never survives leaving the page. Turned off fully: the
+  // browser may bring the page back as it was, not reloaded.
+  window.addEventListener("pagehide", turnOff);
   render();
 }

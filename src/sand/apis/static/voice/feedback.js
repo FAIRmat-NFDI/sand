@@ -21,7 +21,7 @@ export function openFeedback() {
 }
 
 export function closeFeedback() {
-  if (ctx) ctx.close();
+  if (ctx) ctx.close().catch(() => {});
   ctx = null;
 }
 

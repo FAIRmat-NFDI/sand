@@ -158,14 +158,26 @@ export async function startRecording() {
       recorder.resolveOutcome("empty");
       return;
     }
-    const outcome = await uploadRecording({
+    const item = {
       blob,
       experiment,
       transcript: storeLive ? liveTranscript : "",
       label,
       time: new Date(),
-    });
-    recorder.resolveOutcome(outcome);
+    };
+    let outcome = "unsent";
+    try {
+      outcome = await uploadRecording(item);
+    } catch (err) {
+      // not expected: the recording is kept, and whoever waits for the
+      // outcome gets one
+      console.error(err);
+      if (!unsent.includes(item)) unsent.push(item);
+      item.problem = "The upload failed.";
+      renderUnsent();
+    } finally {
+      recorder.resolveOutcome(outcome);
+    }
   };
 
   const myConn = startLiveTranscript();
