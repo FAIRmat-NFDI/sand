@@ -25,7 +25,7 @@ jobs:
         uv sync --all-extras
     - name: Test the frontend's logic
       run: |
-        node --test tests/js/
+        node --test tests/js/*.test.mjs
     - name: Test with pytest
       run: |
         uv run --with coverage coverage run -m pytest -sv
