@@ -3,17 +3,21 @@
 
 // Every phrase starts with "hey sand" or "hi sand": that, and "[unk]",
 // is all that keeps ordinary talk from being taken for a command.
-export const COMMANDS = {
-  start: [
-    "hey sand start record",
-    "hey sand start recording",
-    "hey sand record",
-    "hi sand start record",
-  ],
-  stop: ["hey sand stop", "hey sand stop recording", "hi sand stop"],
-  // said once when voice mode turns on, to check microphone and voice
-  test: ["hey sand", "hi sand"],
+const CALLS = ["hey sand", "hi sand"];
+const SAID = {
+  start: ["start record", "start recording", "record"],
+  stop: ["stop", "stop recording"],
+  // the call alone: said once when voice mode turns on, to check
+  // microphone and voice
+  test: [""],
 };
+
+// Every call with every ending: the recognizer hears "hi" as easily as
+// "hey", whatever was said.
+export const COMMANDS = Object.fromEntries(Object.entries(SAID).map(([command, endings]) => [
+  command,
+  CALLS.flatMap((call) => endings.map((ending) => (call + " " + ending).trim())),
+]));
 
 // "[unk]" stands for any other word: without it the recognizer would
 // force all talk onto the words of the phrases.
@@ -32,9 +36,15 @@ const PHRASES = Object.entries(COMMANDS)
 // The end of a note that was stopped by voice, as a transcription writes
 // it: with capitals and punctuation, and "sand" often as a name or a word
 // that sounds like it.
-const GREETINGS = ["hey", "hi", "hay"];
+const GREETINGS = ["hey", "hi", "hay", "hello"];
 const NAMES = ["sand", "sam", "send", "sent", "san", "stand", "sandy", "sands", "sandra", "zand"];
-const STOPS = [["stop"], ["stop", "recording"], ["stop", "record"], ["stop", "the", "recording"]];
+const STOPS = [
+  ["stop"],
+  ["stop", "recording"],
+  ["stop", "record"],
+  ["stop", "the", "recording"],
+  ["stop", "the", "record"],
+];
 
 // How many words at the end of text are the spoken stop command, 0 if
 // none.

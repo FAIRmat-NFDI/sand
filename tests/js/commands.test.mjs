@@ -15,6 +15,18 @@ test("a command counts at the end of what was said", () => {
   assert.equal(commandIn("  hey sand   stop  "), "stop");
 });
 
+test("hey and hi, with every ending", () => {
+  for (const call of ["hey sand", "hi sand"]) {
+    for (const ending of ["start record", "start recording", "record"]) {
+      assert.equal(commandIn(call + " " + ending), "start", call + " " + ending);
+    }
+    for (const ending of ["stop", "stop recording"]) {
+      assert.equal(commandIn(call + " " + ending), "stop", call + " " + ending);
+    }
+    assert.equal(commandIn(call), "test", call);
+  }
+});
+
 test("a command in the middle does nothing", () => {
   assert.equal(commandIn("hey sand stop [unk] [unk]"), null);
   assert.equal(commandIn("hey sand start record [unk]"), null);
@@ -48,7 +60,7 @@ test("the grammar holds every phrase and the unknown word", () => {
 
 test("the stop command at the end of a transcript", () => {
   for (const text of ["Hey, Sand. Stop.", "and then we wait. Hey Sand, stop!", "hey sam stop",
-    "Hi Sand, stop recording.", "Hey, send stop", "...five millilitres hey sand stop the recording"]) {
+    "Hi Sand, stop recording.", "Hey, send stop", "Hello Sand, stop.", "Hello, Sam. Stop the record.", "...five millilitres hey sand stop the recording"]) {
     assert.ok(stopSaidIn(text), text);
   }
 });
@@ -66,4 +78,5 @@ test("the stop command is taken off the transcript", () => {
   assert.equal(withoutStop("the film is dry, hey Sam stop recording"), "the film is dry,");
   assert.equal(withoutStop("it is 80 degrees - hey sand - stop."), "it is 80 degrees");
   assert.equal(withoutStop("Hey Sand, stop."), "");
+  assert.equal(withoutStop("The film is dry. Hello Sand, stop the record."), "The film is dry.");
 });

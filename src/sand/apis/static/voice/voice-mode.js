@@ -186,6 +186,10 @@ async function turnOn() {
     closeFeedback();
     letScreenTurnOff();
     state = "off";
+    const result = document.createElement("li");
+    result.className = "voice-checks-result";
+    result.textContent = "Voice mode is off. Click Voice mode on to try again.";
+    checksEl.append(result);
     render();
     return;
   }
