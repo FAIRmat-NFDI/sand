@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { COMMANDS, GRAMMAR, commandIn } from "../../src/sand/apis/static/voice/commands.js";
+import { COMMANDS, GRAMMAR, commandIn, stopSaidIn, withoutStop } from "../../src/sand/apis/static/voice/commands.js";
 
 test("every phrase gives its command", () => {
   for (const [command, phrases] of Object.entries(COMMANDS)) {
@@ -44,4 +44,26 @@ test("the words of a command in another order, or alone, are no command", () => 
 test("the grammar holds every phrase and the unknown word", () => {
   assert.ok(GRAMMAR.includes("[unk]"));
   for (const phrase of Object.values(COMMANDS).flat()) assert.ok(GRAMMAR.includes(phrase));
+});
+
+test("the stop command at the end of a transcript", () => {
+  for (const text of ["Hey, Sand. Stop.", "and then we wait. Hey Sand, stop!", "hey sam stop",
+    "Hi Sand, stop recording.", "Hey, send stop", "...five millilitres hey sand stop the recording"]) {
+    assert.ok(stopSaidIn(text), text);
+  }
+});
+
+test("a transcript that does not end with the stop command", () => {
+  for (const text of ["", "stop", "then we stop", "sand stop", "Hey Sand", "Hey Sand, stop the pump",
+    "Hey Sand, stop. And then", "they sand and stop", "hey, stop"]) {
+    assert.equal(stopSaidIn(text), false, text);
+    assert.equal(withoutStop(text), text);
+  }
+});
+
+test("the stop command is taken off the transcript", () => {
+  assert.equal(withoutStop("Add five millilitres. Hey, Sand. Stop."), "Add five millilitres.");
+  assert.equal(withoutStop("the film is dry, hey Sam stop recording"), "the film is dry,");
+  assert.equal(withoutStop("it is 80 degrees - hey sand - stop."), "it is 80 degrees");
+  assert.equal(withoutStop("Hey Sand, stop."), "");
 });

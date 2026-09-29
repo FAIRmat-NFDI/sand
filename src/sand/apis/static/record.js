@@ -12,6 +12,7 @@ import {
   storeLiveChosen,
 } from "./live-transcript.js";
 import { clearEntryLink, clearError, confirmDialog, showError } from "./ui.js";
+import { withoutStop } from "./voice/commands.js";
 
 const recordBtn = document.getElementById("record-btn");
 const discardBtn = document.getElementById("discard-btn");
@@ -161,7 +162,8 @@ export async function startRecording() {
     const item = {
       blob,
       experiment,
-      transcript: storeLive ? liveTranscript : "",
+      // "hey sand stop" is a command, not a part of the note
+      transcript: storeLive ? withoutStop(liveTranscript) : "",
       label,
       time: new Date(),
     };

@@ -8,13 +8,15 @@
 import { sessionState } from "../api.js";
 import { selectedExperiment } from "../experiments.js";
 import { isRecording, startRecording, stopRecording } from "../record.js";
-import { commandIn } from "./commands.js";
+import { onLiveText } from "../live-transcript.js";
+import { commandIn, stopSaidIn } from "./commands.js";
 import { beep, closeFeedback, openFeedback, speaking } from "./feedback.js";
 import { loadRecognizer, recognizerLoaded, startListening, stopListening } from "./recognizer.js";
 
 const voiceBtn = document.getElementById("voice-btn");
 const statusEl = document.getElementById("voice-status");
 const checksEl = document.getElementById("voice-checks");
+const heardEl = document.getElementById("voice-heard");
 
 // one command, not two, when it is heard twice
 const COOLDOWN_MS = 1500;
@@ -46,6 +48,12 @@ function render() {
   // only on a change: a screen reader reads a status out on every write
   if (statusEl.textContent !== text) statusEl.textContent = text;
   if (statusEl.className !== look) statusEl.className = look;
+}
+
+// What the recognizer makes of the voice, so the user sees why a command
+// was not taken. It knows the words of the commands only: the rest is "...".
+function showHeard(words) {
+  heardEl.textContent = "Heard: " + words.replaceAll("[unk]", "...");
 }
 
 // --- the checks before voice mode turns on ------------------------------
@@ -171,9 +179,15 @@ async function turnOn() {
   heard = (text) => {
     // SAND's own beep is no command
     if (speaking()) return;
+    showHeard(text);
     const command = commandIn(text);
     if (command === "start" || command === "stop") voiceCommand(command);
   };
+  hearing = (words) => {
+    if (words && !speaking()) showHeard(words);
+  };
+  heardEl.textContent = "";
+  heardEl.hidden = false;
   renderInterval = setInterval(render, RENDER_MS);
   render();
 }
@@ -187,6 +201,8 @@ function turnOff() {
   if (isRecording()) stopRecording();
   clearInterval(renderInterval);
   heard = () => {};
+  hearing = () => {};
+  heardEl.hidden = true;
   stopListening();
   letScreenTurnOff();
   checksEl.hidden = true;
@@ -237,6 +253,13 @@ export function initVoiceMode() {
 
   // Voice mode never survives leaving the page. Turned off fully: the
   // browser may bring the page back as it was, not reloaded.
+  // During a recording the live transcript hears the stop command too,
+  // and better than the small recognizer in the browser: after a long
+  // dictation or with noise that one often misses it.
+  onLiveText((text) => {
+    if (stopSaidIn(text)) voiceCommand("stop");
+  });
+
   window.addEventListener("pagehide", turnOff);
   render();
 }
