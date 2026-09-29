@@ -9,6 +9,7 @@ import { initLiveToggle } from "./live-transcript.js";
 import { initNotes } from "./notes.js";
 import { initRecord } from "./record.js";
 import { showError } from "./ui.js";
+import { initVoiceMode } from "./voice/voice-mode.js";
 
 function showLoginPrompt(problem = "") {
   const problemEl = document.getElementById("login-problem");
@@ -64,6 +65,7 @@ initNotes();
 initInputs();
 initExtract();
 initLiveToggle();
+initVoiceMode();
 
 onExperimentSelected((experiment) => {
   showExtraction(experiment);
