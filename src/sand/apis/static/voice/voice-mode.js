@@ -27,6 +27,9 @@ let state = "off"; // "off", "checking" or "on"
 let ignoreUntil = 0;
 let wakeLock = null;
 let renderInterval = null;
+// counts the times voice mode was turned on or off: checks that are
+// still running then belong to an old turn
+let turn = 0;
 // get what the recognizer heard; they change with what voice mode is doing
 let heard = () => {};
 let hearing = () => {};
@@ -166,8 +169,19 @@ async function turnOn() {
   // before any await: audio needs the click
   openFeedback();
   state = "checking";
+  turn += 1;
+  const mine = turn;
   render();
-  if (!await runChecks()) {
+  const passed = await runChecks();
+  if (mine !== turn) {
+    // turned off meanwhile: close what the checks opened after that
+    if (state === "off") {
+      stopListening();
+      letScreenTurnOff();
+    }
+    return;
+  }
+  if (!passed) {
     stopListening();
     closeFeedback();
     letScreenTurnOff();
@@ -193,10 +207,11 @@ async function turnOn() {
 }
 
 // Turning on and off is shown, not spoken: the user is at the screen to
-// click.
+// click. Also during the checks, when the page is left.
 function turnOff() {
-  if (state !== "on") return;
+  if (state === "off") return;
   state = "off";
+  turn += 1;
   // stopped and saved like by the Stop button
   if (isRecording()) stopRecording();
   clearInterval(renderInterval);

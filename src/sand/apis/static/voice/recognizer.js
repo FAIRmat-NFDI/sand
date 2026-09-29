@@ -9,6 +9,8 @@ import { audioContext } from "./feedback.js";
 
 const FILES = "static/voice/vosk/";
 const NOT_INSTALLED = "The speech recognizer is not installed on this server.";
+// the first time the model (41 MB) is downloaded
+const LOAD_MS = 120000;
 
 let client = null;
 let recognizer = null;
@@ -26,8 +28,11 @@ export async function loadRecognizer() {
   try {
     // not a static import: without the files the whole page would not load
     library = await import(fileUrl("vosk.wasm.js"));
-    const model = await fetch(fileUrl("model.tar.gz"), { method: "HEAD" });
-    if (!model.ok) throw new Error(NOT_INSTALLED);
+    // a worker that can not start reports nothing: look for its files first
+    for (const name of ["vosk.worker.js", "vosk.wasm", "model.tar.gz"]) {
+      const file = await fetch(fileUrl(name), { method: "HEAD" });
+      if (!file.ok) throw new Error(NOT_INSTALLED);
+    }
   } catch {
     throw new Error(NOT_INSTALLED);
   }
@@ -36,12 +41,21 @@ export async function loadRecognizer() {
     workerUrl: fileUrl("vosk.worker.js"),
     wasmUrl: fileUrl("vosk.wasm"),
   });
-  // the library's own createVoskClient waits forever when loading fails
-  await new Promise((resolve, reject) => {
-    const failed = new Error("The voice model could not be loaded.");
-    loading.on("load", (message) => (message.result ? resolve() : reject(failed)));
-    loading.on("error", () => reject(failed));
-  });
+  let timeout;
+  try {
+    // the library's own createVoskClient waits forever when loading fails
+    await new Promise((resolve, reject) => {
+      const failed = new Error("The voice model could not be loaded.");
+      loading.on("load", (message) => (message.result ? resolve() : reject(failed)));
+      loading.on("error", () => reject(failed));
+      timeout = setTimeout(() => reject(failed), LOAD_MS);
+    });
+  } catch (err) {
+    loading.terminate();
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
   client = loading;
 }
 
