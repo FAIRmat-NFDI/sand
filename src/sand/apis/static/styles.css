@@ -696,6 +696,10 @@ body {
 }
 
 /* Voice mode */
+.section .voice-mode {
+  margin-bottom: 16px;
+}
+
 .voice-status {
   font-weight: 600;
   padding: 4px 12px;
@@ -737,7 +741,7 @@ body {
 
 .voice-checks {
   list-style: none;
-  margin: 0 0 16px;
+  margin: -4px 0 16px;
   font-size: 0.875rem;
   color: #666;
 }

@@ -14,9 +14,7 @@ const voiceBtn = document.getElementById("voice-btn");
 const statusEl = document.getElementById("voice-status");
 const checksEl = document.getElementById("voice-checks");
 
-// Stands in for the spoken commands until the recognizer is connected.
-const COMMAND_KEY = "F9";
-// one command, not two, when it is heard or pressed twice
+// one command, not two, when it is heard twice
 const COOLDOWN_MS = 1500;
 const MIC_LISTEN_MS = 6000;
 const MIC_LOUD = 0.05;
@@ -39,7 +37,7 @@ function render() {
     statusEl.textContent = "Recording";
     statusEl.classList.add("voice-recording");
   } else {
-    statusEl.textContent = "Listening (" + COMMAND_KEY + " starts and stops)";
+    statusEl.textContent = "Listening";
     statusEl.classList.add("voice-listening");
   }
 }
@@ -196,7 +194,7 @@ async function stop() {
   if (outcome === "unsent") await say("upload_failed");
 }
 
-// intent: "start" or "stop"
+// For the recognizer. intent: "start" or "stop"
 export async function voiceCommand(intent) {
   if (state !== "on" || performance.now() < ignoreUntil) return;
   if (intent === "start" && !isRecording()) {
@@ -212,12 +210,6 @@ export function initVoiceMode() {
   voiceBtn.addEventListener("click", () => {
     if (state === "off") turnOn();
     else turnOff();
-  });
-
-  document.addEventListener("keydown", (event) => {
-    if (event.key !== COMMAND_KEY || event.repeat || state !== "on") return;
-    event.preventDefault();
-    voiceCommand(isRecording() ? "stop" : "start");
   });
 
   // the browser drops the wake lock when the tab is hidden
