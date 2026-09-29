@@ -70,17 +70,17 @@
 
       <div class="workspace">
         <section class="card section section-record">
-          <h2 class="section-title"><span class="material-icons">mic</span>Record</h2>
-          <div class="controls voice-mode">
-            <button class="btn btn-outlined" id="voice-btn" type="button">
+          <div class="record-header">
+            <h2 class="section-title"><span class="material-icons">mic</span>Record</h2>
+            <span class="voice-status" id="voice-status" role="status"></span>
+            <button class="btn btn-outlined btn-small" id="voice-btn" type="button">
               <span class="material-icons">record_voice_over</span>
               Voice mode on
             </button>
-            <span class="voice-status" id="voice-status" role="status"></span>
           </div>
           <ul class="voice-checks" id="voice-checks" hidden></ul>
-          <input class="form-input label-input" id="record-label" placeholder="Label (optional)" aria-label="Label for the next recording or audio file">
-          <div class="controls">
+          <div class="record-main">
+            <input class="form-input" id="record-label" placeholder="Label (optional)" aria-label="Label for the next recording or audio file">
             <button class="btn btn-primary" id="record-btn">
               <span class="material-icons">mic</span>
               Record
@@ -89,23 +89,23 @@
               <span class="material-icons">delete</span>
               Discard
             </button>
-            <button class="btn btn-outlined" id="upload-btn" type="button">
-              <span class="material-icons">upload_file</span>
-              Upload audio file
-            </button>
-            <input type="file" id="upload-input" accept="audio/wav,audio/mp3,audio/mpeg,audio/mp4,audio/x-m4a,audio/webm,audio/ogg,audio/flac" hidden>
-            <span class="status-text" id="status"></span>
           </div>
-
-          <label class="toggle-label" id="store-live-label" hidden>
-            <input type="checkbox" id="store-live-toggle">
-            Save the live transcript (skip whisper transcription)
-          </label>
-
+          <p class="status-text record-status" id="status"></p>
           <p class="live-transcript" id="live-transcript" aria-live="polite" hidden>
             <span id="live-final"></span>
             <span id="live-interim" class="interim"></span>
           </p>
+          <div class="record-footer">
+            <label class="toggle-label" id="store-live-label" hidden>
+              <input type="checkbox" id="store-live-toggle">
+              Save the live transcript (skip whisper transcription)
+            </label>
+            <button class="btn btn-quiet btn-small" id="upload-btn" type="button">
+              <span class="material-icons">upload_file</span>
+              Upload audio file
+            </button>
+            <input type="file" id="upload-input" accept="audio/wav,audio/mp3,audio/mpeg,audio/mp4,audio/x-m4a,audio/webm,audio/ogg,audio/flac" hidden>
+          </div>
 
           <p class="audio-entry-text" id="audio-entry"></p>
           <div id="unsent-recordings" role="status"></div>
