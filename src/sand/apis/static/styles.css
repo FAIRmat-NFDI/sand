@@ -719,6 +719,8 @@ body {
 .record-main .form-input {
   flex: 1 1 200px;
   min-width: 0;
+  /* as wide as the label of a note */
+  max-width: 320px;
 }
 
 @media (max-width: 600px) {
