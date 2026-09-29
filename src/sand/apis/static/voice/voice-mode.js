@@ -28,18 +28,20 @@ let renderInterval = null;
 function render() {
   voiceBtn.disabled = state === "checking";
   voiceBtn.lastChild.textContent = state === "on" ? " Voice mode off" : " Voice mode on";
-  statusEl.className = "voice-status";
-  if (state === "off") {
-    statusEl.textContent = "";
-  } else if (state === "checking") {
-    statusEl.textContent = "Checking...";
-  } else if (isRecording()) {
-    statusEl.textContent = "Recording";
-    statusEl.classList.add("voice-recording");
-  } else {
-    statusEl.textContent = "Listening";
-    statusEl.classList.add("voice-listening");
+  let text = "";
+  let look = "voice-status";
+  if (state === "checking") {
+    text = "Checking...";
+  } else if (state === "on" && isRecording()) {
+    text = "Recording";
+    look += " voice-recording";
+  } else if (state === "on") {
+    text = "Listening";
+    look += " voice-listening";
   }
+  // only on a change: a screen reader reads a status out on every write
+  if (statusEl.textContent !== text) statusEl.textContent = text;
+  if (statusEl.className !== look) statusEl.className = look;
 }
 
 // --- the checks before voice mode turns on ------------------------------
@@ -68,22 +70,28 @@ async function checkMicrophone() {
   } catch {
     return "Allow the microphone for this page.";
   }
-  const ctx = new AudioContext();
-  const analyser = ctx.createAnalyser();
-  ctx.createMediaStreamSource(stream).connect(analyser);
-  const samples = new Float32Array(analyser.fftSize);
-  const end = performance.now() + MIC_LISTEN_MS;
-  let heard = false;
-  while (!heard && performance.now() < end) {
-    await new Promise((resolve) => {
-      setTimeout(resolve, 100);
-    });
-    analyser.getFloatTimeDomainData(samples);
-    heard = samples.some((sample) => Math.abs(sample) > MIC_LOUD);
+  let ctx = null;
+  try {
+    ctx = new AudioContext();
+    const analyser = ctx.createAnalyser();
+    ctx.createMediaStreamSource(stream).connect(analyser);
+    const samples = new Float32Array(analyser.fftSize);
+    const end = performance.now() + MIC_LISTEN_MS;
+    let heard = false;
+    while (!heard && performance.now() < end) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 100);
+      });
+      analyser.getFloatTimeDomainData(samples);
+      heard = samples.some((sample) => Math.abs(sample) > MIC_LOUD);
+    }
+    return heard ? "" : "The microphone hears nothing. Check that it is the right one and not muted.";
+  } catch {
+    return "The microphone could not be tested.";
+  } finally {
+    stream.getTracks().forEach((track) => track.stop());
+    if (ctx) ctx.close();
   }
-  stream.getTracks().forEach((track) => track.stop());
-  ctx.close();
-  return heard ? "" : "The microphone hears nothing. Check that it is the right one and not muted.";
 }
 
 async function keepScreenOn() {
@@ -93,6 +101,11 @@ async function keepScreenOn() {
   } catch {
     return "The screen may turn off during the experiment: this browser can not keep it on.";
   }
+}
+
+function letScreenTurnOff() {
+  if (wakeLock) wakeLock.release();
+  wakeLock = null;
 }
 
 function showCheck(label) {
@@ -121,7 +134,7 @@ async function runChecks() {
     done(problem);
     if (problem) failed = true;
   }
-  if (!failed) showCheck("Screen stays on")(await keepScreenOn(), true);
+  showCheck("Screen stays on")(await keepScreenOn(), true);
   return !failed;
 }
 
@@ -134,6 +147,7 @@ async function turnOn() {
   render();
   if (!await runChecks()) {
     closeFeedback();
+    letScreenTurnOff();
     state = "off";
     render();
     return;
@@ -151,8 +165,7 @@ function turnOff() {
   // stopped and saved like by the Stop button
   if (isRecording()) stopRecording();
   clearInterval(renderInterval);
-  if (wakeLock) wakeLock.release();
-  wakeLock = null;
+  letScreenTurnOff();
   checksEl.hidden = true;
   closeFeedback();
   render();

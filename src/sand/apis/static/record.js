@@ -82,6 +82,12 @@ export async function startRecording() {
     showError("Microphone access denied. Check your browser permissions.");
     return "mic";
   }
+  // another start may have passed the check above while this one waited
+  // for the microphone
+  if (isRecording() || pendingUploads > 0) {
+    stream.getTracks().forEach((t) => t.stop());
+    return "busy";
+  }
 
   recordingExperiment = experiment;
   lockExperimentSelect(true);
