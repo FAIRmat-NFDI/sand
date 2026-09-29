@@ -8,7 +8,9 @@
 import { sessionState } from "../api.js";
 import { selectedExperiment } from "../experiments.js";
 import { isRecording, startRecording, stopRecording } from "../record.js";
-import { beep, closeFeedback, openFeedback } from "./feedback.js";
+import { commandIn } from "./commands.js";
+import { beep, closeFeedback, openFeedback, speaking } from "./feedback.js";
+import { loadRecognizer, recognizerLoaded, startListening, stopListening } from "./recognizer.js";
 
 const voiceBtn = document.getElementById("voice-btn");
 const statusEl = document.getElementById("voice-status");
@@ -16,14 +18,16 @@ const checksEl = document.getElementById("voice-checks");
 
 // one command, not two, when it is heard twice
 const COOLDOWN_MS = 1500;
-const MIC_LISTEN_MS = 6000;
-const MIC_LOUD = 0.05;
+const VOICE_TEST_MS = 10000;
 const RENDER_MS = 500;
 
 let state = "off"; // "off", "checking" or "on"
 let ignoreUntil = 0;
 let wakeLock = null;
 let renderInterval = null;
+// get what the recognizer heard; they change with what voice mode is doing
+let heard = () => {};
+let hearing = () => {};
 
 function render() {
   voiceBtn.disabled = state === "checking";
@@ -63,35 +67,38 @@ async function checkLogin() {
   }
 }
 
-async function checkMicrophone() {
-  let stream;
+async function checkRecognizer() {
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch {
-    return "Allow the microphone for this page.";
+    await loadRecognizer();
+    return "";
+  } catch (err) {
+    return err.message;
   }
-  let ctx = null;
+}
+
+// The user says "hey sand": it shows that the microphone works and that
+// the recognizer understands this voice in this room.
+async function checkVoice(hint) {
+  if (!recognizerLoaded()) return "Needs the speech recognizer.";
   try {
-    ctx = new AudioContext();
-    const analyser = ctx.createAnalyser();
-    ctx.createMediaStreamSource(stream).connect(analyser);
-    const samples = new Float32Array(analyser.fftSize);
-    const end = performance.now() + MIC_LISTEN_MS;
-    let heard = false;
-    while (!heard && performance.now() < end) {
-      await new Promise((resolve) => {
-        setTimeout(resolve, 100);
-      });
-      analyser.getFloatTimeDomainData(samples);
-      heard = samples.some((sample) => Math.abs(sample) > MIC_LOUD);
-    }
-    return heard ? "" : "The microphone hears nothing. Check that it is the right one and not muted.";
-  } catch {
-    return "The microphone could not be tested.";
-  } finally {
-    stream.getTracks().forEach((track) => track.stop());
-    if (ctx) ctx.close().catch(() => {});
+    await startListening((text) => heard(text), (words) => hearing(words));
+  } catch (err) {
+    stopListening();
+    if (err.name === "NotAllowedError") return "Allow the microphone for this page.";
+    return "The microphone could not be opened.";
   }
+  const understood = await new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve(false), VOICE_TEST_MS);
+    hearing = (words) => hint(words ? 'hearing "' + words + '"' : "");
+    heard = (text) => {
+      if (commandIn(text) === null) return;
+      clearTimeout(timeout);
+      resolve(true);
+    };
+  });
+  heard = () => {};
+  hearing = () => {};
+  return understood ? "" : "SAND did not understand you. Move closer to the microphone and try again.";
 }
 
 async function keepScreenOn() {
@@ -108,14 +115,20 @@ function letScreenTurnOff() {
   wakeLock = null;
 }
 
+// Returns hint(text), to show something while the check runs, and
+// done(problem).
 function showCheck(label) {
   const item = document.createElement("li");
   item.textContent = label;
   checksEl.append(item);
-  return (problem, warning = false) => {
-    item.className = !problem ? "voice-check-ok" : warning ? "voice-check-warning" : "voice-check-failed";
-    if (problem) item.textContent = label + ": " + problem;
+  const hint = (text) => {
+    item.textContent = text ? label + ": " + text : label;
   };
+  const done = (problem, warning = false) => {
+    item.className = !problem ? "voice-check-ok" : warning ? "voice-check-warning" : "voice-check-failed";
+    hint(problem);
+  };
+  return { hint, done };
 }
 
 // All checks run, so the user sees every problem at once.
@@ -126,15 +139,16 @@ async function runChecks() {
   const checks = [
     ["Experiment", checkExperiment],
     ["NOMAD login", checkLogin],
-    ["Microphone (say a few words)", checkMicrophone],
+    ["Speech recognizer", checkRecognizer],
+    ['Microphone and voice (say "hey sand")', checkVoice],
   ];
   for (const [label, check] of checks) {
-    const done = showCheck(label);
-    const problem = await check();
+    const { hint, done } = showCheck(label);
+    const problem = await check(hint);
     done(problem);
     if (problem) failed = true;
   }
-  showCheck("Screen stays on")(await keepScreenOn(), true);
+  showCheck("Screen stays on").done(await keepScreenOn(), true);
   return !failed;
 }
 
@@ -146,6 +160,7 @@ async function turnOn() {
   state = "checking";
   render();
   if (!await runChecks()) {
+    stopListening();
     closeFeedback();
     letScreenTurnOff();
     state = "off";
@@ -153,6 +168,12 @@ async function turnOn() {
     return;
   }
   state = "on";
+  heard = (text) => {
+    // SAND's own beep is no command
+    if (speaking()) return;
+    const command = commandIn(text);
+    if (command === "start" || command === "stop") voiceCommand(command);
+  };
   renderInterval = setInterval(render, RENDER_MS);
   render();
 }
@@ -165,6 +186,8 @@ function turnOff() {
   // stopped and saved like by the Stop button
   if (isRecording()) stopRecording();
   clearInterval(renderInterval);
+  heard = () => {};
+  stopListening();
   letScreenTurnOff();
   checksEl.hidden = true;
   closeFeedback();
@@ -189,8 +212,8 @@ async function stop() {
   if (outcome !== "discarded") await beep(outcome === "saved" ? "ok" : "error");
 }
 
-// For the recognizer. intent: "start" or "stop"
-export async function voiceCommand(intent) {
+// intent: "start" or "stop"
+async function voiceCommand(intent) {
   if (state !== "on" || performance.now() < ignoreUntil) return;
   if (intent === "start" && !isRecording()) {
     ignoreUntil = performance.now() + COOLDOWN_MS;

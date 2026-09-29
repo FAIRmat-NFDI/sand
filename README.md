@@ -173,3 +173,43 @@ SAND has no login of its own: it uses the login of the NOMAD GUI, which renews
 the token in the cookie while it is open. So SAND works only while the NOMAD
 GUI is open in another tab of the same browser. SAND watches the token and warns when it is about to
 expire or has expired; it then does not start a new recording.
+
+### 5. Voice mode (optional)
+
+With **Voice mode on**, a recording is started and stopped by voice, for
+work where the hands are not free (glove box):
+
+| Say | SAND does | Beep |
+|---|---|---|
+| "hey sand start record" | starts a recording | rising |
+| "hey sand stop" | stops it and uploads the audio | falling, then one high when it is saved |
+| | it did not work (the screen shows why) | two low |
+
+Make a short pause before and after a command: one spoken in the middle
+of a sentence is not taken as a command. Turning voice mode on checks the
+setup first (experiment, login, speech recognizer, microphone) and asks
+to say "hey sand" once.
+
+The speech recognizer runs in the browser: what the microphone hears
+while voice mode listens does not leave the computer. It is
+[Vosk](https://alphacephei.com/vosk/) (Apache-2.0), in the build of
+[vosk-browser](https://github.com/lichess-org/vosk-browser). Its files are
+not part of this repository. Put them into `src/sand/apis/static/voice/vosk/`
+(ignored by git) once:
+
+```sh
+mkdir -p src/sand/apis/static/voice/vosk && cd src/sand/apis/static/voice/vosk
+
+# the recognizer
+curl -L https://registry.npmjs.org/@lichess-org/vosk-browser/-/vosk-browser-0.0.3.tgz \
+  | tar xz --strip-components=2 package/dist/vosk.wasm package/dist/vosk.wasm.js package/dist/vosk.worker.js
+
+# the model (41 MB), repacked from zip to tar.gz
+curl -LO https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+unzip -q vosk-model-small-en-us-0.15.zip
+tar czf model.tar.gz vosk-model-small-en-us-0.15
+rm -r vosk-model-small-en-us-0.15 vosk-model-small-en-us-0.15.zip
+```
+
+Without these files SAND works as before; turning voice mode on then
+says that the speech recognizer is not installed.
