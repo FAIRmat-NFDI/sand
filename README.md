@@ -104,9 +104,14 @@ uv run poe setup
 docker compose up -d
 uv sync
 uv run poe start
+```
 
-# second terminal: the action worker (transcription, extraction),
-# with GROQ_API_KEY and the LLM key in its environment
+In a second terminal, start the action worker. Transcription and extraction
+run there, so it needs the API keys:
+
+```sh
+export GROQ_API_KEY=<your-groq-key>       # transcription (Whisper)
+export GEMINI_API_KEY=<your-gemini-key>   # extraction; the key of your llm_model_name's provider
 uv run poe cpuworker
 ```
 
