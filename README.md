@@ -207,10 +207,12 @@ Turning on and off makes no sound: it is done by click, at the screen.
 | To | Say | Also understood |
 |---|---|---|
 | start a recording | **"hey sand, start record"** | "hey sand, start recording", "hey sand, record" |
-| stop it and save the note | **"hey sand, stop"** | "hey sand, stop recording" |
+| stop it and save the note | **"hey sand, stop recording"** | "hey sand, stop the recording", "hey sand, stop record" |
 
-"hi sand" works in place of "hey sand". Every command begins with it:
-"stop" alone does nothing, so a note can hold the word.
+"hi sand" works in place of "hey sand". Every command begins with it, and
+the stop command names the recording: "stop" alone does nothing, also
+after "hey sand". So "hey Sam, stop!" said to a colleague, or "stop" in
+a note, can not end a recording.
 
 #### What the beeps say
 
@@ -227,7 +229,8 @@ No beep means that SAND did not take the command: say it again.
 
 - **Pause before and after a command**, about one second. SAND takes a
   command only at the end of what was said: "...five millilitres hey sand
-  stop and then..." in one breath is a part of the note, not a command.
+  stop recording and then..." in one breath is a part of the note, not a
+  command.
 - **Speak the note after the rising beep.** What is said before it is not
   in the recording.
 - **Wait 1.5 seconds before the next command.** After a command SAND
@@ -243,7 +246,7 @@ One note, from start to end:
 1. "hey sand, start record", pause
 2. rising beep
 3. the note
-4. pause, "hey sand, stop", pause
+4. pause, "hey sand, stop recording", pause
 5. falling beep, then one high tone: saved
 
 #### On the screen
@@ -261,10 +264,10 @@ When a command is not taken, "Heard:" shows what arrived in its place.
 
 - **The Record and Stop buttons work as before**, also while voice mode
   is on.
-- **"hey sand, stop" is heard in two ways**: by the recognizer in the
-  browser, and in the live transcript, which hears it better after a long
-  note or with noise. With live transcription, "hello sand, stop" and
-  "hey sand, stop the recording" are understood as well.
+- **"hey sand, stop recording" is heard in two ways**: by the recognizer
+  in the browser, and in the live transcript, which hears it better after
+  a long note or with noise. With live transcription, "hello sand, stop
+  recording" is understood as well.
 - **The stop command is not a part of the note**: it is taken off the
   end of the saved live transcript. It stays in the audio, and in the
   transcript when Whisper makes it (live transcript not saved).

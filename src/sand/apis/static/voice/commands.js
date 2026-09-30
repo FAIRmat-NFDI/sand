@@ -6,7 +6,8 @@
 const CALLS = ["hey sand", "hi sand"];
 const SAID = {
   start: ["start record", "start recording", "record"],
-  stop: ["stop", "stop recording"],
+  // "stop" alone is no command: "hey sam, stop" is said to people too
+  stop: ["stop recording", "stop the recording", "stop record"],
   // the call alone: said once when voice mode turns on, to check
   // microphone and voice
   test: [""],
@@ -39,10 +40,9 @@ const PHRASES = Object.entries(COMMANDS)
 const GREETINGS = ["hey", "hi", "hay", "hello"];
 const NAMES = ["sand", "sam", "send", "sent", "san", "stand", "sandy", "sands", "sandra", "zand"];
 const STOPS = [
-  ["stop"],
   ["stop", "recording"],
-  ["stop", "record"],
   ["stop", "the", "recording"],
+  ["stop", "record"],
   ["stop", "the", "record"],
 ];
 
