@@ -234,13 +234,16 @@ function turnOff() {
 // two low = it did not work. The screen shows why.
 
 async function start() {
-  const outcome = await startRecording();
+  // voice mode may be turned off while the microphone opens
+  const mine = turn;
+  const outcome = await startRecording(() => mine === turn);
+  if (outcome === "cancelled") return;
   render();
   await beep(outcome === "started" ? "start" : "error");
 }
 
 async function stop() {
-  const saving = stopRecording();
+  const saving = stopRecording(true);
   render();
   await beep("stop");
   const outcome = await saving;
