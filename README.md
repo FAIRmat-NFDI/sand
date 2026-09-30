@@ -129,7 +129,8 @@ Optional. Needs the speech recognizer installed ([below](#installing-the-speech-
 
 1. Select an experiment and click **Voice mode on**.
 2. sand checks the experiment, the login, the recognizer and the microphone.
-   When asked, say **"hey sand"**.
+   When asked, say **"hey sand"** within 10 seconds; otherwise voice mode
+   stays off and you can click again.
 3. **Listening** is shown: voice mode is on.
 
 | To | Say |
