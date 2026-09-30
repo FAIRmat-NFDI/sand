@@ -33,6 +33,11 @@ let turn = 0;
 // get what the recognizer heard; they change with what voice mode is doing
 let heard = () => {};
 let hearing = () => {};
+// ends the wait for "hey sand" when voice mode is turned off
+let endVoiceTest = () => {};
+// the checks of the latest turn; there is one recognizer and one
+// microphone per page, so a turn's checks start after the old ones ended
+let checking = Promise.resolve(false);
 
 function render() {
   voiceBtn.disabled = state === "checking";
@@ -89,7 +94,7 @@ async function checkRecognizer() {
 
 // The user says "hey sand": it shows that the microphone works and that
 // the recognizer understands this voice in this room.
-async function checkVoice(hint) {
+async function checkVoice(hint, stale) {
   if (!recognizerLoaded()) return "Needs the speech recognizer.";
   try {
     await startListening((text) => heard(text), (words) => hearing(words));
@@ -98,8 +103,13 @@ async function checkVoice(hint) {
     if (err.name === "NotAllowedError") return "Allow the microphone for this page.";
     return "The microphone could not be opened.";
   }
+  if (stale()) return "";
   const understood = await new Promise((resolve) => {
     const timeout = setTimeout(() => resolve(false), VOICE_TEST_MS);
+    endVoiceTest = () => {
+      clearTimeout(timeout);
+      resolve(false);
+    };
     hearing = (words) => hint(words ? 'hearing "' + words + '"' : "");
     heard = (text) => {
       if (commandIn(text) === null) return;
@@ -107,6 +117,7 @@ async function checkVoice(hint) {
       resolve(true);
     };
   });
+  endVoiceTest = () => {};
   heard = () => {};
   hearing = () => {};
   return understood ? "" : "SAND did not understand you. Move closer to the microphone and try again.";
@@ -142,8 +153,9 @@ function showCheck(label) {
   return { hint, done };
 }
 
-// All checks run, so the user sees every problem at once.
-async function runChecks() {
+// All checks run, so the user sees every problem at once. They stop when
+// stale(): voice mode was turned off meanwhile.
+async function runChecks(stale) {
   checksEl.replaceChildren();
   checksEl.hidden = false;
   let failed = false;
@@ -154,13 +166,24 @@ async function runChecks() {
     ['Microphone and voice (say "hey sand")', checkVoice],
   ];
   for (const [label, check] of checks) {
+    if (stale()) return false;
     const { hint, done } = showCheck(label);
-    const problem = await check(hint);
+    const problem = await check(hint, stale);
     done(problem);
     if (problem) failed = true;
   }
+  if (stale()) return false;
   showCheck("Screen stays on").done(await keepScreenOn(), true);
   return !failed;
+}
+
+// false also when the turn is over: then what the checks opened is closed
+async function checkTurn(mine) {
+  const passed = await runChecks(() => mine !== turn);
+  if (mine === turn) return passed;
+  stopListening();
+  letScreenTurnOff();
+  return false;
 }
 
 // --- on and off ----------------------------------------------------------
@@ -172,15 +195,13 @@ async function turnOn() {
   turn += 1;
   const mine = turn;
   render();
-  const passed = await runChecks();
-  if (mine !== turn) {
-    // turned off meanwhile: close what the checks opened after that
-    if (state === "off") {
-      stopListening();
-      letScreenTurnOff();
-    }
-    return;
-  }
+  // an old turn's checks may still run: the page was left during them
+  // and brought back
+  await checking;
+  if (mine !== turn) return;
+  checking = checkTurn(mine);
+  const passed = await checking;
+  if (mine !== turn) return;
   if (!passed) {
     stopListening();
     closeFeedback();
@@ -216,6 +237,7 @@ function turnOff() {
   if (state === "off") return;
   state = "off";
   turn += 1;
+  endVoiceTest();
   // stopped and saved like by the Stop button
   if (isRecording()) stopRecording();
   clearInterval(renderInterval);

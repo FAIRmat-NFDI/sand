@@ -727,6 +727,8 @@ body {
   /* the label on a row of its own, so Stop and Discard stay together */
   .record-main .form-input {
     flex-basis: 100%;
+    /* flex wraps by the capped width: the label would share Stop's row */
+    max-width: none;
   }
 }
 
