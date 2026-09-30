@@ -125,7 +125,7 @@ same browser; sand warns when the login is about to end.
 
 ## Voice mode
 
-Optional. Needs the speech recognizer installed ([below](#installing-the-speech-recognizer)).
+Optional.
 
 1. Select an experiment and click **Voice mode on**.
 2. sand checks the experiment, the login, the recognizer and the microphone.
@@ -162,29 +162,6 @@ No beep: the command was not understood, say it again.
 **Privacy:** while listening, speech is recognized in the browser only;
 nothing is sent or stored. Audio leaves the computer only during a
 recording, as with the Record button.
-
-### Installing the speech recognizer
-
-The recognizer is [Vosk](https://alphacephei.com/vosk/) (Apache-2.0), built
-for the browser by [vosk-browser](https://github.com/lichess-org/vosk-browser).
-Its files are not in this repository. Download them once into
-`src/sand/apis/static/voice/vosk/` (ignored by git):
-
-```sh
-mkdir -p src/sand/apis/static/voice/vosk && cd src/sand/apis/static/voice/vosk
-
-# the recognizer
-curl -L https://registry.npmjs.org/@lichess-org/vosk-browser/-/vosk-browser-0.0.3.tgz \
-  | tar xz --strip-components=2 package/dist/vosk.wasm package/dist/vosk.wasm.js package/dist/vosk.worker.js
-
-# the model (41 MB), repacked from zip to tar.gz
-curl -LO https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
-unzip -q vosk-model-small-en-us-0.15.zip
-tar czf model.tar.gz vosk-model-small-en-us-0.15
-rm -r vosk-model-small-en-us-0.15 vosk-model-small-en-us-0.15.zip
-```
-
-Without these files the rest of sand works as usual.
 
 ## Development
 
