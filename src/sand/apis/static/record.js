@@ -12,6 +12,7 @@ import {
   storeLiveChosen,
 } from "./live-transcript.js";
 import { clearEntryLink, clearError, confirmDialog, showError } from "./ui.js";
+import { withoutStop } from "./voice/commands.js";
 
 const recordBtn = document.getElementById("record-btn");
 const discardBtn = document.getElementById("discard-btn");
@@ -61,9 +62,11 @@ function stopTimer() {
   timerInterval = null;
 }
 
-// Resolves to "started", or to why not: "busy", "no-experiment", "login"
-// or "mic". Shows the error itself, except for "busy".
-export async function startRecording() {
+// Resolves to "started", or to why not: "busy", "no-experiment", "login",
+// "mic" or "cancelled". Shows the error itself, except for "busy" and
+// "cancelled". stillWanted is asked once the microphone is open: the
+// caller may no longer want the recording then.
+export async function startRecording(stillWanted = () => true) {
   // the record button is disabled then; a voice command is not
   if (isRecording() || pendingUploads > 0) return "busy";
   clearError();
@@ -87,6 +90,10 @@ export async function startRecording() {
   if (isRecording() || pendingUploads > 0) {
     stream.getTracks().forEach((t) => t.stop());
     return "busy";
+  }
+  if (!stillWanted()) {
+    stream.getTracks().forEach((t) => t.stop());
+    return "cancelled";
   }
 
   recordingExperiment = experiment;
@@ -161,7 +168,9 @@ export async function startRecording() {
     const item = {
       blob,
       experiment,
-      transcript: storeLive ? liveTranscript : "",
+      // "hey sand stop" is a command, not a part of the note; without
+      // voice it is what the user said
+      transcript: !storeLive ? "" : recorder.stoppedByVoice ? withoutStop(liveTranscript) : liveTranscript,
       label,
       time: new Date(),
     };
@@ -195,10 +204,13 @@ export async function startRecording() {
 
 // Returns a promise of what became of the recording: "saved", "unsent"
 // (kept for a retry), "discarded" or "empty". null when none was running.
-export function stopRecording() {
+// byVoice: stopped by the spoken command, which is then cut from the
+// transcript.
+export function stopRecording(byVoice = false) {
   let outcome = null;
   if (mediaRecorder && mediaRecorder.state === "recording") {
     outcome = mediaRecorder.outcome;
+    mediaRecorder.stoppedByVoice = byVoice;
     mediaRecorder.stop();
   } else {
     stopLiveTranscript();

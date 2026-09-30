@@ -8,6 +8,13 @@
 // state. `liveConn` always points at the connection of the CURRENT
 // recording; only that one may write to the panel or receive chunks.
 let liveConn = null;
+// Gets the text of the running recording whenever it grows, the words
+// not yet final included.
+let textHandler = () => {};
+
+export function onLiveText(handler) {
+  textHandler = handler;
+}
 
 const liveTranscriptEl = document.getElementById("live-transcript");
 const liveFinalEl = document.getElementById("live-final");
@@ -89,6 +96,9 @@ export function startLiveTranscript() {
         liveInterimEl.textContent = "";
       } else {
         liveInterimEl.textContent = alt.transcript || "";
+      }
+      if (!conn.stopped) {
+        textHandler(msg.is_final ? conn.finals : conn.finals + " " + (alt.transcript || ""));
       }
     }
   };

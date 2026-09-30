@@ -2,6 +2,10 @@
 /docs/
 /CLAUDE.md
 
+# Voice mode's speech recognizer (vosk-browser and its model): put there
+# by hand, see the README
+/src/sand/apis/static/voice/vosk/
+
 # IDE and OS files
 .idea/
 .vscode/

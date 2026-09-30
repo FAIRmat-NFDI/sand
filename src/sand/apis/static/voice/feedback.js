@@ -20,6 +20,11 @@ export function openFeedback() {
   ctx = new AudioContext();
 }
 
+// The recognizer listens on the same context.
+export function audioContext() {
+  return ctx;
+}
+
 export function closeFeedback() {
   if (ctx) ctx.close().catch(() => {});
   ctx = null;

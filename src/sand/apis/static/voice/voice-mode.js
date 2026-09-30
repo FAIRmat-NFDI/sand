@@ -8,22 +8,36 @@
 import { sessionState } from "../api.js";
 import { selectedExperiment } from "../experiments.js";
 import { isRecording, startRecording, stopRecording } from "../record.js";
-import { beep, closeFeedback, openFeedback } from "./feedback.js";
+import { onLiveText } from "../live-transcript.js";
+import { commandIn, stopSaidIn } from "./commands.js";
+import { beep, closeFeedback, openFeedback, speaking } from "./feedback.js";
+import { loadRecognizer, recognizerLoaded, startListening, stopListening } from "./recognizer.js";
 
 const voiceBtn = document.getElementById("voice-btn");
 const statusEl = document.getElementById("voice-status");
 const checksEl = document.getElementById("voice-checks");
+const heardEl = document.getElementById("voice-heard");
 
 // one command, not two, when it is heard twice
 const COOLDOWN_MS = 1500;
-const MIC_LISTEN_MS = 6000;
-const MIC_LOUD = 0.05;
+const VOICE_TEST_MS = 10000;
 const RENDER_MS = 500;
 
 let state = "off"; // "off", "checking" or "on"
 let ignoreUntil = 0;
 let wakeLock = null;
 let renderInterval = null;
+// counts the times voice mode was turned on or off: checks that are
+// still running then belong to an old turn
+let turn = 0;
+// get what the recognizer heard; they change with what voice mode is doing
+let heard = () => {};
+let hearing = () => {};
+// ends the wait for "hey sand" when voice mode is turned off
+let endVoiceTest = () => {};
+// the checks of the latest turn; there is one recognizer and one
+// microphone per page, so a turn's checks start after the old ones ended
+let checking = Promise.resolve(false);
 
 function render() {
   voiceBtn.disabled = state === "checking";
@@ -42,6 +56,12 @@ function render() {
   // only on a change: a screen reader reads a status out on every write
   if (statusEl.textContent !== text) statusEl.textContent = text;
   if (statusEl.className !== look) statusEl.className = look;
+}
+
+// What the recognizer makes of the voice, so the user sees why a command
+// was not taken. It knows the words of the commands only: the rest is "...".
+function showHeard(words) {
+  heardEl.textContent = "Heard: " + words.replaceAll("[unk]", "...");
 }
 
 // --- the checks before voice mode turns on ------------------------------
@@ -63,35 +83,44 @@ async function checkLogin() {
   }
 }
 
-async function checkMicrophone() {
-  let stream;
+async function checkRecognizer() {
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch {
-    return "Allow the microphone for this page.";
+    await loadRecognizer();
+    return "";
+  } catch (err) {
+    return err.message;
   }
-  let ctx = null;
+}
+
+// The user says "hey sand": it shows that the microphone works and that
+// the recognizer understands this voice in this room.
+async function checkVoice(hint, stale) {
+  if (!recognizerLoaded()) return "Needs the speech recognizer.";
   try {
-    ctx = new AudioContext();
-    const analyser = ctx.createAnalyser();
-    ctx.createMediaStreamSource(stream).connect(analyser);
-    const samples = new Float32Array(analyser.fftSize);
-    const end = performance.now() + MIC_LISTEN_MS;
-    let heard = false;
-    while (!heard && performance.now() < end) {
-      await new Promise((resolve) => {
-        setTimeout(resolve, 100);
-      });
-      analyser.getFloatTimeDomainData(samples);
-      heard = samples.some((sample) => Math.abs(sample) > MIC_LOUD);
-    }
-    return heard ? "" : "The microphone hears nothing. Check that it is the right one and not muted.";
-  } catch {
-    return "The microphone could not be tested.";
-  } finally {
-    stream.getTracks().forEach((track) => track.stop());
-    if (ctx) ctx.close().catch(() => {});
+    await startListening((text) => heard(text), (words) => hearing(words));
+  } catch (err) {
+    stopListening();
+    if (err.name === "NotAllowedError") return "Allow the microphone for this page.";
+    return "The microphone could not be opened.";
   }
+  if (stale()) return "";
+  const understood = await new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve(false), VOICE_TEST_MS);
+    endVoiceTest = () => {
+      clearTimeout(timeout);
+      resolve(false);
+    };
+    hearing = (words) => hint(words ? 'hearing "' + words + '"' : "");
+    heard = (text) => {
+      if (commandIn(text) === null) return;
+      clearTimeout(timeout);
+      resolve(true);
+    };
+  });
+  endVoiceTest = () => {};
+  heard = () => {};
+  hearing = () => {};
+  return understood ? "" : "SAND did not understand you. Move closer to the microphone and try again.";
 }
 
 async function keepScreenOn() {
@@ -108,34 +137,53 @@ function letScreenTurnOff() {
   wakeLock = null;
 }
 
+// Returns hint(text), to show something while the check runs, and
+// done(problem).
 function showCheck(label) {
   const item = document.createElement("li");
   item.textContent = label;
   checksEl.append(item);
-  return (problem, warning = false) => {
-    item.className = !problem ? "voice-check-ok" : warning ? "voice-check-warning" : "voice-check-failed";
-    if (problem) item.textContent = label + ": " + problem;
+  const hint = (text) => {
+    item.textContent = text ? label + ": " + text : label;
   };
+  const done = (problem, warning = false) => {
+    item.className = !problem ? "voice-check-ok" : warning ? "voice-check-warning" : "voice-check-failed";
+    hint(problem);
+  };
+  return { hint, done };
 }
 
-// All checks run, so the user sees every problem at once.
-async function runChecks() {
+// All checks run, so the user sees every problem at once. They stop when
+// stale(): voice mode was turned off meanwhile.
+async function runChecks(stale) {
   checksEl.replaceChildren();
   checksEl.hidden = false;
   let failed = false;
   const checks = [
     ["Experiment", checkExperiment],
     ["NOMAD login", checkLogin],
-    ["Microphone (say a few words)", checkMicrophone],
+    ["Speech recognizer", checkRecognizer],
+    ['Microphone and voice (say "hey sand")', checkVoice],
   ];
   for (const [label, check] of checks) {
-    const done = showCheck(label);
-    const problem = await check();
+    if (stale()) return false;
+    const { hint, done } = showCheck(label);
+    const problem = await check(hint, stale);
     done(problem);
     if (problem) failed = true;
   }
-  showCheck("Screen stays on")(await keepScreenOn(), true);
+  if (stale()) return false;
+  showCheck("Screen stays on").done(await keepScreenOn(), true);
   return !failed;
+}
+
+// false also when the turn is over: then what the checks opened is closed
+async function checkTurn(mine) {
+  const passed = await runChecks(() => mine !== turn);
+  if (mine === turn) return passed;
+  stopListening();
+  letScreenTurnOff();
+  return false;
 }
 
 // --- on and off ----------------------------------------------------------
@@ -144,27 +192,59 @@ async function turnOn() {
   // before any await: audio needs the click
   openFeedback();
   state = "checking";
+  turn += 1;
+  const mine = turn;
   render();
-  if (!await runChecks()) {
+  // an old turn's checks may still run: the page was left during them
+  // and brought back
+  await checking;
+  if (mine !== turn) return;
+  checking = checkTurn(mine);
+  const passed = await checking;
+  if (mine !== turn) return;
+  if (!passed) {
+    stopListening();
     closeFeedback();
     letScreenTurnOff();
     state = "off";
+    const result = document.createElement("li");
+    result.className = "voice-checks-result";
+    result.textContent = "Voice mode is off. Click Voice mode on to try again.";
+    checksEl.append(result);
     render();
     return;
   }
   state = "on";
+  heard = (text) => {
+    // SAND's own beep is no command
+    if (speaking()) return;
+    showHeard(text);
+    const command = commandIn(text);
+    if (command === "start" || command === "stop") voiceCommand(command);
+  };
+  hearing = (words) => {
+    if (words && !speaking()) showHeard(words);
+  };
+  heardEl.textContent = "";
+  heardEl.hidden = false;
   renderInterval = setInterval(render, RENDER_MS);
   render();
 }
 
 // Turning on and off is shown, not spoken: the user is at the screen to
-// click.
+// click. Also during the checks, when the page is left.
 function turnOff() {
-  if (state !== "on") return;
+  if (state === "off") return;
   state = "off";
+  turn += 1;
+  endVoiceTest();
   // stopped and saved like by the Stop button
   if (isRecording()) stopRecording();
   clearInterval(renderInterval);
+  heard = () => {};
+  hearing = () => {};
+  heardEl.hidden = true;
+  stopListening();
   letScreenTurnOff();
   checksEl.hidden = true;
   closeFeedback();
@@ -176,21 +256,24 @@ function turnOff() {
 // two low = it did not work. The screen shows why.
 
 async function start() {
-  const outcome = await startRecording();
+  // voice mode may be turned off while the microphone opens
+  const mine = turn;
+  const outcome = await startRecording(() => mine === turn);
+  if (outcome === "cancelled") return;
   render();
   await beep(outcome === "started" ? "start" : "error");
 }
 
 async function stop() {
-  const saving = stopRecording();
+  const saving = stopRecording(true);
   render();
   await beep("stop");
   const outcome = await saving;
   if (outcome !== "discarded") await beep(outcome === "saved" ? "ok" : "error");
 }
 
-// For the recognizer. intent: "start" or "stop"
-export async function voiceCommand(intent) {
+// intent: "start" or "stop"
+async function voiceCommand(intent) {
   if (state !== "on" || performance.now() < ignoreUntil) return;
   if (intent === "start" && !isRecording()) {
     ignoreUntil = performance.now() + COOLDOWN_MS;
@@ -214,6 +297,13 @@ export function initVoiceMode() {
 
   // Voice mode never survives leaving the page. Turned off fully: the
   // browser may bring the page back as it was, not reloaded.
+  // During a recording the live transcript hears the stop command too,
+  // and better than the small recognizer in the browser: after a long
+  // dictation or with noise that one often misses it.
+  onLiveText((text) => {
+    if (stopSaidIn(text)) voiceCommand("stop");
+  });
+
   window.addEventListener("pagehide", turnOff);
   render();
 }
