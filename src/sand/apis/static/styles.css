@@ -373,12 +373,13 @@ body {
 .section .label-input {
   display: block;
   width: 100%;
-  max-width: 320px;
   margin-bottom: 12px;
 }
 
+/* the card's action ends where its fields end, as Record does */
 .section .text-field + .controls {
   margin-top: 12px;
+  justify-content: flex-end;
 }
 
 .section .toggle-label {
@@ -719,16 +720,12 @@ body {
 .record-main .form-input {
   flex: 1 1 200px;
   min-width: 0;
-  /* as wide as the label of a note */
-  max-width: 320px;
 }
 
 @media (max-width: 600px) {
   /* the label on a row of its own, so Stop and Discard stay together */
   .record-main .form-input {
     flex-basis: 100%;
-    /* flex wraps by the capped width: the label would share Stop's row */
-    max-width: none;
   }
 }
 
