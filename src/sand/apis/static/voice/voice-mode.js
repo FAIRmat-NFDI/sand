@@ -153,12 +153,12 @@ function showCheck(label) {
   return { hint, done };
 }
 
-// All checks run, so the user sees every problem at once. They stop when
-// stale(): voice mode was turned off meanwhile.
+// The checks stop at the first problem: the later ones would only make
+// the user wait (the model loads, the voice test takes 10 s). They also
+// stop when stale(): voice mode was turned off meanwhile.
 async function runChecks(stale) {
   checksEl.replaceChildren();
   checksEl.hidden = false;
-  let failed = false;
   const checks = [
     ["Experiment", checkExperiment],
     ["NOMAD login", checkLogin],
@@ -170,11 +170,11 @@ async function runChecks(stale) {
     const { hint, done } = showCheck(label);
     const problem = await check(hint, stale);
     done(problem);
-    if (problem) failed = true;
+    if (problem) return false;
   }
   if (stale()) return false;
   showCheck("Screen stays on").done(await keepScreenOn(), true);
-  return !failed;
+  return true;
 }
 
 // false also when the turn is over: then what the checks opened is closed
