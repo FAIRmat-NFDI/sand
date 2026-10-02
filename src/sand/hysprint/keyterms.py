@@ -19,6 +19,9 @@ KEYTERMS = [
     'MACl',
     'PbI2',
     'PbBr2',
+    # how PbI2 and PbBr2 are often said; "lead" is easily heard as "led"
+    'lead iodide',
+    'lead bromide',
     # solvents, cleaning
     'DMF',
     'DMSO',
