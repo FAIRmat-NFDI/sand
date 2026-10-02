@@ -619,6 +619,8 @@ body {
 
 .input-meta .input-delete .material-icons {
   font-size: 18px;
+  /* not the meta icons' grey: follow the button, red on hover */
+  color: inherit;
 }
 
 .input-meta .input-delete:hover:not(:disabled) {

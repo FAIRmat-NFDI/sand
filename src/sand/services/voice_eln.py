@@ -133,6 +133,9 @@ class VoiceElnService:
         # ones on the same entry (a time edit and a text save) would drop
         # each other's change. Per-process only: enough for one app worker.
         self._input_locks: dict[str, asyncio.Lock] = {}
+        # Same for the collection archive: adding, deleting, and setting
+        # derived_entries all rewrite it whole.
+        self._collection_locks: dict[tuple[str, str], asyncio.Lock] = {}
 
     def build_client(self, token: str) -> httpx.AsyncClient:
         return build_client(self._base_url, token)
@@ -322,18 +325,19 @@ class VoiceElnService:
         mainfile: str,
     ) -> None:
         """Replace the collection's derived_entries references."""
-        archive = await self.writer.read_archive(client, upload_id, mainfile)
-        data = archive.get('data')
-        if not isinstance(data, dict):
-            raise NomadAPIError(
-                0,
-                f'Experiment mainfile {mainfile} has no data section',
-                step='read_collection',
-            )
-        refs = [entry_ref(upload_id, entry_id) for entry_id in entry_ids]
-        if data.get('derived_entries') != refs:
-            data['derived_entries'] = refs
-            await self.writer.write_archive(client, upload_id, mainfile, archive)
+        async with self._collection_lock(upload_id, mainfile):
+            archive = await self.writer.read_archive(client, upload_id, mainfile)
+            data = archive.get('data')
+            if not isinstance(data, dict):
+                raise NomadAPIError(
+                    0,
+                    f'Experiment mainfile {mainfile} has no data section',
+                    step='read_collection',
+                )
+            refs = [entry_ref(upload_id, entry_id) for entry_id in entry_ids]
+            if data.get('derived_entries') != refs:
+                data['derived_entries'] = refs
+                await self.writer.write_archive(client, upload_id, mainfile, archive)
 
     async def collect_inputs(
         self,
@@ -583,18 +587,21 @@ class VoiceElnService:
             collection_mainfile = await self.resolve_collection_mainfile(
                 client, upload_id, collection_entry_id
             )
-            collection = await self.writer.read_archive(
-                client, upload_id, collection_mainfile
-            )
-            data = collection.get('data') or {}
-            # by entry id: older references are written in other forms
-            for field in ('audios', 'notes'):
-                refs = data.get(field)
-                if isinstance(refs, list):
-                    data[field] = [r for r in refs if entry_id_from_ref(r) != entry_id]
-            await self.writer.write_archive(
-                client, upload_id, collection_mainfile, collection
-            )
+            async with self._collection_lock(upload_id, collection_mainfile):
+                collection = await self.writer.read_archive(
+                    client, upload_id, collection_mainfile
+                )
+                data = collection.get('data') or {}
+                # by entry id: older references are written in other forms
+                for field in ('audios', 'notes'):
+                    refs = data.get(field)
+                    if isinstance(refs, list):
+                        data[field] = [
+                            r for r in refs if entry_id_from_ref(r) != entry_id
+                        ]
+                await self.writer.write_archive(
+                    client, upload_id, collection_mainfile, collection
+                )
 
             await self.writer.delete_raw_file(client, upload_id, mainfile)
             raw_audio = section.get('raw_audio')
@@ -604,6 +611,10 @@ class VoiceElnService:
 
     def _input_lock(self, entry_id: str) -> asyncio.Lock:
         return self._input_locks.setdefault(entry_id, asyncio.Lock())
+
+    def _collection_lock(self, upload_id: str, mainfile: str) -> asyncio.Lock:
+        """Taken after an input lock, never before one."""
+        return self._collection_locks.setdefault((upload_id, mainfile), asyncio.Lock())
 
     async def _write_input(
         self,
@@ -664,29 +675,25 @@ class VoiceElnService:
         entry_id: str,
         mainfile: str,
     ) -> None:
-        """Reference a new entry from the experiment's InputCollection.
-
-        Read-modify-write of the collection mainfile; concurrent uploads to
-        the same experiment can race here (accepted for now, see the design
-        discussion).
-        """
-        archive = await self.writer.read_archive(client, upload_id, mainfile)
-        data = archive.get('data')
-        if not isinstance(data, dict):
-            raise NomadAPIError(
-                0,
-                f'Experiment mainfile {mainfile} has no data section',
-                step='read_collection',
-            )
-        refs = data.get(field)
-        if not isinstance(refs, list):
-            # absent, or explicitly null (NOMAD's "unset" value): start fresh
-            refs = []
-            data[field] = refs
-        ref = entry_ref(upload_id, entry_id)
-        if ref not in refs:
-            refs.append(ref)
-            await self.writer.write_archive(client, upload_id, mainfile, archive)
+        """Reference a new entry from the experiment's InputCollection."""
+        async with self._collection_lock(upload_id, mainfile):
+            archive = await self.writer.read_archive(client, upload_id, mainfile)
+            data = archive.get('data')
+            if not isinstance(data, dict):
+                raise NomadAPIError(
+                    0,
+                    f'Experiment mainfile {mainfile} has no data section',
+                    step='read_collection',
+                )
+            refs = data.get(field)
+            if not isinstance(refs, list):
+                # absent, or explicitly null (NOMAD's "unset" value): start fresh
+                refs = []
+                data[field] = refs
+            ref = entry_ref(upload_id, entry_id)
+            if ref not in refs:
+                refs.append(ref)
+                await self.writer.write_archive(client, upload_id, mainfile, archive)
 
     async def resolve_collection_mainfile(
         self,

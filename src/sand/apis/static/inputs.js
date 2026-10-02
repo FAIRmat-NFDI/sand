@@ -272,6 +272,8 @@ async function deleteInput(item, experiment, button) {
     ? "Delete this " + inputDescription(item) + "? Its audio and transcript are deleted from NOMAD."
     : "Delete this " + inputDescription(item) + "? It is deleted from NOMAD.";
   if (!await confirmDialog(what, "Delete")) return;
+  // its open editor would hold off the list refresh and could still save
+  if (revising?.item.entry_id === item.entry_id) endRevision();
   clearError();
   button.disabled = true;
   try {
