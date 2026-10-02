@@ -560,13 +560,23 @@ class VoiceElnService:
         upload_id: str,
         entry_id: str,
         collection_entry_id: str,
+        undeletable: tuple[str, ...] = (),
     ) -> None:
         """Delete one input: its archive, and a recording's audio.
+
+        undeletable: entry ids the caller needs kept (e.g. a form the
+        extraction reads); deleting one is refused.
 
         The collection's reference goes first: if a file delete fails
         after it, the input is gone from the list and only an unreferenced
         file is left, not a reference to a missing entry.
         """
+        if entry_id in undeletable:
+            raise NomadAPIError(
+                HTTPStatus.BAD_REQUEST,
+                f'entry {entry_id} can not be deleted',
+                step='delete_input',
+            )
         async with self._input_lock(entry_id):
             mainfile, archive = await self._locate_input(
                 client, upload_id, entry_id, collection_entry_id, step='delete_input'
