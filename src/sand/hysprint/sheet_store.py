@@ -80,7 +80,7 @@ class SheetStore:
             )
             replaced_edits = not _sheet_hash_matches(current, stored_extraction)
             old_ids = await processed_entry_ids(
-                client, entry_id, 1, writer.retry_interval_s
+                client, upload_id, entry_id, 1, writer.retry_interval_s
             )
 
         extraction = {
@@ -129,7 +129,7 @@ class SheetStore:
         old_ids: list[str] = []
         if not changed:
             parsed_ids = await processed_entry_ids(
-                client, entry_id, 5, writer.retry_interval_s
+                client, upload_id, entry_id, 5, writer.retry_interval_s
             )
             if parsed_ids:
                 await self._voice.set_derived_entries(
@@ -139,7 +139,7 @@ class SheetStore:
             # same bytes but no parse output: repair with a full reparse
         elif current is not None:
             old_ids = await processed_entry_ids(
-                client, entry_id, 1, writer.retry_interval_s
+                client, upload_id, entry_id, 1, writer.retry_interval_s
             )
 
         await self._reparse(
@@ -200,7 +200,7 @@ class SheetStore:
         )
         entry_id = generate_entry_id(upload_id, DERIVED_SHEET_MAINFILE)
         parsed_ids = await processed_entry_ids(
-            client, entry_id, 5, writer.retry_interval_s
+            client, upload_id, entry_id, 5, writer.retry_interval_s
         )
         await self._voice.set_derived_entries(
             client, upload_id, [entry_id, *parsed_ids], collection_mainfile

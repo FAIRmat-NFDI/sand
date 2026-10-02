@@ -8,6 +8,7 @@ from http import HTTPStatus
 from urllib.parse import urlparse, urlunparse
 
 import httpx
+from nomad.utils import generate_entry_id
 
 # Lowest HTTP status code that counts as an error response.
 HTTP_ERROR_STATUS = 400
@@ -146,6 +147,7 @@ async def entry_mainfiles(
 
 async def processed_entry_ids(
     client: httpx.AsyncClient,
+    upload_id: str,
     entry_id: str,
     attempts: int,
     retry_interval_s: float,
@@ -166,10 +168,21 @@ async def processed_entry_ids(
             section = ((body.get('data') or {}).get('archive') or {}).get('data') or {}
             refs = section.get('processed_archive')
             if isinstance(refs, list) and refs:
-                return [entry_id_from_ref(ref) for ref in refs]
+                return [_processed_entry_id(upload_id, ref) for ref in refs]
         if attempt < attempts - 1:
             await asyncio.sleep(retry_interval_s)
     return []
+
+
+def _processed_entry_id(upload_id: str, ref: str) -> str:
+    # nomad-hysprint's batch parser puts the created file's name where the
+    # entry id belongs ('.../archive/<name>.archive.json#data'); taken as an
+    # id, it matches no entry, and the previous parse's files were never
+    # deleted on a re-extraction
+    entry_id = entry_id_from_ref(ref)
+    if entry_id.endswith('.json'):
+        return generate_entry_id(upload_id, entry_id)
+    return entry_id
 
 
 @dataclass(frozen=True)
