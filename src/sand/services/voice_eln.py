@@ -550,6 +550,58 @@ class VoiceElnService:
             await self._write_input(client, upload_id, mainfile, archive)
             return kind
 
+    async def delete_input(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        entry_id: str,
+        collection_entry_id: str,
+    ) -> None:
+        """Delete one input: its archive, and a recording's audio.
+
+        The collection's reference goes first: if a file delete fails
+        after it, the input is gone from the list and only an unreferenced
+        file is left, not a reference to a missing entry.
+        """
+        async with self._input_lock(entry_id):
+            mainfile, archive = await self._locate_input(
+                client, upload_id, entry_id, collection_entry_id, step='delete_input'
+            )
+            section = archive.get('data') or {}
+            m_def = str(section.get('m_def') or '')
+            if m_def.endswith('AudioInput'):
+                kind = 'audio'
+            elif m_def.endswith('WrittenNote'):
+                kind = 'note'
+            else:
+                raise NomadAPIError(
+                    HTTPStatus.NOT_FOUND,
+                    f'entry {entry_id} is not a deletable input',
+                    step='delete_input',
+                )
+
+            collection_mainfile = await self.resolve_collection_mainfile(
+                client, upload_id, collection_entry_id
+            )
+            collection = await self.writer.read_archive(
+                client, upload_id, collection_mainfile
+            )
+            data = collection.get('data') or {}
+            # by entry id: older references are written in other forms
+            for field in ('audios', 'notes'):
+                refs = data.get(field)
+                if isinstance(refs, list):
+                    data[field] = [r for r in refs if entry_id_from_ref(r) != entry_id]
+            await self.writer.write_archive(
+                client, upload_id, collection_mainfile, collection
+            )
+
+            await self.writer.delete_raw_file(client, upload_id, mainfile)
+            raw_audio = section.get('raw_audio')
+            if kind == 'audio' and raw_audio:
+                # relative to the upload, as voice-eln reads it
+                await self.writer.delete_raw_file(client, upload_id, raw_audio)
+
     def _input_lock(self, entry_id: str) -> asyncio.Lock:
         return self._input_locks.setdefault(entry_id, asyncio.Lock())
 
