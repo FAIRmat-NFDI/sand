@@ -19,13 +19,25 @@ KEYTERMS = [
     'MACl',
     'PbI2',
     'PbBr2',
-    # how PbI2 and PbBr2 are often said; "lead" is easily heard as "led"
+    # the spoken names: long chemical words a general model rarely knows,
+    # and "lead" is easily heard as "led"
     'lead iodide',
     'lead bromide',
+    'caesium iodide',
+    'formamidinium',
+    'methylammonium',
+    'phenethylammonium',
+    'bathocuproine',
+    # layers, said as letters
+    'HTL',
+    'ETL',
     # solvents, cleaning
     'DMF',
     'DMSO',
     'chlorobenzene',
+    'CBZ',
+    'EtOH',
+    'DI water',
     'Hellmanex',
     # processes
     'UV-ozone',
