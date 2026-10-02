@@ -8,7 +8,8 @@ VOICE_KEYTERMS = ['hey sand']
 
 def deepgram_url(model: str, keyterms: list[str]) -> str:
     params = [('model', model), ('interim_results', 'true'), ('smart_format', 'true')]
-    # keyterm prompting exists for Nova-3 only; older models reject it
-    if model.startswith('nova-3'):
+    # keyterm prompting exists for Nova-3 only; older models reject it.
+    # No keyterms configured: none at all, also not voice mode's.
+    if keyterms and model.startswith('nova-3'):
         params += [('keyterm', term) for term in [*keyterms, *VOICE_KEYTERMS]]
     return f'{DEEPGRAM_LIVE_URL}?{urlencode(params)}'
