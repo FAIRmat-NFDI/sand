@@ -177,6 +177,10 @@ class SheetStore:
             stale = await entry_mainfiles(
                 client, upload_id, old_ids, step='find_stale_entries'
             )
+            # the old sheet goes first: NOMAD reparses it after every delete
+            # below, and the parser rewrites the files it finds missing,
+            # with the old content
+            await writer.delete_raw_file(client, upload_id, DERIVED_SHEET_MAINFILE)
             for target in stale:
                 if target not in keep:
                     await writer.delete_raw_file(client, upload_id, target)
