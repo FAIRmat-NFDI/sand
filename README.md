@@ -6,7 +6,8 @@ data with an LLM.
 
 - **Record** spoken notes, with a live transcript while speaking.
 - **Write** notes by hand.
-- **Review** all inputs of an experiment in time order, and correct their text.
+- **Review** all inputs of an experiment in time order, correct their text,
+  or delete one (its NOMAD entry and, for a recording, the audio).
 - **Extract** the experiment into structured data for a lab's format.
 - **Voice mode**: start and stop recordings by voice, for work where the
   hands are not free (e.g. in a glove box).
@@ -138,6 +139,10 @@ Optional.
    stays off and you can click again.
 3. **Listening** is shown: voice mode is on.
 
+Voice mode stays on until you click **Voice mode off** or leave or reload
+the page. It does not turn itself off after some time, so turn it off when
+the experiment is done. After a reload it is always off.
+
 | To | Say |
 |---|---|
 | start a recording | **"hey sand, start record"** |
@@ -164,9 +169,13 @@ No beep: the command was not understood, say it again.
 - The Record and Stop buttons keep working.
 - English only.
 
-**Privacy:** while listening, speech is recognized in the browser only;
-nothing is sent or stored. Audio leaves the computer only during a
-recording, as with the Record button.
+**Privacy:** while voice mode is on, the microphone is always listening,
+but only the speech recognizer in your browser hears it. The audio is
+not saved on your computer and not sent anywhere, not even to NOMAD:
+each piece of sound is checked for a command and then discarded. Only a
+recording sends audio, to NOMAD (and to the live transcription, if it is
+on), exactly as with the Record button. The browser shows its microphone
+icon in the tab the whole time voice mode is on.
 
 ## Development
 
