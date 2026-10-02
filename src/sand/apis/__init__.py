@@ -14,6 +14,9 @@ class SandDashboardEntryPoint(DashboardEntryPoint):
     # Falls back to the DEEPGRAM_API_KEY environment variable.
     deepgram_api_key: str = ''
     deepgram_model: str = 'nova-3'
+    # Lab terms the live transcript is biased towards (Nova-3 only).
+    # None = the hysprint lab's (sand.hysprint.keyterms); [] = none.
+    deepgram_keyterms: list[str] | None = None
     # Default state of the GUI's "save live transcript" toggle: on = the
     # live text is stored and whisper is skipped; off = the live text is
     # display-only and whisper (Groq) transcribes the uploaded audio -

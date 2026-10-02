@@ -12,6 +12,7 @@ from nomad.config import config
 from sand.apis.deps import get_bearer_token
 from sand.apis.routers.input_collections import router as input_collections_router
 from sand.apis.routers.live_transcript import router as live_transcript_router
+from sand.hysprint.keyterms import KEYTERMS
 from sand.services.voice_eln import VoiceElnService
 
 # TODO: this need to be updated maybe to uplaod access when the api scope is supprted.
@@ -52,6 +53,11 @@ app.state.deepgram_api_key = sand_api_entry_point.deepgram_api_key or os.environ
     'DEEPGRAM_API_KEY', ''
 )
 app.state.deepgram_model = sand_api_entry_point.deepgram_model
+app.state.deepgram_keyterms = (
+    KEYTERMS
+    if sand_api_entry_point.deepgram_keyterms is None
+    else sand_api_entry_point.deepgram_keyterms
+)
 app.state.store_live_transcript = sand_api_entry_point.store_live_transcript
 
 app.include_router(

@@ -25,10 +25,9 @@ import websockets
 from fastapi import APIRouter, WebSocket
 
 from sand.apis.deps import token_from_cookie
+from sand.services.deepgram import deepgram_url
 
 router = APIRouter()
-
-DEEPGRAM_LIVE_URL = 'wss://api.deepgram.com/v1/listen'
 
 # How long to wait for Deepgram's remaining finals after CloseStream.
 DRAIN_TIMEOUT_S = 10.0
@@ -93,7 +92,7 @@ async def live_transcript(browser_ws: WebSocket) -> None:
         await browser_ws.close(code=4401, reason='invalid NOMAD token')
         return
 
-    url = f'{DEEPGRAM_LIVE_URL}?model={app.state.deepgram_model}&interim_results=true&smart_format=true'
+    url = deepgram_url(app.state.deepgram_model, app.state.deepgram_keyterms)
     try:
         deepgram_ws = await websockets.connect(
             url, additional_headers={'Authorization': f'Token {api_key}'}
