@@ -26,6 +26,17 @@ function liveTranscriptUrl() {
   return url.toString();
 }
 
+// Clears the text a finished recording left in the panel, when something
+// else starts (a file upload, voice mode, another experiment). The
+// connection is detached first: its late finals would repaint the panel.
+// What the recording saves is collected apart, so it stays complete.
+export function clearLiveTranscript() {
+  // a running recording keeps its text
+  if (liveConn && !liveConn.stopped) return;
+  liveConn = null;
+  clearLivePanel();
+}
+
 export function clearLivePanel() {
   liveFinalEl.textContent = "";
   liveInterimEl.textContent = "";

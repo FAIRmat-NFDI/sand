@@ -6,6 +6,7 @@ import { lockExperimentSelect, requireExperiment } from "./experiments.js";
 import { reportNewInput } from "./inputs.js";
 import {
   clearLivePanel,
+  clearLiveTranscript,
   sendLiveChunk,
   startLiveTranscript,
   stopLiveTranscript,
@@ -406,6 +407,8 @@ async function uploadAudioFile() {
     showError("File too large (max 25 MB).");
     return;
   }
+  // the panel would look like this file's transcript
+  clearLiveTranscript();
   // not kept for a retry: the file is still on the user's disk
   const result = await uploadAudio(file, experiment, "", labelInput.value.trim());
   if (result === "login") showError("Log in to NOMAD again, then upload the file again.");

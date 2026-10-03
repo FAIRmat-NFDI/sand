@@ -8,7 +8,7 @@
 import { sessionState } from "../api.js";
 import { selectedExperiment } from "../experiments.js";
 import { isRecording, startRecording, stopRecording } from "../record.js";
-import { onLiveText } from "../live-transcript.js";
+import { clearLiveTranscript, onLiveText } from "../live-transcript.js";
 import { commandIn, stopSaidIn } from "./commands.js";
 import { beep, closeFeedback, openFeedback, speaking } from "./feedback.js";
 import { loadRecognizer, recognizerLoaded, startListening, stopListening } from "./recognizer.js";
@@ -191,6 +191,9 @@ async function checkTurn(mine) {
 async function turnOn() {
   // before any await: audio needs the click
   openFeedback();
+  // what voice mode hears is shown apart ("Heard:"); an old recording's
+  // text would mix with it
+  clearLiveTranscript();
   state = "checking";
   turn += 1;
   const mine = turn;
