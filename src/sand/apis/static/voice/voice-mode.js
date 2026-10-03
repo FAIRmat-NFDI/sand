@@ -191,8 +191,7 @@ async function checkTurn(mine) {
 async function turnOn() {
   // before any await: audio needs the click
   openFeedback();
-  // what voice mode hears is shown apart ("Heard:"); an old recording's
-  // text would mix with it
+  // an old recording's text would look like what voice mode hears
   clearLiveTranscript();
   state = "checking";
   turn += 1;
