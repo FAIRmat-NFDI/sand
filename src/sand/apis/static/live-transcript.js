@@ -3,10 +3,14 @@
 // relay is off or fails, recording works unchanged.
 
 // One object per relay connection: handlers close over it, so a socket
-// that outlives its recording (draining finals) or a stale callback from
-// a quickly-restarted recording can never touch the next recording's
-// state. `liveConn` always points at the connection of the CURRENT
-// recording; only that one may write to the panel or receive chunks.
+// that outlives its recording (draining finals) can never touch the next
+// recording's state. Two separate things:
+// - `liveConn` is the connection whose text the panel shows: the latest
+//   recording's, until cleared. Only it paints.
+// - Each connection's lifecycle is its own: once stopped it always
+//   flushes and saves its transcript, whoever owns the panel; only a
+//   discarded one is closed without flushing.
+// Audio chunks go to their recording's own connection (sendLiveChunk).
 let liveConn = null;
 // Gets the text of the running recording whenever it grows, the words
 // not yet final included.
@@ -27,13 +31,13 @@ function liveTranscriptUrl() {
 }
 
 // Clears the text a finished recording left in the panel, when something
-// else starts (a file upload, voice mode, another experiment). The
-// connection stays current, so a stop still waiting for the relay is
-// flushed and its transcript saved; only its late finals no longer paint.
+// else starts (a file upload, voice mode, another experiment). Giving up
+// the panel does not touch the connection: a stop still draining is
+// saved complete, its late finals just no longer paint.
 export function clearLiveTranscript() {
   // a running recording keeps its text
   if (liveConn && !liveConn.stopped) return;
-  if (liveConn) liveConn.panel = false;
+  liveConn = null;
   clearLivePanel();
 }
 
@@ -62,8 +66,8 @@ export function startLiveTranscript() {
     // resolved on close is this recording's text even if another
     // recording has taken over the panel meanwhile
     finals: "",
-    // false once its text was cleared from the panel (clearLiveTranscript)
-    panel: true,
+    // a discarded recording has nothing to save: closed without flushing
+    discarded: false,
     finish: null,
     done: null,
   };
@@ -80,13 +84,12 @@ export function startLiveTranscript() {
       return;
     }
     if (msg.type === "relay-ready") {
-      if (liveConn !== conn) {
-        // superseded by a newer recording: never touch its state
+      if (conn.discarded) {
         ws.close();
         return;
       }
       conn.ready = true;
-      if (conn.panel) liveTranscriptEl.hidden = false;
+      if (liveConn === conn) liveTranscriptEl.hidden = false;
       for (const chunk of conn.queue) ws.send(chunk);
       conn.queue = [];
       // recording already stopped while we were connecting: the queued
@@ -101,9 +104,9 @@ export function startLiveTranscript() {
         conn.finals += (conn.finals ? " " : "") + alt.transcript;
       }
     }
-    if (liveConn === conn && conn.panel) {
-      // drain finals of a stopped recording still render, but a newer
-      // recording owns the panel
+    if (liveConn === conn) {
+      // drain finals of a stopped recording still render, unless a newer
+      // recording owns the panel or it was cleared
       if (msg.is_final) {
         liveFinalEl.textContent = conn.finals;
         liveInterimEl.textContent = "";
@@ -122,8 +125,7 @@ export function startLiveTranscript() {
   return conn;
 }
 
-export function sendLiveChunk(chunk) {
-  const conn = liveConn;
+export function sendLiveChunk(conn, chunk) {
   if (!conn || conn.stopped) return;
   if (conn.ready && conn.ws.readyState === WebSocket.OPEN) {
     conn.ws.send(chunk);
@@ -135,14 +137,19 @@ export function sendLiveChunk(chunk) {
 // Resolves with this recording's final transcript once the relay socket
 // has closed - Deepgram's LAST finals arrive after the stop message, so
 // reading any earlier would truncate the text. Without `conn`, stops the
-// current recording's connection.
-export function stopLiveTranscript(conn = liveConn, detach = false) {
+// connection the panel shows. discard: the recording is thrown away, so
+// the socket closes without flushing and the panel is given up.
+export function stopLiveTranscript(conn = liveConn, discard = false) {
   if (!conn) return Promise.resolve("");
-  if (detach && liveConn === conn) liveConn = null;
+  if (discard) {
+    conn.discarded = true;
+    if (liveConn === conn) liveConn = null;
+    if (conn.ws.readyState !== WebSocket.CLOSED) conn.ws.close();
+  }
   if (conn.stopped) return conn.done;
   conn.stopped = true;
   const ws = conn.ws;
-  if (ws.readyState === WebSocket.OPEN && conn.ready) {
+  if (!discard && ws.readyState === WebSocket.OPEN && conn.ready) {
     // ask sand to flush Deepgram; the remaining finals arrive before close
     ws.send(JSON.stringify({ type: "relay-stop" }));
   }
