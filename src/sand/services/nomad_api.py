@@ -15,28 +15,25 @@ HTTP_ERROR_STATUS = 400
 
 
 def gui_upload_url(base_url: str, upload_id: str) -> str:
-    """Build the NOMAD GUI URL for an upload from the API base URL."""
+    """The new NOMAD GUI's page of an upload (a "project" there), built
+    from the API base URL.
+
+    Not the classic GUI: when it starts it deletes the Authorization cookie
+    of the new GUI, which is the login sand uses.
+    """
     parsed = urlparse(base_url)
     path = parsed.path.rstrip('/')
     for suffix in ('/api/v1', '/api'):
         if path.endswith(suffix):
             path = path[: -len(suffix)]
             break
-
-    netloc = parsed.netloc
-    # TODO: remove the localhost logic in production
-    # hostname is None when base_url has no scheme; treat that as non-local.
-    if 'localhost' in (parsed.hostname or ''):
-        netloc = netloc.replace(':8000', ':3000')
-    # NOMAD GUI v1 (classic) upload URL:
-    #   {base}/gui/user/uploads/upload/id/{upload_id}
-    gui_base = urlunparse((parsed.scheme, netloc, f'{path}/gui', '', '', ''))
-    return f'{gui_base}/user/uploads/upload/id/{upload_id}'
+    gui_base = urlunparse((parsed.scheme, parsed.netloc, f'{path}/gui/v2', '', '', ''))
+    return f'{gui_base}/projects/{upload_id}'
 
 
 def gui_entry_url(base_url: str, upload_id: str, entry_id: str) -> str:
-    """Build the NOMAD GUI URL for one entry."""
-    return f'{gui_upload_url(base_url, upload_id)}/entry/id/{entry_id}'
+    """The new NOMAD GUI's page of one entry."""
+    return f'{gui_upload_url(base_url, upload_id)}/entries/{entry_id}'
 
 
 def entry_ref(upload_id: str, entry_id: str) -> str:
