@@ -28,12 +28,12 @@ function liveTranscriptUrl() {
 
 // Clears the text a finished recording left in the panel, when something
 // else starts (a file upload, voice mode, another experiment). The
-// connection is detached first: its late finals would repaint the panel.
-// What the recording saves is collected apart, so it stays complete.
+// connection stays current, so a stop still waiting for the relay is
+// flushed and its transcript saved; only its late finals no longer paint.
 export function clearLiveTranscript() {
   // a running recording keeps its text
   if (liveConn && !liveConn.stopped) return;
-  liveConn = null;
+  if (liveConn) liveConn.panel = false;
   clearLivePanel();
 }
 
@@ -62,6 +62,8 @@ export function startLiveTranscript() {
     // resolved on close is this recording's text even if another
     // recording has taken over the panel meanwhile
     finals: "",
+    // false once its text was cleared from the panel (clearLiveTranscript)
+    panel: true,
     finish: null,
     done: null,
   };
@@ -84,7 +86,7 @@ export function startLiveTranscript() {
         return;
       }
       conn.ready = true;
-      liveTranscriptEl.hidden = false;
+      if (conn.panel) liveTranscriptEl.hidden = false;
       for (const chunk of conn.queue) ws.send(chunk);
       conn.queue = [];
       // recording already stopped while we were connecting: the queued
@@ -99,7 +101,7 @@ export function startLiveTranscript() {
         conn.finals += (conn.finals ? " " : "") + alt.transcript;
       }
     }
-    if (liveConn === conn) {
+    if (liveConn === conn && conn.panel) {
       // drain finals of a stopped recording still render, but a newer
       // recording owns the panel
       if (msg.is_final) {
