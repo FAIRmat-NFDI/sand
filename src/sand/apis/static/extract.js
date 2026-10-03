@@ -26,8 +26,8 @@ let extractPollTimer = null;
 let extractPollGeneration = 0;
 
 function entryUrlFor(experiment, entryId) {
-  // .../upload/id/<upload>/entry/id/<entry> - swap the entry id
-  return experiment.entry_url.replace(/entry\/id\/[^/]+$/, "entry/id/" + entryId);
+  // .../projects/<upload>/entries/<entry> - swap the entry id
+  return experiment.entry_url.replace(/entries\/[^/]+$/, "entries/" + entryId);
 }
 
 function stopExtractPolling() {
