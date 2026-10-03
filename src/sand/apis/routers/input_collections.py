@@ -3,6 +3,7 @@ import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Form, HTTPException, Request, Response, UploadFile
+from nomad.utils import generate_entry_id
 
 from sand.apis.deps import get_bearer_token
 from sand.hysprint import EXPERIMENT_INFO_LABEL, EXPERIMENT_INFO_MAINFILE
@@ -37,6 +38,11 @@ router = APIRouter()
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 CLIENT_ERROR_STATUSES = (400, 404, 409)
+
+
+def _undeletable_entry_ids(upload_id: str) -> tuple[str, ...]:
+    # the experiment-info form: the hysprint extraction reads it
+    return (generate_entry_id(upload_id, EXPERIMENT_INFO_MAINFILE),)
 
 
 def _voice_service(request: Request) -> VoiceElnService:
@@ -289,6 +295,7 @@ async def list_inputs(
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
+    undeletable = _undeletable_entry_ids(upload_id)
     return InputListResponse(
         inputs=[
             InputItemModel(
@@ -300,6 +307,7 @@ async def list_inputs(
                 text=item.text,
                 corrected=item.corrected,
                 status=item.status,
+                deletable=item.entry_id not in undeletable,
             )
             for item in inputs
         ]
@@ -403,6 +411,33 @@ async def revise_input_label(
         raise _http_error(exc) from exc
 
     return ReviseInputResponse(kind=kind)
+
+
+@router.delete('/input-collections/{upload_id}/inputs/{entry_id}', status_code=204)
+async def delete_input(
+    upload_id: str,
+    entry_id: str,
+    request: Request,
+    collection_entry_id: str,
+) -> Response:
+    """Delete one input: its entry, a recording's audio, and the
+    collection's reference to it."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    try:
+        async with voice.build_client(token) as client:
+            await voice.delete_input(
+                client,
+                upload_id,
+                entry_id,
+                collection_entry_id=collection_entry_id,
+                undeletable=_undeletable_entry_ids(upload_id),
+            )
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return Response(status_code=204)
 
 
 XLSX_MEDIA_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'

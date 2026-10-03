@@ -611,8 +611,26 @@ body {
   visibility: hidden;
 }
 
+.input-meta .input-delete {
+  color: #9e9e9e;
+  padding: 0;
+  visibility: hidden;
+}
+
+.input-meta .input-delete .material-icons {
+  font-size: 18px;
+  /* not the meta icons' grey: follow the button, red on hover */
+  color: inherit;
+}
+
+.input-meta .input-delete:hover:not(:disabled) {
+  color: #c62828;
+}
+
 .input-tile:hover .input-nomad-link,
-.input-tile:focus-within .input-nomad-link {
+.input-tile:focus-within .input-nomad-link,
+.input-tile:hover .input-delete,
+.input-tile:focus-within .input-delete {
   visibility: visible;
 }
 

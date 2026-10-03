@@ -95,6 +95,9 @@ class _FakeNomad:
         name = request.url.path.split('/raw/', 1)[1]
         if name not in self.raw_files:
             return httpx.Response(404, json={'detail': 'not found'})
+        if request.method == 'DELETE':
+            del self.raw_files[name]
+            return httpx.Response(200, json={})
         return httpx.Response(200, content=self.raw_files[name])
 
     def _entries(self, request: httpx.Request) -> httpx.Response:
@@ -643,3 +646,123 @@ async def test_concurrent_revisions_of_one_input_keep_both_changes():
     audio = fake.archive('a1.archive.json')['data']
     assert audio['corrected_transcript'] == 'fixed'
     assert audio['datetime'] == '2026-09-22T11:00:00+00:00'
+
+
+@pytest.mark.asyncio
+async def test_delete_note_removes_its_archive_and_reference():
+    fake = _fake_with_inputs(audio={}, note={'text': 'n'})
+
+    async with _client(fake) as client:
+        await _service().delete_input(
+            client, UPLOAD_ID, 'n1', collection_entry_id=SAND_COLLECTION_ID
+        )
+
+    assert 'n1.archive.json' not in fake.raw_files
+    collection = fake.archive(EXPERIMENT_MAINFILE)['data']
+    assert collection['notes'] == []
+    assert collection['audios'] == [entry_ref(UPLOAD_ID, 'a1')]
+
+
+@pytest.mark.asyncio
+async def test_delete_recording_removes_archive_audio_and_reference():
+    fake = _fake_with_inputs(audio={'raw_audio': 'rec.webm'}, note={'text': 'n'})
+    fake.raw_files['rec.webm'] = b'AUDIO'
+
+    async with _client(fake) as client:
+        await _service().delete_input(
+            client, UPLOAD_ID, 'a1', collection_entry_id=SAND_COLLECTION_ID
+        )
+
+    assert 'a1.archive.json' not in fake.raw_files
+    assert 'rec.webm' not in fake.raw_files
+    collection = fake.archive(EXPERIMENT_MAINFILE)['data']
+    assert collection['audios'] == []
+    assert collection['notes'] == [entry_ref(UPLOAD_ID, 'n1')]
+
+
+@pytest.mark.asyncio
+async def test_delete_rejects_an_entry_outside_the_collection():
+    fake = _fake_with_inputs(audio={}, note={'text': 'n'})
+    files_before = dict(fake.raw_files)
+
+    async with _client(fake) as client:
+        with pytest.raises(NomadAPIError) as excinfo:
+            await _service().delete_input(
+                client, UPLOAD_ID, 'x1', collection_entry_id=SAND_COLLECTION_ID
+            )
+
+    assert excinfo.value.status_code == HTTPStatus.NOT_FOUND
+    assert fake.raw_files == files_before
+
+
+@pytest.mark.asyncio
+async def test_delete_drops_the_reference_before_a_failing_file_delete():
+    fake = _fake_with_inputs(audio={}, note={'text': 'n'})
+
+    def failing_deletes(request: httpx.Request) -> httpx.Response:
+        if request.method == 'DELETE':
+            return httpx.Response(500, json={'detail': 'boom'})
+        return fake(request)
+
+    async with _client(failing_deletes) as client:
+        with pytest.raises(NomadAPIError):
+            await _service().delete_input(
+                client, UPLOAD_ID, 'n1', collection_entry_id=SAND_COLLECTION_ID
+            )
+
+    # an unreferenced file is left, not a reference to a missing entry
+    assert 'n1.archive.json' in fake.raw_files
+    assert fake.archive(EXPERIMENT_MAINFILE)['data']['notes'] == []
+
+
+@pytest.mark.asyncio
+async def test_concurrent_deletes_of_two_inputs_drop_both_references():
+    fake = _fake_with_inputs(audio={}, note={'text': 'n'})
+
+    async def interleaving(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(0)
+        return fake(request)
+
+    async with _client(interleaving) as client:
+        service = _service()
+        await asyncio.gather(
+            service.delete_input(
+                client, UPLOAD_ID, 'a1', collection_entry_id=SAND_COLLECTION_ID
+            ),
+            service.delete_input(
+                client, UPLOAD_ID, 'n1', collection_entry_id=SAND_COLLECTION_ID
+            ),
+        )
+
+    collection = fake.archive(EXPERIMENT_MAINFILE)['data']
+    assert (collection['audios'], collection['notes']) == ([], [])
+
+
+@pytest.mark.asyncio
+async def test_concurrent_adds_keep_both_references():
+    fake = _FakeNomad()
+
+    async def interleaving(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(0)
+        return fake(request)
+
+    async with _client(interleaving) as client:
+        service = _service()
+        await service.create_input_collection(client, 'perov_B1_a')
+        first, second = await asyncio.gather(
+            *(
+                service.add_written_note(
+                    client,
+                    UPLOAD_ID,
+                    'a step',
+                    collection_entry_id=SAND_COLLECTION_ID,
+                    mainfile=mainfile,
+                )
+                for mainfile in ('first.archive.json', 'second.archive.json')
+            )
+        )
+
+    notes = fake.archive(EXPERIMENT_MAINFILE)['data']['notes']
+    assert sorted(notes) == sorted(
+        entry_ref(UPLOAD_ID, handle.entry_id) for handle in (first, second)
+    )

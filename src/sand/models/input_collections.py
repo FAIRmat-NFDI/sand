@@ -64,6 +64,7 @@ class InputItemModel(BaseModel):
     text: str | None  # effective text (intended > corrected > transcript)
     corrected: bool  # a human revision exists
     status: str | None  # audio transcription status; None for notes
+    deletable: bool  # False for the experiment-info form: extraction needs it
 
 
 class InputListResponse(BaseModel):
