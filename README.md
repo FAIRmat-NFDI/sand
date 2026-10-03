@@ -149,7 +149,8 @@ the experiment is done. After a reload it is always off.
 | stop and save it | **"hey sand, stop recording"** |
 
 "hi sand" works too, and so do small variants ("start recording", "stop the
-recording"). "stop" alone does nothing.
+recording") and "please" ("hey sand, please stop recording", "hey sand, start
+recording, please"). "stop" alone does nothing.
 
 | Beep | Meaning |
 |---|---|

@@ -13,11 +13,19 @@ const SAID = {
   test: [""],
 };
 
+// A command may be said with "please" after the call or at its end
+// ("hey sand please stop recording", "hey sand stop recording please").
+// One before the call needs no phrase: what comes before a command is
+// ignored anyway (commandIn).
+function politely(ending) {
+  return ending ? [ending, "please " + ending, ending + " please"] : [ending];
+}
+
 // Every call with every ending: the recognizer hears "hi" as easily as
 // "hey", whatever was said.
 export const COMMANDS = Object.fromEntries(Object.entries(SAID).map(([command, endings]) => [
   command,
-  CALLS.flatMap((call) => endings.map((ending) => (call + " " + ending).trim())),
+  CALLS.flatMap((call) => endings.flatMap(politely).map((ending) => (call + " " + ending).trim())),
 ]));
 
 // "[unk]" stands for any other word: without it the recognizer would
@@ -47,16 +55,23 @@ const STOPS = [
 ];
 
 // How many words at the end of text are the spoken stop command, 0 if
-// none.
+// none. A "please" before the greeting, after the name or at the end
+// belongs to the command.
 function stopWordsAt(words) {
   const plain = words.map((word) => word.toLowerCase().replace(/[^a-z]/g, ""));
+  const tail = plain.at(-1) === "please" ? 1 : 0;
+  const end = plain.length - tail;
   for (const stop of STOPS) {
-    const from = plain.length - stop.length - 2;
-    if (from < 0) continue;
-    const [greeting, name, ...rest] = plain.slice(from);
-    const matches = GREETINGS.includes(greeting) && NAMES.includes(name)
-      && rest.every((word, i) => word === stop[i]);
-    if (matches) return stop.length + 2;
+    for (const command of [stop, ["please", ...stop]]) {
+      const from = end - command.length - 2;
+      if (from < 0) continue;
+      const [greeting, name, ...rest] = plain.slice(from, end);
+      const matches = GREETINGS.includes(greeting) && NAMES.includes(name)
+        && rest.every((word, i) => word === command[i]);
+      if (!matches) continue;
+      const lead = plain[from - 1] === "please" ? 1 : 0;
+      return lead + command.length + 2 + tail;
+    }
   }
   return 0;
 }
