@@ -6,6 +6,7 @@ import { lockExperimentSelect, requireExperiment } from "./experiments.js";
 import { reportNewInput } from "./inputs.js";
 import {
   clearLivePanel,
+  clearLiveTranscript,
   sendLiveChunk,
   startLiveTranscript,
   stopLiveTranscript,
@@ -109,14 +110,14 @@ export async function startRecording(stillWanted = () => true) {
   recorder.ondataavailable = (e) => {
     if (e.data.size > 0) {
       chunks.push(e.data);
-      sendLiveChunk(e.data);
+      sendLiveChunk(myConn, e.data);
     }
   };
 
   recorder.onstop = async () => {
     if (recorder.discardRequested) {
-      // close this recording's relay; detach so its late drain finals
-      // cannot repaint the cleared panel
+      // close this recording's relay without flushing: nothing is saved,
+      // and it gives up the panel, so no late finals repaint it
       stopLiveTranscript(myConn, true);
       stream.getTracks().forEach((t) => t.stop());
       if (mediaRecorder === recorder) {
@@ -406,6 +407,8 @@ async function uploadAudioFile() {
     showError("File too large (max 25 MB).");
     return;
   }
+  // the panel would look like this file's transcript
+  clearLiveTranscript();
   // not kept for a retry: the file is still on the user's disk
   const result = await uploadAudio(file, experiment, "", labelInput.value.trim());
   if (result === "login") showError("Log in to NOMAD again, then upload the file again.");

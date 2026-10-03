@@ -5,7 +5,7 @@ import { initAuth, login } from "./api.js";
 import { initExperiments, loadExperiments, onExperimentSelected } from "./experiments.js";
 import { initExtract, showExtraction } from "./extract.js";
 import { initInputs, showInputs } from "./inputs.js";
-import { initLiveToggle } from "./live-transcript.js";
+import { clearLiveTranscript, initLiveToggle } from "./live-transcript.js";
 import { initNotes } from "./notes.js";
 import { initRecord } from "./record.js";
 import { showError } from "./ui.js";
@@ -70,6 +70,7 @@ initVoiceMode();
 onExperimentSelected((experiment) => {
   showExtraction(experiment);
   showInputs(experiment);
+  clearLiveTranscript();
 });
 
 document.getElementById("login-btn").addEventListener("click", login);
