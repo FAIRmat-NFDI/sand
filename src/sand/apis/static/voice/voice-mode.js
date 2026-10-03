@@ -16,7 +16,6 @@ import { loadRecognizer, recognizerLoaded, startListening, stopListening } from 
 const voiceBtn = document.getElementById("voice-btn");
 const statusEl = document.getElementById("voice-status");
 const checksEl = document.getElementById("voice-checks");
-const heardEl = document.getElementById("voice-heard");
 
 // one command, not two, when it is heard twice
 const COOLDOWN_MS = 1500;
@@ -56,12 +55,6 @@ function render() {
   // only on a change: a screen reader reads a status out on every write
   if (statusEl.textContent !== text) statusEl.textContent = text;
   if (statusEl.className !== look) statusEl.className = look;
-}
-
-// What the recognizer makes of the voice, so the user sees why a command
-// was not taken. It knows the words of the commands only: the rest is "...".
-function showHeard(words) {
-  heardEl.textContent = "Heard: " + words.replaceAll("[unk]", "...");
 }
 
 // --- the checks before voice mode turns on ------------------------------
@@ -218,15 +211,9 @@ async function turnOn() {
   heard = (text) => {
     // SAND's own beep is no command
     if (speaking()) return;
-    showHeard(text);
     const command = commandIn(text);
     if (command === "start" || command === "stop") voiceCommand(command);
   };
-  hearing = (words) => {
-    if (words && !speaking()) showHeard(words);
-  };
-  heardEl.textContent = "";
-  heardEl.hidden = false;
   renderInterval = setInterval(render, RENDER_MS);
   render();
 }
@@ -243,7 +230,6 @@ function turnOff() {
   clearInterval(renderInterval);
   heard = () => {};
   hearing = () => {};
-  heardEl.hidden = true;
   stopListening();
   letScreenTurnOff();
   checksEl.hidden = true;
