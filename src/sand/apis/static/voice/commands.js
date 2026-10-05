@@ -13,11 +13,19 @@ const SAID = {
   test: [""],
 };
 
+// A command may be said with "please" after the call or at its end
+// ("hey sand please stop recording", "hey sand stop recording please").
+// One before the call needs no phrase: what comes before a command is
+// ignored anyway (commandIn).
+function politely(ending) {
+  return ending ? [ending, "please " + ending, ending + " please"] : [ending];
+}
+
 // Every call with every ending: the recognizer hears "hi" as easily as
 // "hey", whatever was said.
 export const COMMANDS = Object.fromEntries(Object.entries(SAID).map(([command, endings]) => [
   command,
-  CALLS.flatMap((call) => endings.map((ending) => (call + " " + ending).trim())),
+  CALLS.flatMap((call) => endings.flatMap(politely).map((ending) => (call + " " + ending).trim())),
 ]));
 
 // "[unk]" stands for any other word: without it the recognizer would
@@ -37,7 +45,7 @@ const PHRASES = Object.entries(COMMANDS)
 // The end of a note that was stopped by voice, as a transcription writes
 // it: with capitals and punctuation, and "sand" often as a name or a word
 // that sounds like it.
-const GREETINGS = ["hey", "hi", "hay", "hello"];
+const GREETINGS = ["hey", "hi", "hay", "hei", "hello"];
 const NAMES = ["sand", "sam", "send", "sent", "san", "stand", "sandy", "sands", "sandra", "zand"];
 const STOPS = [
   ["stop", "recording"],
@@ -47,41 +55,49 @@ const STOPS = [
 ];
 
 // How many words at the end of text are the spoken stop command, 0 if
-// none.
+// none. A "please" before the greeting, after the name or at the end
+// belongs to the command.
 function stopWordsAt(words) {
-  const plain = words.map((word) => word.toLowerCase().replace(/[^a-z]/g, ""));
+  const plain = words.map((word) => word.toLowerCase());
+  const tail = plain.at(-1) === "please" ? 1 : 0;
+  const end = plain.length - tail;
   for (const stop of STOPS) {
-    const from = plain.length - stop.length - 2;
-    if (from < 0) continue;
-    const [greeting, name, ...rest] = plain.slice(from);
-    const matches = GREETINGS.includes(greeting) && NAMES.includes(name)
-      && rest.every((word, i) => word === stop[i]);
-    if (matches) return stop.length + 2;
+    for (const command of [stop, ["please", ...stop]]) {
+      const from = end - command.length - 2;
+      if (from < 0) continue;
+      const [greeting, name, ...rest] = plain.slice(from, end);
+      const matches = GREETINGS.includes(greeting) && NAMES.includes(name)
+        && rest.every((word, i) => word === command[i]);
+      if (!matches) continue;
+      const lead = plain[from - 1] === "please" ? 1 : 0;
+      return lead + command.length + 2 + tail;
+    }
   }
   return 0;
 }
 
+// The words of a text as runs of letters, with where they start: a
+// transcription may join "hey sand" into "Hei-san".
 function wordsOf(text) {
-  return text.trim().split(/\s+/).filter((word) => /[a-z]/i.test(word));
+  return [...text.matchAll(/[a-z]+/gi)];
 }
 
 // For a transcript (Deepgram, Whisper), not for the recognizer's text.
 export function stopSaidIn(transcript) {
-  return stopWordsAt(wordsOf(transcript)) > 0;
+  return stopWordsAt(wordsOf(transcript).map((match) => match[0])) > 0;
 }
 
-// The transcript without the stop command at its end.
+// The transcript without the stop command at its end. Cut where the
+// command's first word starts, so the rest is kept as written.
 export function withoutStop(transcript) {
-  let drop = stopWordsAt(wordsOf(transcript));
+  const words = wordsOf(transcript);
+  const drop = stopWordsAt(words.map((match) => match[0]));
   if (drop === 0) return transcript;
-  const all = transcript.trim().split(/\s+/);
-  while (drop > 0 && all.length > 0) {
-    // a token without letters ("-") belongs to the command, but is no word
-    if (/[a-z]/i.test(all.pop())) drop -= 1;
-  }
-  // a dash or the like that led to the command
-  while (all.length > 0 && !/[a-z0-9]/i.test(all.at(-1))) all.pop();
-  return all.join(" ");
+  return transcript
+    .slice(0, words[words.length - drop].index)
+    .trimEnd()
+    // a dash or the like that led to the command
+    .replace(/(^|\s+)[^\sa-z0-9]+$/i, "");
 }
 
 // "start", "stop", "test" or null. text is what was said between two
