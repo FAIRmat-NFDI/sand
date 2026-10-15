@@ -12,7 +12,6 @@ from nomad.config import config
 from sand.apis.deps import get_bearer_token
 from sand.apis.routers.input_collections import router as input_collections_router
 from sand.apis.routers.live_transcript import router as live_transcript_router
-from sand.hysprint.keyterms import KEYTERMS
 from sand.services.voice_eln import VoiceElnService
 
 # TODO: this need to be updated maybe to uplaod access when the api scope is supprted.
@@ -49,15 +48,12 @@ app = FastAPI(
 app.state.voice_eln = VoiceElnService(
     base_url=sand_api_entry_point.nomad_base_url,
 )
-app.state.deepgram_api_key = sand_api_entry_point.deepgram_api_key or os.environ.get(
-    'DEEPGRAM_API_KEY', ''
+app.state.live_transcript_url = sand_api_entry_point.live_transcript_url
+app.state.live_transcript_api_key = (
+    sand_api_entry_point.live_transcript_api_key
+    or os.environ.get('LIVE_TRANSCRIPT_API_KEY', '')
 )
-app.state.deepgram_model = sand_api_entry_point.deepgram_model
-app.state.deepgram_keyterms = (
-    KEYTERMS
-    if sand_api_entry_point.deepgram_keyterms is None
-    else sand_api_entry_point.deepgram_keyterms
-)
+app.state.live_transcript_model = sand_api_entry_point.live_transcript_model
 app.state.store_live_transcript = sand_api_entry_point.store_live_transcript
 
 app.include_router(
@@ -74,7 +70,7 @@ async def ui_config():
     default state of the save-live-transcript toggle, and where to log in."""
     return {
         'nomad_gui_url': NOMAD_GUI_URL,
-        'live_transcript_available': bool(app.state.deepgram_api_key),
+        'live_transcript_available': bool(app.state.live_transcript_url),
         'store_live_transcript': app.state.store_live_transcript,
     }
 

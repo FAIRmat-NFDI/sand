@@ -10,12 +10,19 @@ class SandDashboardEntryPoint(DashboardEntryPoint):
     # nomad.yaml files still load.
     llm_api_key: str = ''
 
-    # Live transcription while recording (empty key = feature off).
-    # Falls back to the DEEPGRAM_API_KEY environment variable.
+    # Live transcription while recording: the self-hosted WhisperLiveKit
+    # server's Deepgram-compatible socket, e.g.
+    # 'ws://whisper-host:8090/v1/listen'. Empty = feature off.
+    live_transcript_url: str = ''
+    # The server's --api-token. Falls back to the
+    # LIVE_TRANSCRIPT_API_KEY environment variable.
+    live_transcript_api_key: str = ''
+    # Stored with each live transcript as its stt_model.
+    live_transcript_model: str = 'whisperlivekit'
+    # Deprecated, unused: Deepgram was replaced by the self-hosted server.
+    # Kept so existing nomad.yaml files still load.
     deepgram_api_key: str = ''
-    deepgram_model: str = 'nova-3'
-    # Lab terms the live transcript is biased towards (Nova-3 only).
-    # None = the hysprint lab's (sand.hysprint.keyterms); [] = none.
+    deepgram_model: str = ''
     deepgram_keyterms: list[str] | None = None
     # Default state of the GUI's "save live transcript" toggle: on = the
     # live text is stored and whisper is skipped; off = the live text is

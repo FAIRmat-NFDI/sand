@@ -1,6 +1,9 @@
 // Live transcription while recording (best-effort): chunks stream to
-// sand's Deepgram relay in parallel with the local accumulation; if the
-// relay is off or fails, recording works unchanged.
+// sand's relay to the self-hosted Whisper server, in parallel with the
+// local accumulation; if the relay is off or fails, recording works
+// unchanged.
+
+import { joinFinal } from "./transcript-text.js";
 
 // One object per relay connection: handlers close over it, so a socket
 // that outlives its recording (draining finals) can never touch the next
@@ -101,7 +104,7 @@ export function startLiveTranscript() {
     if (!alt) return;
     if (msg.is_final) {
       if (alt.transcript) {
-        conn.finals += (conn.finals ? " " : "") + alt.transcript;
+        conn.finals = joinFinal(conn.finals, alt.transcript);
       }
     }
     if (liveConn === conn) {
@@ -135,7 +138,7 @@ export function sendLiveChunk(conn, chunk) {
 }
 
 // Resolves with this recording's final transcript once the relay socket
-// has closed - Deepgram's LAST finals arrive after the stop message, so
+// has closed - the LAST finals arrive after the stop message, so
 // reading any earlier would truncate the text. Without `conn`, stops the
 // connection the panel shows. discard: the recording is thrown away, so
 // the socket closes without flushing and the panel is given up.
@@ -150,7 +153,7 @@ export function stopLiveTranscript(conn = liveConn, discard = false) {
   conn.stopped = true;
   const ws = conn.ws;
   if (!discard && ws.readyState === WebSocket.OPEN && conn.ready) {
-    // ask sand to flush Deepgram; the remaining finals arrive before close
+    // ask sand to flush the server; the remaining finals arrive before close
     ws.send(JSON.stringify({ type: "relay-stop" }));
   }
   // not ready yet: keep the socket - the relay-ready handler flushes the
@@ -159,7 +162,9 @@ export function stopLiveTranscript(conn = liveConn, discard = false) {
   setTimeout(() => {
     if (ws.readyState !== WebSocket.CLOSED) ws.close();
     conn.finish(""); // a wedged socket is not a clean completion
-  }, 12000);
+    // above the relay's DRAIN_TIMEOUT_S (30 s): whisper finishes the
+    // buffered audio only after the stop
+  }, 35000);
   if (ws.readyState === WebSocket.CLOSED) conn.finish("");
   return conn.done;
 }
