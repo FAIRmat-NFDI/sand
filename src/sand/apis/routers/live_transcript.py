@@ -1,18 +1,19 @@
-"""Live transcription relay: browser audio -> Deepgram -> transcript.
+"""Live transcription relay: browser audio -> self-hosted Whisper -> transcript.
 
 Protocol (client side):
   1. connect: the browser sends NOMAD's Authorization cookie with the
      handshake, which authenticates the socket;
   2. wait for {"type": "relay-ready"};
   3. send audio chunks as binary frames;
-  4. send {"type": "relay-stop"} (or just close) - sand tells Deepgram to
+  4. send {"type": "relay-stop"} (or just close) - sand tells the server to
      flush, relays the remaining final transcripts, then closes.
-Deepgram's Results messages are forwarded verbatim; the client reads
+The server is WhisperLiveKit, whose /v1/listen speaks Deepgram's live
+protocol. Its Results messages are forwarded verbatim; the client reads
 channel.alternatives[0].transcript and is_final.
 
         WebSocket #1            WebSocket #2
-  browser ◀════════▶ sand backend ◀════════▶ api.deepgram.com
-          browser_ws                 deepgram_ws
+  browser ◀════════▶ sand backend ◀════════▶ WhisperLiveKit
+          browser_ws                 stt_ws
 
 """
 
@@ -25,12 +26,14 @@ import websockets
 from fastapi import APIRouter, WebSocket
 
 from sand.apis.deps import token_from_cookie
-from sand.services.deepgram import deepgram_url
+from sand.services.live_transcript import live_transcript_url
 
 router = APIRouter()
 
-# How long to wait for Deepgram's remaining finals after CloseStream.
-DRAIN_TIMEOUT_S = 10.0
+# How long to wait for the remaining finals after CloseStream. Whisper
+# finishes the buffered audio only then, which takes longer than Deepgram
+# did. Keep below the browser's stop deadline in live-transcript.js.
+DRAIN_TIMEOUT_S = 30.0
 
 
 async def _token_is_valid(app, token: str) -> bool:
@@ -46,33 +49,33 @@ async def _token_is_valid(app, token: str) -> bool:
     return response.status_code == HTTPStatus.OK
 
 
-# browser ──▶ Deepgram
-async def _pump_client_audio(browser_ws: WebSocket, deepgram_ws) -> None:
+# browser ──▶ server
+async def _pump_client_audio(browser_ws: WebSocket, stt_ws) -> None:
     """Forward binary frames until the client stops or disconnects, then
-    ask Deepgram to flush its final results."""
+    ask the server to flush its final results."""
     while True:
         message = await browser_ws.receive()
         if message.get('type') == 'websocket.disconnect':
             break
         if message.get('bytes'):
-            await deepgram_ws.send(message['bytes'])
+            await stt_ws.send(message['bytes'])
             continue
         if message.get('text'):
             try:
                 control = json.loads(message['text'])
             except ValueError:
                 continue
-            # the browser tells sand to stop -> tell Deepgram to flush
+            # the browser tells sand to stop -> tell the server to flush
             if control.get('type') == 'relay-stop':
                 break
-    await deepgram_ws.send(json.dumps({'type': 'CloseStream'}))
+    await stt_ws.send(json.dumps({'type': 'CloseStream'}))
 
 
-# Deepgram ──▶ browser
-async def _pump_transcripts(deepgram_ws, browser_ws: WebSocket) -> None:
-    """Forward Deepgram's JSON messages until it closes (it
+# server ──▶ browser
+async def _pump_transcripts(stt_ws, browser_ws: WebSocket) -> None:
+    """Forward the server's JSON messages until it closes (it
     closes itself after CloseStream once all finals are delivered)."""
-    async for message in deepgram_ws:
+    async for message in stt_ws:
         if isinstance(message, str):
             await browser_ws.send_text(message)
 
@@ -82,8 +85,8 @@ async def live_transcript(browser_ws: WebSocket) -> None:
     app = browser_ws.app
     await browser_ws.accept()
 
-    api_key = app.state.deepgram_api_key
-    if not api_key:
+    base_url = app.state.live_transcript_url
+    if not base_url:
         await browser_ws.close(code=4503, reason='live transcription not configured')
         return
 
@@ -92,27 +95,30 @@ async def live_transcript(browser_ws: WebSocket) -> None:
         await browser_ws.close(code=4401, reason='invalid NOMAD token')
         return
 
-    url = deepgram_url(app.state.deepgram_model, app.state.deepgram_keyterms)
+    api_key = app.state.live_transcript_api_key
+    headers = {'Authorization': f'Token {api_key}'} if api_key else {}
     try:
-        deepgram_ws = await websockets.connect(
-            url, additional_headers={'Authorization': f'Token {api_key}'}
+        stt_ws = await websockets.connect(
+            live_transcript_url(base_url), additional_headers=headers
         )
     except Exception:
-        await browser_ws.close(code=1011, reason='could not reach Deepgram')
+        await browser_ws.close(
+            code=1011, reason='could not reach the transcription server'
+        )
         return
 
-    # From here on the paid Deepgram socket is open: every await (the
-    # ready-send included) can raise on a browser disconnect, so it all
-    # runs inside the scope whose finally closes both sockets.
+    # From here on the server socket is open: every await (the ready-send
+    # included) can raise on a browser disconnect, so it all runs inside
+    # the scope whose finally closes both sockets.
     up = down = None
     try:
         # sand tells the browser it is ready to relay audio
         await browser_ws.send_text(json.dumps({'type': 'relay-ready'}))
-        up = asyncio.create_task(_pump_client_audio(browser_ws, deepgram_ws))
-        down = asyncio.create_task(_pump_transcripts(deepgram_ws, browser_ws))
+        up = asyncio.create_task(_pump_client_audio(browser_ws, stt_ws))
+        down = asyncio.create_task(_pump_transcripts(stt_ws, browser_ws))
         await asyncio.wait({up, down}, return_when=asyncio.FIRST_COMPLETED)
         if up.done() and not down.done():
-            # client finished: drain Deepgram's remaining finals
+            # client finished: drain the server's remaining finals
             with suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(down, timeout=DRAIN_TIMEOUT_S)
     finally:
@@ -121,6 +127,6 @@ async def live_transcript(browser_ws: WebSocket) -> None:
         if down is not None:
             down.cancel()
         with suppress(Exception):
-            await deepgram_ws.close()
+            await stt_ws.close()
         with suppress(Exception):
             await browser_ws.close()

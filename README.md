@@ -82,10 +82,11 @@ plugins:
       sand.apis:sand_api:
         llm_model_name: 'gemini/gemini-2.5-flash'  # LiteLLM notation
         nomad_base_url: 'http://localhost:8000/nomad-oasis/api/v1'
-        # live transcript while recording; optional, empty = off
-        # (also read from DEEPGRAM_API_KEY)
-        deepgram_api_key: '<your-deepgram-api-key>'
-        deepgram_model: 'nova-3'
+        # live transcript while recording, from the self-hosted
+        # WhisperLiveKit server; optional, empty = off
+        live_transcript_url: 'ws://localhost:8090/v1/listen'
+        # the server's --api-token (also read from LIVE_TRANSCRIPT_API_KEY)
+        live_transcript_api_key: '<the-server-api-token>'
         # default of the "save live transcript" toggle
         # store_live_transcript: true
         launch_modes: ['tab']

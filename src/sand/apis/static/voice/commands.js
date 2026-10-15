@@ -82,7 +82,7 @@ function wordsOf(text) {
   return [...text.matchAll(/[a-z]+/gi)];
 }
 
-// For a transcript (Deepgram, Whisper), not for the recognizer's text.
+// For a transcript (live or Whisper), not for the recognizer's text.
 export function stopSaidIn(transcript) {
   return stopWordsAt(wordsOf(transcript).map((match) => match[0])) > 0;
 }

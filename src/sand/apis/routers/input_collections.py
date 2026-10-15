@@ -226,7 +226,7 @@ async def add_audio(  # noqa: PLR0913
                     audio=audio,
                     filename=filename,
                     transcript=transcript,
-                    stt_model=f'deepgram/{request.app.state.deepgram_model}',
+                    stt_model=request.app.state.live_transcript_model,
                     label=label,
                 ),
                 collection_entry_id=collection_entry_id,
