@@ -7,7 +7,7 @@ formula columns, per-sample variation and a gap in the sample labels.
 
 import io
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
 
 SPIN_COATING = [
@@ -149,6 +149,26 @@ def build() -> bytes:
         g = where[info, 'Variation']
         ws[f'{where[css, "Deposition Time [s]"]}{r}'] = f'=VALUE(LEFT({g}{r},2))*60'
 
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
+def letter(section: str, header: str) -> str:
+    """Column letter of (section label, header) in the built sheet."""
+    col = 1
+    for label, headers in SECTIONS:
+        for h in headers:
+            if (label, h) == (section, header):
+                return get_column_letter(col)
+            col += 1
+    raise KeyError((section, header))
+
+
+def edited(xlsx: bytes, change) -> bytes:
+    """A copy of `xlsx` after `change(worksheet)`."""
+    wb = load_workbook(io.BytesIO(xlsx))
+    change(wb.worksheets[0])
     buffer = io.BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
