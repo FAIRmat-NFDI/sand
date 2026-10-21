@@ -6,6 +6,8 @@ formula columns, per-sample variation and a gap in the sample labels.
 """
 
 import io
+import re
+import zipfile
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
@@ -172,3 +174,43 @@ def edited(xlsx: bytes, change) -> bytes:
     buffer = io.BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
+
+
+def with_part(xlsx: bytes, name: str, data: bytes = b'x') -> bytes:
+    """A copy with one more package part (e.g. an image or calcChain)."""
+    out = io.BytesIO()
+    with (
+        zipfile.ZipFile(io.BytesIO(xlsx)) as src,
+        zipfile.ZipFile(out, 'w') as dst,
+    ):
+        for item in src.infolist():
+            dst.writestr(item, src.read(item.filename))
+        dst.writestr(name, data)
+    return out.getvalue()
+
+
+def with_formula_results(xlsx: bytes, results: dict[str, str]) -> bytes:
+    """A copy where formula cells carry cached results, as Excel saves them.
+
+    openpyxl cannot write these; this patches the first sheet's XML.
+    """
+    sheet = 'xl/worksheets/sheet1.xml'
+    out = io.BytesIO()
+    with (
+        zipfile.ZipFile(io.BytesIO(xlsx)) as src,
+        zipfile.ZipFile(out, 'w') as dst,
+    ):
+        for item in src.infolist():
+            data = src.read(item.filename)
+            if item.filename == sheet:
+                xml = data.decode()
+                for coord, value in results.items():
+                    xml, n = re.subn(
+                        rf'<c r="{coord}">(<f>.*?</f>)<v></v></c>',
+                        rf'<c r="{coord}" t="str">\1<v>{value}</v></c>',
+                        xml,
+                    )
+                    assert n == 1, coord
+                data = xml.encode()
+            dst.writestr(item, data)
+    return out.getvalue()
