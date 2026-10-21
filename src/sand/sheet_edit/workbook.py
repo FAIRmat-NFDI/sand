@@ -8,6 +8,7 @@ that runs until the next label, so merged cells are not required.
 
 import io
 import re
+import zipfile
 from dataclasses import dataclass
 
 from openpyxl import load_workbook
@@ -243,3 +244,104 @@ def _sample_problems(ws: Worksheet, s: SheetStructure) -> list[str]:
         else:
             seen[key] = r.row
     return problems
+
+
+# --- round trip ---------------------------------------------------------------
+
+# Package parts that hold no lab data: Excel's calculation-order cache,
+# the shared-string table (cell text is compared cell by cell instead),
+# print setup, and relationship files (their targets are compared).
+_NON_DATA_PARTS = re.compile(
+    r'^xl/calcChain\.xml$|^xl/sharedStrings\.xml$|^xl/printerSettings/|\.rels$'
+)
+
+
+@dataclass(frozen=True)
+class CellChange:
+    sheet: str
+    coordinate: str  # 'F3'
+    field: str  # 'value' | 'type' | 'number format' | 'computed value'
+    before: object
+    after: object
+
+
+def cell_changes(before: bytes, after: bytes) -> list[CellChange]:
+    """Every cell difference on sheets present in both files.
+
+    'computed value' is the result Excel cached for a formula. openpyxl
+    cannot compute formulas, and NOMAD's parser reads only these cached
+    results, so losing one loses data even though the formula is intact.
+    """
+    a, b = load_workbook(io.BytesIO(before)), load_workbook(io.BytesIO(after))
+    a_vals = load_workbook(io.BytesIO(before), data_only=True)
+    b_vals = load_workbook(io.BytesIO(after), data_only=True)
+    changes = []
+    for name in a.sheetnames:
+        if name not in b.sheetnames:
+            continue
+        wa, wb = a[name], b[name]
+        for r in range(1, max(wa.max_row, wb.max_row) + 1):
+            for c in range(1, max(wa.max_column, wb.max_column) + 1):
+                ca, cb = wa.cell(r, c), wb.cell(r, c)
+                coord = ca.coordinate
+                for field, x, y in (
+                    ('value', ca.value, cb.value),
+                    ('type', ca.data_type, cb.data_type),
+                    ('number format', ca.number_format, cb.number_format),
+                ):
+                    if x != y:
+                        changes.append(CellChange(name, coord, field, x, y))
+                if ca.data_type == 'f':
+                    x = a_vals[name].cell(r, c).value
+                    y = b_vals[name].cell(r, c).value
+                    if x != y:
+                        changes.append(CellChange(name, coord, 'computed value', x, y))
+    return changes
+
+
+def _data_parts(xlsx: bytes) -> set[str]:
+    names = zipfile.ZipFile(io.BytesIO(xlsx)).namelist()
+    return {n for n in names if not _NON_DATA_PARTS.search(n)}
+
+
+def workbook_problems(before: bytes, after: bytes) -> list[str]:
+    """What `after` lost or changed against `before`, as user messages."""
+    a, b = load_workbook(io.BytesIO(before)), load_workbook(io.BytesIO(after))
+    problems = []
+    if a.sheetnames != b.sheetnames:
+        problems.append(f'sheets changed: {a.sheetnames} -> {b.sheetnames}')
+    for name in set(a.sheetnames) & set(b.sheetnames):
+        ma = sorted(str(m) for m in a[name].merged_cells.ranges)
+        mb = sorted(str(m) for m in b[name].merged_cells.ranges)
+        if ma != mb:
+            problems.append(f'{name!r}: merged cells changed')
+    problems += [
+        f'file part {part} lost'
+        for part in sorted(_data_parts(before) - _data_parts(after))
+    ]
+
+    # one message per column for lost formula results: the usual case is
+    # a whole formula column, not single cells
+    lost: dict[tuple[str, str], list[str]] = {}
+    for ch in cell_changes(before, after):
+        if ch.field == 'computed value' and ch.after is None:
+            col = re.sub(r'\d+$', '', ch.coordinate)
+            lost.setdefault((ch.sheet, col), []).append(ch.coordinate)
+        else:
+            problems.append(
+                f'{ch.sheet!r}!{ch.coordinate}: {ch.field} {ch.before!r} -> {ch.after!r}'
+            )
+    problems += [
+        f'{sheet!r} column {col}: formula results lost on {len(cells)} rows '
+        f'({cells[0]}…{cells[-1]})'
+        for (sheet, col), cells in lost.items()
+    ]
+    return problems
+
+
+def roundtrip_problems(xlsx: bytes) -> list[str]:
+    """What opening and saving this file with openpyxl, changing nothing,
+    would lose. Every later edit is saved the same way."""
+    buffer = io.BytesIO()
+    load_workbook(io.BytesIO(xlsx)).save(buffer)
+    return workbook_problems(xlsx, buffer.getvalue())
