@@ -1,13 +1,13 @@
 from pathlib import Path
 
 import pytest
-from kit_like import build
+from synthetic_sheet import build
 
 REAL_KIT_SHEET = Path(__file__).parents[2] / 'docs' / 'Joshua_CsCI.xlsx'
 
 
 @pytest.fixture(scope='session')
-def kit_like_xlsx() -> bytes:
+def synthetic_xlsx() -> bytes:
     return build()
 
 

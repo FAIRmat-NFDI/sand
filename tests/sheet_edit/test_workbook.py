@@ -1,7 +1,7 @@
 import io
 
-from kit_like import SECTIONS
 from openpyxl import Workbook
+from synthetic_sheet import SECTIONS
 
 from sand.sheet_edit.workbook import read_structure
 
@@ -18,8 +18,8 @@ def _xlsx(rows: list[list]) -> bytes:
     return buffer.getvalue()
 
 
-def test_sections_keep_order_position_and_repeated_step_types(kit_like_xlsx):
-    s = read_structure(kit_like_xlsx)
+def test_sections_keep_order_position_and_repeated_step_types(synthetic_xlsx):
+    s = read_structure(synthetic_xlsx)
     assert [(sec.position, sec.step_type) for sec in s.sections] == [
         (None, 'Experiment Info'),
         (1, 'Cleaning UV-Ozone'),
@@ -34,8 +34,8 @@ def test_sections_keep_order_position_and_repeated_step_types(kit_like_xlsx):
     assert s.sheet_name == 'Experiment Data'
 
 
-def test_columns_belong_to_their_section(kit_like_xlsx):
-    s = read_structure(kit_like_xlsx)
+def test_columns_belong_to_their_section(synthetic_xlsx):
+    s = read_structure(synthetic_xlsx)
     spin2, spin3 = s.sections[2], s.sections[3]
     speeds = [c for c in s.columns if c.header == 'Rotation speed [rpm]']
     # same header in three spin coatings: told apart only by section
@@ -46,8 +46,8 @@ def test_columns_belong_to_their_section(kit_like_xlsx):
     assert len(s.columns) == sum(len(headers) for _, headers in SECTIONS)
 
 
-def test_sample_rows_carry_sample_names_and_keep_the_gap(kit_like_xlsx):
-    s = read_structure(kit_like_xlsx)
+def test_sample_rows_carry_sample_names_and_keep_the_gap(synthetic_xlsx):
+    s = read_structure(synthetic_xlsx)
     assert [r.row for r in s.samples] == list(range(3, 15))
     assert [r.sample for r in s.samples] == [
         '1',
