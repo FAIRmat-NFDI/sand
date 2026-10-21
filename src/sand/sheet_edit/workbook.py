@@ -259,7 +259,8 @@ _NON_DATA_PARTS = re.compile(
 @dataclass(frozen=True)
 class CellChange:
     sheet: str
-    coordinate: str  # 'F3'
+    row: int  # 1-based, like SampleRow.row
+    column: int  # 1-based, like Column.index
     field: str  # 'value' | 'type' | 'number format' | 'computed value'
     before: object
     after: object
@@ -283,22 +284,23 @@ def cell_changes(before: bytes, after: bytes) -> list[CellChange]:
         for r in range(1, max(wa.max_row, wb.max_row) + 1):
             for c in range(1, max(wa.max_column, wb.max_column) + 1):
                 ca, cb = wa.cell(r, c), wb.cell(r, c)
-                coord = ca.coordinate
                 for field, x, y in (
                     ('value', ca.value, cb.value),
                     ('type', ca.data_type, cb.data_type),
                     ('number format', ca.number_format, cb.number_format),
                 ):
                     if x != y:
-                        changes.append(CellChange(name, coord, field, x, y))
+                        changes.append(CellChange(name, r, c, field, x, y))
                 if ca.data_type == 'f':
                     x = a_vals[name].cell(r, c).value
                     y = b_vals[name].cell(r, c).value
                     if x != y:
-                        changes.append(CellChange(name, coord, 'computed value', x, y))
+                        changes.append(CellChange(name, r, c, 'computed value', x, y))
     return changes
 
 
+# TODO: not sure we need it; if edits patch only the target cells (PR 4),
+# "every other part byte-identical" replaces this check.
 def _data_parts(xlsx: bytes) -> set[str]:
     names = zipfile.ZipFile(io.BytesIO(xlsx)).namelist()
     return {n for n in names if not _NON_DATA_PARTS.search(n)}
@@ -322,20 +324,21 @@ def workbook_problems(before: bytes, after: bytes) -> list[str]:
 
     # one message per column for lost formula results: the usual case is
     # a whole formula column, not single cells
-    lost: dict[tuple[str, str], list[str]] = {}
+    lost: dict[tuple[str, int], list[int]] = {}
     for ch in cell_changes(before, after):
         if ch.field == 'computed value' and ch.after is None:
-            col = re.sub(r'\d+$', '', ch.coordinate)
-            lost.setdefault((ch.sheet, col), []).append(ch.coordinate)
+            lost.setdefault((ch.sheet, ch.column), []).append(ch.row)
         else:
+            cell = f'{get_column_letter(ch.column)}{ch.row}'
             problems.append(
-                f'{ch.sheet!r}!{ch.coordinate}: {ch.field} {ch.before!r} -> {ch.after!r}'
+                f'{ch.sheet!r}!{cell}: {ch.field} {ch.before!r} -> {ch.after!r}'
             )
-    problems += [
-        f'{sheet!r} column {col}: formula results lost on {len(cells)} rows '
-        f'({cells[0]}…{cells[-1]})'
-        for (sheet, col), cells in lost.items()
-    ]
+    for (sheet, column), rows in lost.items():
+        col = get_column_letter(column)
+        problems.append(
+            f'{sheet!r} column {col}: formula results lost on {len(rows)} rows '
+            f'({col}{rows[0]}…{col}{rows[-1]})'
+        )
     return problems
 
 

@@ -1,3 +1,4 @@
+from openpyxl.utils import column_index_from_string
 from synthetic_sheet import edited, letter, with_formula_results, with_part
 
 from sand.sheet_edit.workbook import (
@@ -40,17 +41,19 @@ def test_lost_formula_results_are_reported_per_column(synthetic_xlsx):
 
 
 def test_cell_changes_lists_value_type_and_format(synthetic_xlsx):
-    speed = f'{letter("2: Spin Coating", "Rotation speed [rpm]")}3'
+    speed_col = letter('2: Spin Coating', 'Rotation speed [rpm]')
+    speed = f'{speed_col}3'
 
     def change(ws):
         ws[speed] = '3000'  # number -> text
         ws['H3'].number_format = '0.00%'
 
     after = edited(synthetic_xlsx, change)
+    n = column_index_from_string(speed_col)
     assert cell_changes(synthetic_xlsx, after) == [
-        CellChange('Experiment Data', 'H3', 'number format', 'General', '0.00%'),
-        CellChange('Experiment Data', speed, 'value', 3000, '3000'),
-        CellChange('Experiment Data', speed, 'type', 'n', 's'),
+        CellChange('Experiment Data', 3, 8, 'number format', 'General', '0.00%'),
+        CellChange('Experiment Data', 3, n, 'value', 3000, '3000'),
+        CellChange('Experiment Data', 3, n, 'type', 'n', 's'),
     ]
 
 
