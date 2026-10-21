@@ -10,6 +10,7 @@ Excel's stored result from the original inputs; otherwise the edit is
 refused. Every write is verified before it is returned.
 """
 
+import datetime
 import io
 import math
 import re
@@ -23,7 +24,12 @@ from openpyxl.utils import column_index_from_string, get_column_letter
 
 from sand.sheet_edit import formulas
 from sand.sheet_edit.formulas import ExcelError, Ref, Unsupported
-from sand.sheet_edit.workbook import FIRST_SAMPLE_ROW, CellChange, cell_changes
+from sand.sheet_edit.workbook import (
+    FIRST_SAMPLE_ROW,
+    HEADER_ROW,
+    CellChange,
+    changes_between,
+)
 
 NewValue = str | int | float | bool | None
 
@@ -52,12 +58,15 @@ class WriteResult:
 
 def write_cells(xlsx: bytes, writes: list[Write]) -> WriteResult:
     book = load_workbook(io.BytesIO(xlsx))
-    ws = book.worksheets[0]
-    stored = load_workbook(io.BytesIO(xlsx), data_only=True).worksheets[0]
+    values = load_workbook(io.BytesIO(xlsx), data_only=True)
+    ws, stored = book.worksheets[0], values.worksheets[0]
 
     new: dict[tuple[int, int], NewValue] = {}
     for w in writes:
         key = (w.row, w.column)
+        # checked before ws.cell, which would create (and later scan) the cell
+        if not (1 <= w.row <= ws.max_row and 1 <= w.column <= ws.max_column):
+            raise WriteRefused(f'row {w.row}, column {w.column} is outside the sheet')
         if key in new:
             raise WriteRefused(f'{_coord(*key)} is written twice')
         if w.row < FIRST_SAMPLE_ROW:
@@ -69,12 +78,15 @@ def write_cells(xlsx: bytes, writes: list[Write]) -> WriteResult:
         if value != cell.value or type(value) is not type(cell.value):
             new[key] = value
 
-    results = _recompute(ws, stored, new)
+    results = _recompute(book, stored, new)
 
     changes = [
         *_value_changes(ws, new),
         *(
-            CellChange(ws.title, r, c, 'computed value', stored.cell(r, c).value, v)
+            # an empty text result is stored as <v></v>, which reads back as None
+            CellChange(
+                ws.title, r, c, 'computed value', stored.cell(r, c).value, v or None
+            )
             for (r, c), v in results.items()
         ),
     ]
@@ -82,7 +94,7 @@ def write_cells(xlsx: bytes, writes: list[Write]) -> WriteResult:
         return WriteResult(xlsx, [])
 
     after = _patch(xlsx, new, results)
-    verify(xlsx, after, changes)
+    _verify(xlsx, after, changes, before_books=(book, values))
     return WriteResult(after, changes)
 
 
@@ -94,7 +106,8 @@ def _coord(row: int, column: int) -> str:
 
 
 def _kind(ws, row: int, column: int) -> str:
-    """'number' | 'text' | 'bool' | 'any', from the cell, else its column."""
+    """'number' | 'text' | 'bool' | 'date' | 'any', from the cell, else its
+    column."""
     value = ws.cell(row, column).value
     values = (
         [value]
@@ -110,6 +123,8 @@ def _kind(ws, row: int, column: int) -> str:
         if isinstance(v, bool)
         else 'number'
         if isinstance(v, int | float)
+        else 'date'
+        if isinstance(v, datetime.date | datetime.time | datetime.timedelta)
         else 'text'
         for v in values
     }
@@ -121,6 +136,9 @@ def _typed(value: NewValue, kind: str, coord: str) -> NewValue:  # noqa: PLR0911
     stays text even when it looks like a number."""
     if value is None or value == '':
         return None
+    if kind == 'date':
+        # writing text would silently turn the date into a string
+        raise WriteRefused(f'{coord} holds a date; sand does not edit dates yet')
     if kind == 'text':
         return formulas.as_text(value)
     if kind == 'bool':
@@ -174,32 +192,66 @@ def _value_changes(ws, new: dict[tuple[int, int], NewValue]) -> list[CellChange]
 # --- formula results ---------------------------------------------------------
 
 
-# (first row, first column, last row, last column); a whole-column range
-# like A:A has no last row
-_Rect = tuple[int, int, float, float]
-_LOOSE_REF_RE = re.compile(
-    r'\$?([A-Z]{1,3})\$?(\d+)(?::\$?([A-Z]{1,3})\$?(\d+))?|\$?([A-Z]{1,3}):\$?([A-Z]{1,3})'
+# (first row, first column, last row, last column); open ranges like A:A
+# or 3:3 run to infinity
+_Rect = tuple[float, float, float, float]
+_EVERYTHING: list[_Rect] = [(1, 1, math.inf, math.inf)]
+_INF = math.inf
+
+_STRING_RE = re.compile(r'"(?:[^"]|"")*"')
+_CELL_RANGE_RE = re.compile(
+    r"(?:(?:'[^']+'|[A-Za-z0-9_.]+)!)?"  # optional sheet
+    r'\$?([A-Z]{1,3})\$?(\d+)(?::\$?([A-Z]{1,3})\$?(\d+))?'
 )
+_COLUMNS_RE = re.compile(
+    r"(?:(?:'[^']+'|[A-Za-z0-9_.]+)!)?\$?([A-Z]{1,3}):\$?([A-Z]{1,3})\b"
+)
+_ROWS_RE = re.compile(r"(?:(?:'[^']+'|[A-Za-z0-9_.]+)!)?\$?(\d+):\$?(\d+)\b")
+_FUNCTION_RE = re.compile(r'(?:_xlfn\.|_xlws\.)?[A-Za-z][A-Za-z0-9.]*\(')
+# functions whose inputs are computed at run time, not written in the text
+_DYNAMIC = {'INDIRECT', 'OFFSET'}
 
 
 def _reads(text: str) -> list[_Rect]:
-    """What a formula reads. For one the calculator cannot parse, every
-    cell, range and whole column it mentions, so an edit that might feed
-    it is caught (and then refused) rather than missed."""
+    """The cells a formula may read.
+
+    Exact for formulas the calculator parses. For others, every cell and
+    range written in the text, so an edit that might feed the formula is
+    caught (and refused) rather than missed. When the text leaves inputs
+    open (a defined name like `Speed`, INDIRECT, OFFSET, a table
+    reference), the formula may read anything.
+    """
     try:
         return [(r.row, r.column, r.row, r.column) for r in formulas.references(text)]
     except Unsupported:
         pass
+    rest = _STRING_RE.sub(' ', text.lstrip('='))
+    if any(
+        name.rstrip('(').upper().split('.')[-1] in _DYNAMIC
+        for name in _FUNCTION_RE.findall(rest)
+    ):
+        return _EVERYTHING
+    rest = _FUNCTION_RE.sub(' ', rest)
+
     rects: list[_Rect] = []
-    for m in _LOOSE_REF_RE.finditer(re.sub(r'"(?:[^"]|"")*"', '""', text)):
-        if m.group(1):
-            r1, c1 = int(m.group(2)), column_index_from_string(m.group(1))
-            r2 = int(m.group(4)) if m.group(3) else r1
-            c2 = column_index_from_string(m.group(3)) if m.group(3) else c1
-            rects.append((min(r1, r2), min(c1, c2), max(r1, r2), max(c1, c2)))
-        else:
-            c1, c2 = (column_index_from_string(g) for g in m.group(5, 6))
-            rects.append((1, min(c1, c2), float('inf'), max(c1, c2)))
+    for m in _COLUMNS_RE.finditer(rest):
+        c1, c2 = sorted(column_index_from_string(g) for g in m.groups())
+        rects.append((1, c1, _INF, c2))
+    rest = _COLUMNS_RE.sub(' ', rest)
+    for m in _ROWS_RE.finditer(rest):
+        r1, r2 = sorted(int(g) for g in m.groups())
+        rects.append((r1, 1, r2, _INF))
+    rest = _ROWS_RE.sub(' ', rest)
+    for m in _CELL_RANGE_RE.finditer(rest):
+        r1, c1 = int(m.group(2)), column_index_from_string(m.group(1))
+        r2 = int(m.group(4)) if m.group(3) else r1
+        c2 = column_index_from_string(m.group(3)) if m.group(3) else c1
+        rects.append((min(r1, r2), min(c1, c2), max(r1, r2), max(c1, c2)))
+    rest = _CELL_RANGE_RE.sub(' ', rest)
+
+    # a word or table reference left over is a name sand cannot resolve
+    if re.search(r'[A-Za-z_\[]', rest.replace('TRUE', '').replace('FALSE', '')):
+        return _EVERYTHING
     return rects
 
 
@@ -209,18 +261,34 @@ def _hits(rects: list[_Rect], cells: set[tuple[int, int]]) -> bool:
     )
 
 
-def _recompute(ws, stored, new: dict[tuple[int, int], NewValue]) -> dict:
+def _formula_reads(value) -> list[_Rect]:
+    """An array formula's text still says what it reads; a data table's
+    does not."""
+    text = value if isinstance(value, str) else getattr(value, 'text', None)
+    return _reads(text) if text else _EVERYTHING
+
+
+def _formula_text(value) -> str | None:
+    """A cell's formula text; None for array and data-table formulas."""
+    return value if isinstance(value, str) else None
+
+
+def _recompute(book, stored, new: dict[tuple[int, int], NewValue]) -> dict:
     """New stored results of every formula that reads an edited cell,
     directly or through another formula. Only results that change."""
     if not new:
         return {}
-    texts = {
+    ws = book.worksheets[0]
+    _refuse_other_sheets_reading(book, new)
+
+    raw = {
         (cell.row, cell.column): cell.value
         for row in ws.iter_rows()
         for cell in row
         if cell.data_type == 'f'
     }
-    reads = {key: _reads(text) for key, text in texts.items()}
+    texts = {key: _formula_text(value) for key, value in raw.items()}
+    reads = {key: _formula_reads(value) for key, value in raw.items()}
 
     affected: set[tuple[int, int]] = set()
     frontier = set(new)
@@ -231,6 +299,11 @@ def _recompute(ws, stored, new: dict[tuple[int, int], NewValue]) -> dict:
         affected |= frontier
 
     results: dict[tuple[int, int], formulas.Value] = {}
+    in_progress: set[tuple[int, int]] = set()
+
+    def name_of(key: tuple[int, int]) -> str:
+        header = ws.cell(HEADER_ROW, key[1]).value
+        return f'{header!r} ({_coord(*key)})' if header else _coord(*key)
 
     def original(ref: Ref):
         return stored.cell(ref.row, ref.column).value
@@ -244,11 +317,19 @@ def _recompute(ws, stored, new: dict[tuple[int, int], NewValue]) -> dict:
         return original(ref)
 
     def result(key: tuple[int, int]):
-        if key not in results:
-            header = ws.cell(2, key[1]).value
-            name = f'{header!r} ({_coord(*key)})' if header else _coord(*key)
-            excel = stored.cell(*key).value
-            results[key] = _new_result(name, texts[key], excel, original, current)
+        if key in results:
+            return results[key]
+        if key in in_progress:
+            raise WriteRefused(f'{name_of(key)} is part of a circular calculation')
+        if texts[key] is None:
+            raise WriteRefused(
+                f'{name_of(key)} is an array or table formula; sand cannot compute it'
+            )
+        in_progress.add(key)
+        results[key] = _new_result(
+            name_of(key), texts[key], stored.cell(*key).value, original, current
+        )
+        in_progress.discard(key)
         return results[key]
 
     for key in sorted(affected):
@@ -256,9 +337,28 @@ def _recompute(ws, stored, new: dict[tuple[int, int], NewValue]) -> dict:
     return {
         key: value
         for key, value in results.items()
-        if not formulas.same_result(value, stored.cell(*key).value)
-        or type(value) is not type(stored.cell(*key).value)
+        if _result_differs(value, stored.cell(*key).value)
     }
+
+
+def _result_differs(new: formulas.Value, old: formulas.Value) -> bool:
+    if new in ('', None) and old in ('', None):
+        return False
+    return not formulas.same_result(new, old) or type(new) is not type(old)
+
+
+def _refuse_other_sheets_reading(book, new: dict) -> None:
+    """Formulas on other sheets that point at this one would go stale."""
+    title = book.worksheets[0].title
+    for other in book.worksheets[1:]:
+        for row in other.iter_rows():
+            for cell in row:
+                text = _formula_text(cell.value) if cell.data_type == 'f' else None
+                if cell.data_type == 'f' and (text is None or '!' in text):
+                    raise WriteRefused(
+                        f'a formula on sheet {other.title!r} ({cell.coordinate}) may '
+                        f'read {title!r}; sand cannot keep it up to date'
+                    )
 
 
 def _new_result(name: str, text: str, excel, original, current):
@@ -270,7 +370,9 @@ def _new_result(name: str, text: str, excel, original, current):
         raise WriteRefused(f'{name} is a formula sand cannot compute ({exc})') from None
     except ExcelError as exc:
         check = exc
-    if excel is None:
+    # Excel stores an empty text result as <v></v>, which reads as None:
+    # only a missing result with something to show is "no stored result"
+    if excel is None and check not in ('', None):
         raise WriteRefused(
             f'{name} has no stored result to check sand against; '
             'open and save the file in Excel first'
@@ -284,6 +386,10 @@ def _new_result(name: str, text: str, excel, original, current):
         value = formulas.evaluate(text, current)
     except ExcelError as exc:
         raise WriteRefused(f'{name} would become an Excel error: {exc}') from None
+    except Unsupported as exc:
+        raise WriteRefused(
+            f'{name} cannot be computed with the new value ({exc})'
+        ) from None
     if isinstance(value, float) and value.is_integer():
         value = int(value)
     return value
@@ -419,6 +525,16 @@ def _key(ch: CellChange) -> tuple:
 def verify(before: bytes, after: bytes, expected: list[CellChange]) -> None:
     """Raise unless `after` is `before` plus exactly `expected`: every
     part except the edited sheet byte-identical, every cell change listed."""
+    books = (
+        load_workbook(io.BytesIO(before)),
+        load_workbook(io.BytesIO(before), data_only=True),
+    )
+    _verify(before, after, expected, books)
+
+
+def _verify(
+    before: bytes, after: bytes, expected: list[CellChange], before_books
+) -> None:
     with (
         zipfile.ZipFile(io.BytesIO(before)) as a,
         zipfile.ZipFile(io.BytesIO(after)) as b,
@@ -430,7 +546,11 @@ def verify(before: bytes, after: bytes, expected: list[CellChange]) -> None:
         if changed:
             raise VerifyFailed(f'parts changed that must not: {changed}')
 
-    actual = sorted(cell_changes(before, after), key=_key)
+    after_books = (
+        load_workbook(io.BytesIO(after)),
+        load_workbook(io.BytesIO(after), data_only=True),
+    )
+    actual = sorted(changes_between(before_books, after_books), key=_key)
     wanted = sorted(expected, key=_key)
     if actual != wanted:
         extra = [ch for ch in actual if ch not in wanted]

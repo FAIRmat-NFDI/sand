@@ -5,9 +5,10 @@ reads only the result Excel stored for each formula. So when an edit
 changes a formula's input, sand computes the new result itself. Only a
 whitelist of functions is supported; anything else raises Unsupported and
 the edit is refused. Callers must prove the calculator on each file first:
-it has to reproduce every result Excel stored (see workbook.formula_check).
+it has to reproduce the result Excel stored (write._new_result does).
 """
 
+import datetime
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -167,8 +168,19 @@ def references(formula: str) -> set[Ref]:
 # --- Excel value semantics ---------------------------------------------------
 
 
+_DATES = (datetime.date, datetime.time, datetime.timedelta)
+
+
+def _no_dates(v) -> None:
+    # Excel stores dates as serial numbers shown through a format; sand
+    # does not reproduce that, so formulas over dates are refused
+    if isinstance(v, _DATES):
+        raise Unsupported(f'date values are not supported ({v})')
+
+
 def as_text(v: Value) -> str:
     """How Excel turns a value into text (General format)."""
+    _no_dates(v)
     if v is None:
         return ''
     if isinstance(v, bool):
@@ -184,6 +196,7 @@ def as_text(v: Value) -> str:
 
 
 def as_number(v: Value) -> float:
+    _no_dates(v)
     if v is None:
         return 0.0
     if isinstance(v, bool):
@@ -204,25 +217,36 @@ def _as_bool(v: Value) -> bool:
     return bool(as_number(v))
 
 
+# Excel orders values of different types: numbers < text < TRUE/FALSE
+def _rank(v: Value) -> int:
+    if isinstance(v, bool):
+        return 2
+    return 1 if isinstance(v, str) else 0
+
+
 def _compare(op: str, a: Value, b: Value) -> bool:
-    # Excel: text compares case-insensitively; text and numbers never equal
-    a = '' if a is None and isinstance(b, str) else a
-    b = '' if b is None and isinstance(a, str) else b
-    a = 0.0 if a is None else a
-    b = 0.0 if b is None else b
-    if isinstance(a, str) != isinstance(b, str):
-        return op == '<>'
-    if isinstance(a, str):
-        a, b = a.casefold(), b.casefold()
+    """Excel's comparison: text case-insensitively, different types by
+    rank (so "abc" > 0 is TRUE, and TRUE never equals 1)."""
+    _no_dates(a)
+    _no_dates(b)
+    # an empty cell takes the other side's type
+    if a is None:
+        a = '' if isinstance(b, str) else False if isinstance(b, bool) else 0.0
+    if b is None:
+        b = '' if isinstance(a, str) else False if isinstance(a, bool) else 0.0
+    if _rank(a) != _rank(b):
+        x, y = _rank(a), _rank(b)
+    elif isinstance(a, str):
+        x, y = a.casefold(), b.casefold()
     else:
-        a, b = as_number(a), as_number(b)
+        x, y = float(a), float(b)
     return {
-        '=': a == b,
-        '<>': a != b,
-        '<': a < b,
-        '>': a > b,
-        '<=': a <= b,
-        '>=': a >= b,
+        '=': x == y,
+        '<>': x != y,
+        '<': x < y,
+        '>': x > y,
+        '<=': x <= y,
+        '>=': x >= y,
     }[op]
 
 

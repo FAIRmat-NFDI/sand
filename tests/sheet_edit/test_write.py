@@ -1,3 +1,4 @@
+import datetime
 import io
 import zipfile
 
@@ -5,6 +6,8 @@ import pandas as pd
 import pytest
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils import column_index_from_string
+from openpyxl.workbook.defined_name import DefinedName
+from openpyxl.worksheet.formula import ArrayFormula
 from synthetic_sheet import letter, with_formula_results, with_part
 
 from sand.sheet_edit.workbook import CellChange
@@ -255,3 +258,110 @@ def test_real_kit_sheet_edits_reach_nomads_reader(real_kit_xlsx):
     assert len([i for i in ids if isinstance(i, str)]) == 42  # noqa: PLR2004
     times = df['5: Close Space Sublimation']['Deposition Time [s]'].to_list()
     assert times[:3] == [900, 3000, 900]
+
+
+# --- review fixes: cases sand cannot handle exactly are refused --------------
+
+
+def _book(rows: list[list], results: dict[str, str] | None = None, setup=None) -> bytes:
+    """A small sheet: two header rows, then `rows` from row 3."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Sheet'
+    ws.append(['Experiment Info', None, None, None])
+    ws.append(['Sample', 'x', 'f1', 'f2'])
+    for row in rows:
+        ws.append(row)
+    if setup:
+        setup(wb)
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return with_formula_results(buffer.getvalue(), results or {})
+
+
+def test_defined_name_makes_every_edit_feed_the_formula():
+    def name(wb):
+        wb.defined_names['Speed'] = DefinedName('Speed', attr_text='Sheet!$B$3')
+
+    xlsx = _book([[1, 2, '=Speed*2']], {'C3': '4'}, name)
+    for column in (1, 2):  # sand cannot tell what Speed points at
+        with pytest.raises(WriteRefused, match='formula sand cannot compute'):
+            write_cells(xlsx, [Write(3, column, 5)])
+
+
+def test_indirect_reads_anything():
+    xlsx = _book([[1, 2, '=INDIRECT("B3")*2']], {'C3': '4'})
+    with pytest.raises(WriteRefused, match='formula sand cannot compute'):
+        write_cells(xlsx, [Write(3, 1, 5)])
+
+
+def test_whole_row_range_is_seen():
+    xlsx = _book([[1, 2, '=SUM(3:3)'], [2, 3, None]], {'C3': '3'})
+    with pytest.raises(WriteRefused, match='formula sand cannot compute'):
+        write_cells(xlsx, [Write(3, 2, 5)])
+    assert write_cells(xlsx, [Write(4, 2, 5)]).changes  # row 4 is not read
+
+
+def test_date_cell_is_not_turned_into_text():
+    xlsx = _book([[1, datetime.datetime(2025, 1, 1), None]])
+    with pytest.raises(WriteRefused, match='holds a date'):
+        write_cells(xlsx, [Write(3, 2, '2025-02-01')])
+
+
+def test_formula_over_a_date_is_refused_not_crashing():
+    xlsx = _book(
+        [['a', datetime.datetime(2025, 1, 1), '=A3&"_"&B3']],
+        {'C3': 'a_45658'},
+    )
+    with pytest.raises(WriteRefused, match='date values are not supported'):
+        write_cells(xlsx, [Write(3, 1, 'b')])
+
+
+def test_circular_formulas_are_refused():
+    xlsx = _book([[1, 2, '=D3+B3', '=C3*0+1']], {'C3': '3', 'D3': '1'})
+    with pytest.raises(WriteRefused, match='circular'):
+        write_cells(xlsx, [Write(3, 2, 5)])
+
+
+@pytest.mark.parametrize(('row', 'column'), [(3, 0), (0, 1), (3, 10**5), (10**6, 2)])
+def test_writes_outside_the_sheet_are_refused(row, column):
+    xlsx = _book([[1, 2, None]])
+    with pytest.raises(WriteRefused, match='outside the sheet'):
+        write_cells(xlsx, [Write(row, column, 1)])
+
+
+def test_empty_formula_result_is_a_valid_stored_result():
+    xlsx = _book(
+        [[1, 'a', '=IF(B3="x","yes","")'], [2, 'x', '=IF(B4="x","yes","")']],
+        {'C3': '', 'C4': 'yes'},
+    )
+    result = write_cells(xlsx, [Write(3, 2, 'x'), Write(4, 2, 'b')])
+    computed = {
+        (c.row, c.before, c.after)
+        for c in result.changes
+        if c.field == 'computed value'
+    }
+    assert computed == {(3, None, 'yes'), (4, 'yes', None)}
+    # still empty -> no change listed
+    assert write_cells(xlsx, [Write(3, 2, 'c')]).changes == [
+        CellChange('Sheet', 3, 2, 'value', 'a', 'c')
+    ]
+
+
+def test_array_formula_blocks_only_edits_it_reads():
+    def array(wb):
+        wb.active['D3'] = ArrayFormula('D3', '=SUM(B3:B4)')
+
+    xlsx = _book([[1, 2, None], [2, 3, None]], setup=array)
+    assert write_cells(xlsx, [Write(3, 1, 9)]).changes  # Sample is not read
+    with pytest.raises(WriteRefused, match='array or table formula'):
+        write_cells(xlsx, [Write(3, 2, 9)])
+
+
+def test_formula_on_another_sheet_pointing_here_is_refused():
+    def other(wb):
+        wb.create_sheet('Summary')['A1'] = '=Sheet!B3*2'
+
+    xlsx = _book([[1, 2, None]], setup=other)
+    with pytest.raises(WriteRefused, match="sheet 'Summary'"):
+        write_cells(xlsx, [Write(3, 2, 5)])

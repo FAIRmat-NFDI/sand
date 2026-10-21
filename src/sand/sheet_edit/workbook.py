@@ -273,9 +273,31 @@ def cell_changes(before: bytes, after: bytes) -> list[CellChange]:
     cannot compute formulas, and NOMAD's parser reads only these cached
     results, so losing one loses data even though the formula is intact.
     """
-    a, b = load_workbook(io.BytesIO(before)), load_workbook(io.BytesIO(after))
-    a_vals = load_workbook(io.BytesIO(before), data_only=True)
-    b_vals = load_workbook(io.BytesIO(after), data_only=True)
+    return changes_between(
+        (
+            load_workbook(io.BytesIO(before)),
+            load_workbook(io.BytesIO(before), data_only=True),
+        ),
+        (
+            load_workbook(io.BytesIO(after)),
+            load_workbook(io.BytesIO(after), data_only=True),
+        ),
+    )
+
+
+def _comparable(value):
+    """Array and data-table formulas are objects equal only to themselves;
+    compare them by what they hold."""
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    if hasattr(value, '__dict__'):
+        return (type(value).__name__, sorted(vars(value).items()))
+    return value
+
+
+def changes_between(before: tuple, after: tuple) -> list[CellChange]:
+    """cell_changes on already loaded (formulas, data_only) workbook pairs."""
+    (a, a_vals), (b, b_vals) = before, after
     changes = []
     for name in a.sheetnames:
         if name not in b.sheetnames:
@@ -285,7 +307,7 @@ def cell_changes(before: bytes, after: bytes) -> list[CellChange]:
             for c in range(1, max(wa.max_column, wb.max_column) + 1):
                 ca, cb = wa.cell(r, c), wb.cell(r, c)
                 for field, x, y in (
-                    ('value', ca.value, cb.value),
+                    ('value', _comparable(ca.value), _comparable(cb.value)),
                     ('type', ca.data_type, cb.data_type),
                     ('number format', ca.number_format, cb.number_format),
                 ):

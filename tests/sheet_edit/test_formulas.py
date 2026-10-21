@@ -1,3 +1,5 @@
+import datetime
+
 import pytest
 from openpyxl.utils.cell import column_index_from_string, coordinate_from_string
 
@@ -106,3 +108,25 @@ def test_same_result():
     assert same_result('', None)
     assert not same_result('1', 1)
     assert not same_result(900.0, 901)
+
+
+@pytest.mark.parametrize(
+    ('formula', 'a1', 'result'),
+    [
+        ('=IF(A1>0,"t","f")', 'abc', 't'),  # Excel: text ranks above numbers
+        ('=IF(A1<0,"t","f")', 'abc', 'f'),
+        ('=A1=1', True, False),  # TRUE never equals 1
+        ('=A1>"zzz"', True, True),  # TRUE ranks above text
+        ('=A1=""', None, True),  # empty equals ""
+        ('=A1=0', None, True),  # and 0
+    ],
+)
+def test_mixed_type_comparison_follows_excel(formula, a1, result):
+    assert evaluate(formula, cells({'A1': a1})) is result
+
+
+def test_dates_are_unsupported_not_crashing():
+    when = datetime.datetime(2025, 1, 1)
+    for formula in ('=A1&"_"&B1', '=CONCATENATE(A1,B1)', '=B1+1', '=B1>0'):
+        with pytest.raises(Unsupported, match='date'):
+            evaluate(formula, cells({'A1': 'x', 'B1': when}))
