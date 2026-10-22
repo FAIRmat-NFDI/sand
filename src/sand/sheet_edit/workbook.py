@@ -60,7 +60,7 @@ def _text(value) -> str:
     return '' if value is None else str(value).strip()
 
 
-def _sample(value) -> str | None:
+def sample_label(value) -> str | None:
     """Sample names as users say them: 1.0 and 1 are both '1'."""
     if value is None or _text(value) == '':
         return None
@@ -76,7 +76,7 @@ def _section(label: str, first_col: int, last_col: int) -> Section:
     return Section(label, label, None, first_col, last_col)
 
 
-def _info_column(columns: tuple[Column, ...], header: str) -> int | None:
+def info_column(columns: tuple[Column, ...], header: str) -> int | None:
     return next(
         (
             col.index
@@ -117,10 +117,13 @@ def sheet_structure(ws: Worksheet) -> SheetStructure:
         if _text(ws.cell(HEADER_ROW, c).value)
     )
 
-    sample_col = _info_column(columns, SAMPLE_HEADER)
+    sample_col = info_column(columns, SAMPLE_HEADER)
     samples = tuple(
         SampleRow(
-            r, _sample(ws.cell(r, sample_col).value) if sample_col is not None else None
+            r,
+            sample_label(ws.cell(r, sample_col).value)
+            if sample_col is not None
+            else None,
         )
         for r in range(FIRST_SAMPLE_ROW, ws.max_row + 1)
         if any(_text(ws.cell(r, c).value) for c in range(1, width + 1))
@@ -213,7 +216,7 @@ def _sample_problems(ws: Worksheet, s: SheetStructure) -> list[str]:
     problems = [
         f"'{EXPERIMENT_INFO}' has no {header!r} column"
         for header in (NOMAD_ID_HEADER, SAMPLE_HEADER)
-        if _info_column(s.columns, header) is None
+        if info_column(s.columns, header) is None
     ]
     if not s.samples:
         return [*problems, 'no sample rows below the headers']
@@ -224,18 +227,20 @@ def _sample_problems(ws: Worksheet, s: SheetStructure) -> list[str]:
         for r in range(rows[0], rows[-1] + 1)
         if r not in set(rows)
     ]
-    if _info_column(s.columns, SAMPLE_HEADER) is None:
+    if info_column(s.columns, SAMPLE_HEADER) is None:
         return problems
 
     # Samples may restart at 1 in each subbatch: the address is then
     # (subbatch, sample), and a bare "sample 1" is resolved later.
-    subbatch_col = _info_column(s.columns, SUBBATCH_HEADER)
+    subbatch_col = info_column(s.columns, SUBBATCH_HEADER)
     seen: dict[tuple, int] = {}
     for r in s.samples:
         if r.sample is None:
             problems.append(f'row {r.row} has no {SAMPLE_HEADER!r} value')
             continue
-        subbatch = _sample(ws.cell(r.row, subbatch_col).value) if subbatch_col else None
+        subbatch = (
+            sample_label(ws.cell(r.row, subbatch_col).value) if subbatch_col else None
+        )
         key = (subbatch, r.sample)
         if key in seen:
             name = f'sample {r.sample}' + (

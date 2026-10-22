@@ -1,4 +1,4 @@
-"""One entry per column: the only vocabulary the LLM may use.
+"""One entry per column and per sample: the only vocabulary the LLM may use.
 
 Everything is read from the file: no column, unit or type is assumed.
 """
@@ -12,9 +12,14 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from sand.sheet_edit.formulas import Unsupported, references
 from sand.sheet_edit.workbook import (
+    NOMAD_ID_HEADER,
+    SAMPLE_HEADER,
+    SUBBATCH_HEADER,
     Column,
     SheetStructure,
     first_sheet,
+    info_column,
+    sample_label,
     sheet_structure,
 )
 from sand.sheet_headers import INDEXED_GROUPS, STRIP_RE, classify, norm_key, step_key
@@ -39,6 +44,14 @@ class Family:
 
 
 @dataclass(frozen=True)
+class ValueGroup:
+    """E.g. ValueGroup(value='15min', rows=(3, 4, 5))."""
+
+    value: object  # as stored (a formula's stored result); None: empty
+    rows: tuple[int, ...]  # sample rows holding it
+
+
+@dataclass(frozen=True)
 class ColumnInfo:
     id: str  # 'C033': from the column's place in the sheet, which edits never change
     column: Column
@@ -47,12 +60,29 @@ class ColumnInfo:
     type: ValueType  # of the values in the sample rows
     formula: bool  # a sample cell holds a formula: not writable
     inputs: tuple[str, ...] | None  # ids the formulas read; None: unknown
+    groups: tuple[ValueGroup, ...]  # in order of first appearance
+
+
+@dataclass(frozen=True)
+class SampleInfo:
+    row: int
+    label: str | None  # the Sample value as users say it: '23', never the row
+    subbatch: str | None
+    nomad_id: str | None  # Excel's stored result of the Nomad ID formula
 
 
 @dataclass(frozen=True)
 class Catalog:
     structure: SheetStructure
     columns: tuple[ColumnInfo, ...]
+    samples: tuple[SampleInfo, ...]
+
+    @property
+    def needs_subbatch(self) -> bool:
+        """Labels repeat (each subbatch restarts at 1): 'sample 1' alone
+        names more than one row."""
+        labels = [s.label for s in self.samples if s.label is not None]
+        return len(labels) != len(set(labels))
 
 
 def column_id(index: int) -> str:
@@ -65,21 +95,80 @@ def build(xlsx: bytes) -> Catalog:
     structure = sheet_structure(ws)
     rows = [s.row for s in structure.samples]
     headed = {col.index for col in structure.columns}
-    columns = tuple(
-        ColumnInfo(
-            id=column_id(col.index),
-            column=col,
-            family=_family(col),
-            unit=_unit(col.header),
-            type=value_type(
-                col.header, [results.cell(r, col.index).value for r in rows]
-            ),
-            formula=any(ws.cell(r, col.index).data_type == 'f' for r in rows),
-            inputs=_inputs(ws, col.index, rows, headed),
+    columns = []
+    for col in structure.columns:
+        values = [results.cell(r, col.index).value for r in rows]
+        columns.append(
+            ColumnInfo(
+                id=column_id(col.index),
+                column=col,
+                family=_family(col),
+                unit=_unit(col.header),
+                type=value_type(col.header, values),
+                formula=any(ws.cell(r, col.index).data_type == 'f' for r in rows),
+                inputs=_inputs(ws, col.index, rows, headed),
+                groups=_groups(rows, values),
+            )
         )
-        for col in structure.columns
+    return Catalog(structure, tuple(columns), _samples(results, structure))
+
+
+def _samples(results: Worksheet, structure: SheetStructure) -> tuple[SampleInfo, ...]:
+    def value(row: int, header: str) -> str | None:
+        col = info_column(structure.columns, header)
+        return sample_label(results.cell(row, col).value) if col else None
+
+    return tuple(
+        SampleInfo(
+            s.row,
+            value(s.row, SAMPLE_HEADER),
+            value(s.row, SUBBATCH_HEADER),
+            value(s.row, NOMAD_ID_HEADER),
+        )
+        for s in structure.samples
     )
-    return Catalog(structure, columns)
+
+
+def _groups(rows: list[int], values: list) -> tuple[ValueGroup, ...]:
+    found: dict[tuple, tuple[object, list[int]]] = {}
+    for row, v in zip(rows, values):
+        _, group_rows = found.setdefault(_same(v), (_stored(v), []))
+        group_rows.append(row)
+    return tuple(ValueGroup(v, tuple(rs)) for v, rs in found.values())
+
+
+def _stored(v):
+    return None if _kind(v) == 'empty' else v
+
+
+def _same(v) -> tuple:
+    """Values Excel holds as equal: 3000 and 3000.0 are one number, but
+    TRUE is not 1 and the number 3000 is not the text '3000'."""
+    kind = _kind(v)
+    if kind in ('int', 'float'):
+        return ('number', float(v))
+    return (kind, _stored(v))
+
+
+def sample_ranges(labels: list[str]) -> str:
+    """'1–3, 7, 9–12': consecutive numbers joined, in the given order.
+    A missing sample always breaks a range."""
+    runs: list[list[str]] = []
+    for label in labels:
+        if runs and _follows(runs[-1][-1], label):
+            runs[-1].append(label)
+        else:
+            runs.append([label])
+    return ', '.join(r[0] if len(r) == 1 else f'{r[0]}–{r[-1]}' for r in runs)
+
+
+def _follows(previous: str, label: str) -> bool:
+    return _number(previous) is not None and _number(label) == _number(previous) + 1
+
+
+def _number(label: str) -> int | None:
+    """'7' is 7; '07' and 'A' are kept as written, never joined."""
+    return int(label) if label.isdigit() and str(int(label)) == label else None
 
 
 def _family(col: Column) -> Family | None:

@@ -1,9 +1,16 @@
 import datetime
 
 import pytest
-from synthetic_sheet import edited, letter
+from synthetic_sheet import edited, letter, with_formula_results
 
-from sand.sheet_edit.catalog import Catalog, ColumnInfo, Family, build, value_type
+from sand.sheet_edit.catalog import (
+    Catalog,
+    ColumnInfo,
+    Family,
+    build,
+    sample_ranges,
+    value_type,
+)
 
 INFO = 'Experiment Info'
 CLEANING = '1: Cleaning UV-Ozone'
@@ -157,3 +164,113 @@ def test_real_kit_sheet(real_kit_xlsx):
     )
     assert entry(catalog, INFO, 'Date').type == 'yyyymmdd'
     assert entry(catalog, CSS, 'Source material ratio 2').family == Family(None, 2)
+
+
+# --- samples and value groups ---------------------------------------------
+
+
+def groups(catalog: Catalog, section: str, header: str) -> list[tuple]:
+    label = {s.row: s.label for s in catalog.samples}
+    return [
+        (g.value, sample_ranges([label[r] for r in g.rows]))
+        for g in entry(catalog, section, header).groups
+    ]
+
+
+def test_samples_are_named_by_their_label_and_keep_the_gap(synthetic_xlsx):
+    catalog = build(synthetic_xlsx)
+    assert [(s.row, s.label) for s in catalog.samples][4:6] == [(7, '5'), (8, '7')]
+    assert sample_ranges([s.label for s in catalog.samples]) == '1–5, 7–13'
+    assert {s.subbatch for s in catalog.samples} == {'0'}
+    assert not catalog.needs_subbatch
+
+
+def test_nomad_id_is_the_result_excel_stored(synthetic_xlsx):
+    nomad_id = letter(INFO, 'Nomad ID')
+    xlsx = with_formula_results(synthetic_xlsx, {f'{nomad_id}3': 'KIT_Synth_1'})
+    assert [s.nomad_id for s in build(xlsx).samples][:2] == ['KIT_Synth_1', None]
+
+
+def test_subbatches_restarting_at_1_need_the_subbatch(synthetic_xlsx):
+    subbatch, sample = letter(INFO, 'Subbatch'), letter(INFO, 'Sample')
+
+    def second_subbatch(ws):
+        for i, r in enumerate(range(9, 15)):
+            ws[f'{subbatch}{r}'] = 1
+            ws[f'{sample}{r}'] = i + 1
+
+    catalog = build(edited(synthetic_xlsx, second_subbatch))
+    assert catalog.needs_subbatch
+    assert [(s.subbatch, s.label) for s in catalog.samples][5:7] == [
+        ('0', '7'),
+        ('1', '1'),
+    ]
+
+
+def test_rows_without_a_label_are_not_a_subbatch_restart(synthetic_xlsx):
+    sample = letter(INFO, 'Sample')
+
+    def unlabel(ws):
+        ws[f'{sample}3'] = None
+        ws[f'{sample}4'] = None
+
+    assert not build(edited(synthetic_xlsx, unlabel)).needs_subbatch
+
+
+def test_value_groups(synthetic_xlsx):
+    catalog = build(synthetic_xlsx)
+    assert groups(catalog, CSS, 'Substrate temperature [°C]') == [
+        (120, '1–5, 7'),
+        (115, '8–13'),
+    ]
+    assert groups(catalog, INFO, 'Variation') == [
+        ('10min', '1–3'),
+        ('20min', '4–5, 7'),
+        ('10min-hot', '8–10'),
+        ('20min-hot', '11–13'),
+    ]
+    assert groups(catalog, SPIN2, 'Rotation speed [rpm]') == [(3000, '1–5, 7–13')]
+    assert groups(catalog, SPIN2, 'Notes') == [(None, '1–5, 7–13')]
+
+
+@pytest.mark.parametrize(('value', 'expected'), [('3000', '3000'), (True, True)])
+def test_text_and_bool_are_not_the_same_value_as_a_number(
+    synthetic_xlsx, value, expected
+):
+    speed = letter(SPIN2, 'Rotation speed [rpm]')
+
+    def change(ws):
+        ws[f'{speed}3'] = value
+
+    catalog = build(edited(synthetic_xlsx, change))
+    assert groups(catalog, SPIN2, 'Rotation speed [rpm]') == [
+        (expected, '1'),
+        (3000, '2–5, 7–13'),
+    ]
+
+
+@pytest.mark.parametrize(
+    ('labels', 'expected'),
+    [
+        (['1', '2', '3', '7', '9', '10', '11', '12'], '1–3, 7, 9–12'),
+        (['1', '2', '4'], '1–2, 4'),
+        (['3', '2', '1'], '3, 2, 1'),  # in sheet order, never sorted
+        (['A', 'B', '1'], 'A, B, 1'),
+        (['07', '08'], '07, 08'),  # kept as written
+        ([], ''),
+    ],
+)
+def test_sample_ranges(labels, expected):
+    assert sample_ranges(labels) == expected
+
+
+def test_real_kit_samples_and_groups(real_kit_xlsx):
+    catalog = build(real_kit_xlsx)
+    assert sample_ranges([s.label for s in catalog.samples]) == '1–21, 23–43'
+    assert groups(catalog, CSS, 'Substrate temperature [°C]') == [
+        (120, '1–21'),
+        (115, '23–43'),
+    ]
+    assert all(
+        s.nomad_id and s.nomad_id.endswith(f'_{s.label}') for s in catalog.samples
+    )
