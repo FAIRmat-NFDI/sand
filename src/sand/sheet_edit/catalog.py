@@ -42,7 +42,7 @@ class Family:
 class ColumnInfo:
     id: str  # 'C033': from the column's place in the sheet, which edits never change
     column: Column
-    family: Family | None
+    family: Family | None  # 'Solvent 1 volume [uL]' -> Family('solvents', 1)
     unit: str | None  # from '[...]' in the header
     type: ValueType  # of the values in the sample rows
     formula: bool  # a sample cell holds a formula: not writable
