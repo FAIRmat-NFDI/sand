@@ -31,6 +31,7 @@ ValueType = Literal[
 _UNIT_RE = re.compile(r'\[([^\]]+)\]')
 _NUMBER_RE = re.compile(r'(?<![\w.])\d+(?![\w.])')
 _YYYYMMDD_DIGITS = 8
+_LABEL_RE = re.compile(r'(.*?)(\d+)')
 
 
 @dataclass(frozen=True)
@@ -151,8 +152,8 @@ def _same(v) -> tuple:
 
 
 def sample_ranges(labels: list[str]) -> str:
-    """'1–3, 7, 9–12': consecutive numbers joined, in the given order.
-    A missing sample always breaks a range."""
+    """'1–3, 7, 9–12' or 's_1–s_3': consecutive numbers joined, in the
+    given order. A missing sample always breaks a range."""
     runs: list[list[str]] = []
     for label in labels:
         if runs and _follows(runs[-1][-1], label):
@@ -162,24 +163,18 @@ def sample_ranges(labels: list[str]) -> str:
     return ', '.join(r[0] if len(r) == 1 else f'{r[0]}–{r[-1]}' for r in runs)
 
 
-def missing_samples(labels: list[str]) -> list[str]:
-    """Numbers skipped between neighbouring labels: '21', '23' -> ['22']."""
-    numbers = [_number(label) for label in labels]
-    return [
-        str(n)
-        for a, b in zip(numbers, numbers[1:])
-        if a is not None and b is not None and b > a + 1
-        for n in range(a + 1, b)
-    ]
-
-
 def _follows(previous: str, label: str) -> bool:
-    return _number(previous) is not None and _number(label) == _number(previous) + 1
+    a, b = _numbered(previous), _numbered(label)
+    return a is not None and b is not None and b == (a[0], a[1] + 1)
 
 
-def _number(label: str) -> int | None:
-    """'7' is 7; '07' and 'A' are kept as written, never joined."""
-    return int(label) if label.isdigit() and str(int(label)) == label else None
+def _numbered(label: str) -> tuple[str, int] | None:
+    """'7' -> ('', 7), 's_7' -> ('s_', 7). '07', '1.5' and 'A' are not
+    numbered: they are kept as written, never joined."""
+    m = _LABEL_RE.fullmatch(label)
+    if not m or m.group(2) != str(int(m.group(2))) or m.group(1).endswith(('.', '-')):
+        return None
+    return m.group(1), int(m.group(2))
 
 
 def _family(col: Column) -> Family | None:

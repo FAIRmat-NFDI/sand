@@ -12,7 +12,6 @@ import json
 from sand.sheet_edit.catalog import (
     Catalog,
     ColumnInfo,
-    missing_samples,
     sample_ranges,
 )
 from sand.sheet_edit.formulas import as_text
@@ -104,13 +103,4 @@ def _sample_line(catalog: Catalog) -> str:
     if not catalog.samples:
         return 'none'
     rows = [s.row for s in catalog.samples]
-    count = f'{len(rows)} samples'
-    # with subbatches, each one's ranges already show its gaps
-    missing = (
-        []
-        if catalog.needs_subbatch
-        else missing_samples([s.label for s in catalog.samples])
-    )
-    if missing:
-        count += f'; no {sample_ranges(missing)}'
-    return f'{_samples(catalog, rows)} ({count})'
+    return f'{_samples(catalog, rows)} ({len(rows)} samples)'

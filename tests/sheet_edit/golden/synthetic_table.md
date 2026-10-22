@@ -77,4 +77,4 @@
 | C075 | 8: Evaporation | Thickness [nm] | "100" |
 | C076 | 8: Evaporation | Rate [angstrom/s] | (empty) |
 
-Samples: 1–5, 7–13 (12 samples; no 6)
+Samples: 1–5, 7–13 (12 samples)

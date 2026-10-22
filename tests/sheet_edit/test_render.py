@@ -100,4 +100,4 @@ def test_real_kit_sheet(real_kit_xlsx):
     assert value(text, CSS, 'Substrate temperature [°C]') == (
         '"120" samples 1–21; "115" samples 23–43'
     )
-    assert text.endswith('Samples: 1–21, 23–43 (42 samples; no 22)\n')
+    assert text.endswith('Samples: 1–21, 23–43 (42 samples)\n')
