@@ -205,9 +205,11 @@ def with_formula_results(xlsx: bytes, results: dict[str, str]) -> bytes:
             if item.filename == sheet:
                 xml = data.decode()
                 for coord, value in results.items():
+                    # Excel marks text results t="str"; numbers carry no type
+                    t = '' if re.fullmatch(r'-?\d+(\.\d+)?', value) else ' t="str"'
                     xml, n = re.subn(
                         rf'<c r="{coord}">(<f>.*?</f>)<v></v></c>',
-                        rf'<c r="{coord}" t="str">\1<v>{value}</v></c>',
+                        rf'<c r="{coord}"{t}>\1<v>{value}</v></c>',
                         xml,
                     )
                     assert n == 1, coord
