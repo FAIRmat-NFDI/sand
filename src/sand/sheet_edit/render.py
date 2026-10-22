@@ -46,6 +46,10 @@ def table(catalog: Catalog) -> str:
 
 
 def _current(c: ColumnInfo, catalog: Catalog, names: dict[str, str]) -> str:
+    """The 'Current value' cell, e.g. '"3000"', '(empty)',
+    '"120" samples 1–21; "115" samples 23–43' or
+    'formula, read-only (from C007 Variation)'. Formulas come first so
+    their results never look like editable values."""
     if c.formula:
         if not c.inputs:
             return 'formula, read-only'
