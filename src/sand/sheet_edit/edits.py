@@ -27,7 +27,13 @@ class Samples(_Model):
 
 
 class Range(_Model):
-    """{"first": "1", "last": "25", "subbatch": null}; code expands it."""
+    """{"first": "1", "last": "25", "subbatch": null} for "samples 1 to 25".
+
+    The LLM only copies the two words it heard; code expands the range from
+    the real samples. Listing 1..25 itself, the LLM could drop or add one,
+    could not know sample 22 is missing, and check S could not match the
+    list against the words said.
+    """
 
     first: str
     last: str
