@@ -6,7 +6,7 @@ the LLM cannot name a column, formula column or sample that does not
 exist. Values stay text, as the table shows them; checks convert them.
 """
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
@@ -23,7 +23,10 @@ class Samples(_Model):
     """{"samples": ["1", "2", "3"], "subbatch": null}"""
 
     samples: list[str] = Field(min_length=1)
-    subbatch: str | None  # needed when every subbatch restarts at 1
+    # Null stays allowed even when subbatches restart at 1: forcing a value
+    # would make the LLM guess one when the user named none. The rows check
+    # refuses a label that is then found in more than one subbatch.
+    subbatch: str | None
 
 
 class Range(_Model):
@@ -67,10 +70,22 @@ class Edit(_Model):
     said: str  # the user's words this edit came from
 
 
-class Unresolved(_Model):
-    reason: Literal['ambiguous', 'not_found']
-    candidates: list[str]  # column ids the words could mean
+class Ambiguous(_Model):
+    """The words fit more than one cell or row group."""
+
+    reason: Literal['ambiguous']
+    candidates: list[str] = Field(min_length=1)  # column ids the words could mean
     said: str
+
+
+class NotFound(_Model):
+    """What the user pointed at is not in the sheet."""
+
+    reason: Literal['not_found']
+    said: str
+
+
+Unresolved = Annotated[Ambiguous | NotFound, Field(discriminator='reason')]
 
 
 class Answer(_Model):
@@ -120,9 +135,12 @@ def answer_model(catalog: Catalog) -> type[Answer]:
         rows=(Literal['all'] | samples | range_ | where, ...),
         anchor=(anchor | None, ...),
     )
-    unresolved = create_model(
-        'Unresolved', __base__=Unresolved, candidates=(list[ids], ...)
+    ambiguous = create_model(
+        'Ambiguous',
+        __base__=Ambiguous,
+        candidates=(list[ids], Field(min_length=1)),
     )
+    unresolved = Annotated[ambiguous | NotFound, Field(discriminator='reason')]
     return create_model(
         'Answer',
         __base__=Answer,

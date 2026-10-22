@@ -102,6 +102,25 @@ def test_invalid_proposals_are_rejected(catalog, bad, why):
         answer_model(catalog).model_validate(answer([bad]))
 
 
+@pytest.mark.parametrize(
+    'unresolved',
+    [
+        {'reason': 'ambiguous', 'candidates': [], 'said': 'x'},
+        {'reason': 'not_found', 'candidates': ['C001'], 'said': 'x'},
+        {'reason': 'unclear', 'said': 'x'},
+    ],
+)
+def test_ambiguous_needs_candidates_and_not_found_has_none(catalog, unresolved):
+    with pytest.raises(ValidationError):
+        answer_model(catalog).model_validate(answer(unresolved=[unresolved]))
+
+
+def test_not_found_is_accepted(catalog):
+    answer_model(catalog).model_validate(
+        answer(unresolved=[{'reason': 'not_found', 'said': 'the DMSO solvent'}])
+    )
+
+
 def test_unresolved_candidates_must_exist(catalog):
     with pytest.raises(ValidationError):
         answer_model(catalog).model_validate(
@@ -146,8 +165,9 @@ def test_subbatches_are_offered_when_the_sheet_has_them(synthetic_xlsx):
             ws[f'{sample}{r}'] = i + 1
 
     model = answer_model(build(edited(synthetic_xlsx, second_subbatch)))
-    rows = {'samples': ['1'], 'subbatch': '1'}
-    model.model_validate(answer([edit('C025', rows)]))
+    model.model_validate(answer([edit('C025', {'samples': ['1'], 'subbatch': '1'})]))
+    # no subbatch named: valid here, left for the rows check to refuse
+    model.model_validate(answer([edit('C025', {'samples': ['1'], 'subbatch': None})]))
 
 
 def test_a_sheet_without_samples_cannot_be_edited(synthetic_xlsx):
