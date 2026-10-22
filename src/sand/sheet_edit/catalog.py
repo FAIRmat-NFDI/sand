@@ -162,6 +162,17 @@ def sample_ranges(labels: list[str]) -> str:
     return ', '.join(r[0] if len(r) == 1 else f'{r[0]}–{r[-1]}' for r in runs)
 
 
+def missing_samples(labels: list[str]) -> list[str]:
+    """Numbers skipped between neighbouring labels: '21', '23' -> ['22']."""
+    numbers = [_number(label) for label in labels]
+    return [
+        str(n)
+        for a, b in zip(numbers, numbers[1:])
+        if a is not None and b is not None and b > a + 1
+        for n in range(a + 1, b)
+    ]
+
+
 def _follows(previous: str, label: str) -> bool:
     return _number(previous) is not None and _number(label) == _number(previous) + 1
 
