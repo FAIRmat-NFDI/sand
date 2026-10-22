@@ -87,17 +87,18 @@ def _info_column(columns: tuple[Column, ...], header: str) -> int | None:
     )
 
 
-def _first_sheet(xlsx: bytes) -> Worksheet:
-    return load_workbook(io.BytesIO(xlsx)).worksheets[0]
+def first_sheet(xlsx: bytes, data_only: bool = False) -> Worksheet:
+    """data_only: formula cells hold Excel's stored result, not the formula."""
+    return load_workbook(io.BytesIO(xlsx), data_only=data_only).worksheets[0]
 
 
 def read_structure(xlsx: bytes) -> SheetStructure:
     """Sections, columns and sample rows of the first sheet (the one the
     batch parser reads)."""
-    return _structure(_first_sheet(xlsx))
+    return sheet_structure(first_sheet(xlsx))
 
 
-def _structure(ws: Worksheet) -> SheetStructure:
+def sheet_structure(ws: Worksheet) -> SheetStructure:
     width = max(
         (c for c in range(1, ws.max_column + 1) if _text(ws.cell(HEADER_ROW, c).value)),
         default=0,
@@ -138,10 +139,10 @@ def ingest_problems(xlsx: bytes) -> list[str]:
     place.
     """
     try:
-        ws = _first_sheet(xlsx)
+        ws = first_sheet(xlsx)
     except Exception as exc:  # any openpyxl/zip failure means "not an xlsx"
         return [f'not a readable .xlsx file ({exc})']
-    s = _structure(ws)
+    s = sheet_structure(ws)
     if not s.columns:
         return ['row 2 has no column headers']
 
