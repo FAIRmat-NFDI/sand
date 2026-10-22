@@ -45,6 +45,8 @@ class Family:
 
 @dataclass(frozen=True)
 class ValueGroup:
+    """E.g. ValueGroup(value='15min', rows=(3, 4, 5))."""
+
     value: object  # as stored (a formula's stored result); None: empty
     rows: tuple[int, ...]  # sample rows holding it
 
@@ -79,7 +81,7 @@ class Catalog:
     def needs_subbatch(self) -> bool:
         """Labels repeat (each subbatch restarts at 1): 'sample 1' alone
         names more than one row."""
-        labels = [s.label for s in self.samples]
+        labels = [s.label for s in self.samples if s.label is not None]
         return len(labels) != len(set(labels))
 
 

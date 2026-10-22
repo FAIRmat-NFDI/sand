@@ -207,6 +207,16 @@ def test_subbatches_restarting_at_1_need_the_subbatch(synthetic_xlsx):
     ]
 
 
+def test_rows_without_a_label_are_not_a_subbatch_restart(synthetic_xlsx):
+    sample = letter(INFO, 'Sample')
+
+    def unlabel(ws):
+        ws[f'{sample}3'] = None
+        ws[f'{sample}4'] = None
+
+    assert not build(edited(synthetic_xlsx, unlabel)).needs_subbatch
+
+
 def test_value_groups(synthetic_xlsx):
     catalog = build(synthetic_xlsx)
     assert groups(catalog, CSS, 'Substrate temperature [°C]') == [
