@@ -257,6 +257,9 @@ def test_text_and_bool_are_not_the_same_value_as_a_number(
         (['3', '2', '1'], '3, 2, 1'),  # in sheet order, never sorted
         (['A', 'B', '1'], 'A, B, 1'),
         (['07', '08'], '07, 08'),  # kept as written
+        (['s_1', 's_2', 's_3', 's_5'], 's_1–s_3, s_5'),
+        (['s_1', 't_2'], 's_1, t_2'),
+        (['1.4', '1.5'], '1.4, 1.5'),
         ([], ''),
     ],
 )
