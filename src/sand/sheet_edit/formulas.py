@@ -68,13 +68,24 @@ class Ref:
 
 
 class _Parser:
+    """Turns a formula's tokens into a tree of tuples, which _eval computes:
+    ('const', value), ('ref', Ref), ('neg', node), ('op', op, left, right),
+    ('call', NAME, [args]).
+
+    E.g. =VALUE(LEFT(G3,2))*60 becomes
+    ('op', '*', ('call', 'VALUE', [('call', 'LEFT', [('ref', G3), ('const', 2.0)])]),
+    ('const', 60.0))
+    """
+
     def __init__(self, tokens: list[tuple[str, str]]) -> None:
-        self.tokens, self.i = tokens, 0
+        self.tokens, self.i = tokens, 0  # i: next token to read
 
     def peek(self) -> tuple[str, str] | None:
+        """The next token without consuming it; None at the end."""
         return self.tokens[self.i] if self.i < len(self.tokens) else None
 
     def take(self) -> tuple[str, str]:
+        """Consume the next token."""
         tok = self.peek()
         if tok is None:
             raise Unsupported('formula ends too early')
@@ -82,16 +93,20 @@ class _Parser:
         return tok
 
     def expect(self, op: str) -> None:
+        """Consume a required operator, e.g. the closing ')'."""
         if self.take() != ('op', op):
             raise Unsupported(f'expected {op!r}')
 
     def parse(self):
+        """The whole formula; leftover tokens mean we misread it."""
         tree = self.binary(0)
         if self.peek() is not None:
             raise Unsupported(f'unexpected {self.peek()[1]!r}')
         return tree
 
     def binary(self, level: int):
+        """Operators of _LEVELS[level] and above. Each level parses the
+        tighter one first, so in 1+2*3 the * binds before the +."""
         if level == len(_LEVELS):
             return self.unary()
         left = self.binary(level + 1)
@@ -101,6 +116,7 @@ class _Parser:
         return left
 
     def unary(self):
+        """A leading sign, e.g. -A3."""
         tok = self.peek()
         if tok == ('op', '-'):
             self.take()
@@ -111,6 +127,8 @@ class _Parser:
         return self.atom()
 
     def atom(self):
+        """The smallest piece: a number, "text", a cell, a function call
+        or a (bracketed) expression. Unknown functions are refused here."""
         kind, text = self.take()
         if kind == 'number':
             return ('const', float(text))
