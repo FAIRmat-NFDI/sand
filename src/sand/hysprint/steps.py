@@ -10,6 +10,8 @@ import re
 from functools import lru_cache
 from importlib import resources
 
+from sand.sheet_headers import step_key
+
 # Inputs are narrations addressed to the assistant (SAND), mostly spoken:
 # greetings and recording chatter must not become steps, samples or values.
 NARRATION_CONTEXT = """The text is a researcher's narration, usually spoken to the lab assistant \
@@ -86,14 +88,9 @@ def fill_schema(step_type: str) -> dict:
     return _strip_units(to_single_step_schema(full_schema(), step_type))
 
 
-def _step_key(step_type: str) -> str:
-    """'Slot Die Coating' -> 'slot_die_coating' — the `$defs` key for a step type."""
-    return step_type.lower().replace(' ', '_').replace('-', '_')
-
-
 def to_single_step_schema(full: dict, step_type: str) -> dict:
     """Derive the extraction target for ONE step"""
-    step_def = full['$defs'].get(_step_key(step_type))
+    step_def = full['$defs'].get(step_key(step_type))
     if step_def is None or 'step_type' not in step_def['properties']:
         raise ValueError(
             f'unknown step type {step_type!r}; expected one of {sorted(step_types())}'
