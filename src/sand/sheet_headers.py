@@ -1,5 +1,5 @@
-"""The hysprint sheet's header vocabulary, shared by extraction
-(sand.hysprint) and sheet editing (sand.sheet_edit).
+"""How sheet headers are read: normalized keys, step keys and numbered
+column groups ('Solvent 1 volume' -> solvents #1, field volume).
 
 Copied from nomad-entry-data (src/hzb_pool/to_json.py) - keep in sync.
 """
