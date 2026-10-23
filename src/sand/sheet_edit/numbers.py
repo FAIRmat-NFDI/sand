@@ -8,6 +8,9 @@ English only. A comma is a thousands separator ('4,000') or a list
 import re
 from dataclasses import dataclass
 from decimal import Decimal
+from functools import lru_cache
+
+import pint
 
 _ONES = {
     'zero': 0,
@@ -45,49 +48,45 @@ _SCALES = {'thousand': 1000, 'million': 1_000_000}
 _HUNDRED = 100
 _DIGIT_WORD = 10  # ones words below this are single digits ('point two five')
 
-# Canonical unit -> spellings. Symbols match case-sensitively ('mM' is
-# millimolar, 'mm' millimetre); spelled-out words match in any case.
-_UNITS = {
-    's': (['s'], ['sec', 'secs', 'second', 'seconds']),
-    'min': (['min'], ['mins', 'minute', 'minutes']),
-    'h': (['h'], ['hr', 'hrs', 'hour', 'hours']),
-    'rpm/s': (['rpm/s'], ['rpm per second']),
-    'rpm': (['rpm'], ['rpms']),
-    'krpm': (['krpm'], []),
-    '°C': (
-        ['°C', '° C', 'C'],
-        ['degc', 'celsius', 'degrees celsius', 'degree', 'degrees'],
-    ),
-    'K': ([], ['kelvin']),
-    'uL': (
-        ['uL', 'µL', 'μL', 'ul', 'µl', 'μl'],
-        ['microliter', 'microliters', 'microlitre', 'microlitres'],
-    ),
-    'mL': (['mL', 'ml'], ['milliliter', 'milliliters', 'millilitre', 'millilitres']),
-    'mM': (['mM'], ['millimolar']),
-    'M': (['M'], ['molar']),
-    'nm': (['nm'], ['nanometer', 'nanometers', 'nanometre', 'nanometres']),
-    'mm': (['mm'], ['millimeter', 'millimeters', 'millimetre', 'millimetres']),
-    'angstrom/s': (
-        ['angstrom/s', 'Å/s'],
-        ['angstrom per second', 'angstroms per second'],
-    ),
-    '%': (['%'], ['percent', 'per cent']),
-    'mbar': (['mbar'], ['millibar', 'millibars']),
-    'bar': (['bar'], ['bars']),
-    'ppm': (['ppm'], []),
-    'cm^2': (['cm^2', 'cm²'], ['square centimeter', 'square centimeters']),
+# Units are resolved by pint (what NOMAD uses too), so every standard
+# spelling works: sec, seconds, µl, degC, krpm, cm², millibar, ...
+# The lists below are where lab speech differs from pint.
+_LAB_SPEECH = {  # pint reads 'C' as coulomb and 'degrees' as an angle
+    'c': 'degC',
+    'degc': 'degC',
+    '°c': 'degC',
+    '° c': 'degC',
+    'deg': 'degC',
+    'degs': 'degC',
+    'deg c': 'degC',
+    'degree': 'degC',
+    'degrees': 'degC',
+    'degree c': 'degC',
+    'degrees c': 'degC',
+    'degree celsius': 'degC',
+    'degrees celsius': 'degC',
+    'celsius': 'degC',
+    'per cent': 'percent',
+    'rpm per second': 'rpm/s',
+    'angstrom per second': 'angstrom/s',
+    'angstroms per second': 'angstrom/s',
+    'square centimeter': 'cm^2',
+    'square centimeters': 'cm^2',
+    'square centimetre': 'cm^2',
+    'square centimetres': 'cm^2',
 }
-_SPELLINGS = sorted(
-    [(sym, unit, False) for unit, (syms, _) in _UNITS.items() for sym in syms]
-    + [(word, unit, True) for unit, (_, words) in _UNITS.items() for word in words],
-    key=lambda s: -len(s[0]),
-)
-_SYMBOLS = {sym: unit for unit, (syms, _) in _UNITS.items() for sym in syms}
-_WORDS = {word: unit for unit, (_, words) in _UNITS.items() for word in words}
+# English words pint would read as units: a (year), at (atmosphere),
+# as (attosecond), in (inch), point; and ordinal endings ('2nd': nanodays)
+_NOT_UNITS = {'a', 'an', 'at', 'as', 'in', 'to', 'point', 'per', 'st', 'nd', 'rd', 'th'}
+# The only single letters taken as units; m, g, l, A, V, ... are more
+# likely a word or a name in lab speech
+_SINGLE_LETTERS = {'s', 'h', 'K', 'M', 'C', '%'}
+_WORD_LENGTH = 3  # alphabetic spellings this long match in any case
+_UNIT_TOKEN_RE = re.compile(r'[A-Za-zµμ°Å%][A-Za-zµμ°Å%/²]*(?:\^\d)?')
+_MAX_UNIT_WORDS = 3  # 'rpm per second'
 
 _DIGITS_RE = re.compile(
-    r'(?<![\w.)])'  # not after a word or ')' : the 3 in 'Pb(I0.83Br0.17)3'
+    r'(?<![\w.)^])'  # not after a word, ')' or '^': the 3 in 'Pb(...)3', 'cm^2'
     r'(?:(?<![\w.-])-)?'
     r'(?:\d{1,3}(?:,\d{3})+|\d+)?(?:\.\d+)?'
 )
@@ -108,6 +107,15 @@ class Number:
 class Range:
     first: Number
     last: Number
+
+    @property
+    def unit(self) -> str | None:
+        """'1s - 3s' and 'from 1 second to 3' are in seconds; '1 s to 3 min'
+        is refused."""
+        a, b = self.first.unit, self.last.unit
+        if a and b and not same_unit(a, b):
+            raise UnitMismatch(f'{self.first.text!r} to {self.last.text!r}: two units')
+        return a or b
 
 
 def numbers(text: str) -> list[Number]:
@@ -155,12 +163,38 @@ def check_unit(number: Number, header_unit: str | None) -> None:
 
 def same_unit(said: str, header: str) -> bool:
     """Whether `said` is a spelling of the header's unit; never converts."""
-    return _canonical(said) == _canonical(header)
+    a, b = _unit(said), _unit(header)
+    if a is None or b is None:  # a unit pint does not know: spelling must match
+        return said.strip() == header.strip()
+    return a == b
 
 
-def _canonical(unit: str) -> str:
-    unit = unit.strip()
-    return _SYMBOLS.get(unit) or _WORDS.get(unit.lower(), unit)
+@lru_cache(maxsize=1)
+def _registry() -> pint.UnitRegistry:
+    return pint.UnitRegistry()
+
+
+def _unit(spelling: str) -> pint.Unit | None:
+    text = ' '.join(spelling.replace('μ', 'µ').split())
+    key = text.lower()
+    if key in _NOT_UNITS:
+        return None
+    if key in _LAB_SPEECH:
+        text = _LAB_SPEECH[key]
+    elif len(text) == 1:
+        if text not in _SINGLE_LETTERS:
+            return None
+    elif text.isalpha() and len(text) >= _WORD_LENGTH:
+        text = key  # 'Seconds', 'MBAR': words in any case; symbols ('mM') as written
+    try:
+        return _registry().Unit(text)
+    except Exception:  # pint raises several kinds for an unknown spelling
+        return None
+
+
+def _short(unit: pint.Unit) -> str:
+    """pint's symbol: 'seconds' -> 's', 'microliter' -> 'µl', 'cm**2' -> 'cm^2'."""
+    return f'{unit:~}'.replace(' ** ', '^').replace(' / ', '/')
 
 
 def _in_word(ch: str) -> bool:
@@ -177,6 +211,8 @@ def _digit_numbers(text: str) -> list[Number]:
         if not any(ch.isdigit() for ch in written):
             continue
         end, number = m.end(), Decimal(written.replace(',', ''))
+        if text[: m.start()].rstrip().endswith('^'):
+            continue  # an exponent: 'x ^ 2'
         scale = re.match(r'\s+(hundred|thousand|million)\b', text[end:], re.IGNORECASE)
         if scale:  # '4 thousand'
             word = scale.group(1).lower()
@@ -195,18 +231,29 @@ def _digit_numbers(text: str) -> list[Number]:
 
 
 def _unit_at(text: str, pos: int, glued: bool) -> tuple[str, int] | None:
-    """A unit spelling starting at `pos` (after spaces unless glued) and
-    ending at a word boundary: (canonical unit, end)."""
-    start = pos if glued else pos + len(text[pos:]) - len(text[pos:].lstrip(' '))
-    if not glued and start == pos:
+    """A unit starting at `pos` (after spaces unless glued): (unit, end).
+    Up to three words are tried, longest first: 'rpm per second'."""
+    start = _after_spaces(text, pos)
+    if glued != (start == pos):
         return None
-    for spelling, unit, any_case in _SPELLINGS:
-        piece = text[start : start + len(spelling)]
-        if (piece.lower() == spelling.lower()) if any_case else (piece == spelling):
-            end = start + len(spelling)
-            if end == len(text) or not _in_word(text[end]):
-                return unit, end
+    ends, at = [], start
+    for _ in range(_MAX_UNIT_WORDS):
+        m = _UNIT_TOKEN_RE.match(text, at)
+        if not m or (m.end() < len(text) and _in_word(text[m.end()])):
+            break
+        ends.append(m.end())
+        at = _after_spaces(text, m.end())
+        if at == m.end():
+            break
+    for end in reversed(ends):
+        unit = _unit(text[start:end])
+        if unit is not None:
+            return _short(unit), end
     return None
+
+
+def _after_spaces(text: str, pos: int) -> int:
+    return pos + len(text[pos:]) - len(text[pos:].lstrip(' '))
 
 
 # --- words ----------------------------------------------------------------
@@ -279,7 +326,7 @@ def _read_words(text: str, words: list, i: int) -> tuple[int, Decimal] | None:  
             and word(k + 1) in {**_ONES, **_TENS}
         ):
             pass
-        elif w == 'point' and used:
+        elif w == 'point' and (used or k == i):  # 'three point five', 'point five'
             k += 1
             while (
                 k < len(words)
@@ -290,6 +337,7 @@ def _read_words(text: str, words: list, i: int) -> tuple[int, Decimal] | None:  
                 k += 1
             if not decimals:
                 k -= 1
+            used = used or bool(decimals)
             break
         else:
             break
