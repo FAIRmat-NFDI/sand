@@ -63,7 +63,7 @@ class Anchor(_Model):
 
 class Edit(_Model):
     target: str  # column id
-    rows: RowSpec
+    rows: RowSpec  # 'all' | {samples} | {first, last} | {where, equals}
     anchor: Anchor | None
     old: str | None  # what the LLM believes is in the cell; None: empty
     new: str  # as the user said it, not converted
