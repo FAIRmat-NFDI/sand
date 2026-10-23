@@ -80,6 +80,146 @@ def test_numbers(text, expected):
 @pytest.mark.parametrize(
     ('text', 'expected'),
     [
+        # thousands separators and decimals
+        ('4,000', ['4000']),
+        ('4,000,000', ['4000000']),
+        ('12,345,678', ['12345678']),
+        ('4,000.5', ['4000.5']),
+        ('4000.5', ['4000.5']),
+        ('0.1', ['0.1']),
+        ('00.1', ['0.1']),
+        ('007', ['7']),
+        ('.5', ['0.5']),
+        # signs: only a '-' glued to the number is a sign
+        ('-5', ['-5']),
+        ('-0.5', ['-0.5']),
+        ('- 5', ['5']),
+        ('3-5', ['3', '5']),
+        # digits with a scale word, and what follows the scale
+        ('4 thousand', ['4000']),
+        ('4 Thousand', ['4000']),
+        ('4 hundred', ['400']),
+        ('4 million', ['4000000']),
+        ('4 million and 23', ['4000023']),
+        ('4 million and twenty three', ['4000023']),
+        ('4 million 23', ['4000023']),
+        ('4 thousand and 5', ['4005']),
+        ('4 thousand five hundred', ['4500']),
+        ('2 hundred and 5', ['205']),
+        ('4 thousand and 5000', ['4000', '5000']),  # 5000 is not below a thousand
+        ('4 thousand and 2.5', ['4000', '2.5']),
+        ('4 million 500 thousand', ['4000000', '500000']),  # not joined: two numbers
+        ('4 thousand and 5 samples', ['4005']),
+        ('4thousand', []),
+        # lists and punctuation around a number
+        ('4,5,6', ['4', '5', '6']),
+        ('1 2 3', ['1', '2', '3']),
+        ('4000,', ['4000']),
+        ('4000;', ['4000']),
+        ('(4000)', ['4000']),
+        ('[4000]', ['4000']),
+        ('4000/5', ['4000', '5']),
+        ('4000.', ['4000']),
+        ('1.', ['1']),
+        ('1...3', ['1', '3']),
+        ('1.2.3', ['1.2']),  # a version, not numbers; the rest is dropped
+        # speech transcribed with 'point' or 'minus'
+        ('3 point 5', ['3.5']),
+        ('3 point 50', ['3.50']),
+        ('-3 point 5', ['-3.5']),
+        ('minus 5', ['-5']),
+        ('negative 5', ['-5']),
+        ('minus 5.5', ['-5.5']),
+        ('−5', ['-5']),  # Unicode minus
+        ('plus 5', ['5']),
+        # scientific notation, as pressures are written
+        ('1e-6', ['0.000001']),
+        ('1E-6', ['0.000001']),
+        ('5e3', ['5000']),
+        ('1x10^-6', ['0.000001']),
+        ('1×10^-6', ['0.000001']),
+        ('1*10^-6', ['0.000001']),
+        ('2 x 10^-6', ['0.000002']),
+        ('2.5 × 10^3', ['2500']),
+        ('10^-6', ['0.000001']),
+        ('4.000', ['4']),
+        # digits inside a word
+        ('1e5x', []),
+        ('2x', []),
+        ('v2', []),
+        ('v2.1', []),
+        ('a2', []),
+        ('2 a 3', ['2', '3']),
+        ('2026-09-14', ['2026', '9', '14']),  # a date is three numbers, not a sum
+    ],
+)
+def test_digit_numbers(text, expected):
+    assert [str(n.value) for n in numbers(text)] == expected
+
+
+@pytest.mark.parametrize(
+    ('text', 'expected'),
+    [
+        ('1e-6 bar', [('0.000001', 'bar')]),
+        ('10^-6 bar', [('0.000001', 'bar')]),
+        ('1 x 10^-6 bar', [('0.000001', 'bar')]),
+        ('minus 20 degrees', [('-20', '°C')]),
+        ('−5 °C', [('-5', '°C')]),
+        ('2 hundred and 5 rpm', [('205', 'rpm')]),
+    ],
+)
+def test_digit_forms_keep_their_unit(text, expected):
+    assert found(text) == expected
+
+
+@pytest.mark.parametrize(
+    'text',
+    [
+        'sixthing hundred',  # a misheard or misspelt number word
+        'fourty',
+        'fourthousand',
+        'a dozen',
+        'half',
+        'quarter',
+        'first',
+        'the second sample',
+    ],
+)
+def test_unknown_words_are_never_guessed(text):
+    assert numbers(text) == []
+
+
+@pytest.mark.parametrize(
+    ('text', 'expected'),
+    [
+        # read as far as the words allow; the rest is left, never guessed
+        ('four, thousand', ['4']),
+        ('hundred and five', ['5']),
+        ('one oh five', ['1', '5']),
+        ('one and a half', ['1']),
+        ('4 000', ['4', '0']),  # a space is not a thousands separator
+        ('1/2', ['1', '2']),
+        ('1:30', ['1', '30']),
+    ],
+)
+def test_forms_not_understood_read_only_what_is_sure(text, expected):
+    assert [str(n.value) for n in numbers(text)] == expected
+
+
+def test_a_scale_and_its_rest_are_one_number_with_one_unit():
+    (n,) = numbers('spin at 4 thousand and 5 rpm please')
+    assert (n.text, str(n.value), n.unit, n.start, n.end) == (
+        '4 thousand and 5 rpm',
+        '4005',
+        'rpm',
+        8,
+        28,
+    )
+
+
+@pytest.mark.parametrize(
+    ('text', 'expected'),
+    [
         # spellings pint knows, glued or spaced, words in any case
         ('30s', [('30', 's')]),
         ('30 s', [('30', 's')]),
@@ -116,6 +256,22 @@ def test_numbers(text, expected):
         ('50 mm', [('50', 'mm')]),
         ('50 mM', [('50', 'mM')]),
         ('30 S', [('30', None)]),
+        ('1 Å', [('1', 'Å')]),
+        ('5 L', [('5', None)]),  # not a lab unit by one letter
+        # temperature as typed: ordinal indicator for °, ℃ as one character
+        ('100ºC', [('100', '°C')]),
+        ('100 ºC', [('100', '°C')]),
+        ('100℃', [('100', '°C')]),
+        ('100 °c', [('100', '°C')]),
+        ('4K', [('4', 'K')]),
+        ('4k', []),
+        # pint would multiply letters it knows ('%RH' = percent * R * H)
+        ('60 %RH', [('60', None)]),
+        ('5 mol%', [('5', None)]),
+        ('5 at%', [('5', None)]),
+        ('5 wt%', [('5', None)]),
+        ('5 rpm per sample', [('5', 'rpm')]),
+        ('5 rpm per s', [('5', 'rpm/s')]),
         # English words and single letters pint knows are not units here
         ('4000 at sample 1', [('4000', None), ('1', None)]),
         ('3 in spin coating', [('3', None)]),
@@ -189,6 +345,11 @@ def test_numbers_keep_their_text_and_position():
         ('1–3', [('1', '3')]),
         ('10 through 12', [('10', '12')]),
         ('one to three', [('1', '3')]),
+        ('1..3', [('1', '3')]),
+        ('1...3', [('1', '3')]),
+        ('1 till 3', [('1', '3')]),
+        ('1 until 3', [('1', '3')]),
+        ('between 1 and 3', []),  # could be a list of two: left to the LLM
         ('samples 1 and 3', []),
         ('1, 3', []),
     ],

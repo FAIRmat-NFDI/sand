@@ -80,18 +80,22 @@ _LAB_SPEECH = {  # pint reads 'C' as coulomb and 'degrees' as an angle
 _NOT_UNITS = {'a', 'an', 'at', 'as', 'in', 'to', 'point', 'per', 'st', 'nd', 'rd', 'th'}
 # The only single letters taken as units; m, g, l, A, V, ... are more
 # likely a word or a name in lab speech
-_SINGLE_LETTERS = {'s', 'h', 'K', 'M', 'C', '%'}
+_SINGLE_LETTERS = {'s', 'h', 'K', 'M', 'C', '%', 'Å'}
 _WORD_LENGTH = 3  # alphabetic spellings this long match in any case
-_UNIT_TOKEN_RE = re.compile(r'[A-Za-zµμ°Å%][A-Za-zµμ°Å%/²]*(?:\^\d)?')
+_UNIT_TOKEN_RE = re.compile(r'[A-Za-zµμ°º℃Å%][A-Za-zµμ°º℃Å%/²]*(?:\^\d)?')
+# Greek mu for the micro sign, the ordinal indicator º for °, ℃ as one char
+_SPELLING_FIXES = str.maketrans({'μ': 'µ', 'º': '°', '℃': '°C'})
 _MAX_UNIT_WORDS = 3  # 'rpm per second'
 
 _DIGITS_RE = re.compile(
-    r'(?<![\w.)^])'  # not after a word, ')' or '^': the 3 in 'Pb(...)3', 'cm^2'
-    r'(?:(?<![\w.-])-)?'
-    r'(?:\d{1,3}(?:,\d{3})+|\d+)?(?:\.\d+)?'
+    r'(?<![\w)^])(?<!\d\.)'  # not inside a word or 'Pb(...)3', 'cm^2', '1.2.3'
+    r'(?:(?<![\w.−-])[−-])?'  # a glued sign (also the Unicode minus)
+    r'(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|(?<!\.)\.\d+)'  # 4,000.5 or .5
+    r'(?:[eE][+-]?\d+(?![\w.])|\s*[x×*]\s*10\^[+-]?\d+)?'  # 1e-6, 1x10^-6
 )
+_POWER_OF_TEN_RE = re.compile(r'\^([+-]?\d+)(?![\w.])')  # the ^-6 of '10^-6'
 _WORD_RE = re.compile(r'[A-Za-z]+')
-_RANGE_WORDS = {'-', '–', '—', 'to', 'through', 'thru'}
+_RANGE_WORDS = {'-', '–', '—', '..', '...', 'to', 'through', 'thru', 'till', 'until'}
 
 
 @dataclass(frozen=True)
@@ -121,7 +125,13 @@ class Range:
 def numbers(text: str) -> list[Number]:
     """Every number, in order. A digit inside a word is not one: the 2 in
     'PbI2', 'C033', '2nd', 'Cs0.05'."""
-    return sorted([*_digit_numbers(text), *_word_numbers(text)], key=lambda n: n.start)
+    digits = _digit_numbers(text)
+    words = [  # 'twenty three' in '4 million and twenty three' is already read
+        w
+        for w in _word_numbers(text)
+        if not any(d.start <= w.start < d.end for d in digits)
+    ]
+    return sorted([*digits, *words], key=lambda n: n.start)
 
 
 def ranges(text: str) -> list[Range]:
@@ -175,7 +185,7 @@ def _registry() -> pint.UnitRegistry:
 
 
 def _unit(spelling: str) -> pint.Unit | None:
-    text = ' '.join(spelling.replace('μ', 'µ').split())
+    text = ' '.join(spelling.translate(_SPELLING_FIXES).split())
     key = text.lower()
     if key in _NOT_UNITS:
         return None
@@ -187,9 +197,12 @@ def _unit(spelling: str) -> pint.Unit | None:
     elif text.isalpha() and len(text) >= _WORD_LENGTH:
         text = key  # 'Seconds', 'MBAR': words in any case; symbols ('mM') as written
     try:
-        return _registry().Unit(text)
+        unit = _registry().Unit(text)
     except Exception:  # pint raises several kinds for an unknown spelling
         return None
+    # pint multiplies letters it knows: '%RH' is percent * gas constant *
+    # henry; no lab unit is a product
+    return None if ' * ' in f'{unit:~}' else unit
 
 
 def _short(unit: pint.Unit) -> str:
@@ -198,26 +211,42 @@ def _short(unit: pint.Unit) -> str:
 
 
 def _in_word(ch: str) -> bool:
-    return ch.isalnum() or ch in '_°µμ'
+    return ch.isalnum() or ch in '_°ºµμ℃'
 
 
 # --- digits ---------------------------------------------------------------
 
 
 def _digit_numbers(text: str) -> list[Number]:
-    out = []
+    out, taken = [], 0  # taken: end of the last number, which may span later digits
     for m in _DIGITS_RE.finditer(text):
         written = m.group()
-        if not any(ch.isdigit() for ch in written):
+        if m.start() < taken:
             continue
-        end, number = m.end(), Decimal(written.replace(',', ''))
-        if text[: m.start()].rstrip().endswith('^'):
-            continue  # an exponent: 'x ^ 2'
+        start, end = m.start(), m.end()
+        number = _decimal(written)
+        if re.search(r'\^\s*[+-]?$', text[:start]):
+            continue  # an exponent: 'x ^ 2', the 6 of '10^-6'
+        power = _POWER_OF_TEN_RE.match(text, end) if written == '10' else None
+        if power:  # '10^-6'
+            number, end = Decimal(10) ** int(power.group(1)), power.end()
+        sign = re.search(r'(?:minus|negative)\s+$', text[:start], re.IGNORECASE)
+        if sign:  # 'minus 5'
+            start, number = sign.start(), -number
+        point = re.match(r'\s+point\s+(\d+)(?![\w.,])', text[end:], re.IGNORECASE)
+        if point:  # '3 point 5', as speech is transcribed
+            number += Decimal(f'0.{point.group(1)}') * (1 if number >= 0 else -1)
+            end += point.end()
         scale = re.match(r'\s+(hundred|thousand|million)\b', text[end:], re.IGNORECASE)
-        if scale:  # '4 thousand'
+        if scale and not point:  # '4 thousand', '4 million and 23'
             word = scale.group(1).lower()
-            number *= _HUNDRED if word == 'hundred' else _SCALES[word]
+            factor = _HUNDRED if word == 'hundred' else _SCALES[word]
+            number *= factor
             end += scale.end()
+            rest = _after_scale(text, end, factor)
+            if rest:
+                number += rest[0]
+                end = rest[1]
         glued = _unit_at(text, end, glued=True)
         if glued:
             unit, end = glued
@@ -226,8 +255,45 @@ def _digit_numbers(text: str) -> list[Number]:
         else:
             spaced = _unit_at(text, end, glued=False)
             unit, end = spaced if spaced else (None, end)
-        out.append(Number(text[m.start() : end], number, unit, m.start(), end))
+        out.append(Number(text[start:end], number, unit, start, end))
+        taken = end
     return out
+
+
+def _decimal(written: str) -> Decimal:
+    """'4,000' -> 4000, '1e-6', '1x10^-6' and '2.5 × 10^3' -> their value."""
+    written = written.replace(',', '').replace('−', '-')
+    m = re.fullmatch(r'(.*?)\s*[x×*]\s*10\^([+-]?\d+)', written)
+    if m:
+        number = Decimal(m.group(1) or '1') * Decimal(10) ** int(m.group(2))
+    else:
+        number = Decimal(written)
+    # whole numbers as plain integers: '5e3' and '2.5 × 10^3' are 5000, 2500
+    return Decimal(int(number)) if number == number.to_integral_value() else number
+
+
+def _after_scale(text: str, pos: int, factor: int) -> tuple[Decimal, int] | None:
+    """The part below the scale that follows it: the 23 in '4 million and
+    23' or '4 million and twenty three'; (value, end) or None."""
+    lead = re.match(r'\s+(?:and\s+)?', text[pos:])
+    if not lead:
+        return None
+    at = pos + lead.end()
+    m = re.compile(r'(?:\d{1,3}(?:,\d{3})+|\d+)(?![\w.,])').match(text, at)
+    if m:
+        value, end = Decimal(m.group().replace(',', '')), m.end()
+    else:
+        words = list(_WORD_RE.finditer(text))
+        i = next((k for k, w in enumerate(words) if w.start() == at), None)
+        read = _read_words(text, words, i) if i is not None else None
+        if read is None:
+            return None
+        value, end = read[1], words[read[0] - 1].end()
+    if not 0 < value < factor or value != value.to_integral_value():
+        return None
+    if re.match(r'\s+(hundred|thousand|million)\b', text[end:], re.IGNORECASE):
+        return None  # '4 million 500 thousand': not one number we can read
+    return value, end
 
 
 def _unit_at(text: str, pos: int, glued: bool) -> tuple[str, int] | None:
