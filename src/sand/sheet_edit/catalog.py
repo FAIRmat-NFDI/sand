@@ -85,6 +85,22 @@ class Catalog:
         labels = [s.label for s in self.samples if s.label is not None]
         return len(labels) != len(set(labels))
 
+    def names(self, rows) -> str:
+        """Excel rows as the user knows them: '1–3, 7'; per subbatch when
+        labels repeat ('1–3 of subbatch 0, 1 of subbatch 1'); 'row 5' for
+        a sample without a label."""
+        info = {s.row: s for s in self.samples}
+        names = {r: info[r].label or f'row {r}' for r in rows}
+        if not self.needs_subbatch:
+            return sample_ranges(list(names.values()))
+        by_subbatch: dict[str | None, list[str]] = {}
+        for r in rows:
+            by_subbatch.setdefault(info[r].subbatch, []).append(names[r])
+        return ', '.join(
+            f'{sample_ranges(labels)} of subbatch {subbatch}'
+            for subbatch, labels in by_subbatch.items()
+        )
+
 
 def column_id(index: int) -> str:
     return f'C{index:03d}'

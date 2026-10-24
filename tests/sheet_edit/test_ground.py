@@ -3,7 +3,16 @@ from synthetic_sheet import edited, letter, with_formula_results
 
 from sand.sheet_edit.catalog import build
 from sand.sheet_edit.edits import Edit, Range, Samples, Where
-from sand.sheet_edit.ground import Grounded, Refused, ground, said_samples, same_value
+from sand.sheet_edit.ground import (
+    Grounded,
+    Refusal,
+    Refused,
+    ground,
+    resolve_rows,
+    said_samples,
+    same_value,
+    sample_by_label,
+)
 
 INFO = 'Experiment Info'
 SPEED, VARIATION, DEPOSITION, SUBSTRATE, NOTES = 'C025', 'C007', 'C056', 'C055', 'C029'
@@ -97,6 +106,45 @@ def test_a_range_without_a_gap_has_no_note(catalog):
 def test_a_backwards_range_is_refused(catalog):
     why = refused(ground(edit(rows=between('8', '4'), said='samples 8 to 4'), catalog))
     assert why == 'samples 8 to 4: 8 comes after 4 in the sheet'
+
+
+def test_sample_by_label_finds_the_row(catalog, two_subbatches):
+    found = sample_by_label(catalog, '7', None)
+    assert (found.row, found.label) == (8, '7')  # row 8: there is no sample 6
+    found = sample_by_label(two_subbatches, '1', '1')
+    assert (found.row, found.label, found.subbatch) == (9, '1', '1')
+
+
+@pytest.mark.parametrize(
+    ('label', 'subbatch', 'why'),
+    [
+        ('8', None, 'there is no sample 8'),
+        ('7', '1', 'there is no sample 7 in subbatch 1'),  # 7 is in subbatch 0 only
+        ('1', '5', 'there is no subbatch 5'),
+        ('1', None, 'sample 1 is in subbatches 0, 1: say which one'),
+    ],
+)
+def test_sample_by_label_refusals(two_subbatches, label, subbatch, why):
+    with pytest.raises(Refusal, match=f'^{why}$'):
+        sample_by_label(two_subbatches, label, subbatch)
+
+
+@pytest.mark.parametrize(
+    ('spec', 'rows', 'notes'),
+    [
+        ('all', ALL_ROWS, ()),
+        (Samples(samples=['7', '1', '1'], subbatch=None), (3, 8), ()),
+        (Range(first='1', last='3', subbatch=None), (3, 4, 5), ()),
+        (
+            Range(first='5', last='8', subbatch=None),
+            (7, 8, 9),
+            ('samples 5 to 8: no sample 6, applied to 3 samples',),
+        ),
+        (Where(where=VARIATION, equals='20min'), (6, 7, 8), ()),
+    ],
+)
+def test_resolve_rows(catalog, spec, rows, notes):
+    assert resolve_rows(spec, catalog) == (rows, notes)
 
 
 def test_a_missing_sample_is_refused(catalog):
@@ -229,6 +277,69 @@ def test_naming_samples_but_answering_a_condition_is_refused(catalog):
     )
 
 
+def test_naming_a_subbatch_but_answering_all_is_refused(two_subbatches, catalog):
+    why = refused(
+        ground(
+            edit(rows='all', said='speed 4000 for all samples of subbatch 1'),
+            two_subbatches,
+        )
+    )
+    assert why == (
+        'you named subbatch 1, but the edit would apply to all samples of every subbatch'
+    )
+    # one subbatch in the sheet: naming it changes nothing
+    result = ground(
+        edit(rows='all', said='speed 4000 for all samples of subbatch 0'), catalog
+    )
+    assert result.rows == ALL_ROWS
+
+
+def test_a_label_in_two_subbatches_names_both(two_subbatches):
+    why = refused(
+        ground(edit(rows='all', said='speed 4000 for sample 1'), two_subbatches)
+    )
+    assert why == (
+        'you named samples 1 of subbatch 0, 1 of subbatch 1, '
+        'but the edit would apply to all samples'
+    )
+
+
+def test_a_partly_named_range_is_refused(catalog):
+    why = refused(
+        ground(
+            edit(rows=between('1', '3'), said='speed 4000 for samples 1 and 2'), catalog
+        )
+    )
+    assert why == 'the edit includes samples 3, which you did not name'
+
+
+def test_a_named_sample_that_does_not_exist_is_refused(catalog):
+    why = refused(
+        ground(
+            edit(rows=samples('5', '7'), said='speed 4000 for samples 5, 6 and 7'),
+            catalog,
+        )
+    )
+    assert why == 'there is no sample 6'
+
+
+def test_a_sample_without_a_label_is_named_by_its_row(synthetic_xlsx):
+    sample, nomad_id = letter(INFO, 'Sample'), letter(INFO, 'Nomad ID')
+    no_label = edited(synthetic_xlsx, lambda ws: ws.__setitem__(f'{sample}3', None))
+    catalog = build(with_formula_results(no_label, {f'{nomad_id}3': 'KIT_Synth_1'}))
+    why = refused(ground(edit(rows='all', said='speed 4000 for KIT_Synth_1'), catalog))
+    assert why == 'you named samples row 3, but the edit would apply to all samples'
+
+
+def test_a_leading_zero_is_the_same_number(synthetic_xlsx):
+    sample = letter(INFO, 'Sample')
+    catalog = build(
+        edited(synthetic_xlsx, lambda ws: ws.__setitem__(f'{sample}9', '08'))
+    )
+    for said in ('sample 8', 'sample 08'):
+        assert [s.row for s in said_samples(said, catalog).samples] == [9]
+
+
 def test_a_range_the_user_did_not_name_is_refused(catalog):
     why = refused(
         ground(
@@ -287,16 +398,33 @@ def test_a_nomad_id_counts_as_naming_the_sample(synthetic_xlsx):
         ('sample seven', ['7']),
         ('samples 1 and sample 3', ['1', '3']),
         ('sample 13', ['13']),
+        # the value after 'to' is not a range end
+        ('samples 1 and 2 to 3000', ['1', '2']),
+        ('samples 1, 2 and 7 to 4000', ['1', '2', '7']),
         ('sample 1 of subbatch 0', ['1']),
         ('samples with variation 15min', []),  # a condition, not sample numbers
         ('the 20min samples', []),
         ('set 4000 for all samples', []),
-        ('sample 6', []),  # there is none
+        ('sample 6', []),  # there is none: see `unknown`
         ('speed 4000', []),
     ],
 )
 def test_said_samples(catalog, said, labels):
-    assert [s.label for s in said_samples(said, catalog)] == labels
+    assert [s.label for s in said_samples(said, catalog).samples] == labels
+
+
+@pytest.mark.parametrize(
+    ('said', 'unknown'),
+    [
+        ('samples 5, 6 and 7', ('6',)),
+        ('sample 6', ('6',)),
+        ('samples 1 and 2 to 3000', ()),  # the value is not a sample
+        ('samples 1 to 3', ()),
+        ('samples with variation 15min', ()),
+    ],
+)
+def test_said_samples_unknown(catalog, said, unknown):
+    assert said_samples(said, catalog).unknown == unknown
 
 
 # --- N no-op --------------------------------------------------------------------

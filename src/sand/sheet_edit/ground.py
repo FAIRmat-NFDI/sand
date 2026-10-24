@@ -21,9 +21,14 @@ _SUBBATCH_RE = re.compile(r'\bsub-?\s?batch\s+(\S+)', re.IGNORECASE)
 _LIST_WORDS = {'and', 'or', 'to', 'through', 'thru', 'till', 'until', '&', 'plus'}
 _SHOWN_VALUES = 8
 
+RowsAndNotes = tuple[tuple[int, ...], tuple[str, ...]]
+
 
 @dataclass(frozen=True)
 class Grounded:
+    """A proposal that passed: which rows to write, which to skip, what to
+    warn about."""
+
     edit: Edit
     rows: tuple[int, ...]  # Excel rows to write, in sheet order
     unchanged: tuple[int, ...] = ()  # rows already holding `new`: reported, not written
@@ -36,16 +41,20 @@ class Grounded:
 
 @dataclass(frozen=True)
 class Refused:
+    """A proposal that failed a check; `reasons` is what the user reads."""
+
     edit: Edit
     reasons: tuple[str, ...]
 
 
 class Refusal(Exception):
-    """A check failed; the message is the reason the user sees."""
+    """Raised inside a check when it fails; ground() turns it into Refused."""
 
 
 def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
-    """W, R, S and N on one proposal."""
+    """Check one proposal against the sheet, in this order: the target can
+    be written (W), the rows exist (R), the samples the user named are the
+    rows used (S), rows already holding the value are set aside (N)."""
     target = _column(catalog, edit.target)
     if target is None:
         return Refused(edit, (f'{edit.target} is not a column of this sheet',))
@@ -67,7 +76,7 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
         which = (
             f'all {len(rows)} samples'
             if len(unchanged) == len(rows)
-            else f'samples {_labels(catalog, unchanged)}'
+            else f'samples {catalog.names(unchanged)}'
         )
         notes = (
             *notes,
@@ -81,9 +90,10 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
 # --- R rows ------------------------------------------------------------------
 
 
-def resolve_rows(spec, catalog: Catalog) -> tuple[tuple[int, ...], tuple[str, ...]]:
-    """The Excel rows a row spec means, with notes (a gap in a range).
-    Raises Refusal."""
+def resolve_rows(spec, catalog: Catalog) -> RowsAndNotes:
+    """Turn a row spec ('all', samples, a range, a condition) into Excel
+    row numbers, plus notes to show (a gap in a range). Raises Refusal
+    when a sample, subbatch or matching row does not exist."""
     samples = catalog.samples
     if not samples:
         raise Refusal('the sheet has no sample rows')
@@ -91,7 +101,7 @@ def resolve_rows(spec, catalog: Catalog) -> tuple[tuple[int, ...], tuple[str, ..
         return tuple(s.row for s in samples), ()
     if isinstance(spec, Samples):
         found = [
-            _one_sample(catalog, label, spec.subbatch)
+            sample_by_label(catalog, label, spec.subbatch)
             for label in dict.fromkeys(spec.samples)
         ]
         return tuple(sorted(s.row for s in found)), ()
@@ -102,7 +112,10 @@ def resolve_rows(spec, catalog: Catalog) -> tuple[tuple[int, ...], tuple[str, ..
     raise Refusal(f'unknown row form {spec!r}')
 
 
-def _one_sample(catalog: Catalog, label: str, subbatch: str | None) -> SampleInfo:
+def sample_by_label(catalog: Catalog, label: str, subbatch: str | None) -> SampleInfo:
+    """The sample called `label` - the name in the Sample column ('7',
+    's_7'), not the Excel row. Refuses when there is none, or when the name
+    is in several subbatches and no subbatch was given."""
     if subbatch is not None and subbatch not in {s.subbatch for s in catalog.samples}:
         raise Refusal(f'there is no subbatch {subbatch}')
     hits = [
@@ -119,9 +132,11 @@ def _one_sample(catalog: Catalog, label: str, subbatch: str | None) -> SampleInf
     return hits[0]
 
 
-def _range_rows(catalog: Catalog, spec: Range):
-    first = _one_sample(catalog, spec.first, spec.subbatch)
-    last = _one_sample(catalog, spec.last, spec.subbatch)
+def _range_rows(catalog: Catalog, spec: Range) -> RowsAndNotes:
+    """Rows from `first` to `last` as they stand in the sheet. A missing
+    number in between (no sample 22) is a note, not an error."""
+    first = sample_by_label(catalog, spec.first, spec.subbatch)
+    last = sample_by_label(catalog, spec.last, spec.subbatch)
     # the range runs in sheet order, within the subbatch when one is named
     ordered = [
         s
@@ -153,7 +168,9 @@ def _missing_between(first: str, last: str, present: list[str]) -> list[str]:
     return [str(n) for n in range(int(first), int(last) + 1) if str(n) not in have]
 
 
-def _where_rows(catalog: Catalog, spec: Where):
+def _where_rows(catalog: Catalog, spec: Where) -> RowsAndNotes:
+    """Rows where a column holds exactly `equals` (None: is empty). When no
+    row matches, the refusal lists what the column does hold."""
     column = _column(catalog, spec.where)
     if column is None:
         raise Refusal(f'{spec.where} is not a column of this sheet')
@@ -180,73 +197,104 @@ def _where_rows(catalog: Catalog, spec: Where):
 def sample_words_problems(
     edit: Edit, catalog: Catalog, rows: tuple[int, ...]
 ) -> list[str]:
-    """The samples named in `said` must be exactly the ones in `rows`.
-    'all' is allowed only when no sample was named."""
+    """Compare the samples the user named with the rows the edit uses.
+    Returns the differences as messages; empty means they agree. 'all'
+    and a condition are fine only when no sample or subbatch was named."""
     said = said_samples(edit.said, catalog)
     spec = edit.rows
-    if spec == 'all' or isinstance(spec, Where):
-        if said:
-            labels = sample_ranges([s.label for s in said])
-            how = 'all samples' if spec == 'all' else 'samples chosen by a value'
-            return [f'you named samples {labels}, but the edit would apply to {how}']
-        return []
-    if (
-        spec.subbatch is not None
-    ):  # the numbers only make sense once the subbatch is known
-        m = _SUBBATCH_RE.search(edit.said)
-        if not m or m.group(1).strip('.,;') != spec.subbatch:
-            return [f'you did not name subbatch {spec.subbatch}']
-    chosen = {s.row: s for s in catalog.samples if s.row in rows}
-    named = {s.row for s in said}
     problems = []
-    if extra := sorted(named - set(chosen)):
+    if said.unknown:
+        problems.append(f'there is no sample {", ".join(said.unknown)}')
+    named = {s.row for s in said.samples}
+    if spec == 'all' or isinstance(spec, Where):
+        how = 'all samples' if spec == 'all' else 'samples chosen by a value'
+        if named:
+            problems.append(
+                f'you named samples {catalog.names(sorted(named))}, '
+                f'but the edit would apply to {how}'
+            )
+        if said.subbatch is not None and len({s.subbatch for s in catalog.samples}) > 1:
+            problems.append(
+                f'you named subbatch {said.subbatch}, '
+                f'but the edit would apply to {how} of every subbatch'
+            )
+        return problems
+    if spec.subbatch is not None and said.subbatch != spec.subbatch:
+        # the numbers only make sense once the subbatch is known
+        return [f'you did not name subbatch {spec.subbatch}']
+    if extra := sorted(named - set(rows)):
         problems.append(
-            f'you named samples {_labels(catalog, extra)}, which the edit does not include'
+            f'you named samples {catalog.names(extra)}, which the edit does not include'
         )
-    if missing := sorted(set(chosen) - named):
-        if isinstance(spec, Range) and not said:
+    if missing := sorted(set(rows) - named):
+        if isinstance(spec, Range) and not named:
             problems.append(
                 f'samples {spec.first} to {spec.last}: you did not name them'
             )
-        elif not isinstance(spec, Range):
+        else:
             problems.append(
-                f'the edit includes samples {_labels(catalog, missing)}, which you did not name'
+                f'the edit includes samples {catalog.names(missing)}, which you did not name'
             )
     return problems
 
 
-def said_samples(said: str, catalog: Catalog) -> list[SampleInfo]:
-    """Samples the user named: numbers listed after 'sample(s)', ranges
-    among them expanded in sheet order, labels and Nomad IDs written out.
-    A subbatch named in the words ('of subbatch 1') scopes the numbers."""
-    m = _SUBBATCH_RE.search(said)
-    subbatch = m.group(1).strip('.,;') if m else None
+@dataclass(frozen=True)
+class Said:
+    """What the user's words name."""
+
+    samples: tuple[SampleInfo, ...]  # found in the sheet, in sheet order
+    unknown: tuple[str, ...]  # numbers after 'sample(s)' that no sample carries
+    subbatch: str | None  # 'of subbatch 1'
+
+
+def said_samples(said: str, catalog: Catalog) -> Said:
+    """Find the samples the user named in their words: numbers right after
+    'sample(s)' ("samples 1, 3 and 7 to 9", ranges expanded in sheet
+    order), and labels or Nomad IDs written out ('s_7'). A subbatch in the
+    words ('of subbatch 1') limits where the numbers are looked up; without
+    one, a number found in several subbatches names all of them."""
+    subbatch = _said_subbatch(said)
     ordered = [s for s in catalog.samples if subbatch is None or s.subbatch == subbatch]
 
-    def by_number(number: Decimal) -> SampleInfo | None:
-        if number != number.to_integral_value():
-            return None
-        hits = [s for s in ordered if s.label == str(int(number))]
-        return (
-            hits[0] if len(hits) == 1 else None
-        )  # None also when in several subbatches
+    def by_number(number: Decimal) -> list[SampleInfo]:
+        # '7' and '07' both mean sample 7
+        return [
+            s
+            for s in ordered
+            if s.label and s.label.isdigit() and Decimal(s.label) == number
+        ]
 
     found: dict[int, SampleInfo] = {}
+    unknown: list[str] = []
     for word in _SAMPLE_WORD_RE.finditer(said):
         clause = _sample_clause(said[word.end() :])
         spans = {(n.start, n.end): n for n in numbers(clause) if n.unit is None}
+        value_ends = set()  # numbers that are a value, not a sample
         for r in ranges(clause):
+            ends = ((r.first.start, r.first.end), (r.last.start, r.last.end))
             a, b = by_number(r.first.value), by_number(r.last.value)
-            if a and b and ordered.index(a) <= ordered.index(b):
-                for s in ordered[ordered.index(a) : ordered.index(b) + 1]:
+            if (
+                len(a) == 1
+                and len(b) == 1
+                and ordered.index(a[0]) <= ordered.index(b[0])
+            ):
+                for s in ordered[ordered.index(a[0]) : ordered.index(b[0]) + 1]:
                     found[s.row] = s
-            spans.pop((r.first.start, r.first.end), None)
-            spans.pop((r.last.start, r.last.end), None)
-        for n in spans.values():
-            s = by_number(n.value)
-            if s:
+                for span in ends:
+                    spans.pop(span, None)
+            else:  # "samples 1 and 2 to 3000": 2 is a sample, 3000 the value
+                value_ends.update(ends)
+        for span, n in spans.items():
+            hits = by_number(n.value)
+            for s in hits:
                 found[s.row] = s
-    for s in catalog.samples:  # 's_7', '07' or a Nomad ID written as it is
+            if (
+                not hits
+                and span not in value_ends
+                and n.value == n.value.to_integral_value()
+            ):
+                unknown.append(n.text)
+    for s in catalog.samples:  # 's_7' or a Nomad ID written as it is
         for literal in (s.label, s.nomad_id):
             if (
                 literal
@@ -254,12 +302,20 @@ def said_samples(said: str, catalog: Catalog) -> list[SampleInfo]:
                 and re.search(rf'(?<!\w){re.escape(literal)}(?!\w)', said)
             ):
                 found[s.row] = s
-    return [found[r] for r in sorted(found)]
+    return Said(
+        tuple(found[r] for r in sorted(found)), tuple(dict.fromkeys(unknown)), subbatch
+    )
+
+
+def _said_subbatch(text: str) -> str | None:
+    m = _SUBBATCH_RE.search(text)
+    return m.group(1).strip('.,;') if m else None
 
 
 def _sample_clause(text: str) -> str:
-    """The list of numbers right after 'samples': stops at the first word
-    that is not a number, a range or a list word."""
+    """Cut the number list right after 'samples': "1, 3 and 7 to 9 to
+    3000 rpm" -> "1, 3 and 7 to 9 to". Stops at the first word that is not
+    a number, a dash or a list word."""
     pos = 0
     for m in re.finditer(r'\S+', text):
         word = m.group().strip('.,;:')
@@ -280,8 +336,9 @@ def _sample_clause(text: str) -> str:
 
 
 def same_value(new: str, stored) -> bool:
-    """Whether the text the user gave equals the stored cell: numbers
-    numerically ('3000' is 3000.0), text exactly, empty only to empty."""
+    """Is the text the user gave the same as what the cell holds? Numbers
+    compare as numbers ('3000' is 3000.0), text exactly, TRUE/FALSE as
+    words, empty only to empty."""
     if stored is None or (isinstance(stored, str) and not stored.strip()):
         return new.strip() == ''
     if isinstance(stored, bool):
@@ -302,19 +359,16 @@ def _column(catalog: Catalog, column_id: str) -> ColumnInfo | None:
 
 
 def _name(column: ColumnInfo) -> str:
+    """How a column is named in messages: 'Spin speed [rpm] (2: Spin Coating)'."""
     return f'{column.column.header} ({column.column.section.label})'
 
 
 def _read_only(target: ColumnInfo, catalog: Catalog) -> str:
+    """The message for a formula column, naming the columns to edit instead."""
     inputs = [_column(catalog, i) for i in target.inputs or ()]
     names = ', '.join(c.column.header for c in inputs if c)
     hint = f' from {names}; edit {names} instead' if names else ''
     return f'{_name(target)} is calculated by a formula{hint}'
-
-
-def _labels(catalog: Catalog, rows) -> str:
-    by_row = {s.row: s.label or f'row {s.row}' for s in catalog.samples}
-    return sample_ranges([by_row[r] for r in rows])
 
 
 def _text(v) -> str:

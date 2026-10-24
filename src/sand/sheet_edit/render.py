@@ -9,11 +9,7 @@ catalog itself.
 import datetime
 import json
 
-from sand.sheet_edit.catalog import (
-    Catalog,
-    ColumnInfo,
-    sample_ranges,
-)
+from sand.sheet_edit.catalog import Catalog, ColumnInfo
 from sand.sheet_edit.formulas import as_text
 from sand.sheet_edit.workbook import EXPERIMENT_INFO, SAMPLE_HEADER
 
@@ -64,7 +60,7 @@ def _current(c: ColumnInfo, catalog: Catalog, names: dict[str, str]) -> str:
     if len(c.groups) == 1:  # the same on every sample
         return _value(c.groups[0].value)
     return '; '.join(
-        f'{_value(g.value)} samples {_samples(catalog, g.rows)}' for g in c.groups
+        f'{_value(g.value)} samples {catalog.names(g.rows)}' for g in c.groups
     )
 
 
@@ -85,22 +81,8 @@ def _cell(text: str) -> str:
     return text.replace('|', '\\|').replace('\n', '\\n')
 
 
-def _samples(catalog: Catalog, rows) -> str:
-    """Sample ranges; per subbatch when labels repeat across subbatches."""
-    info = {s.row: s for s in catalog.samples}
-    if not catalog.needs_subbatch:
-        return sample_ranges([info[r].label for r in rows])
-    by_subbatch: dict[str | None, list[str]] = {}
-    for r in rows:
-        by_subbatch.setdefault(info[r].subbatch, []).append(info[r].label)
-    return ', '.join(
-        f'{sample_ranges(labels)} of subbatch {subbatch}'
-        for subbatch, labels in by_subbatch.items()
-    )
-
-
 def _sample_line(catalog: Catalog) -> str:
     if not catalog.samples:
         return 'none'
     rows = [s.row for s in catalog.samples]
-    return f'{_samples(catalog, rows)} ({len(rows)} samples)'
+    return f'{catalog.names(rows)} ({len(rows)} samples)'
