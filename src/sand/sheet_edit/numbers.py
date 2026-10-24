@@ -206,8 +206,10 @@ def _unit(spelling: str) -> pint.Unit | None:
 
 
 def _short(unit: pint.Unit) -> str:
-    """pint's symbol: 'seconds' -> 's', 'microliter' -> 'µl', 'cm**2' -> 'cm^2'."""
-    return f'{unit:~}'.replace(' ** ', '^').replace(' / ', '/')
+    """pint's symbol: 'seconds' -> 's', 'microliter' -> 'µl', 'cm**2' -> 'cm^2'.
+    Older pint prints a Greek mu; the micro sign is used throughout."""
+    short = f'{unit:~}'.translate(_SPELLING_FIXES)
+    return short.replace(' ** ', '^').replace(' / ', '/')
 
 
 def _in_word(ch: str) -> bool:
