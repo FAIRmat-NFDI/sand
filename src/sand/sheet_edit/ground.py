@@ -274,8 +274,7 @@ def sample_words_problems(
         how = 'all samples' if spec == 'all' else 'samples chosen by a value'
         return problems + _nothing_named_problems(said, catalog, how), []
     if spec.subbatch is not None:
-        if spec.subbatch not in said.subbatches:
-            doubts.append(f'subbatch {spec.subbatch}: not named in your words')
+        problems += _subbatch_problems(spec.subbatch, said.subbatches, doubts)
         # "samples 1 to 3 of subbatches 0 and 1" is one edit per subbatch
         in_subbatch = {s.row for s in catalog.samples if s.subbatch == spec.subbatch}
         named, excluded = named & in_subbatch, excluded & in_subbatch
@@ -301,6 +300,19 @@ def sample_words_problems(
         else:
             doubts.append(f'samples {catalog.names(missing)}: not named in your words')
     return problems, doubts
+
+
+def _subbatch_problems(
+    wanted: str, said: tuple[str, ...], doubts: list[str]
+) -> list[str]:
+    """The edit's subbatch against the words: another one named is a
+    contradiction, none named a doubt."""
+    if wanted in said:
+        return []
+    if said:
+        return [f'you named subbatch {", ".join(said)}, not {wanted}']
+    doubts.append(f'subbatch {wanted}: not named in your words')
+    return []
 
 
 def _nothing_named_problems(said: 'Said', catalog: Catalog, how: str) -> list[str]:
@@ -658,29 +670,18 @@ def value_problems(
     doubt when the words hold nothing to compare."""
     new, said = edit.new.strip(), edit.said
     where = f'{_name(target)}: {new!r}'
+    doubt = [f'{where} not found in your words']
     if new == '':
-        return (
-            [],
-            [],
-            []
-            if _CLEAR_WORDS.search(said)
-            else [f'{where}: clearing is not in your words'],
-        )
-    number = value(new)
+        return [], [], [] if _CLEAR_WORDS.search(said) else doubt
+    if target.type == 'bool':
+        words = _TRUE_WORDS if new.upper() in ('TRUE', 'YES') else _FALSE_WORDS
+        return [], [], [] if words.search(said) else doubt
+    number = None if target.type == 'text' else value(new)  # text: as written
     if number is None:
-        if target.type == 'bool':
-            words = _TRUE_WORDS if new.upper() == 'TRUE' else _FALSE_WORDS
-            return (
-                [],
-                [],
-                [] if words.search(said) else [f'{where} not found in your words'],
-            )
-        return (
-            [],
-            [],
-            [] if _in_words(new, said) else [f'{where} not found in your words'],
-        )
+        return [], [], [] if _in_words(new, said) else doubt
     candidates = _value_numbers(said, target, anchor, catalog)
+    if target.type == 'yyyymmdd':  # only a day written as 20250101 compares
+        candidates = [c for c in candidates if is_day(str(c.value))]
     matches = [c for c in candidates if c.value == number.value]
     if matches:
         spoken = [m.text for m in matches if not any(ch.isdigit() for ch in m.text)]
@@ -688,12 +689,12 @@ def value_problems(
             [f'{where}: read from {spoken[0]!r}'] if len(spoken) == len(matches) else []
         )
         return [], notes, []
-    if candidates and target.type != 'yyyymmdd':
+    if candidates:
         said_numbers = ', '.join(c.text for c in candidates)
         return [f'{where} is not in your words; you said {said_numbers}'], [], []
-    # no number to compare; or a date said in words ('2nd of February 2025'),
-    # which code does not read yet
-    return [], [], [f'{where} not found in your words']
+    # nothing to compare: no number said, or a date said in words ('2nd of
+    # February 2025'), which code does not read yet
+    return [], [], doubt
 
 
 def _value_numbers(
@@ -737,11 +738,13 @@ def _blank(text: str, start: int, end: int) -> str:
 
 
 def _in_words(text: str, said: str) -> bool:
-    """Text as written, ignoring case, spaces and hyphens: 'Me 4PACz'
-    is 'Me-4PACz'."""
-    squeeze = str.maketrans('', '', ' -\t\n')
-    norm = text.translate(squeeze).lower()
-    return bool(norm) and norm in said.translate(squeeze).lower()
+    """Text as written, ignoring case, spaces and hyphens, as a whole word:
+    'Me 4PACz' is 'Me-4PACz'; '15min' is '15 MIN' but not '15 minutes'."""
+    chars = [re.escape(ch) for ch in text if ch not in ' -']
+    if not chars:
+        return False
+    pattern = r'(?<![A-Za-z0-9])' + r'[\s-]*'.join(chars) + r'(?![A-Za-z0-9])'
+    return re.search(pattern, said, re.IGNORECASE) is not None
 
 
 # --- T type and U unit -------------------------------------------------------

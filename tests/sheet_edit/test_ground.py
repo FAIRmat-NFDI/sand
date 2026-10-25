@@ -262,6 +262,19 @@ def test_a_range_stays_inside_its_subbatch(two_subbatches):
     assert result.rows == (9, 10, 11)
 
 
+def test_a_different_subbatch_in_the_words_is_refused(two_subbatches):
+    why = refused(
+        ground(
+            edit(
+                rows=samples('1', subbatch='1'),
+                said='speed 4000 for sample 1 of subbatch 0',
+            ),
+            two_subbatches,
+        )
+    )
+    assert why == 'you named subbatch 0, not 1'
+
+
 def test_a_subbatch_the_edit_names_but_the_words_do_not_is_a_doubt(two_subbatches):
     result = ground(
         edit(rows=samples('1', subbatch='1'), said='speed 4000 for sample 1'),
@@ -759,6 +772,35 @@ def test_text_is_looked_for_as_written(catalog):
     )
 
 
+def test_text_is_not_compared_as_a_number(catalog):
+    # '15min' is text: '15 minutes' is not it as written, '15 MIN' is
+    cases = (
+        ('variation of sample 1 15 minutes', 'low'),
+        ('variation of sample 1 15 MIN', 'high'),
+    )
+    for said, confidence in cases:
+        result = ground(
+            edit(VARIATION, rows=samples('1'), old='10min', new='15min', said=said),
+            catalog,
+        )
+        assert result.confidence == confidence, said
+
+
+def test_yes_is_a_true_word(synthetic_xlsx):
+    flag = letter(INFO, 'Notes')  # turned into a TRUE/FALSE column
+
+    def change(ws):
+        for r in range(3, 15):
+            ws[f'{flag}{r}'] = False
+
+    catalog = build(edited(synthetic_xlsx, change))
+    notes = 'C009'
+    result = ground(edit(notes, old='FALSE', new='YES', said='flag yes'), catalog)
+    assert (result.value, result.confidence) == (True, 'high')
+    result = ground(edit(notes, old='FALSE', new='YES', said='flag no'), catalog)
+    assert result.confidence == 'low'
+
+
 def test_clearing_needs_a_clearing_word(catalog):
     tool = 'C019'  # Tool/GB name, 'box1'
     result = ground(edit(tool, old='box1', new='', said='clear the tool name'), catalog)
@@ -839,6 +881,15 @@ def test_dates_keep_the_sheets_form(catalog):
         assert why == (
             f"Date (Experiment Info) holds dates written as 20250101; '{said[5:]}' is not one"
         )
+    why = refused(
+        ground(
+            edit(DATE, old='20250101', new='20250202', said='date 20250201'), catalog
+        )
+    )
+    assert (
+        why
+        == "Date (Experiment Info): '20250202' is not in your words; you said 20250201"
+    )
     # a date said in words: code does not read it yet, the user confirms once
     result = ground(
         edit(DATE, old='20250101', new='20250202', said='date 2nd of February 2025'),
