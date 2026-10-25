@@ -86,9 +86,9 @@ class Catalog:
         return len(labels) != len(set(labels))
 
     def names(self, rows) -> str:
-        """Excel rows as the user knows them: '1–3, 7'; per subbatch when
-        labels repeat ('1–3 of subbatch 0, 1 of subbatch 1'); 'row 5' for
-        a sample without a label."""
+        """Excel rows -> the sample names, for messages: rows (3, 4, 5, 8)
+        -> '1–3, 7'. With repeated labels: '1–3 of subbatch 0, 1 of
+        subbatch 1'. A sample without a label is 'row 5'."""
         info = {s.row: s for s in self.samples}
         names = {r: info[r].label or f'row {r}' for r in rows}
         if not self.needs_subbatch:

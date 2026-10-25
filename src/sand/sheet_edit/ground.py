@@ -21,10 +21,20 @@ from sand.sheet_edit.catalog import (
 from sand.sheet_edit.edits import Edit, Range, Samples, Where
 from sand.sheet_edit.numbers import RANGE_WORDS, numbers, value
 
-_SAMPLE_WORD_RE = re.compile(r'\bsamples?\b', re.IGNORECASE)
-_SUBBATCH_RE = re.compile(r'\bsub-?\s?batch\s+(\S+)', re.IGNORECASE)
+_SAMPLE_WORD_RE = re.compile(r'\bsamples?(?=\d|\b)', re.IGNORECASE)  # also 'sample1'
+_SUBBATCH_RE = re.compile(r'\bsub-?\s?batch(?:es)?:?\s+', re.IGNORECASE)
+_EXCEPT_RE = re.compile(
+    r'\b(?:except|excluding|but not|without|apart from|other than)\b\s*(?:samples?\s+)?',
+    re.IGNORECASE,
+)
+# "all samples", "every sample", "all of the samples", "the whole subbatch"
+_ALL_RE = re.compile(
+    r'\b(?:all|every|each)\b(?:\s+\w+){0,2}?\s+samples?\b|\b(?:whole|entire)\s+sub-?\s?batch',
+    re.IGNORECASE,
+)
 # words that may sit between sample numbers in one list: "1, 3 and 7 to 9"
 _LIST_WORDS = {'and', 'or', 'to', 'through', 'thru', 'till', 'until', '&', 'plus'}
+_LIST_WORDS |= {'no', 'number', 'nr', '#'}  # "sample no. 3"
 _SHOWN_VALUES = 8
 
 RowsAndNotes = tuple[tuple[int, ...], tuple[str, ...]]
@@ -212,22 +222,23 @@ def sample_words_problems(
     if said.unknown:
         problems.append(f'there is no sample {", ".join(said.unknown)}')
     named = {s.row for s in said.samples}
+    excluded = {s.row for s in said.excluded}
     if spec == 'all' or isinstance(spec, Where):
         how = 'all samples' if spec == 'all' else 'samples chosen by a value'
-        if named:
-            problems.append(
-                f'you named samples {catalog.names(sorted(named))}, '
-                f'but the edit would apply to {how}'
-            )
-        if said.subbatch is not None and len({s.subbatch for s in catalog.samples}) > 1:
-            problems.append(
-                f'you named subbatch {said.subbatch}, '
-                f'but the edit would apply to {how} of every subbatch'
-            )
-        return problems
-    if spec.subbatch is not None and said.subbatch != spec.subbatch:
-        # the numbers only make sense once the subbatch is known
-        return [f'you did not name subbatch {spec.subbatch}']
+        return problems + _nothing_named_problems(said, catalog, how)
+    if spec.subbatch is not None:
+        if spec.subbatch not in said.subbatches:
+            # the numbers only make sense once the subbatch is known
+            return [f'you did not name subbatch {spec.subbatch}']
+        # "samples 1 to 3 of subbatches 0 and 1" is one edit per subbatch
+        in_subbatch = {s.row for s in catalog.samples if s.subbatch == spec.subbatch}
+        named, excluded = named & in_subbatch, excluded & in_subbatch
+    if not named and said.all:  # "all samples of subbatch 1": the whole scope
+        named = set(_scope(catalog, spec.subbatch, said.subbatches)) - excluded
+    if hit := sorted(excluded & set(rows)):
+        problems.append(
+            f'you excluded samples {catalog.names(hit)}, but the edit includes them'
+        )
     if extra := sorted(named - set(rows)):
         problems.append(
             f'you named samples {catalog.names(extra)}, which the edit does not include'
@@ -244,13 +255,44 @@ def sample_words_problems(
     return problems
 
 
+def _nothing_named_problems(said: 'Said', catalog: Catalog, how: str) -> list[str]:
+    """'all' and a condition cover rows the user did not pick one by one,
+    so naming samples, exclusions or a subbatch contradicts them."""
+    problems = []
+    if said.samples:
+        rows = [s.row for s in said.samples]
+        problems.append(
+            f'you named samples {catalog.names(rows)}, but the edit would apply to {how}'
+        )
+    if said.excluded:
+        rows = [s.row for s in said.excluded]
+        problems.append(
+            f'you excluded samples {catalog.names(rows)}, but the edit would apply to {how}'
+        )
+    if said.subbatches and len({s.subbatch for s in catalog.samples}) > 1:
+        problems.append(
+            f'you named subbatch {", ".join(said.subbatches)}, '
+            f'but the edit would apply to {how} of every subbatch'
+        )
+    return problems
+
+
+def _scope(catalog: Catalog, subbatch: str | None, said: tuple[str, ...]) -> list[int]:
+    """The rows 'all samples' means: of the edit's subbatch, else of the
+    subbatches the words name, else the whole sheet."""
+    wanted = {subbatch} if subbatch is not None else set(said)
+    return [s.row for s in catalog.samples if not wanted or s.subbatch in wanted]
+
+
 @dataclass(frozen=True)
 class Said:
     """What the user's words name."""
 
-    samples: tuple[SampleInfo, ...]  # found in the sheet, in sheet order
+    samples: tuple[SampleInfo, ...]  # named, in sheet order, minus the excluded
+    excluded: tuple[SampleInfo, ...]  # "except 3"
     unknown: tuple[str, ...]  # numbers after 'sample(s)' that no sample carries
-    subbatch: str | None  # 'of subbatch 1'
+    subbatches: tuple[str, ...]  # "of subbatch 1", "subbatches 0 and 1"
+    all: bool  # "all samples", "the whole subbatch"
 
 
 def said_samples(said: str, catalog: Catalog) -> Said:
@@ -261,24 +303,38 @@ def said_samples(said: str, catalog: Catalog) -> Said:
     number: '7' is sample '7', '07' or 's_7'. A subbatch in the words ('of
     subbatch 1') limits where names are looked up; without one, a name
     found in several subbatches names all of them."""
-    subbatch = _said_subbatch(said)
-    ordered = [s for s in catalog.samples if subbatch is None or s.subbatch == subbatch]
+    subbatches = _said_subbatches(said)
+    ordered = [s for s in catalog.samples if not subbatches or s.subbatch in subbatches]
+    found, unknown = _after(_SAMPLE_WORD_RE, said, ordered)
+    excluded, unknown_excluded = _after(_EXCEPT_RE, said, ordered)
+    pattern = _literal_re(ordered)  # 's_7', 'ref' or a Nomad ID written out
+    for m in pattern.finditer(said) if pattern else ():
+        for s in _by_literal(ordered, m.group()):
+            found[s.row] = s
+    return Said(
+        samples=tuple(found[r] for r in sorted(found) if r not in excluded),
+        excluded=tuple(excluded[r] for r in sorted(excluded)),
+        unknown=tuple(dict.fromkeys(unknown + unknown_excluded)),
+        subbatches=subbatches,
+        all=bool(_ALL_RE.search(said)),
+    )
+
+
+def _after(
+    pattern: re.Pattern, said: str, ordered: list[SampleInfo]
+) -> tuple[dict[int, SampleInfo], list[str]]:
+    """Samples listed after each match of `pattern` ('samples', 'except'),
+    by row, and the listed names no sample carries."""
     found: dict[int, SampleInfo] = {}
     unknown: list[str] = []
-    for word in _SAMPLE_WORD_RE.finditer(said):
+    for word in pattern.finditer(said):
         clause = _sample_clause(said[word.end() :], ordered)
         for item in _listed(clause, ordered):
             for s in item.hits:
                 found[s.row] = s
             if not item.hits:
                 unknown.append(item.text)
-    pattern = _literal_re(ordered)  # 's_7', 'ref' or a Nomad ID written out
-    for m in pattern.finditer(said) if pattern else ():
-        for s in _by_literal(ordered, m.group()):
-            found[s.row] = s
-    return Said(
-        tuple(found[r] for r in sorted(found)), tuple(dict.fromkeys(unknown)), subbatch
-    )
+    return found, unknown
 
 
 @dataclass(frozen=True)
@@ -294,34 +350,45 @@ class _Item:
 
 def _listed(clause: str, ordered: list[SampleInfo]) -> list[_Item]:
     """The items after 'samples' with ranges expanded: "1, 3 and 7 to 9"
-    -> 1, 3, 7, 8, 9. A range whose end is no sample is a value
-    ("samples 1 and 2 to 3000"), not an unknown sample."""
+    -> 1, 3, 7, 8, 9. A number after a range word that is no sample is a
+    value ("samples 1 and 2 to 3000", "samples 1 to 3 to 3000"), not an
+    unknown sample."""
     items = _items(clause, ordered)
+    linked = [False] + [
+        clause[a.end : b.start].strip().lower() in RANGE_WORDS
+        for a, b in zip(items, items[1:])
+    ]
     out = []
-    skip = False
-    for i, item in enumerate(items):
-        if skip:
-            skip = False
-            continue
+    i = 0
+    while i < len(items):
+        item = items[i]
         after = items[i + 1] if i + 1 < len(items) else None
-        if (
-            after is None
-            or clause[item.end : after.start].strip().lower() not in RANGE_WORDS
-        ):
-            out.append(item)
+        if after and linked[i + 1] and (span := _between(item, after, ordered)):
+            out.append(
+                _Item(item.start, after.end, clause[item.start : after.end], span)
+            )
+            i += 2
             continue
-        if len(item.hits) == 1 and len(after.hits) == 1:
-            first, last = ordered.index(item.hits[0]), ordered.index(after.hits[0])
-            if first <= last:
-                text = clause[item.start : after.end]
-                out.append(
-                    _Item(item.start, after.end, text, tuple(ordered[first : last + 1]))
-                )
-                skip = True
-                continue
-        out.append(item)
-        skip = not after.hits  # the value, not a sample
+        if not (linked[i] and not item.hits):
+            out.append(item)
+        i += 1
     return out
+
+
+def _between(a: _Item, b: _Item, ordered: list[SampleInfo]) -> tuple[SampleInfo, ...]:
+    """The samples from a to b in sheet order, within each subbatch where
+    both are exactly one sample ("samples 1 to 3 of subbatches 0 and 1").
+    Empty when the range cannot be followed (backwards, or an end is no
+    sample)."""
+    rows = []
+    for subbatch in dict.fromkeys(s.subbatch for s in a.hits):
+        first = [s for s in a.hits if s.subbatch == subbatch]
+        last = [s for s in b.hits if s.subbatch == subbatch]
+        if len(first) != 1 or len(last) != 1:
+            continue
+        lo, hi = ordered.index(first[0]), ordered.index(last[0])
+        rows += [s for s in ordered[lo : hi + 1] if s.subbatch == subbatch]
+    return tuple(rows)
 
 
 def _items(clause: str, ordered: list[SampleInfo]) -> list[_Item]:
@@ -333,7 +400,8 @@ def _items(clause: str, ordered: list[SampleInfo]) -> list[_Item]:
         token = m.group().strip('.,;:')
         hits = _by_literal(ordered, token)
         if hits or _prefixed(token, labels):
-            items.append(_Item(m.start(), m.start() + len(token), token, hits))
+            start = m.start() + m.group().index(token)
+            items.append(_Item(start, start + len(token), token, hits))
     for n in numbers(clause):
         if n.unit is not None or n.value != n.value.to_integral_value():
             continue
@@ -393,15 +461,24 @@ def _prefixed(token: str, labels: set[str]) -> bool:
     return any((p := numbered(label)) and p[0] == parts[0] for label in labels)
 
 
-def _said_subbatch(text: str) -> str | None:
-    m = _SUBBATCH_RE.search(text)
-    return m.group(1).strip('.,;') if m else None
+def _said_subbatches(text: str) -> tuple[str, ...]:
+    """'of subbatch 1' -> ('1',); 'subbatches 0 and 1' -> ('0', '1')."""
+    out = []
+    for m in _SUBBATCH_RE.finditer(text):
+        for i, w in enumerate(re.finditer(r'\S+', text[m.end() :])):
+            word = re.sub(r"'s$", '', w.group().strip('.,;:'))
+            joiner = word.lower() in _LIST_WORDS or re.fullmatch(r'[-–—,&]+', word)
+            if i and not (joiner or numbers(word)):
+                break
+            if word and not joiner:
+                out.append(word)
+    return tuple(dict.fromkeys(out))
 
 
 def _sample_clause(text: str, ordered: list[SampleInfo]) -> str:
-    """Cut the list right after 'samples': "1, 3 and 7 to 9 to 3000 rpm"
-    -> "1, 3 and 7 to 9 to". Stops at the first word that is not a
-    number, a label, a dash or a list word."""
+    """Cut the list right after 'samples': "1, 3 and 7 to 9 at 3000 rpm"
+    -> "1, 3 and 7 to 9". Stops at the first word that is not a number,
+    a label, a dash or a list word, and before a number with a unit."""
     labels = {s.label for s in ordered if s.label}
     pos = 0
     for m in re.finditer(r'\S+', text):
@@ -409,6 +486,8 @@ def _sample_clause(text: str, ordered: list[SampleInfo]) -> str:
         is_number = bool(numbers(word)) or bool(
             re.fullmatch(r'[\d.,]+[-–—]?[\d.,]*', word)
         )
+        if is_number and _has_unit(text[m.start() :]):
+            break  # "samples 1 to 3 4000 rpm": the value ends the list
         if not (
             is_number
             or _by_literal(ordered, word)
@@ -418,7 +497,15 @@ def _sample_clause(text: str, ordered: list[SampleInfo]) -> str:
         ):
             break
         pos = m.end()
+        if m.group().endswith(':'):
+            break  # "samples 1 to 3: 4000"
     return text[:pos]
+
+
+def _has_unit(text: str) -> bool:
+    """Whether the number the text starts with carries a unit ('20 min')."""
+    first = next(iter(numbers(text)), None)
+    return first is not None and first.start == 0 and first.unit is not None
 
 
 # --- values ------------------------------------------------------------------

@@ -390,6 +390,56 @@ def test_a_sample_the_user_did_not_name_is_refused(catalog):
     assert why == 'the edit includes samples 7, which you did not name'
 
 
+def test_a_value_right_after_the_list_is_not_a_sample(catalog):
+    for said in (
+        'samples 1 to 3 4000 rpm',
+        'samples 1 to 3 to 4000',
+        'samples 1 to 3: 4000',
+        'samples 1 to 3 15 minutes',
+    ):
+        result = ground(edit(rows=between('1', '3'), said=said), catalog)
+        assert isinstance(result, Grounded), (said, result)
+        assert result.rows == (3, 4, 5), said
+
+
+def test_except_takes_samples_out(catalog):
+    said = 'speed 4000 for samples 1 to 7 except 3'
+    result = ground(edit(rows=samples('1', '2', '4', '5', '7'), said=said), catalog)
+    assert result.rows == (3, 4, 6, 7, 8)
+    why = refused(
+        ground(edit(rows=samples('1', '2', '3', '4', '5', '7'), said=said), catalog)
+    )
+    assert why.startswith('you excluded samples 3, but the edit includes them')
+    why = refused(ground(edit(rows='all', said='all samples except 3'), catalog))
+    assert why == 'you excluded samples 3, but the edit would apply to all samples'
+    rest = [s.label for s in catalog.samples if s.label != '3']
+    result = ground(edit(rows=samples(*rest), said='all samples except 3'), catalog)
+    row_of_3 = sample_by_label(catalog, '3', None).row
+    assert result.rows == tuple(r for r in ALL_ROWS if r != row_of_3)
+
+
+def test_all_samples_of_a_subbatch(two_subbatches):
+    result = ground(
+        edit(
+            rows=between('1', '6', subbatch='1'),
+            said='4000 for all samples of subbatch 1',
+        ),
+        two_subbatches,
+    )
+    assert result.rows == (9, 10, 11, 12, 13, 14)
+
+
+def test_a_range_over_two_subbatches_is_one_edit_each(two_subbatches):
+    said = 'speed 4000 for samples 1 to 3 of subbatches 0 and 1'
+    for subbatch, rows in (('0', (3, 4, 5)), ('1', (9, 10, 11))):
+        result = ground(
+            edit(rows=between('1', '3', subbatch=subbatch), said=said), two_subbatches
+        )
+        assert result.rows == rows, subbatch
+    assert said_samples(said, two_subbatches).subbatches == ('0', '1')
+    assert said_samples("subbatch 1's samples", two_subbatches).subbatches == ('1',)
+
+
 def test_the_same_samples_in_another_form_are_fine(catalog):
     # the user listed them; the LLM answered a range over the same rows
     result = ground(
@@ -421,6 +471,9 @@ def test_a_nomad_id_counts_as_naming_the_sample(synthetic_xlsx):
         ('sample seven', ['7']),
         ('samples 1 and sample 3', ['1', '3']),
         ('sample 13', ['13']),
+        ('sample no. 3', ['3']),
+        ('sample1 and sample2', ['1', '2']),
+        ('sample 1 20 min', ['1']),  # the value, not sample 20
         # the value after 'to' is not a range end
         ('samples 1 and 2 to 3000', ['1', '2']),
         ('samples 1, 2 and 7 to 4000', ['1', '2', '7']),
@@ -480,6 +533,8 @@ def test_word_labels(words):
         ('samples 5, 6 and 7', ('6',)),
         ('sample 6', ('6',)),
         ('samples 1 and 2 to 3000', ()),  # the value is not a sample
+        ('samples 1 to 3 4000 rpm', ()),
+        ('samples 1 to 3 to 4000', ()),
         ('samples 1 to 3', ()),
         ('samples with variation 15min', ()),
     ],
