@@ -11,9 +11,15 @@ import re
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sand.sheet_edit.catalog import Catalog, ColumnInfo, SampleInfo, sample_ranges
+from sand.sheet_edit.catalog import (
+    Catalog,
+    ColumnInfo,
+    SampleInfo,
+    numbered,
+    sample_ranges,
+)
 from sand.sheet_edit.edits import Edit, Range, Samples, Where
-from sand.sheet_edit.numbers import numbers, ranges, value
+from sand.sheet_edit.numbers import RANGE_WORDS, numbers, value
 
 _SAMPLE_WORD_RE = re.compile(r'\bsamples?\b', re.IGNORECASE)
 _SUBBATCH_RE = re.compile(r'\bsub-?\s?batch\s+(\S+)', re.IGNORECASE)
@@ -248,52 +254,24 @@ class Said:
 
 
 def said_samples(said: str, catalog: Catalog) -> Said:
-    """Find the samples the user named in their words: numbers right after
-    'sample(s)' ("samples 1, 3 and 7 to 9", ranges expanded in sheet
-    order), and labels or Nomad IDs written out ('s_7'). A subbatch in the
-    words ('of subbatch 1') limits where the numbers are looked up; without
-    one, a number found in several subbatches names all of them."""
+    """Find the samples the user named in their words: what is listed right
+    after 'sample(s)' ("samples 1, 3 and 7 to 9", "samples s_1 to s_3";
+    ranges expanded in sheet order), and labels or Nomad IDs written out
+    anywhere ('s_7', 'KIT_Synth_1'). A number names the sample with that
+    number: '7' is sample '7', '07' or 's_7'. A subbatch in the words ('of
+    subbatch 1') limits where names are looked up; without one, a name
+    found in several subbatches names all of them."""
     subbatch = _said_subbatch(said)
     ordered = [s for s in catalog.samples if subbatch is None or s.subbatch == subbatch]
-
-    def by_number(number: Decimal) -> list[SampleInfo]:
-        # '7' and '07' both mean sample 7
-        return [
-            s
-            for s in ordered
-            if s.label and s.label.isdigit() and Decimal(s.label) == number
-        ]
-
     found: dict[int, SampleInfo] = {}
     unknown: list[str] = []
     for word in _SAMPLE_WORD_RE.finditer(said):
-        clause = _sample_clause(said[word.end() :])
-        spans = {(n.start, n.end): n for n in numbers(clause) if n.unit is None}
-        value_ends = set()  # numbers that are a value, not a sample
-        for r in ranges(clause):
-            ends = ((r.first.start, r.first.end), (r.last.start, r.last.end))
-            a, b = by_number(r.first.value), by_number(r.last.value)
-            if (
-                len(a) == 1
-                and len(b) == 1
-                and ordered.index(a[0]) <= ordered.index(b[0])
-            ):
-                for s in ordered[ordered.index(a[0]) : ordered.index(b[0]) + 1]:
-                    found[s.row] = s
-                for span in ends:
-                    spans.pop(span, None)
-            else:  # "samples 1 and 2 to 3000": 2 is a sample, 3000 the value
-                value_ends.update(ends)
-        for span, n in spans.items():
-            hits = by_number(n.value)
-            for s in hits:
+        clause = _sample_clause(said[word.end() :], ordered)
+        for item in _listed(clause, ordered):
+            for s in item.hits:
                 found[s.row] = s
-            if (
-                not hits
-                and span not in value_ends
-                and n.value == n.value.to_integral_value()
-            ):
-                unknown.append(n.text)
+            if not item.hits:
+                unknown.append(item.text)
     for s in catalog.samples:  # 's_7' or a Nomad ID written as it is
         for literal in (s.label, s.nomad_id):
             if (
@@ -307,15 +285,103 @@ def said_samples(said: str, catalog: Catalog) -> Said:
     )
 
 
+@dataclass(frozen=True)
+class _Item:
+    """One thing listed after 'samples' - a number or a label - and the
+    samples it names (none when the sheet has no such sample)."""
+
+    start: int
+    end: int
+    text: str
+    hits: tuple[SampleInfo, ...]
+
+
+def _listed(clause: str, ordered: list[SampleInfo]) -> list[_Item]:
+    """The items after 'samples' with ranges expanded: "1, 3 and 7 to 9"
+    -> 1, 3, 7, 8, 9. A range whose end is no sample is a value
+    ("samples 1 and 2 to 3000"), not an unknown sample."""
+    items = _items(clause, ordered)
+    out = []
+    skip = False
+    for i, item in enumerate(items):
+        if skip:
+            skip = False
+            continue
+        after = items[i + 1] if i + 1 < len(items) else None
+        if (
+            after is None
+            or clause[item.end : after.start].strip().lower() not in RANGE_WORDS
+        ):
+            out.append(item)
+            continue
+        if len(item.hits) == 1 and len(after.hits) == 1:
+            first, last = ordered.index(item.hits[0]), ordered.index(after.hits[0])
+            if first <= last:
+                text = clause[item.start : after.end]
+                out.append(
+                    _Item(item.start, after.end, text, tuple(ordered[first : last + 1]))
+                )
+                skip = True
+                continue
+        out.append(item)
+        skip = not after.hits  # the value, not a sample
+    return out
+
+
+def _items(clause: str, ordered: list[SampleInfo]) -> list[_Item]:
+    """Numbers and labels in the clause, in order, each with the samples it
+    names."""
+    labels = {s.label for s in ordered if s.label}
+    items = []
+    for m in re.finditer(r'\S+', clause):
+        token = m.group().strip('.,;:')
+        if token in labels or _prefixed(token, labels):
+            hits = tuple(s for s in ordered if s.label == token)
+            items.append(_Item(m.start(), m.start() + len(token), token, hits))
+    for n in numbers(clause):
+        if n.unit is not None or n.value != n.value.to_integral_value():
+            continue
+        if any(i.start <= n.start and n.end <= i.end for i in items):
+            continue  # the 1 in 'A-1'
+        items.append(_Item(n.start, n.end, n.text, _by_number(ordered, n.value)))
+    return sorted(items, key=lambda i: i.start)
+
+
+def _by_number(ordered: list[SampleInfo], number: Decimal) -> tuple[SampleInfo, ...]:
+    """The samples a bare number names: label '7', '07' or 's_7' for 7."""
+    hits = []
+    for s in ordered:
+        if not s.label:
+            continue
+        if s.label.isdigit():
+            same = Decimal(s.label) == number
+        else:
+            parts = numbered(s.label)
+            same = parts is not None and parts[1] == number
+        if same:
+            hits.append(s)
+    return tuple(hits)
+
+
+def _prefixed(token: str, labels: set[str]) -> bool:
+    """Whether a token is shaped like the sheet's labels ('s_6' among
+    's_1'..'s_13'), so a label that does not exist is still noticed."""
+    parts = numbered(token)
+    if parts is None or not parts[0]:
+        return False
+    return any((p := numbered(label)) and p[0] == parts[0] for label in labels)
+
+
 def _said_subbatch(text: str) -> str | None:
     m = _SUBBATCH_RE.search(text)
     return m.group(1).strip('.,;') if m else None
 
 
-def _sample_clause(text: str) -> str:
-    """Cut the number list right after 'samples': "1, 3 and 7 to 9 to
-    3000 rpm" -> "1, 3 and 7 to 9 to". Stops at the first word that is not
-    a number, a dash or a list word."""
+def _sample_clause(text: str, ordered: list[SampleInfo]) -> str:
+    """Cut the list right after 'samples': "1, 3 and 7 to 9 to 3000 rpm"
+    -> "1, 3 and 7 to 9 to". Stops at the first word that is not a
+    number, a label, a dash or a list word."""
+    labels = {s.label for s in ordered if s.label}
     pos = 0
     for m in re.finditer(r'\S+', text):
         word = m.group().strip('.,;:')
@@ -324,6 +390,8 @@ def _sample_clause(text: str) -> str:
         )
         if not (
             is_number
+            or word in labels
+            or _prefixed(word, labels)
             or word.lower() in _LIST_WORDS
             or re.fullmatch(r'[-–—,&]+', m.group())
         ):

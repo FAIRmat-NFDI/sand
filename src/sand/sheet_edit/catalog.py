@@ -180,11 +180,11 @@ def sample_ranges(labels: list[str]) -> str:
 
 
 def _follows(previous: str, label: str) -> bool:
-    a, b = _numbered(previous), _numbered(label)
+    a, b = numbered(previous), numbered(label)
     return a is not None and b is not None and b == (a[0], a[1] + 1)
 
 
-def _numbered(label: str) -> tuple[str, int] | None:
+def numbered(label: str) -> tuple[str, int] | None:
     """'7' -> ('', 7), 's_7' -> ('s_', 7). '07', '1.5' and 'A' are not
     numbered: they are kept as written, never joined."""
     m = _LABEL_RE.fullmatch(label)

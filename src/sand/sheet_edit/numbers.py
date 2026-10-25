@@ -95,7 +95,7 @@ _DIGITS_RE = re.compile(
 )
 _POWER_OF_TEN_RE = re.compile(r'\^([+-]?\d+)(?![\w.])')  # the ^-6 of '10^-6'
 _WORD_RE = re.compile(r'[A-Za-z]+')
-_RANGE_WORDS = {'-', '–', '—', '..', '...', 'to', 'through', 'thru', 'till', 'until'}
+RANGE_WORDS = {'-', '–', '—', '..', '...', 'to', 'through', 'thru', 'till', 'until'}
 
 
 @dataclass(frozen=True)
@@ -140,7 +140,7 @@ def ranges(text: str) -> list[Range]:
     return [
         Range(a, b)
         for a, b in zip(found, found[1:])
-        if text[a.end : b.start].strip().lower() in _RANGE_WORDS
+        if text[a.end : b.start].strip().lower() in RANGE_WORDS
     ]
 
 

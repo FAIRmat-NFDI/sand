@@ -36,6 +36,17 @@ def two_subbatches(synthetic_xlsx):
     return build(edited(synthetic_xlsx, change))
 
 
+@pytest.fixture(scope='module')
+def prefixed(synthetic_xlsx):
+    sample = letter(INFO, 'Sample')
+
+    def change(ws):  # labels s_1..s_5, s_7..s_13
+        for r in range(3, 15):
+            ws[f'{sample}{r}'] = f's_{ws[f"{sample}{r}"].value}'
+
+    return build(edited(synthetic_xlsx, change))
+
+
 def edit(
     target=SPEED, rows='all', old='3000', new='4000', said='spin coating 2 speed 4000'
 ):
@@ -411,6 +422,25 @@ def test_a_nomad_id_counts_as_naming_the_sample(synthetic_xlsx):
 )
 def test_said_samples(catalog, said, labels):
     assert [s.label for s in said_samples(said, catalog).samples] == labels
+
+
+def test_prefixed_labels(prefixed):
+    assert prefixed.names((3, 4, 5, 7, 8)) == 's_1–s_3, s_5, s_7'
+    assert sample_by_label(prefixed, 's_7', None).row == 8  # noqa: PLR2004
+    cases = {
+        'speed 4000 for s_1, s_2 and s_7': ['s_1', 's_2', 's_7'],
+        'samples s_1 to s_3': ['s_1', 's_2', 's_3'],
+        'samples 1 to 3': ['s_1', 's_2', 's_3'],  # the number names the sample
+        'samples 1 and 2 to 3000': ['s_1', 's_2'],
+        'sample seven': ['s_7'],
+    }
+    for said, labels in cases.items():
+        assert [s.label for s in said_samples(said, prefixed).samples] == labels, said
+    assert said_samples('sample s_6', prefixed).unknown == ('s_6',)
+    result = ground(
+        edit(rows=between('s_1', 's_3'), said='speed 4000 for samples 1 to 3'), prefixed
+    )
+    assert result.rows == (3, 4, 5)
 
 
 @pytest.mark.parametrize(
