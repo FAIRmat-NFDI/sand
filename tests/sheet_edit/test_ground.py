@@ -1,3 +1,5 @@
+import datetime
+
 import pytest
 from synthetic_sheet import edited, letter, with_formula_results
 
@@ -317,6 +319,17 @@ def test_naming_a_subbatch_but_answering_all_is_refused(two_subbatches, catalog)
     assert result.rows == ALL_ROWS
 
 
+def test_an_unknown_subbatch_in_the_words_is_refused(catalog, two_subbatches):
+    said = 'speed 4000 for all samples of subbatch 5'
+    assert (
+        refused(ground(edit(rows='all', said=said), catalog))
+        == 'there is no subbatch 5'
+    )
+    said = 'speed 4000 for sample 7 of subbatch 5'  # 7 exists, in subbatch 0 only
+    why = refused(ground(edit(rows=samples('7'), said=said), two_subbatches))
+    assert why == 'there is no subbatch 5'
+
+
 def test_a_label_in_two_subbatches_names_both(two_subbatches):
     why = refused(
         ground(edit(rows='all', said='speed 4000 for sample 1'), two_subbatches)
@@ -344,6 +357,15 @@ def test_a_named_sample_that_does_not_exist_is_refused(catalog):
         )
     )
     assert why == 'there is no sample 6'
+
+
+def test_a_sample_without_a_label_is_not_named_by_a_separator(synthetic_xlsx):
+    sample = letter(INFO, 'Sample')
+    catalog = build(
+        edited(synthetic_xlsx, lambda ws: ws.__setitem__(f'{sample}3', None))
+    )
+    result = ground(edit(rows=samples('2', '3'), said='samples: 2 , 3'), catalog)
+    assert result.rows == (4, 5)
 
 
 def test_a_sample_without_a_label_is_named_by_its_row(synthetic_xlsx):
@@ -472,6 +494,8 @@ def test_a_nomad_id_counts_as_naming_the_sample(synthetic_xlsx):
         ('samples 1 and sample 3', ['1', '3']),
         ('sample 13', ['13']),
         ('sample no. 3', ['3']),
+        ('samples: 1 to 3', ['1', '2', '3']),
+        ('samples 1 , 3', ['1', '3']),
         ('sample1 and sample2', ['1', '2']),
         ('sample 1 20 min', ['1']),  # the value, not sample 20
         # the value after 'to' is not a range end
@@ -518,6 +542,9 @@ def test_word_labels(words):
         'samples a and b': ['A', 'B'],  # any spelling when only one label fits
         'the reference sample': [],  # not a label: nothing found, nothing guessed
         'sample X': ['x'],
+        'speed 4000 for a sample': [],  # 'a' is an article, not sample A
+        'A and B': [],  # one-letter labels only count after 'sample(s)'
+        'ref and hot': ['ref', 'hot'],
     }
     for said, labels in cases.items():
         assert [s.label for s in said_samples(said, words).samples] == labels, said
@@ -586,6 +613,12 @@ def test_rows_already_holding_the_value_are_left_out(catalog):
         ('x', None, False),
         ('TRUE', True, True),
         ('1', True, False),
+        ('2024-03-05', datetime.datetime(2024, 3, 5), True),  # Excel date cell
+        ('2024-03-05T00:00:00', datetime.datetime(2024, 3, 5), True),
+        ('2024-03-05', datetime.datetime(2024, 3, 5, 14, 30), False),
+        ('2024-03-05T14:30:00', datetime.datetime(2024, 3, 5, 14, 30), True),
+        ('14:30:00', datetime.time(14, 30), True),
+        ('2024-03-06', datetime.date(2024, 3, 5), False),
     ],
 )
 def test_same_value(new, stored, same):

@@ -7,6 +7,7 @@ N rows that already hold the value are reported, not written. Each
 failure is a refusal with a reason; nothing is guessed or repaired.
 """
 
+import datetime
 import re
 from dataclasses import dataclass
 from decimal import Decimal
@@ -219,6 +220,9 @@ def sample_words_problems(
     said = said_samples(edit.said, catalog)
     spec = edit.rows
     problems = []
+    subbatches = {s.subbatch for s in catalog.samples}
+    if unknown := [b for b in said.subbatches if b not in subbatches]:
+        return [f'there is no subbatch {", ".join(unknown)}']
     if said.unknown:
         problems.append(f'there is no sample {", ".join(said.unknown)}')
     named = {s.row for s in said.samples}
@@ -430,6 +434,8 @@ def _by_number(ordered: list[SampleInfo], number: Decimal) -> tuple[SampleInfo, 
 def _by_literal(ordered: list[SampleInfo], text: str) -> tuple[SampleInfo, ...]:
     """Samples whose label or Nomad ID is `text`; the exact spelling wins,
     else any spelling ('a' names 'A' unless there is also an 'a')."""
+    if not text:
+        return ()
     exact = tuple(s for s in ordered if text in (s.label, s.nomad_id))
     if exact:
         return exact
@@ -442,14 +448,20 @@ def _by_literal(ordered: list[SampleInfo], text: str) -> tuple[SampleInfo, ...]:
 
 
 def _literal_re(ordered: list[SampleInfo]) -> re.Pattern | None:
-    """Matches any non-numeric label or Nomad ID as a whole word, longest
-    first so 'Ctrl-2' is not read as 'Ctrl'."""
-    words = {w for s in ordered for w in (s.label, s.nomad_id) if w and not w.isdigit()}
+    """Matches a non-numeric label or Nomad ID written as it is, anywhere
+    in the words; longest first so 'Ctrl-2' is not read as 'Ctrl'. Exact
+    spelling only, and no one-letter labels: 'a sample' is not sample A."""
+    words = {
+        w
+        for s in ordered
+        for w in (s.label, s.nomad_id)
+        if w and len(w) > 1 and not w.isdigit()
+    }
     if not words:
         return None
     longest_first = sorted(words, key=len, reverse=True)
     pattern = '|'.join(map(re.escape, longest_first))
-    return re.compile(rf'(?<!\w)(?:{pattern})(?!\w)', re.IGNORECASE)
+    return re.compile(rf'(?<!\w)(?:{pattern})(?!\w)')
 
 
 def _prefixed(token: str, labels: set[str]) -> bool:
@@ -493,11 +505,11 @@ def _sample_clause(text: str, ordered: list[SampleInfo]) -> str:
             or _by_literal(ordered, word)
             or _prefixed(word, labels)
             or word.lower() in _LIST_WORDS
-            or re.fullmatch(r'[-–—,&]+', m.group())
+            or not word  # "samples: 1", "1 , 3"
         ):
             break
         pos = m.end()
-        if m.group().endswith(':'):
+        if word and m.group().endswith(':'):
             break  # "samples 1 to 3: 4000"
     return text[:pos]
 
@@ -514,17 +526,28 @@ def _has_unit(text: str) -> bool:
 def same_value(new: str, stored) -> bool:
     """Is the text the user gave the same as what the cell holds? Numbers
     compare as numbers ('3000' is 3000.0), text exactly, TRUE/FALSE as
-    words, empty only to empty."""
+    words, dates as ISO text ('2024-03-05'), empty only to empty."""
+    given = new.strip()
     if stored is None or (isinstance(stored, str) and not stored.strip()):
-        return new.strip() == ''
+        return given == ''
     if isinstance(stored, bool):
-        return new.strip().upper() == ('TRUE' if stored else 'FALSE')
+        return given.upper() == ('TRUE' if stored else 'FALSE')
     if isinstance(stored, int | float):
         n = value(new)
         return n is not None and n.value == Decimal(str(stored))
     if isinstance(stored, str):
-        return new.strip() == stored.strip()
-    return False
+        return given == stored.strip()
+    return given in _date_forms(stored)
+
+
+def _date_forms(stored) -> set[str]:
+    """ISO spellings of a date or time cell. Excel keeps a date as a
+    midnight datetime, so '2024-03-05' must match it too."""
+    if isinstance(stored, datetime.datetime) and stored.time() == datetime.time():
+        return {stored.isoformat(), stored.date().isoformat()}
+    if isinstance(stored, datetime.date | datetime.time):
+        return {stored.isoformat()}
+    return set()
 
 
 # --- helpers -----------------------------------------------------------------
