@@ -74,6 +74,9 @@ _LAB_SPEECH = {  # pint reads 'C' as coulomb and 'degrees' as an angle
     'square centimeters': 'cm^2',
     'square centimetre': 'cm^2',
     'square centimetres': 'cm^2',
+    'cm2': 'cm^2',
+    'mm2': 'mm^2',
+    'a/s': 'angstrom/s',  # never ampere per second in a lab sheet
 }
 # English words pint would read as units: a (year), at (atmosphere),
 # as (attosecond), in (inch), point; and ordinal endings ('2nd': nanodays)
@@ -82,7 +85,7 @@ _NOT_UNITS = {'a', 'an', 'at', 'as', 'in', 'to', 'point', 'per', 'st', 'nd', 'rd
 # likely a word or a name in lab speech
 _SINGLE_LETTERS = {'s', 'h', 'K', 'M', 'C', '%', 'Å'}
 _WORD_LENGTH = 3  # alphabetic spellings this long match in any case
-_UNIT_TOKEN_RE = re.compile(r'[A-Za-zµμ°º℃Å%][A-Za-zµμ°º℃Å%/²]*(?:\^\d)?')
+_UNIT_TOKEN_RE = re.compile(r'[A-Za-zµμ°º℃Å%][A-Za-zµμ°º℃Å%/²]*(?:\^?\d)?')
 # Greek mu for the micro sign, the ordinal indicator º for °, ℃ as one char
 _SPELLING_FIXES = str.maketrans({'μ': 'µ', 'º': '°', '℃': '°C'})
 _MAX_UNIT_WORDS = 3  # 'rpm per second'

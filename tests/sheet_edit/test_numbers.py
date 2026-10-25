@@ -236,6 +236,9 @@ def test_a_scale_and_its_rest_are_one_number_with_one_unit():
         ('4 krpm', [('4', 'krpm')]),
         ('0.1 cm²', [('0.1', 'cm^2')]),
         ('2 angstrom/s', [('2', 'Å/s')]),
+        ('2 A/s', [('2', 'Å/s')]),  # never ampere per second in a lab sheet
+        ('1 cm2', [('1', 'cm^2')]),
+        ('30 s 2', [('30', 's'), ('2', None)]),  # 's2' only when glued
         # lab speech pint reads differently
         ('100 °C', [('100', '°C')]),
         ('100 ° C', [('100', '°C')]),

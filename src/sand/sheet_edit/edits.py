@@ -13,6 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 from sand.sheet_edit.catalog import Catalog
 
 Status = Literal['ok', 'unresolved', 'mismatch', 'uncertain', 'noop']
+# computed from the checks (ground.py), never from the LLM's self-rating
+Confidence = Literal['high', 'medium', 'low']
 
 
 class _Model(BaseModel):
@@ -98,6 +100,9 @@ class EditResult(_Model):
     edit: Edit | None = None
     unresolved: Unresolved | None = None
     reasons: tuple[str, ...] = ()  # why it is not ok, as user messages
+    confidence: Confidence | None = None  # for applied edits
+    notes: tuple[str, ...] = ()
+    doubts: tuple[str, ...] = ()  # low confidence: confirm each
 
 
 def answer_model(catalog: Catalog) -> type[Answer]:
