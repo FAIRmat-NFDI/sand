@@ -272,14 +272,10 @@ def said_samples(said: str, catalog: Catalog) -> Said:
                 found[s.row] = s
             if not item.hits:
                 unknown.append(item.text)
-    for s in catalog.samples:  # 's_7' or a Nomad ID written as it is
-        for literal in (s.label, s.nomad_id):
-            if (
-                literal
-                and not literal.isdigit()
-                and re.search(rf'(?<!\w){re.escape(literal)}(?!\w)', said)
-            ):
-                found[s.row] = s
+    pattern = _literal_re(ordered)  # 's_7', 'ref' or a Nomad ID written out
+    for m in pattern.finditer(said) if pattern else ():
+        for s in _by_literal(ordered, m.group()):
+            found[s.row] = s
     return Said(
         tuple(found[r] for r in sorted(found)), tuple(dict.fromkeys(unknown)), subbatch
     )
@@ -335,8 +331,8 @@ def _items(clause: str, ordered: list[SampleInfo]) -> list[_Item]:
     items = []
     for m in re.finditer(r'\S+', clause):
         token = m.group().strip('.,;:')
-        if token in labels or _prefixed(token, labels):
-            hits = tuple(s for s in ordered if s.label == token)
+        hits = _by_literal(ordered, token)
+        if hits or _prefixed(token, labels):
             items.append(_Item(m.start(), m.start() + len(token), token, hits))
     for n in numbers(clause):
         if n.unit is not None or n.value != n.value.to_integral_value():
@@ -361,6 +357,31 @@ def _by_number(ordered: list[SampleInfo], number: Decimal) -> tuple[SampleInfo, 
         if same:
             hits.append(s)
     return tuple(hits)
+
+
+def _by_literal(ordered: list[SampleInfo], text: str) -> tuple[SampleInfo, ...]:
+    """Samples whose label or Nomad ID is `text`; the exact spelling wins,
+    else any spelling ('a' names 'A' unless there is also an 'a')."""
+    exact = tuple(s for s in ordered if text in (s.label, s.nomad_id))
+    if exact:
+        return exact
+    low = text.lower()
+    return tuple(
+        s
+        for s in ordered
+        if low in {(s.label or '').lower(), (s.nomad_id or '').lower()}
+    )
+
+
+def _literal_re(ordered: list[SampleInfo]) -> re.Pattern | None:
+    """Matches any non-numeric label or Nomad ID as a whole word, longest
+    first so 'Ctrl-2' is not read as 'Ctrl'."""
+    words = {w for s in ordered for w in (s.label, s.nomad_id) if w and not w.isdigit()}
+    if not words:
+        return None
+    longest_first = sorted(words, key=len, reverse=True)
+    pattern = '|'.join(map(re.escape, longest_first))
+    return re.compile(rf'(?<!\w)(?:{pattern})(?!\w)', re.IGNORECASE)
 
 
 def _prefixed(token: str, labels: set[str]) -> bool:
@@ -390,7 +411,7 @@ def _sample_clause(text: str, ordered: list[SampleInfo]) -> str:
         )
         if not (
             is_number
-            or word in labels
+            or _by_literal(ordered, word)
             or _prefixed(word, labels)
             or word.lower() in _LIST_WORDS
             or re.fullmatch(r'[-–—,&]+', m.group())

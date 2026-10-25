@@ -47,6 +47,18 @@ def prefixed(synthetic_xlsx):
     return build(edited(synthetic_xlsx, change))
 
 
+@pytest.fixture(scope='module')
+def words(synthetic_xlsx):
+    sample = letter(INFO, 'Sample')
+    names = ['A', 'B', 'C', 'D', 'E', 'ref', 'hot', 'cold', 'Ctrl', 'Ctrl-2', 'x', 'K']
+
+    def change(ws):
+        for r, name in zip(range(3, 15), names, strict=True):
+            ws[f'{sample}{r}'] = name
+
+    return build(edited(synthetic_xlsx, change))
+
+
 def edit(
     target=SPEED, rows='all', old='3000', new='4000', said='spin coating 2 speed 4000'
 ):
@@ -439,6 +451,25 @@ def test_prefixed_labels(prefixed):
     assert said_samples('sample s_6', prefixed).unknown == ('s_6',)
     result = ground(
         edit(rows=between('s_1', 's_3'), said='speed 4000 for samples 1 to 3'), prefixed
+    )
+    assert result.rows == (3, 4, 5)
+
+
+def test_word_labels(words):
+    assert words.names((3, 4, 5, 8)) == 'A, B, C, ref'
+    cases = {
+        'speed 4000 for samples A, B and ref': ['A', 'B', 'ref'],
+        'samples A to C': ['A', 'B', 'C'],  # sheet order
+        'sample hot and sample cold': ['hot', 'cold'],
+        'sample Ctrl-2': ['Ctrl-2'],  # not also Ctrl
+        'samples a and b': ['A', 'B'],  # any spelling when only one label fits
+        'the reference sample': [],  # not a label: nothing found, nothing guessed
+        'sample X': ['x'],
+    }
+    for said, labels in cases.items():
+        assert [s.label for s in said_samples(said, words).samples] == labels, said
+    result = ground(
+        edit(rows=between('A', 'C'), said='speed 4000 for samples A to C'), words
     )
     assert result.rows == (3, 4, 5)
 
