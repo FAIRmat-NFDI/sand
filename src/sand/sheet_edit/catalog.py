@@ -85,6 +85,22 @@ class Catalog:
         labels = [s.label for s in self.samples if s.label is not None]
         return len(labels) != len(set(labels))
 
+    def names(self, rows) -> str:
+        """Excel rows -> the sample names, for messages: rows (3, 4, 5, 8)
+        -> '1–3, 7'. With repeated labels: '1–3 of subbatch 0, 1 of
+        subbatch 1'. A sample without a label is 'row 5'."""
+        info = {s.row: s for s in self.samples}
+        names = {r: info[r].label or f'row {r}' for r in rows}
+        if not self.needs_subbatch:
+            return sample_ranges(list(names.values()))
+        by_subbatch: dict[str | None, list[str]] = {}
+        for r in rows:
+            by_subbatch.setdefault(info[r].subbatch, []).append(names[r])
+        return ', '.join(
+            f'{sample_ranges(labels)} of subbatch {subbatch}'
+            for subbatch, labels in by_subbatch.items()
+        )
+
 
 def column_id(index: int) -> str:
     return f'C{index:03d}'
@@ -164,11 +180,11 @@ def sample_ranges(labels: list[str]) -> str:
 
 
 def _follows(previous: str, label: str) -> bool:
-    a, b = _numbered(previous), _numbered(label)
+    a, b = numbered(previous), numbered(label)
     return a is not None and b is not None and b == (a[0], a[1] + 1)
 
 
-def _numbered(label: str) -> tuple[str, int] | None:
+def numbered(label: str) -> tuple[str, int] | None:
     """'7' -> ('', 7), 's_7' -> ('s_', 7). '07', '1.5' and 'A' are not
     numbered: they are kept as written, never joined."""
     m = _LABEL_RE.fullmatch(label)
