@@ -6,9 +6,9 @@ from sand.sheet_edit.coverage import Coverage, coverage
 from sand.sheet_edit.edits import (
     Ambiguous,
     Anchor,
-    ProposedEdits,
     Edit,
     NotFound,
+    ProposedEdits,
     Range,
     Samples,
 )

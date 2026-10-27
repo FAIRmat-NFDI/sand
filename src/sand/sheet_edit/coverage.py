@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass, replace
 
 from sand.sheet_edit.catalog import Catalog
-from sand.sheet_edit.edits import ProposedEdits, Edit, Range, Samples, Where
+from sand.sheet_edit.edits import Edit, ProposedEdits, Range, Samples, Where
 from sand.sheet_edit.ground import value_numbers, word_pattern
 from sand.sheet_edit.numbers import Number, numbers, value
 
