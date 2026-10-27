@@ -6,7 +6,7 @@ from sand.sheet_edit.coverage import Coverage, coverage
 from sand.sheet_edit.edits import (
     Ambiguous,
     Anchor,
-    Answer,
+    ProposedEdits,
     Edit,
     NotFound,
     Range,
@@ -56,8 +56,8 @@ def not_found(said):
 
 
 def check(instruction, catalog, *edits, unresolved=()):
-    answer = Answer(edits=list(edits), unresolved=list(unresolved))
-    return coverage(instruction, answer, catalog)
+    proposal = ProposedEdits(edits=list(edits), unresolved=list(unresolved))
+    return coverage(instruction, proposal, catalog)
 
 
 def not_applied(instruction, catalog, *edits, unresolved=()):

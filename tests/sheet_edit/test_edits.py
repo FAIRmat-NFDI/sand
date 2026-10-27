@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from synthetic_sheet import edited, letter
 
 from sand.sheet_edit.catalog import build
-from sand.sheet_edit.edits import Edit, answer_model, answer_schema
+from sand.sheet_edit.edits import Edit, proposed_edits_model, proposed_edits_schema
 
 INFO = 'Experiment Info'
 REAL_KIT_WRITABLE = 153  # 155 columns minus Nomad ID and Deposition Time
@@ -25,7 +25,7 @@ def ids(catalog):
     return found
 
 
-def answer(edits=(), unresolved=()) -> dict:
+def proposal(edits=(), unresolved=()) -> dict:
     return {'edits': list(edits), 'unresolved': list(unresolved)}
 
 
@@ -52,15 +52,15 @@ def edit(target, rows='all', anchor=None, old='3000', new='4000') -> dict:
     ],
 )
 def test_every_row_form_is_accepted(catalog, ids, rows):
-    model = answer_model(catalog)
-    result = model.model_validate(answer([edit(ids['Rotation speed [rpm]'], rows)]))
+    model = proposed_edits_model(catalog)
+    result = model.model_validate(proposal([edit(ids['Rotation speed [rpm]'], rows)]))
     assert isinstance(result.edits[0], Edit)
 
 
 def test_an_anchor_and_an_unresolved_are_accepted(catalog, ids):
-    model = answer_model(catalog)
+    model = proposed_edits_model(catalog)
     model.model_validate(
-        answer(
+        proposal(
             [
                 edit(
                     ids['Solvent 1 volume [uL]'],
@@ -99,7 +99,7 @@ def test_an_anchor_and_an_unresolved_are_accepted(catalog, ids):
 )
 def test_invalid_proposals_are_rejected(catalog, bad, why):
     with pytest.raises(ValidationError):
-        answer_model(catalog).model_validate(answer([bad]))
+        proposed_edits_model(catalog).model_validate(proposal([bad]))
 
 
 @pytest.mark.parametrize(
@@ -112,19 +112,19 @@ def test_invalid_proposals_are_rejected(catalog, bad, why):
 )
 def test_ambiguous_needs_candidates_and_not_found_has_none(catalog, unresolved):
     with pytest.raises(ValidationError):
-        answer_model(catalog).model_validate(answer(unresolved=[unresolved]))
+        proposed_edits_model(catalog).model_validate(proposal(unresolved=[unresolved]))
 
 
 def test_not_found_is_accepted(catalog):
-    answer_model(catalog).model_validate(
-        answer(unresolved=[{'reason': 'not_found', 'said': 'the DMSO solvent'}])
+    proposed_edits_model(catalog).model_validate(
+        proposal(unresolved=[{'reason': 'not_found', 'said': 'the DMSO solvent'}])
     )
 
 
 def test_unresolved_candidates_must_exist(catalog):
     with pytest.raises(ValidationError):
-        answer_model(catalog).model_validate(
-            answer(
+        proposed_edits_model(catalog).model_validate(
+            proposal(
                 unresolved=[
                     {'reason': 'ambiguous', 'candidates': ['C999'], 'said': 'x'}
                 ]
@@ -133,7 +133,7 @@ def test_unresolved_candidates_must_exist(catalog):
 
 
 def test_schema_enums_are_the_sheet_ids_and_labels(catalog):
-    schema = answer_schema(catalog)
+    schema = proposed_edits_schema(catalog)
     json.dumps(schema)  # serializable as it is sent
     defs = schema['$defs']
     target = defs['Edit']['properties']['target']['enum']
@@ -164,20 +164,20 @@ def test_subbatches_are_offered_when_the_sheet_has_them(synthetic_xlsx):
             ws[f'{subbatch}{r}'] = 1
             ws[f'{sample}{r}'] = i + 1
 
-    model = answer_model(build(edited(synthetic_xlsx, second_subbatch)))
-    model.model_validate(answer([edit('C025', {'samples': ['1'], 'subbatch': '1'})]))
+    model = proposed_edits_model(build(edited(synthetic_xlsx, second_subbatch)))
+    model.model_validate(proposal([edit('C025', {'samples': ['1'], 'subbatch': '1'})]))
     # no subbatch named: valid here, left for the rows check to refuse
-    model.model_validate(answer([edit('C025', {'samples': ['1'], 'subbatch': None})]))
+    model.model_validate(proposal([edit('C025', {'samples': ['1'], 'subbatch': None})]))
 
 
 def test_a_sheet_without_samples_cannot_be_edited(synthetic_xlsx):
     headers_only = edited(synthetic_xlsx, lambda ws: ws.delete_rows(3, 100))
     with pytest.raises(ValueError, match='no sample labels'):
-        answer_model(build(headers_only))
+        proposed_edits_model(build(headers_only))
 
 
 def test_real_kit_sheet(real_kit_xlsx):
-    schema = answer_schema(build(real_kit_xlsx))
+    schema = proposed_edits_schema(build(real_kit_xlsx))
     target = schema['$defs']['Edit']['properties']['target']['enum']
     assert len(target) == REAL_KIT_WRITABLE
     assert (
