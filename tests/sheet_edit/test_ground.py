@@ -714,6 +714,9 @@ def test_no_number_in_the_words_is_a_doubt(catalog):
 def test_numbers_of_the_column_name_are_not_values(catalog):
     # the 2 of 'spin coating 2' and the 1 of 'solvent 1'
     assert ground(edit(said='spin coating 2 speed 4000'), catalog).confidence == 'high'
+    assert (
+        ground(edit(said='step 2 set the speed to 4000'), catalog).confidence == 'high'
+    )
     result = ground(
         edit(VOLUME_3, old='50', new='100', said='step 3 solvent 1 volume 100'), catalog
     )
