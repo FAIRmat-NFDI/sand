@@ -16,6 +16,8 @@ The first character says what to do: nothing (fine, or a · to glance at),
 ? (confirm one by one), ✗ or ⚠ (rephrase), = (nothing to change).
 """
 
+from collections.abc import Iterable
+
 from sand.sheet_edit.catalog import Catalog, ColumnInfo
 from sand.sheet_edit.coverage import Coverage
 from sand.sheet_edit.edits import Ambiguous, Unresolved
@@ -100,7 +102,7 @@ def _texts(catalog: Catalog) -> set[str]:
 def _unresolved_lines(item: Unresolved, catalog: Catalog) -> list[str]:
     if isinstance(item, Ambiguous):
         columns = [catalog.column(c) for c in item.candidates]
-        names = [_where(c) if c else id for c, id in zip(columns, item.candidates)]
+        names = [_where(c) if c else cid for c, cid in zip(columns, item.candidates)]
         return [f'? ambiguous: "{item.said}"', f'{INDENT}{" or ".join(names)}?']
     return [f'? not found: "{item.said}"']
 
@@ -116,5 +118,5 @@ def _where(column: ColumnInfo) -> str:
     return f'{column.column.section.label} · {column.column.header}'
 
 
-def _indented(lines) -> list[str]:
+def _indented(lines: Iterable[str]) -> list[str]:
     return [f'{INDENT}{line}' for line in lines]
