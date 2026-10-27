@@ -1,6 +1,6 @@
-"""What the LLM may answer, and what becomes of each proposal.
+"""What the LLM may propose, and what becomes of each proposal.
 
-The models below take any string. answer_model(catalog) narrows them to
+The models below take any string. proposed_edits_model(catalog) narrows them to
 one sheet: ids and sample labels become enums, so with constrained output
 the LLM cannot name a column, formula column or sample that does not
 exist. Values stay text, as the table shows them; checks convert them.
@@ -90,7 +90,7 @@ class NotFound(_Model):
 Unresolved = Annotated[Ambiguous | NotFound, Field(discriminator='reason')]
 
 
-class Answer(_Model):
+class ProposedEdits(_Model):
     edits: list[Edit]
     unresolved: list[Unresolved]
 
@@ -105,8 +105,9 @@ class EditResult(_Model):
     doubts: tuple[str, ...] = ()  # low confidence: confirm each
 
 
-def answer_model(catalog: Catalog) -> type[Answer]:
-    """Answer narrowed to this sheet; validates and gives the JSON schema."""
+def proposed_edits_model(catalog: Catalog) -> type[ProposedEdits]:
+    """ProposedEdits narrowed to this sheet; validates and gives the JSON
+    schema."""
     ids = _one_of('column ids', [c.id for c in catalog.columns])
     writable = _one_of(
         'writable columns', [c.id for c in catalog.columns if not c.formula]
@@ -147,15 +148,15 @@ def answer_model(catalog: Catalog) -> type[Answer]:
     )
     unresolved = Annotated[ambiguous | NotFound, Field(discriminator='reason')]
     return create_model(
-        'Answer',
-        __base__=Answer,
+        'ProposedEdits',
+        __base__=ProposedEdits,
         edits=(list[edit], ...),
         unresolved=(list[unresolved], ...),
     )
 
 
-def answer_schema(catalog: Catalog) -> dict:
-    return answer_model(catalog).model_json_schema()
+def proposed_edits_schema(catalog: Catalog) -> dict:
+    return proposed_edits_model(catalog).model_json_schema()
 
 
 def _one_of(what: str, values: list[str]):

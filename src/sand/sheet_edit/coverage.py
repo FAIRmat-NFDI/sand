@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass, replace
 
 from sand.sheet_edit.catalog import Catalog
-from sand.sheet_edit.edits import Answer, Edit, Range, Samples, Where
+from sand.sheet_edit.edits import Edit, ProposedEdits, Range, Samples, Where
 from sand.sheet_edit.ground import value_numbers, word_pattern
 from sand.sheet_edit.numbers import Number, numbers, value
 
@@ -70,7 +70,7 @@ class _Quoted:
         return self.start <= start and end <= self.end
 
 
-def coverage(instruction: str, answer: Answer, catalog: Catalog) -> Coverage:
+def coverage(instruction: str, proposal: ProposedEdits, catalog: Catalog) -> Coverage:
     """Every number and every sheet word in the instruction must be quoted
     by an edit or unresolved item and used by it. The rest is listed as
     not applied, by clause:
@@ -78,7 +78,7 @@ def coverage(instruction: str, answer: Answer, catalog: Catalog) -> Coverage:
         "speed 4000 and time 40"  with one edit, Rotation speed -> 4000
         -> not_applied: ('time 40',)
     """
-    quoted, misquoted = _quoted(instruction, answer, catalog)
+    quoted, misquoted = _quoted(instruction, proposal, catalog)
     runs = _uncovered_runs(instruction, quoted)
     flagged: list[tuple[Span, Span]] = []  # (what, the region to report it in)
     used: list[Span] = []  # numbers and values an edit uses: they end a report
@@ -122,17 +122,17 @@ def _record(
 
 
 def _quoted(
-    instruction: str, answer: Answer, catalog: Catalog
+    instruction: str, proposal: ProposedEdits, catalog: Catalog
 ) -> tuple[list[_Quoted], list[str]]:
     """Each edit's and unresolved item's `said` located in the instruction;
     a `said` that is not there is returned as misquoted and covers nothing."""
     quoted, misquoted = [], []
-    for edit in answer.edits:
+    for edit in proposal.edits:
         spans = _occurrences(edit.said, instruction)
         quoted += [_edit_quoted(instruction, span, edit, catalog) for span in spans]
         if not spans:
             misquoted.append(edit.said)
-    for item in answer.unresolved:
+    for item in proposal.unresolved:
         spans = _occurrences(item.said, instruction)
         quoted += [_Quoted(a, b, (), (instruction[a:b],)) for a, b in spans]
         if not spans:

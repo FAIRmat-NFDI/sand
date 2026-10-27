@@ -6,9 +6,9 @@ from sand.sheet_edit.coverage import Coverage, coverage
 from sand.sheet_edit.edits import (
     Ambiguous,
     Anchor,
-    Answer,
     Edit,
     NotFound,
+    ProposedEdits,
     Range,
     Samples,
 )
@@ -73,8 +73,8 @@ def edit(target=SPEED, rows='all', **fields):
 def lines(catalog, *edits, unresolved=(), instruction=None):
     """The preview of ground + coverage on these edits, as lines."""
     results = [ground(e, catalog) for e in edits]
-    answer = Answer(edits=list(edits), unresolved=list(unresolved))
-    cov = coverage(instruction, answer, catalog) if instruction else NONE
+    proposal = ProposedEdits(edits=list(edits), unresolved=list(unresolved))
+    cov = coverage(instruction, proposal, catalog) if instruction else NONE
     return preview(results, list(unresolved), cov, catalog).split('\n')
 
 
