@@ -51,6 +51,7 @@ _ALL_RE = re.compile(
 _LIST_WORDS = {'and', 'or', 'to', 'through', 'thru', 'till', 'until', '&', 'plus'}
 _LIST_WORDS |= {'no', 'number', 'nr', '#'}  # "sample no. 3"
 _SHOWN_VALUES = 8
+_STEP_WORDS = {'step', 'section'}  # words a step number follows
 
 RowsAndNotes = tuple[tuple[int, ...], tuple[str, ...]]
 
@@ -97,7 +98,7 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
     (S), the anchor holds (A), `old` is what the cell holds (O), `new` is
     in the words (V), fits the column (T) and its unit (U); rows already
     holding the value are set aside (N)."""
-    target = _column(catalog, edit.target)
+    target = catalog.column(edit.target)
     if target is None:
         return Refused(edit, (f'{edit.target} is not a column of this sheet',))
     if target.formula:  # W
@@ -111,7 +112,7 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
     problems, doubts = sample_words_problems(edit, catalog, rows)  # S
     anchor = None
     if edit.anchor is not None:  # A
-        anchor = _column(catalog, edit.anchor.column)
+        anchor = catalog.column(edit.anchor.column)
         found = anchor_problems(edit, target, anchor, catalog, rows)
         problems, doubts = problems + found[0], doubts + found[1]
     problems += old_problems(edit, target, catalog, rows)  # O
@@ -229,7 +230,7 @@ def _missing_between(first: str, last: str, present: list[str]) -> list[str]:
 def _where_rows(catalog: Catalog, spec: Where) -> RowsAndNotes:
     """Rows where a column holds exactly `equals` (None: is empty). When no
     row matches, the refusal lists what the column does hold."""
-    column = _column(catalog, spec.where)
+    column = catalog.column(spec.where)
     if column is None:
         raise Refusal(f'{spec.where} is not a column of this sheet')
     rows = tuple(
@@ -613,7 +614,7 @@ def anchor_problems(
             f'not {edit.anchor.equals!r}'
         )
     doubts = []
-    if not _in_words(edit.anchor.equals, edit.said):
+    if not in_words(edit.anchor.equals, edit.said):
         doubts.append(f'{edit.anchor.equals!r}: not found in your words')
     return problems, doubts
 
@@ -678,8 +679,8 @@ def value_problems(
         return [], [], [] if words.search(said) else doubt
     number = None if target.type == 'text' else value(new)  # text: as written
     if number is None:
-        return [], [], [] if _in_words(new, said) else doubt
-    candidates = _value_numbers(said, target, anchor, catalog)
+        return [], [], [] if in_words(new, said) else doubt
+    candidates = value_numbers(said, target, anchor, catalog)
     if target.type == 'yyyymmdd':  # only a day written as 20250101 compares
         candidates = [c for c in candidates if is_day(str(c.value))]
     matches = [c for c in candidates if c.value == number.value]
@@ -697,12 +698,13 @@ def value_problems(
     return [], [], doubt
 
 
-def _value_numbers(
+def value_numbers(
     said: str, target: ColumnInfo, anchor: ColumnInfo | None, catalog: Catalog
 ) -> list[Number]:
     """The numbers in the words that can be a value: not after 'samples'
     or 'subbatch', and not a number of the column's name next to one of
-    its words (the 2 in 'solvent 2 volume' or 'spin coating 2 speed')."""
+    its words (the 2 in 'solvent 2 volume', 'spin coating 2 speed' or
+    'step 2'). Positions are in `said`."""
     blanked = said
     ordered = list(catalog.samples)
     for m in _SUBBATCH_RE.finditer(said):  # subbatch names
@@ -721,6 +723,7 @@ def _value_numbers(
     if anchor:
         names += [anchor.column.header, anchor.column.section.label]
     words = {w.lower() for w in re.findall(r'[A-Za-z]{3,}', ' '.join(names))}
+    words |= _STEP_WORDS  # 'step 2 set the speed to 4000'
     indexes = {Decimal(d) for d in re.findall(r'\d+', ' '.join(names))}
     out = []
     for n in numbers(blanked):
@@ -737,14 +740,21 @@ def _blank(text: str, start: int, end: int) -> str:
     return text[:start] + ' ' * (end - start) + text[end:]
 
 
-def _in_words(text: str, said: str) -> bool:
+def in_words(text: str, said: str) -> bool:
     """Text as written, ignoring case, spaces and hyphens, as a whole word:
     'Me 4PACz' is 'Me-4PACz'; '15min' is '15 MIN' but not '15 minutes'."""
+    pattern = word_pattern(text)
+    return pattern is not None and pattern.search(said) is not None
+
+
+def word_pattern(text: str) -> re.Pattern | None:
+    """The pattern `in_words` matches with; None for text without
+    characters ('', ' -')."""
     chars = [re.escape(ch) for ch in text if ch not in ' -']
     if not chars:
-        return False
+        return None
     pattern = r'(?<![A-Za-z0-9])' + r'[\s-]*'.join(chars) + r'(?![A-Za-z0-9])'
-    return re.search(pattern, said, re.IGNORECASE) is not None
+    return re.compile(pattern, re.IGNORECASE)
 
 
 # --- T type and U unit -------------------------------------------------------
@@ -829,10 +839,6 @@ def _date_forms(stored) -> set[str]:
 # --- helpers -----------------------------------------------------------------
 
 
-def _column(catalog: Catalog, column_id: str) -> ColumnInfo | None:
-    return next((c for c in catalog.columns if c.id == column_id), None)
-
-
 def _name(column: ColumnInfo) -> str:
     """How a column is named in messages: 'Spin speed [rpm] (2: Spin Coating)'."""
     return f'{column.column.header} ({column.column.section.label})'
@@ -840,7 +846,7 @@ def _name(column: ColumnInfo) -> str:
 
 def _read_only(target: ColumnInfo, catalog: Catalog) -> str:
     """The message for a formula column, naming the columns to edit instead."""
-    inputs = [_column(catalog, i) for i in target.inputs or ()]
+    inputs = [catalog.column(i) for i in target.inputs or ()]
     names = ', '.join(c.column.header for c in inputs if c)
     hint = f' from {names}; edit {names} instead' if names else ''
     return f'{_name(target)} is calculated by a formula{hint}'

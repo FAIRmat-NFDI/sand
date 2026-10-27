@@ -85,6 +85,9 @@ class Catalog:
         labels = [s.label for s in self.samples if s.label is not None]
         return len(labels) != len(set(labels))
 
+    def column(self, column_id: str) -> ColumnInfo | None:
+        return next((c for c in self.columns if c.id == column_id), None)
+
     def names(self, rows) -> str:
         """Excel rows -> the sample names, for messages: rows (3, 4, 5, 8)
         -> '1–3, 7'. With repeated labels: '1–3 of subbatch 0, 1 of
