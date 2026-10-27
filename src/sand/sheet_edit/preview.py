@@ -29,7 +29,7 @@ INDENT = '   '
 NOTHING = 'nothing to edit'
 
 
-def readback(
+def preview(
     results: list[Grounded | Refused],
     unresolved: list[Unresolved],
     coverage: Coverage,

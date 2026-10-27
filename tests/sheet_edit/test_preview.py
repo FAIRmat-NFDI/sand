@@ -12,7 +12,7 @@ from sand.sheet_edit.edits import (
     Samples,
 )
 from sand.sheet_edit.ground import ground
-from sand.sheet_edit.readback import NOTHING, edit_lines, readback
+from sand.sheet_edit.preview import NOTHING, edit_lines, preview
 
 SPEED, TIME, ANNEAL_TIME, VARIATION, NOTES = 'C025', 'C026', 'C027', 'C007', 'C029'
 DATE, SUBSTRATE, CLEAN_SOLVENT_2, VOLUME_3, SOLVENT_3 = (
@@ -42,11 +42,11 @@ def edit(target=SPEED, rows='all', **fields):
 
 
 def lines(catalog, *edits, unresolved=(), instruction=None):
-    """The readback of ground + coverage on these edits, as lines."""
+    """The preview of ground + coverage on these edits, as lines."""
     results = [ground(e, catalog) for e in edits]
     answer = Answer(edits=list(edits), unresolved=list(unresolved))
     cov = coverage(instruction, answer, catalog) if instruction else NONE
-    return readback(results, list(unresolved), cov, catalog).split('\n')
+    return preview(results, list(unresolved), cov, catalog).split('\n')
 
 
 def test_an_edit_reads_as_step_header_change_samples_and_words(catalog):
@@ -201,7 +201,7 @@ def test_what_nothing_used_comes_last(catalog):
 
 
 def test_nothing_at_all(catalog):
-    assert readback([], [], NONE, catalog) == NOTHING
+    assert preview([], [], NONE, catalog) == NOTHING
 
 
 def test_one_edit_alone(catalog):
