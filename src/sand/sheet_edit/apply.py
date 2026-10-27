@@ -23,7 +23,7 @@ from dataclasses import dataclass, replace
 from sand.sheet_edit.catalog import Catalog, build
 from sand.sheet_edit.coverage import Coverage, coverage
 from sand.sheet_edit.edits import ProposedEdits
-from sand.sheet_edit.ground import Grounded, Refused, ground
+from sand.sheet_edit.ground import Grounded, Refused, column_name, ground
 from sand.sheet_edit.preview import preview
 from sand.sheet_edit.workbook import CellChange
 from sand.sheet_edit.write import Write, WriteRefused, write_cells
@@ -73,20 +73,57 @@ def interpret_instruction(text: str, sheet: bytes, resolve: Resolve) -> Interpre
     proposal = resolve(text, catalog)
     results = [ground(edit, catalog) for edit in proposal.edits]
     found = coverage(text, proposal, catalog)
-    # an edit quoting words the user did not say is refused here, not by
-    # ground, which sees the edit alone; the preview then shows it once
+    # ground sees one edit alone; what needs the whole instruction is
+    # refused here: an edit quoting words the user did not say, and an
+    # edit writing a cell an earlier edit of the same instruction writes
     results = [
         Refused(r.edit, (f'"{r.edit.said}" is not in your instruction',))
         if r.edit.said in found.misquoted
         else r
         for r in results
     ]
+    results = _without_overlaps(results, catalog)
     state = _hash(sheet)
     ready = {
         _key(text, state, r): r for r in results if isinstance(r, Grounded) and r.rows
     }
-    shown = preview(results, proposal.unresolved, replace(found, misquoted=()), catalog)
+    # a misquoted edit is shown as refused above; a misquoted unresolved
+    # item has no other line, so its coverage line stays
+    quoted = {edit.said for edit in proposal.edits}
+    shown_coverage = replace(
+        found, misquoted=tuple(m for m in found.misquoted if m not in quoted)
+    )
+    shown = preview(results, proposal.unresolved, shown_coverage, catalog)
     return Interpretation(catalog, proposal, tuple(results), found, shown, ready)
+
+
+def _without_overlaps(
+    results: list[Grounded | Refused], catalog: Catalog
+) -> list[Grounded | Refused]:
+    """The later of two edits writing the same cell is refused: "solvent 2
+    to DMSO for samples 1 to 3 and to ETH for sample 2" cannot both be
+    done, and the writer would refuse the whole step."""
+    taken: dict[tuple[str, int], Grounded] = {}  # (target, row) -> the edit
+    out: list[Grounded | Refused] = []
+    for r in results:
+        if isinstance(r, Refused):
+            out.append(r)
+            continue
+        cells = [(r.edit.target, row) for row in r.rows]
+        first = next((taken[c] for c in cells if c in taken), None)
+        if first is None:
+            taken.update(dict.fromkeys(cells, r))
+            out.append(r)
+            continue
+        rows = [row for target, row in cells if taken.get((target, row)) is first]
+        column = catalog.column(r.edit.target)
+        assert column is not None  # ground refused the edit otherwise
+        why = (
+            f'{column_name(column)} on samples {catalog.names(rows)} is already '
+            f'changed by "{first.edit.said}"'
+        )
+        out.append(Refused(r.edit, (why,)))
+    return out
 
 
 def apply_all(
@@ -98,7 +135,9 @@ def apply_all(
 ) -> list[Step]:
     """Every input in order, each against the sheet the earlier ones
     left; the confirmed edits of each are written and verified. The last
-    step's state is the final sheet. `cache` is filled as it goes."""
+    step's state is the final sheet. `cache` is filled as it goes. A
+    writer refusal is recorded on the step; a failed verification is a
+    bug in the writer and raises, since the file must not be used."""
     steps = []
     state = original
     for text in inputs:

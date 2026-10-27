@@ -13,6 +13,8 @@ SOLVENT = 'solvent 2 to DMSO for samples 1 to 3'
 TIME = 'the time of the DMSO for samples 1 to 3 to 300'
 SPEED_SAID = 'speed 4000'
 VARIATION_SAID = 'variation 20min for samples 1 to 3'
+TWICE = 'solvent 2 to DMSO for samples 1 to 3 and to ETH for sample 2'
+TWO = 'solvent 2 to DMSO for samples 1 to 3 and speed 4000'
 
 
 def edit(target, rows, old, new, said, **fields):
@@ -60,6 +62,24 @@ PROPOSALS = {
     'speed 4000 and anneal': proposal(
         edit(SPEED, 'all', '3000', '4000', 'speed 4000'),
         unresolved=[NotFound(reason='not_found', said='anneal')],
+    ),
+    'speed 4000 and annael': proposal(
+        edit(SPEED, 'all', '3000', '4000', 'speed 4000'),
+        unresolved=[NotFound(reason='not_found', said='anneal')],
+    ),
+    TWICE: proposal(
+        edit(CLEAN_SOLVENT_2, FIRST_THREE, 'IPA', 'DMSO', SOLVENT),
+        edit(
+            CLEAN_SOLVENT_2,
+            Samples(samples=['2'], subbatch=None),
+            'IPA',
+            'ETH',
+            'to ETH for sample 2',
+        ),
+    ),
+    TWO: proposal(
+        edit(CLEAN_SOLVENT_2, FIRST_THREE, 'IPA', 'DMSO', SOLVENT),
+        edit(SPEED, 'all', '3000', '4000', 'speed 4000'),
     ),
 }
 
@@ -110,6 +130,22 @@ def test_a_misquoted_edit_is_refused_and_shown_once(synthetic_xlsx):
         '⚠ not applied: "speed 4100"'
     )
     assert result.ready == {}
+
+
+def test_a_misquoted_unresolved_item_keeps_its_line(synthetic_xlsx):
+    result = interpret_instruction('speed 4000 and annael', synthetic_xlsx, FakeLLM())
+    assert result.preview.endswith('? not found: "anneal"\n⚠ misquoted: "anneal"')
+
+
+def test_two_edits_of_one_instruction_may_not_write_the_same_cell(synthetic_xlsx):
+    result = interpret_instruction(TWICE, synthetic_xlsx, FakeLLM())
+    first, second = result.results
+    assert isinstance(second, Refused)
+    assert second.reasons == (
+        'Solvent 2 (1: Cleaning UV-Ozone) on samples 2 is already changed by '
+        f'"{SOLVENT}"',
+    )
+    assert list(result.ready.values()) == [first]
 
 
 def test_a_noop_is_not_ready(synthetic_xlsx):
@@ -194,6 +230,22 @@ def test_a_confirmation_is_bound_to_the_sheet_the_input_was_given(synthetic_xlsx
     assert step.state == synthetic_xlsx
 
 
+def test_edits_of_one_input_are_confirmed_one_by_one(synthetic_xlsx):
+    (step,) = run(synthetic_xlsx, [TWO])
+    solvent, speed = step.interpretation.ready
+    (step,) = run(synthetic_xlsx, [TWO], {solvent})
+    assert {c.column for c in step.written} == {SOLVENT_2_COLUMN}
+    assert set(step.interpretation.ready) == {solvent, speed}  # keys unchanged
+
+
+def test_the_same_words_twice_write_once(synthetic_xlsx):
+    # both inputs get the same key: the second then finds nothing to change
+    confirmed = keys(run(synthetic_xlsx, [SPEED_SAID, SPEED_SAID])[0])
+    steps = run(synthetic_xlsx, [SPEED_SAID, SPEED_SAID], confirmed)
+    assert [len(s.written) for s in steps] == [ALL_ROWS, 0]
+    assert steps[1].interpretation.preview.startswith('= ')
+
+
 def test_the_writer_may_still_refuse_a_confirmed_edit(synthetic_xlsx):
     # the synthetic sheet has no stored formula results, so a cell a
     # formula reads cannot be written safely
@@ -203,3 +255,7 @@ def test_the_writer_may_still_refuse_a_confirmed_edit(synthetic_xlsx):
     assert step.state == synthetic_xlsx
     assert step.refused is not None
     assert 'has no stored result' in step.refused
+    # a later input, confirmed on the unchanged sheet, is still written
+    confirmed |= keys(run(synthetic_xlsx, [VARIATION_SAID, SOLVENT], confirmed)[1])
+    steps = run(synthetic_xlsx, [VARIATION_SAID, SOLVENT], confirmed)
+    assert [len(s.written) for s in steps] == [0, THREE_ROWS]
