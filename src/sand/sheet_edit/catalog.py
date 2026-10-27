@@ -236,10 +236,10 @@ def _is_date_column(header: str, values: list) -> bool:
     says date, and every value is a real calendar day."""
     if 'date' not in norm_key(header).split('_'):
         return False
-    return all(_is_day(str(int(v))) for v in values if _kind(v) == 'int')
+    return all(is_day(str(int(v))) for v in values if _kind(v) == 'int')
 
 
-def _is_day(digits: str) -> bool:
+def is_day(digits: str) -> bool:
     if len(digits) != _YYYYMMDD_DIGITS:
         return False
     try:

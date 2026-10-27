@@ -4,7 +4,7 @@ import pytest
 from synthetic_sheet import edited, letter, with_formula_results
 
 from sand.sheet_edit.catalog import build
-from sand.sheet_edit.edits import Edit, Range, Samples, Where
+from sand.sheet_edit.edits import Anchor, Edit, Range, Samples, Where
 from sand.sheet_edit.ground import (
     Grounded,
     Refusal,
@@ -18,6 +18,14 @@ from sand.sheet_edit.ground import (
 
 INFO = 'Experiment Info'
 SPEED, VARIATION, DEPOSITION, SUBSTRATE, NOTES = 'C025', 'C007', 'C056', 'C055', 'C029'
+DATE, AREA, TIME, ANNEAL_TIME = 'C001', 'C008', 'C026', 'C027'
+CLEAN_SOLVENT_1, CLEAN_TIME_1, CLEAN_SOLVENT_2, CLEAN_TIME_2 = (
+    'C010',
+    'C011',
+    'C013',
+    'C014',
+)
+VOLUME_3 = 'C034'  # 3: Spin Coating, Solvent 1 volume [uL], 50
 ALL_ROWS = tuple(range(3, 15))  # samples 1-5, 7-13
 
 
@@ -61,10 +69,15 @@ def words(synthetic_xlsx):
     return build(edited(synthetic_xlsx, change))
 
 
-def edit(
-    target=SPEED, rows='all', old='3000', new='4000', said='spin coating 2 speed 4000'
-):
-    return Edit(target=target, rows=rows, anchor=None, old=old, new=new, said=said)
+def edit(target=SPEED, rows='all', **fields):
+    fields = {
+        'anchor': None,
+        'old': '3000',
+        'new': '4000',
+        'said': 'spin coating 2 speed 4000',
+        **fields,
+    }
+    return Edit(target=target, rows=rows, **fields)
 
 
 def samples(*labels, subbatch=None):
@@ -249,14 +262,27 @@ def test_a_range_stays_inside_its_subbatch(two_subbatches):
     assert result.rows == (9, 10, 11)
 
 
-def test_a_subbatch_the_edit_names_must_have_been_said(two_subbatches):
+def test_a_different_subbatch_in_the_words_is_refused(two_subbatches):
     why = refused(
         ground(
-            edit(rows=samples('1', subbatch='1'), said='speed 4000 for sample 1'),
+            edit(
+                rows=samples('1', subbatch='1'),
+                said='speed 4000 for sample 1 of subbatch 0',
+            ),
             two_subbatches,
         )
     )
-    assert why == 'you did not name subbatch 1'
+    assert why == 'you named subbatch 0, not 1'
+
+
+def test_a_subbatch_the_edit_names_but_the_words_do_not_is_a_doubt(two_subbatches):
+    result = ground(
+        edit(rows=samples('1', subbatch='1'), said='speed 4000 for sample 1'),
+        two_subbatches,
+    )
+    assert result.rows == (9,)
+    assert result.doubts == ('subbatch 1: not named in your words',)
+    assert result.confidence == 'low'
 
 
 def test_an_unknown_subbatch_is_refused(two_subbatches):
@@ -385,14 +411,15 @@ def test_a_leading_zero_is_the_same_number(synthetic_xlsx):
         assert [s.row for s in said_samples(said, catalog).samples] == [9]
 
 
-def test_a_range_the_user_did_not_name_is_refused(catalog):
-    why = refused(
-        ground(
-            edit(rows=between('1', '3'), said='speed 4000 for the first three samples'),
-            catalog,
-        )
+def test_a_range_the_user_did_not_name_is_a_doubt(catalog):
+    # code found no sample words: no contradiction, the user confirms once
+    result = ground(
+        edit(rows=between('1', '3'), said='speed 4000 for the first three samples'),
+        catalog,
     )
-    assert why == 'samples 1 to 3: you did not name them'
+    assert result.rows == (3, 4, 5)
+    assert result.doubts == ('samples 1 to 3: not named in your words',)
+    assert result.confidence == 'low'
 
 
 def test_a_named_sample_the_edit_leaves_out_is_refused(catalog):
@@ -417,11 +444,21 @@ def test_a_value_right_after_the_list_is_not_a_sample(catalog):
         'samples 1 to 3 4000 rpm',
         'samples 1 to 3 to 4000',
         'samples 1 to 3: 4000',
-        'samples 1 to 3 15 minutes',
     ):
         result = ground(edit(rows=between('1', '3'), said=said), catalog)
         assert isinstance(result, Grounded), (said, result)
         assert result.rows == (3, 4, 5), said
+    result = ground(
+        edit(
+            ANNEAL_TIME,
+            between('1', '3'),
+            old='10',
+            new='15 minutes',
+            said='samples 1 to 3 15 minutes',
+        ),
+        catalog,
+    )
+    assert (result.rows, result.value) == ((3, 4, 5), 15)
 
 
 def test_except_takes_samples_out(catalog):
@@ -570,6 +607,319 @@ def test_said_samples_unknown(catalog, said, unknown):
     assert said_samples(said, catalog).unknown == unknown
 
 
+# --- O old value ------------------------------------------------------------------
+
+
+def test_old_must_be_what_the_cell_holds(catalog):
+    why = refused(ground(edit(old='2000'), catalog))
+    assert why == (
+        "Rotation speed [rpm] (2: Spin Coating) holds '3000' on samples 1–5, 7–13, "
+        "not '2000'"
+    )
+    why = refused(ground(edit(old=None), catalog))
+    assert why.endswith('not empty')
+
+
+def test_old_describes_the_rows_still_to_change(catalog):
+    # samples 1-5, 7 already hold 120: `old` is 115, the value on the others
+    result = ground(
+        edit(target=SUBSTRATE, old='115', new='120', said='substrate temperature 120'),
+        catalog,
+    )
+    assert isinstance(result, Grounded)
+    why = refused(
+        ground(
+            edit(
+                target=SUBSTRATE, old='110', new='120', said='substrate temperature 120'
+            ),
+            catalog,
+        )
+    )
+    assert why.startswith(
+        "Substrate temperature [°C] (5: Close Space Sublimation) holds '115'"
+    )
+
+
+# --- A anchor ---------------------------------------------------------------------
+
+
+def ipa(target, equals='IPA', said='time of the IPA 300'):
+    return edit(
+        target,
+        anchor=Anchor(column=CLEAN_SOLVENT_2, equals=equals),
+        old='600',
+        new='300',
+        said=said,
+    )
+
+
+def test_an_anchor_reaches_its_own_number(catalog):
+    result = ground(ipa(CLEAN_TIME_2), catalog)  # Solvent 2 -> Time 2
+    assert result.rows == ALL_ROWS
+    assert result.confidence == 'high'
+    why = refused(ground(ipa(CLEAN_TIME_1), catalog))  # Solvent 2 -> Time 1
+    assert why == 'Solvent 2 is number 2, Time 1 [s] is number 1'
+
+
+def test_an_anchor_must_hold_its_value(catalog):
+    why = refused(
+        ground(ipa(CLEAN_TIME_2, equals='DMSO', said='time of the DMSO 300'), catalog)
+    )
+    assert why == (
+        "Solvent 2 (1: Cleaning UV-Ozone) holds 'IPA' on samples 1–5, 7–13, not 'DMSO'"
+    )
+
+
+def test_an_anchor_stays_in_its_step(catalog):
+    why = refused(ground(ipa(SPEED, said='speed of the IPA 300'), catalog))
+    assert why.startswith(
+        'Solvent 2 (1: Cleaning UV-Ozone) is not in the step of Rotation speed'
+    )
+
+
+def test_an_anchor_value_missing_from_the_words_is_a_doubt(catalog):
+    result = ground(ipa(CLEAN_TIME_2, said='second cleaning time 300'), catalog)
+    assert result.doubts == ("'IPA': not found in your words",)
+
+
+# --- V value in the words ---------------------------------------------------------
+
+
+def test_a_number_not_said_is_refused(catalog):
+    why = refused(ground(edit(new='4100', said='speed 4000'), catalog))
+    assert why == (
+        "Rotation speed [rpm] (2: Spin Coating): '4100' is not in your words; you said 4000"
+    )
+    why = refused(ground(edit(new='4000', said='speed 4 krpm'), catalog))
+    assert why.endswith('you said 4 krpm')  # the LLM converted: refused, see #108
+
+
+def test_a_spoken_number_is_a_note(catalog):
+    result = ground(edit(said='speed four thousand'), catalog)
+    assert result.notes == (
+        "Rotation speed [rpm] (2: Spin Coating): '4000': read from 'four thousand'",
+    )
+    assert result.confidence == 'medium'
+
+
+def test_no_number_in_the_words_is_a_doubt(catalog):
+    result = ground(edit(said='set the speed to the usual'), catalog)
+    assert result.rows == ALL_ROWS
+    assert result.doubts == (
+        "Rotation speed [rpm] (2: Spin Coating): '4000' not found in your words",
+    )
+    assert result.confidence == 'low'
+
+
+def test_numbers_of_the_column_name_are_not_values(catalog):
+    # the 2 of 'spin coating 2' and the 1 of 'solvent 1'
+    assert ground(edit(said='spin coating 2 speed 4000'), catalog).confidence == 'high'
+    result = ground(
+        edit(VOLUME_3, old='50', new='100', said='step 3 solvent 1 volume 100'), catalog
+    )
+    assert (result.confidence, result.value) == ('high', 100)
+    why = refused(
+        ground(
+            edit(VOLUME_3, old='50', new='1', said='step 3 solvent 1 volume 100'),
+            catalog,
+        )
+    )
+    assert why.endswith('you said 100')
+
+
+def test_a_value_with_a_unit_is_never_an_index(catalog):
+    rate = 'C050'  # Rate 2 [angstrom/s], 1
+    result = ground(
+        edit(
+            rate,
+            old='1',
+            new='2 angstrom per second',
+            said='rate 2 angstrom per second',
+        ),
+        catalog,
+    )
+    assert (result.confidence, result.value) == ('high', 2)
+
+
+def test_text_matches_across_spaces_and_hyphens(catalog):
+    material = 'C017'  # Material name, Me-4PACz
+    result = ground(
+        edit(material, old='Me-4PACz', new='2PACz', said='material name to 2 PACz'),
+        catalog,
+    )
+    assert result.confidence == 'high'
+
+
+def test_text_is_looked_for_as_written(catalog):
+    result = ground(
+        edit(
+            CLEAN_SOLVENT_1, old='Acetone', new='IPA', said='first cleaning solvent ipa'
+        ),
+        catalog,
+    )
+    assert (result.confidence, result.value) == ('high', 'IPA')
+    result = ground(
+        edit(
+            CLEAN_SOLVENT_1,
+            old='Acetone',
+            new='IPA',
+            said='first cleaning solvent isopropanol',
+        ),
+        catalog,
+    )
+    assert result.doubts == (
+        "Solvent 1 (1: Cleaning UV-Ozone): 'IPA' not found in your words",
+    )
+
+
+def test_text_is_not_compared_as_a_number(catalog):
+    # '15min' is text: '15 minutes' is not it as written, '15 MIN' is
+    cases = (
+        ('variation of sample 1 15 minutes', 'low'),
+        ('variation of sample 1 15 MIN', 'high'),
+    )
+    for said, confidence in cases:
+        result = ground(
+            edit(VARIATION, rows=samples('1'), old='10min', new='15min', said=said),
+            catalog,
+        )
+        assert result.confidence == confidence, said
+
+
+def test_yes_is_a_true_word(synthetic_xlsx):
+    flag = letter(INFO, 'Notes')  # turned into a TRUE/FALSE column
+
+    def change(ws):
+        for r in range(3, 15):
+            ws[f'{flag}{r}'] = False
+
+    catalog = build(edited(synthetic_xlsx, change))
+    notes = 'C009'
+    result = ground(edit(notes, old='FALSE', new='YES', said='flag yes'), catalog)
+    assert (result.value, result.confidence) == (True, 'high')
+    result = ground(edit(notes, old='FALSE', new='YES', said='flag no'), catalog)
+    assert result.confidence == 'low'
+
+
+def test_clearing_needs_a_clearing_word(catalog):
+    tool = 'C019'  # Tool/GB name, 'box1'
+    result = ground(edit(tool, old='box1', new='', said='clear the tool name'), catalog)
+    assert (result.value, result.confidence) == (None, 'high')
+    result = ground(edit(tool, old='box1', new='', said='the tool name'), catalog)
+    assert result.confidence == 'low'
+
+
+# --- T type and U unit ------------------------------------------------------------
+
+
+def test_a_unit_must_be_the_columns(catalog):
+    why = refused(ground(edit(new='4 krpm', said='speed 4 krpm'), catalog))
+    assert why == "'4 krpm' is in krpm, not a [rpm] column"
+    why = refused(
+        ground(
+            edit(TIME, old='30', new='15 minutes', said='rotation time 15 minutes'),
+            catalog,
+        )
+    )
+    assert why == "'15 minutes' is in min, not a [s] column"
+    result = ground(
+        edit(TIME, old='30', new='15 seconds', said='rotation time 15 seconds'), catalog
+    )
+    assert (result.rows, result.value) == (ALL_ROWS, 15)  # the unit is stripped
+
+
+def test_text_into_a_number_column_is_refused(catalog):
+    why = refused(ground(edit(new='fast', said='speed fast'), catalog))
+    assert (
+        why
+        == "Rotation speed [rpm] (2: Spin Coating) holds numbers; 'fast' is not a number"
+    )
+
+
+def test_values_are_written_in_the_columns_type(catalog):
+    written = [
+        ground(edit(new='4000 rpm', said='speed 4000 rpm'), catalog).value,
+        ground(edit(new='3500.5', said='speed 3500.5'), catalog).value,
+        ground(
+            edit(AREA, old='0.1', new='0.15', said='sample area 0.15'), catalog
+        ).value,
+    ]
+    assert written == [4000, 3500.5, 0.15]
+    result = ground(
+        edit(
+            VARIATION,
+            old='10min',
+            new='15min',
+            rows=samples('1'),
+            said='variation of sample 1 15min',
+        ),
+        catalog,
+    )
+    assert result.value == '15min'  # text stays text
+    result = ground(
+        edit(
+            VARIATION,
+            old='10min',
+            new='15',
+            rows=samples('1'),
+            said='variation of sample 1 to 15',
+        ),
+        catalog,
+    )
+    assert result.value == '15'
+
+
+def test_dates_keep_the_sheets_form(catalog):
+    result = ground(
+        edit(DATE, old='20250101', new='20250102', said='date 20250102'), catalog
+    )
+    assert (result.rows, result.value) == (ALL_ROWS, 20250102)
+    for said in ('date 20250132', 'date 2025-02-02'):
+        why = refused(
+            ground(edit(DATE, old='20250101', new=said[5:], said=said), catalog)
+        )
+        assert why == (
+            f"Date (Experiment Info) holds dates written as 20250101; '{said[5:]}' is not one"
+        )
+    why = refused(
+        ground(
+            edit(DATE, old='20250101', new='20250202', said='date 20250201'), catalog
+        )
+    )
+    assert (
+        why
+        == "Date (Experiment Info): '20250202' is not in your words; you said 20250201"
+    )
+    # a date said in words: code does not read it yet, the user confirms once
+    result = ground(
+        edit(DATE, old='20250101', new='20250202', said='date 2nd of February 2025'),
+        catalog,
+    )
+    assert result.confidence == 'low'
+    assert result.value == int('20250202')
+
+
+# --- confidence -------------------------------------------------------------------
+
+
+def test_confidence_levels(catalog):
+    high = ground(
+        edit(rows=between('1', '3'), said='speed 4000 for samples 1 to 3'), catalog
+    )
+    medium = ground(
+        edit(rows=between('5', '8'), said='speed 4000 for samples 5 to 8'), catalog
+    )
+    low = ground(
+        edit(rows=between('1', '3'), said='speed 4000 for the first three'), catalog
+    )
+    assert (high.confidence, medium.confidence, low.confidence) == (
+        'high',
+        'medium',
+        'low',
+    )
+    assert medium.notes == ('samples 5 to 8: no sample 6, applied to 3 samples',)
+
+
 # --- N no-op --------------------------------------------------------------------
 
 
@@ -585,7 +935,8 @@ def test_a_value_already_everywhere_is_a_warning_not_an_error(catalog):
 
 def test_rows_already_holding_the_value_are_left_out(catalog):
     result = ground(
-        edit(target=SUBSTRATE, new='120', said='substrate temperature 120'), catalog
+        edit(target=SUBSTRATE, old='115', new='120', said='substrate temperature 120'),
+        catalog,
     )
     assert result.status == 'ok'
     assert result.rows == (9, 10, 11, 12, 13, 14)  # samples 8-13 hold 115

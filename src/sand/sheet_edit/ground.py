@@ -1,10 +1,16 @@
 """Code checks every proposal against the real sheet before anything is
 written.
 
-Part 1, structure: W the target is writable, R the rows exist and are
-found by exact match, S the samples the user named are the ones used,
-N rows that already hold the value are reported, not written. Each
-failure is a refusal with a reason; nothing is guessed or repaired.
+Structure: W the target is writable, R the rows exist and are found by
+exact match, S the samples the user named are the ones used. Value: A
+the anchor ("the volume of the DMSO") holds and points at the target, O
+`old` is what the cell holds, V `new` is in the user's words, T it fits
+the column's type, U its unit is the column's. N rows that already hold
+the value are reported, not written.
+
+A check refuses only on evidence against the proposal. Where code finds
+nothing to compare ("the usual speed" names no number) the edit passes
+with a doubt and low confidence: the user confirms it once.
 """
 
 import datetime
@@ -16,11 +22,19 @@ from sand.sheet_edit.catalog import (
     Catalog,
     ColumnInfo,
     SampleInfo,
+    is_day,
     numbered,
     sample_ranges,
 )
-from sand.sheet_edit.edits import Edit, Range, Samples, Where
-from sand.sheet_edit.numbers import RANGE_WORDS, numbers, value
+from sand.sheet_edit.edits import Confidence, Edit, Range, Samples, Where
+from sand.sheet_edit.numbers import (
+    RANGE_WORDS,
+    Number,
+    UnitMismatch,
+    check_unit,
+    numbers,
+    value,
+)
 
 _SAMPLE_WORD_RE = re.compile(r'\bsamples?(?=\d|\b)', re.IGNORECASE)  # also 'sample1'
 _SUBBATCH_RE = re.compile(r'\bsub-?\s?batch(?:es)?:?\s+', re.IGNORECASE)
@@ -43,17 +57,26 @@ RowsAndNotes = tuple[tuple[int, ...], tuple[str, ...]]
 
 @dataclass(frozen=True)
 class Grounded:
-    """A proposal that passed: which rows to write, which to skip, what to
-    warn about."""
+    """A proposal that passed: which rows to write, what to write, what to
+    warn about, and what the user should confirm."""
 
     edit: Edit
     rows: tuple[int, ...]  # Excel rows to write, in sheet order
+    value: object  # what is written: 4000, 'DMSO', True; None clears the cell
     unchanged: tuple[int, ...] = ()  # rows already holding `new`: reported, not written
     notes: tuple[str, ...] = ()  # warnings the user sees before confirming
+    doubts: tuple[str, ...] = ()  # what code could not check in the words
 
     @property
     def status(self) -> str:
         return 'noop' if not self.rows else 'ok'
+
+    @property
+    def confidence(self) -> Confidence:
+        """low: confirm one by one; medium: glance; high: can be skipped."""
+        if self.doubts:
+            return 'low'
+        return 'medium' if self.notes else 'high'
 
 
 @dataclass(frozen=True)
@@ -69,9 +92,11 @@ class Refusal(Exception):
 
 
 def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
-    """Check one proposal against the sheet, in this order: the target can
-    be written (W), the rows exist (R), the samples the user named are the
-    rows used (S), rows already holding the value are set aside (N)."""
+    """Check one proposal against the sheet: the target can be written
+    (W), the rows exist (R), the samples the user named are the rows used
+    (S), the anchor holds (A), `old` is what the cell holds (O), `new` is
+    in the words (V), fits the column (T) and its unit (U); rows already
+    holding the value are set aside (N)."""
     target = _column(catalog, edit.target)
     if target is None:
         return Refused(edit, (f'{edit.target} is not a column of this sheet',))
@@ -83,9 +108,20 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
     except Refusal as why:
         return Refused(edit, (str(why),))
 
-    reasons = sample_words_problems(edit, catalog, rows)  # S
-    if reasons:
-        return Refused(edit, tuple(reasons))
+    problems, doubts = sample_words_problems(edit, catalog, rows)  # S
+    anchor = None
+    if edit.anchor is not None:  # A
+        anchor = _column(catalog, edit.anchor.column)
+        found = anchor_problems(edit, target, anchor, catalog, rows)
+        problems, doubts = problems + found[0], doubts + found[1]
+    problems += old_problems(edit, target, catalog, rows)  # O
+    found = value_problems(edit, target, anchor, catalog)  # V
+    problems, doubts = problems + found[0], doubts + found[2]
+    notes = (*notes, *found[1])
+    new, problems_t = typed_value(edit.new, target)  # T, U
+    problems += problems_t
+    if problems:
+        return Refused(edit, tuple(problems))
 
     held = {r: g.value for g in target.groups for r in g.rows}  # N
     unchanged = tuple(r for r in rows if same_value(edit.new, held.get(r)))
@@ -100,7 +136,12 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
             f'{_name(target)}: already {edit.new} on {which}, nothing to change',
         )
     return Grounded(
-        edit, tuple(r for r in rows if r not in unchanged), unchanged, notes
+        edit,
+        tuple(r for r in rows if r not in unchanged),
+        new,
+        unchanged,
+        notes,
+        tuple(doubts),
     )
 
 
@@ -213,27 +254,27 @@ def _where_rows(catalog: Catalog, spec: Where) -> RowsAndNotes:
 
 def sample_words_problems(
     edit: Edit, catalog: Catalog, rows: tuple[int, ...]
-) -> list[str]:
+) -> tuple[list[str], list[str]]:
     """Compare the samples the user named with the rows the edit uses.
-    Returns the differences as messages; empty means they agree. 'all'
-    and a condition are fine only when no sample or subbatch was named."""
+    Returns (problems, doubts): problems where the words contradict the
+    rows, doubts where the words name nothing the code can read ("the
+    first three samples"). 'all' and a condition are fine only when no
+    sample or subbatch was named."""
     said = said_samples(edit.said, catalog)
     spec = edit.rows
-    problems = []
+    problems, doubts = [], []
     subbatches = {s.subbatch for s in catalog.samples}
     if unknown := [b for b in said.subbatches if b not in subbatches]:
-        return [f'there is no subbatch {", ".join(unknown)}']
+        return [f'there is no subbatch {", ".join(unknown)}'], []
     if said.unknown:
         problems.append(f'there is no sample {", ".join(said.unknown)}')
     named = {s.row for s in said.samples}
     excluded = {s.row for s in said.excluded}
     if spec == 'all' or isinstance(spec, Where):
         how = 'all samples' if spec == 'all' else 'samples chosen by a value'
-        return problems + _nothing_named_problems(said, catalog, how)
+        return problems + _nothing_named_problems(said, catalog, how), []
     if spec.subbatch is not None:
-        if spec.subbatch not in said.subbatches:
-            # the numbers only make sense once the subbatch is known
-            return [f'you did not name subbatch {spec.subbatch}']
+        problems += _subbatch_problems(spec.subbatch, said.subbatches, doubts)
         # "samples 1 to 3 of subbatches 0 and 1" is one edit per subbatch
         in_subbatch = {s.row for s in catalog.samples if s.subbatch == spec.subbatch}
         named, excluded = named & in_subbatch, excluded & in_subbatch
@@ -248,15 +289,30 @@ def sample_words_problems(
             f'you named samples {catalog.names(extra)}, which the edit does not include'
         )
     if missing := sorted(set(rows) - named):
-        if isinstance(spec, Range) and not named:
-            problems.append(
-                f'samples {spec.first} to {spec.last}: you did not name them'
-            )
-        else:
+        if named:  # the user listed samples; the edit adds others
             problems.append(
                 f'the edit includes samples {catalog.names(missing)}, which you did not name'
             )
-    return problems
+        elif isinstance(spec, Range):
+            doubts.append(
+                f'samples {spec.first} to {spec.last}: not named in your words'
+            )
+        else:
+            doubts.append(f'samples {catalog.names(missing)}: not named in your words')
+    return problems, doubts
+
+
+def _subbatch_problems(
+    wanted: str, said: tuple[str, ...], doubts: list[str]
+) -> list[str]:
+    """The edit's subbatch against the words: another one named is a
+    contradiction, none named a doubt."""
+    if wanted in said:
+        return []
+    if said:
+        return [f'you named subbatch {", ".join(said)}, not {wanted}']
+    doubts.append(f'subbatch {wanted}: not named in your words')
+    return []
 
 
 def _nothing_named_problems(said: 'Said', catalog: Catalog, how: str) -> list[str]:
@@ -518,6 +574,226 @@ def _has_unit(text: str) -> bool:
     """Whether the number the text starts with carries a unit ('20 min')."""
     first = next(iter(numbers(text)), None)
     return first is not None and first.start == 0 and first.unit is not None
+
+
+# --- A anchor ----------------------------------------------------------------
+
+
+def anchor_problems(
+    edit: Edit,
+    target: ColumnInfo,
+    anchor: ColumnInfo | None,
+    catalog: Catalog,
+    rows: tuple[int, ...],
+) -> tuple[list[str], list[str]]:
+    """ "The volume of the DMSO": the anchor column must hold DMSO in the
+    targeted rows and sit in the target's step; a numbered anchor
+    (Solvent 2 name) reaches only its own number (Solvent 2 volume).
+    Returns (problems, doubts); the doubt: the anchor value is not in the
+    words."""
+    assert edit.anchor is not None
+    if anchor is None:
+        return [f'{edit.anchor.column} is not a column of this sheet'], []
+    problems = []
+    if anchor.column.section != target.column.section:
+        problems.append(f'{_name(anchor)} is not in the step of {_name(target)}')
+    elif (
+        anchor.family is not None
+        and target.family is not None
+        and anchor.family.index != target.family.index
+    ):
+        problems.append(
+            f'{anchor.column.header} is number {anchor.family.index}, '
+            f'{target.column.header} is number {target.family.index}'
+        )
+    wrong = _rows_not_holding(anchor, edit.anchor.equals, rows)
+    if wrong:
+        problems.append(
+            f'{_name(anchor)} holds {_held(anchor, catalog, wrong)}, '
+            f'not {edit.anchor.equals!r}'
+        )
+    doubts = []
+    if not _in_words(edit.anchor.equals, edit.said):
+        doubts.append(f'{edit.anchor.equals!r}: not found in your words')
+    return problems, doubts
+
+
+# --- O old value ---------------------------------------------------------------
+
+
+def old_problems(
+    edit: Edit, target: ColumnInfo, catalog: Catalog, rows: tuple[int, ...]
+) -> list[str]:
+    """`old` must be what the target holds in every targeted row that
+    does not already hold `new`; otherwise the LLM read another line of
+    the table."""
+    wrong = _rows_not_holding(target, edit.old or '', rows)
+    wrong = [r for r in wrong if r in _rows_not_holding(target, edit.new, rows)]
+    if not wrong:
+        return []
+    claimed = 'empty' if not edit.old else repr(edit.old)
+    return [f'{_name(target)} holds {_held(target, catalog, wrong)}, not {claimed}']
+
+
+def _rows_not_holding(column: ColumnInfo, text: str, rows) -> list[int]:
+    held = {r: g.value for g in column.groups for r in g.rows}
+    return [r for r in rows if not same_value(text, held.get(r))]
+
+
+def _held(column: ColumnInfo, catalog: Catalog, rows: list[int]) -> str:
+    """ "'3000' on samples 1–3 and '3500' on samples 4–5"."""
+    by_value: dict[str, list[int]] = {}
+    for g in column.groups:
+        for r in g.rows:
+            if r in rows:
+                by_value.setdefault(_text(g.value), []).append(r)
+    return ' and '.join(
+        f'{v!r} on samples {catalog.names(sorted(rs))}' for v, rs in by_value.items()
+    )
+
+
+# --- V value in the words --------------------------------------------------------
+
+_CLEAR_WORDS = re.compile(r'\b(?:clear|empty|blank|delete|remove|erase|none)\b', re.I)
+_TRUE_WORDS = re.compile(r'\b(?:true|yes|on|enabled?|checked)\b', re.I)
+_FALSE_WORDS = re.compile(r'\b(?:false|no|off|disabled?|unchecked)\b', re.I)
+
+
+def value_problems(
+    edit: Edit, target: ColumnInfo, anchor: ColumnInfo | None, catalog: Catalog
+) -> tuple[list[str], list[str], list[str]]:
+    """`new` must come from the user's words. A number is compared with the
+    numbers said that are values (not sample numbers, not the 2 of
+    'solvent 2'); text is looked for as written. Returns (problems,
+    notes, doubts): a problem when the words hold other numbers but not
+    this one; a note when it was read from words ('four thousand'); a
+    doubt when the words hold nothing to compare."""
+    new, said = edit.new.strip(), edit.said
+    where = f'{_name(target)}: {new!r}'
+    doubt = [f'{where} not found in your words']
+    if new == '':
+        return [], [], [] if _CLEAR_WORDS.search(said) else doubt
+    if target.type == 'bool':
+        words = _TRUE_WORDS if new.upper() in ('TRUE', 'YES') else _FALSE_WORDS
+        return [], [], [] if words.search(said) else doubt
+    number = None if target.type == 'text' else value(new)  # text: as written
+    if number is None:
+        return [], [], [] if _in_words(new, said) else doubt
+    candidates = _value_numbers(said, target, anchor, catalog)
+    if target.type == 'yyyymmdd':  # only a day written as 20250101 compares
+        candidates = [c for c in candidates if is_day(str(c.value))]
+    matches = [c for c in candidates if c.value == number.value]
+    if matches:
+        spoken = [m.text for m in matches if not any(ch.isdigit() for ch in m.text)]
+        notes = (
+            [f'{where}: read from {spoken[0]!r}'] if len(spoken) == len(matches) else []
+        )
+        return [], notes, []
+    if candidates:
+        said_numbers = ', '.join(c.text for c in candidates)
+        return [f'{where} is not in your words; you said {said_numbers}'], [], []
+    # nothing to compare: no number said, or a date said in words ('2nd of
+    # February 2025'), which code does not read yet
+    return [], [], doubt
+
+
+def _value_numbers(
+    said: str, target: ColumnInfo, anchor: ColumnInfo | None, catalog: Catalog
+) -> list[Number]:
+    """The numbers in the words that can be a value: not after 'samples'
+    or 'subbatch', and not a number of the column's name next to one of
+    its words (the 2 in 'solvent 2 volume' or 'spin coating 2 speed')."""
+    blanked = said
+    ordered = list(catalog.samples)
+    for m in _SUBBATCH_RE.finditer(said):  # subbatch names
+        end = m.end() + len(_sample_clause(said[m.end() :], ordered))
+        blanked = _blank(blanked, m.end(), end)
+    for pattern in (
+        _SAMPLE_WORD_RE,
+        _EXCEPT_RE,
+    ):  # sample names, not a value after them
+        for m in pattern.finditer(said):
+            clause = _sample_clause(said[m.end() :], ordered)
+            for item in _listed(clause, ordered):
+                if item.hits:
+                    blanked = _blank(blanked, m.end() + item.start, m.end() + item.end)
+    names = [target.column.header, target.column.section.label]
+    if anchor:
+        names += [anchor.column.header, anchor.column.section.label]
+    words = {w.lower() for w in re.findall(r'[A-Za-z]{3,}', ' '.join(names))}
+    indexes = {Decimal(d) for d in re.findall(r'\d+', ' '.join(names))}
+    out = []
+    for n in numbers(blanked):
+        before = re.findall(r'[A-Za-z]+', blanked[: n.start])
+        after = re.findall(r'[A-Za-z]+', blanked[n.end :])
+        neighbours = {w.lower() for w in before[-1:] + after[:1]}
+        if n.unit is None and n.value in indexes and neighbours & words:
+            continue  # a number with a unit is a value ('rate 2 angstrom per second')
+        out.append(n)
+    return out
+
+
+def _blank(text: str, start: int, end: int) -> str:
+    return text[:start] + ' ' * (end - start) + text[end:]
+
+
+def _in_words(text: str, said: str) -> bool:
+    """Text as written, ignoring case, spaces and hyphens, as a whole word:
+    'Me 4PACz' is 'Me-4PACz'; '15min' is '15 MIN' but not '15 minutes'."""
+    chars = [re.escape(ch) for ch in text if ch not in ' -']
+    if not chars:
+        return False
+    pattern = r'(?<![A-Za-z0-9])' + r'[\s-]*'.join(chars) + r'(?![A-Za-z0-9])'
+    return re.search(pattern, said, re.IGNORECASE) is not None
+
+
+# --- T type and U unit -------------------------------------------------------
+
+
+def typed_value(new: str, target: ColumnInfo) -> tuple[object, list[str]]:
+    """`new` in the type the column holds, ready to write: '4000 rpm' into
+    a number column is 4000 (after its unit was checked against the
+    header, never converted); text stays text; '' clears. Returns (value,
+    problems)."""
+    try:
+        return _typed(new.strip(), target), []
+    except Refusal as why:
+        return None, [str(why)]
+
+
+def _typed(new: str, target: ColumnInfo) -> object:
+    name = _name(target)
+    if new == '':
+        return None
+    if target.type == 'bool':
+        if new.upper() not in ('TRUE', 'YES', 'FALSE', 'NO'):
+            raise Refusal(f'{name} holds TRUE/FALSE; {new!r} is neither')
+        return new.upper() in ('TRUE', 'YES')
+    if target.type == 'date':
+        raise Refusal(f'{name} holds dates; sand does not edit dates yet')
+    if target.type == 'text':
+        return new
+    number = value(new)
+    if number is None:
+        if target.type == 'yyyymmdd':
+            raise Refusal(f'{name} holds dates written as 20250101; {new!r} is not one')
+        if target.type in ('int', 'float'):
+            raise Refusal(f'{name} holds numbers; {new!r} is not a number')
+        return new  # an empty or mixed column keeps what was said
+    try:
+        check_unit(number, target.unit)  # U
+    except UnitMismatch as why:
+        raise Refusal(str(why)) from None
+    plain = (
+        int(number.value)
+        if number.value == number.value.to_integral_value()
+        else float(number.value)
+    )
+    if target.type == 'yyyymmdd' and not (
+        isinstance(plain, int) and is_day(str(plain))
+    ):
+        raise Refusal(f'{name} holds dates written as 20250101; {new!r} is not one')
+    return plain
 
 
 # --- values ------------------------------------------------------------------
