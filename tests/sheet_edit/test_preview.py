@@ -1,4 +1,5 @@
 import pytest
+from synthetic_sheet import edited, letter
 
 from sand.sheet_edit.catalog import build
 from sand.sheet_edit.coverage import Coverage, coverage
@@ -23,11 +24,39 @@ DATE, SUBSTRATE, CLEAN_SOLVENT_2, VOLUME_3, SOLVENT_3 = (
     'C033',
 )
 NONE = Coverage((), ())
+INFO, CLEANING = 'Experiment Info', '1: Cleaning UV-Ozone'
+AREA = 'C008'
 
 
 @pytest.fixture(scope='module')
 def catalog(synthetic_xlsx):
     return build(synthetic_xlsx)
+
+
+@pytest.fixture(scope='module')
+def two_subbatches(synthetic_xlsx):
+    subbatch, sample = letter(INFO, 'Subbatch'), letter(INFO, 'Sample')
+
+    def change(ws):  # rows 9-14 become subbatch 1, samples 1-6
+        for i, r in enumerate(range(9, 15)):
+            ws[f'{subbatch}{r}'] = 1
+            ws[f'{sample}{r}'] = i + 1
+
+    return build(edited(synthetic_xlsx, change))
+
+
+@pytest.fixture(scope='module')
+def flagged(synthetic_xlsx):
+    """Notes of 2: Spin Coating hold TRUE; Solvent 2 holds 'DMSO ' with a
+    trailing space."""
+    notes, solvent = letter('2: Spin Coating', 'Notes'), letter(CLEANING, 'Solvent 2')
+
+    def change(ws):
+        for r in range(3, 15):
+            ws[f'{notes}{r}'] = True
+            ws[f'{solvent}{r}'] = 'DMSO '
+
+    return build(edited(synthetic_xlsx, change))
 
 
 def edit(target=SPEED, rows='all', **fields):
@@ -86,6 +115,35 @@ def test_a_refused_edit_lists_its_reasons(catalog):
         "   Rotation speed [rpm] (2: Spin Coating): '4100' is not in your words; "
         'you said 4000',
     ]
+    rows = Samples(samples=['1', '2', '3'], subbatch=None)
+    wrong = edit(rows=rows, old='2000', new='4000', said='samples 1 to 5 speed 4100')
+    assert lines(catalog, wrong) == [
+        '✗ not applied: "samples 1 to 5 speed 4100"',
+        '   you named samples 4–5, which the edit does not include',
+        "   Rotation speed [rpm] (2: Spin Coating) holds '3000' on samples 1–3, "
+        "not '2000'",
+        "   Rotation speed [rpm] (2: Spin Coating): '4000' is not in your words; "
+        'you said 4100',
+    ]
+
+
+def test_values_read_as_excel_shows_them(catalog, flagged):
+    said = 'sample area 0.25'
+    area = edit(AREA, old='0.1', new='0.25', said=said)
+    assert lines(catalog, area)[0] == (
+        'Experiment Info · Sample area [cm^2]: 0.1 → 0.25, all 12 samples'
+    )
+    note = edit(NOTES, old=None, new='checked', said='notes: checked')
+    assert lines(catalog, note)[:3] == [
+        '2: Spin Coating · Notes: (empty) → checked, all 12 samples',
+        '   from "notes: checked"',
+        '   · new term: checked',
+    ]
+    flag = edit(NOTES, old='TRUE', new='no', said='notes no')
+    assert (
+        lines(flagged, flag)[0]
+        == '2: Spin Coating · Notes: TRUE → FALSE, all 12 samples'
+    )
 
 
 def test_nothing_to_change(catalog):
@@ -147,6 +205,27 @@ def test_a_formula_reading_the_column_is_a_mark(catalog):
     assert (
         lines(catalog, date)[-1] == '   · changes Experiment Info · Nomad ID by formula'
     )
+    # nothing written: no formula changes either
+    same = edit(DATE, old='20250101', new='20250101', said='date 20250101')
+    assert lines(catalog, same)[-1] == (
+        '   · already 20250101 on all 12 samples, nothing to change'
+    )
+
+
+def test_samples_are_named_with_their_subbatch_when_labels_repeat(two_subbatches):
+    said = 'samples 1 and 2 of subbatch 1 speed 4000'
+    rows = Samples(samples=['1', '2'], subbatch='1')
+    assert lines(two_subbatches, edit(rows=rows, said=said))[0] == (
+        '2: Spin Coating · Rotation speed [rpm]: 3000 → 4000, samples 1–2 of subbatch 1'
+    )
+
+
+def test_a_text_a_cell_holds_with_spaces_around_is_no_new_term(catalog, flagged):
+    said = 'solvent 2 to DMSO'
+    solvent = edit(CLEAN_SOLVENT_2, old='DMSO', new='DMSO', said=said)
+    assert lines(flagged, solvent)[0] == '= 1: Cleaning UV-Ozone · Solvent 2'
+    solvent = edit(CLEAN_SOLVENT_2, old='IPA', new='IPA', said='solvent 2 to IPA')
+    assert lines(catalog, solvent)[0] == '= 1: Cleaning UV-Ozone · Solvent 2'
 
 
 def test_a_text_no_cell_holds_is_a_new_term(catalog):

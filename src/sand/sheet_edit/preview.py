@@ -16,14 +16,11 @@ The first character says what to do: nothing (fine, or a · to glance at),
 ? (confirm one by one), ✗ or ⚠ (rephrase), = (nothing to change).
 """
 
-import datetime
-
 from sand.sheet_edit.catalog import Catalog, ColumnInfo
 from sand.sheet_edit.coverage import Coverage
 from sand.sheet_edit.edits import Ambiguous, Unresolved
-from sand.sheet_edit.formulas import as_text
 from sand.sheet_edit.ground import Grounded, Refused, column_name
-from sand.sheet_edit.render import EMPTY
+from sand.sheet_edit.render import value_text
 
 INDENT = '   '
 NOTHING = 'nothing to edit'
@@ -58,7 +55,8 @@ def edit_lines(result: Grounded | Refused, catalog: Catalog) -> list[str]:
         head = f'{_where(target)}: {_change(result, target, catalog)}'
     lines = [head, f'{INDENT}from "{result.edit.said}"']
     lines += _indented(f'· {_short(note, target)}' for note in result.notes)
-    lines += _indented(f'· {mark}' for mark in _marks(result, target, catalog))
+    if result.rows:  # a no-op changes nothing, so no formula changes either
+        lines += _indented(f'· {mark}' for mark in _marks(result, target, catalog))
     lines += _indented(f'? {_short(doubt, target)}' for doubt in result.doubts)
     return lines
 
@@ -67,8 +65,8 @@ def _change(result: Grounded, target: ColumnInfo, catalog: Catalog) -> str:
     """'3000 → 4000, all 12 samples'. The rows written all hold the same
     value: check O refused the edit otherwise."""
     held = {r: g.value for g in target.groups for r in g.rows}
-    old = _show(held.get(result.rows[0]))
-    return f'{old} → {_show(result.value)}, {_samples(result.rows, catalog)}'
+    old = value_text(held.get(result.rows[0]))
+    return f'{old} → {value_text(result.value)}, {_samples(result.rows, catalog)}'
 
 
 def _samples(rows: tuple[int, ...], catalog: Catalog) -> str:
@@ -81,7 +79,7 @@ def _marks(result: Grounded, target: ColumnInfo, catalog: Catalog) -> list[str]:
     """What to look at twice: a text no cell holds yet (a misheard material
     name is the likeliest voice error), and formulas that read the column."""
     marks = []
-    if isinstance(result.value, str) and result.value not in _texts(catalog):
+    if isinstance(result.value, str) and result.value.strip() not in _texts(catalog):
         marks.append(f'new term: {result.value}')
     readers = [c for c in catalog.columns if target.id in (c.inputs or ())]
     if readers:
@@ -92,7 +90,10 @@ def _marks(result: Grounded, target: ColumnInfo, catalog: Catalog) -> list[str]:
 
 def _texts(catalog: Catalog) -> set[str]:
     return {
-        g.value for c in catalog.columns for g in c.groups if isinstance(g.value, str)
+        g.value.strip()
+        for c in catalog.columns
+        for g in c.groups
+        if isinstance(g.value, str)
     }
 
 
@@ -113,16 +114,6 @@ def _short(message: str, target: ColumnInfo) -> str:
 
 def _where(column: ColumnInfo) -> str:
     return f'{column.column.section.label} · {column.column.header}'
-
-
-def _show(v: object) -> str:
-    if v is None:
-        return EMPTY
-    if isinstance(v, datetime.date | datetime.time):
-        return v.isoformat()
-    if isinstance(v, bool | int | float):
-        return as_text(v)
-    return str(v)
 
 
 def _indented(lines) -> list[str]:
