@@ -134,7 +134,7 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
         )
         notes = (
             *notes,
-            f'{_name(target)}: already {edit.new} on {which}, nothing to change',
+            f'{column_name(target)}: already {edit.new or "empty"} on {which}, nothing to change',
         )
     return Grounded(
         edit,
@@ -245,7 +245,7 @@ def _where_rows(catalog: Catalog, spec: Where) -> RowsAndNotes:
         shown = [repr(_text(g.value)) for g in column.groups[:_SHOWN_VALUES]]
         more = ', ...' if len(column.groups) > _SHOWN_VALUES else ''
         raise Refusal(
-            f'no sample has {_name(column)} = {wanted}; it holds {", ".join(shown)}{more}'
+            f'no sample has {column_name(column)} = {wanted}; it holds {", ".join(shown)}{more}'
         )
     return tuple(sorted(rows)), ()
 
@@ -597,7 +597,9 @@ def anchor_problems(
         return [f'{edit.anchor.column} is not a column of this sheet'], []
     problems = []
     if anchor.column.section != target.column.section:
-        problems.append(f'{_name(anchor)} is not in the step of {_name(target)}')
+        problems.append(
+            f'{column_name(anchor)} is not in the step of {column_name(target)}'
+        )
     elif (
         anchor.family is not None
         and target.family is not None
@@ -610,7 +612,7 @@ def anchor_problems(
     wrong = _rows_not_holding(anchor, edit.anchor.equals, rows)
     if wrong:
         problems.append(
-            f'{_name(anchor)} holds {_held(anchor, catalog, wrong)}, '
+            f'{column_name(anchor)} holds {_held(anchor, catalog, wrong)}, '
             f'not {edit.anchor.equals!r}'
         )
     doubts = []
@@ -633,7 +635,9 @@ def old_problems(
     if not wrong:
         return []
     claimed = 'empty' if not edit.old else repr(edit.old)
-    return [f'{_name(target)} holds {_held(target, catalog, wrong)}, not {claimed}']
+    return [
+        f'{column_name(target)} holds {_held(target, catalog, wrong)}, not {claimed}'
+    ]
 
 
 def _rows_not_holding(column: ColumnInfo, text: str, rows) -> list[int]:
@@ -670,7 +674,7 @@ def value_problems(
     this one; a note when it was read from words ('four thousand'); a
     doubt when the words hold nothing to compare."""
     new, said = edit.new.strip(), edit.said
-    where = f'{_name(target)}: {new!r}'
+    where = f'{column_name(target)}: {new!r}'
     doubt = [f'{where} not found in your words']
     if new == '':
         return [], [], [] if _CLEAR_WORDS.search(said) else doubt
@@ -772,7 +776,7 @@ def typed_value(new: str, target: ColumnInfo) -> tuple[object, list[str]]:
 
 
 def _typed(new: str, target: ColumnInfo) -> object:
-    name = _name(target)
+    name = column_name(target)
     if new == '':
         return None
     if target.type == 'bool':
@@ -839,8 +843,8 @@ def _date_forms(stored) -> set[str]:
 # --- helpers -----------------------------------------------------------------
 
 
-def _name(column: ColumnInfo) -> str:
-    """How a column is named in messages: 'Spin speed [rpm] (2: Spin Coating)'."""
+def column_name(column: ColumnInfo) -> str:
+    """How a column is named in messages: 'Rotation speed [rpm] (2: Spin Coating)'."""
     return f'{column.column.header} ({column.column.section.label})'
 
 
@@ -849,7 +853,7 @@ def _read_only(target: ColumnInfo, catalog: Catalog) -> str:
     inputs = [catalog.column(i) for i in target.inputs or ()]
     names = ', '.join(c.column.header for c in inputs if c)
     hint = f' from {names}; edit {names} instead' if names else ''
-    return f'{_name(target)} is calculated by a formula{hint}'
+    return f'{column_name(target)} is calculated by a formula{hint}'
 
 
 def _text(v) -> str:

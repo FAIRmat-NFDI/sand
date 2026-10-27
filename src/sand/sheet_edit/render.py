@@ -67,13 +67,19 @@ def _current(c: ColumnInfo, catalog: Catalog, names: dict[str, str]) -> str:
 def _value(v) -> str:
     if v is None:
         return EMPTY
+    return _cell(json.dumps(value_text(v), ensure_ascii=False))
+
+
+def value_text(v) -> str:
+    """A stored value as the user reads it: as Excel shows it, dates in
+    ISO form, None as '(empty)'."""
+    if v is None:
+        return EMPTY
     if isinstance(v, datetime.date | datetime.time):
-        text = v.isoformat()
-    elif isinstance(v, datetime.timedelta):
-        text = str(v)
-    else:
-        text = as_text(v)
-    return _cell(json.dumps(text, ensure_ascii=False))
+        return v.isoformat()
+    if isinstance(v, datetime.timedelta):
+        return str(v)
+    return as_text(v)
 
 
 def _cell(text: str) -> str:
