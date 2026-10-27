@@ -107,13 +107,22 @@ def test_sample_numbers_must_reach_the_rows(catalog):
     assert not_applied(said, catalog, edit(rows=rows, said=said)) == ()
 
 
-def test_a_sheet_word_outside_every_edit_is_not_applied(catalog):
-    assert not_applied('the hot samples speed 4000', catalog, edit()) == (
-        'the hot samples',
+def test_a_sheet_value_outside_every_edit_is_not_applied(catalog):
+    assert not_applied('the 10min-hot samples speed 4000', catalog, edit()) == (
+        'the 10min-hot samples',
     )
     rows = Where(where=VARIATION, equals='10min-hot')
-    said = 'the hot samples speed 4000'
+    said = 'the 10min-hot samples speed 4000'
     assert not_applied(said, catalog, edit(rows=rows, said=said)) == ()
+
+
+def test_a_header_word_outside_every_edit_is_not_applied(catalog):
+    said = 'speed 4000, annealing too'
+    assert not_applied(said, catalog, edit()) == ('annealing too',)
+    # 'times' only starts with the header word 'time'; cell text is no
+    # header word: 'ok' in a Notes cell does not make 'ok' one
+    assert not_applied('spin 3 times, speed 4000', catalog, edit()) == ('spin 3 times',)
+    assert not_applied('ok, speed 4000', catalog, edit()) == ()
 
 
 def test_a_sheet_value_no_field_holds_is_not_applied(catalog):
@@ -122,6 +131,21 @@ def test_a_sheet_value_no_field_holds_is_not_applied(catalog):
     said = 'speed 4000 and Ag'  # the Evaporation material, as a whole word
     assert not_applied(said, catalog, edit(said=said)) == ('Ag',)
     assert not_applied('speed 4000 again', catalog, edit(said='speed 4000 again')) == ()
+
+
+def test_a_unit_after_the_quote_belongs_to_its_number(catalog):
+    assert not_applied('speed 4000 rpm', catalog, edit()) == ()
+    assert not_applied('speed 4000 rpm and time 40', catalog, edit(), time()) == ()
+
+
+def test_a_unit_tells_two_equal_numbers_apart(catalog):
+    said = 'time 40 s at 40 degrees'
+    assert not_applied(said, catalog, time(said=said)) == ('at 40 degrees',)
+
+
+def test_a_spoken_number_is_one_clause(catalog):
+    said = 'speed 4000 and anneal at one hundred and twenty'
+    assert not_applied(said, catalog, edit()) == ('anneal at one hundred and twenty',)
 
 
 def test_words_the_sheet_does_not_know_are_ignored(catalog):
@@ -237,6 +261,20 @@ def test_an_edit_must_quote_the_instruction(catalog):
     assert result.misquoted == ('speed to 4000',)
     assert result.not_applied == ('spin coating 2 speed 4000',)  # it covers nothing
     assert not result.complete
+
+
+def test_a_quote_matches_whole_words_only(catalog):
+    # 'time 40' is not in 'time 400': the cell would get 40 for 400
+    result = check('speed 4000 and time 400', catalog, edit(), time())
+    assert result.misquoted == ('time 40',)
+    assert result.not_applied == ('time 400',)
+    result = check('speed 14000 rpm', catalog, edit(said='4000 rpm'))
+    assert result.misquoted == ('4000 rpm',)
+
+
+def test_a_quote_may_occur_twice(catalog):
+    said = 'speed 4000, I mean speed 4000'
+    assert not_applied(said, catalog, edit()) == ()
 
 
 def test_case_spacing_and_end_punctuation_do_not_count(catalog):
