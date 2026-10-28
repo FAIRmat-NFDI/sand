@@ -35,6 +35,7 @@ from sand.sheet_edit.numbers import (
     numbers,
     value,
 )
+from sand.sheet_edit.render import EMPTY
 
 _SAMPLE_WORD_RE = re.compile(r'\bsamples?(?=\d|\b)', re.IGNORECASE)  # also 'sample1'
 _SUBBATCH_RE = re.compile(r'\bsub-?\s?batch(?:es)?:?\s+', re.IGNORECASE)
@@ -777,6 +778,10 @@ def typed_value(new: str, target: ColumnInfo) -> tuple[object, list[str]]:
 
 def _typed(new: str, target: ColumnInfo) -> object:
     name = column_name(target)
+    if new == EMPTY:  # the LLM copied the table's marker for an empty cell
+        raise Refusal(
+            f'{name}: {new!r} is how the table shows an empty cell, not a value'
+        )
     if new == '':
         return None
     if target.type == 'bool':

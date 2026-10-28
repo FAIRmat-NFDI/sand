@@ -10,19 +10,17 @@ One model is available, so the two passes differ by what they see, not
 by chance: pass A reads the table in sheet order with the rules as
 written, pass B the steps in reverse order with the rules reworded. Both
 run at temperature 0, which the workflow sets. Only edits both passes
-agree on go on as edits; the rest becomes `Uncertain`, shown with both
-readings and never applied without the user choosing. Same model means
+agree on go on as edits; the rest becomes `Uncertain`, shown with every
+reading and never applied without the user choosing. Same model means
 shared blind spots: this is one more layer, the deterministic checks in
 ground.py are the safety net.
 """
 
 import json
-import re
 from collections.abc import Callable
 
-from pydantic import ValidationError
-
 from sand.sheet_edit.catalog import Catalog
+from sand.sheet_edit.coverage import quote_words
 from sand.sheet_edit.edits import (
     Edit,
     ProposedEdits,
@@ -32,21 +30,25 @@ from sand.sheet_edit.edits import (
     Unreadable,
     Unresolved,
     proposed_edits_model,
-    proposed_edits_schema,
 )
+from sand.sheet_edit.ground import Refusal, resolve_rows
 from sand.sheet_edit.render import table
 
-# recorded with every proposal (changelog, status); bump on any prompt change
+# recorded with every proposal (changelog, status); bump on any change to
+# the prompts below or to the table in render.py, which the model reads
 PROMPT_VERSION = 'v1'
 
-# (system prompt, user text, JSON schema) -> the model's answer, as text
+# (system prompt, user text, JSON schema) -> the model's answer, as text;
+# an answer that is not text, or not the schema, makes the instruction
+# unreadable. Transport errors are the caller's to raise.
 CallLLM = Callable[[str, str, dict], str]
 
 _TASK = """\
 You turn ONE instruction about a lab spreadsheet into cell edits. The user \
 is a researcher who uploaded the sheet and says, by voice or text, what to \
 change. The table lists every column with its ID, step, parameter and \
-current values, then the samples. Answer ONLY JSON matching the schema."""
+current values (in quotes; an empty cell shows as (empty)), then the \
+samples. Answer ONLY JSON matching the schema."""
 
 _RULES_A = """\
 Rules:
@@ -54,18 +56,23 @@ Rules:
 user did not mention.
 - "said": the exact words of the instruction this edit comes from, copied \
 verbatim, nothing else.
-- "new": the value as the user said it. Never convert units, scale or round.
-- "old": what the table shows the cell holds now; null when it is empty.
+- "new": the value as the user said it. Never convert units, scale or round. \
+To clear a cell, "new" is "" (the user said to clear, empty or remove it); \
+(empty) is never a value.
+- "old": the current value the table shows for the cell, without the quotes; \
+null when the cell is empty.
 - "rows": "all" when the user names no samples; the samples named; a range \
-("samples 1 to 3"); or "where" another column holds the value the user \
-pointed through ("the time of the DMSO step").
+("samples 1 to 3"); or "where" another column holds a value, to pick the \
+rows by it ("the samples with variation 20min": where = that column, \
+equals = "20min").
+- "anchor": when the user names a value in a neighbouring column of the \
+same step to say which cell they mean ("the volume of the DMSO": the \
+volume column is the target, anchor = the solvent column, equals = "DMSO").
 - A value the user mentions as current ("the 3000") is a clue to the cell: \
-use it as "old" or as the "where" value.
+use it as "old".
 - If the words fit more than one column, do not pick one: answer \
 "ambiguous" with every candidate.
 - If what the user points at is not in the table, answer "not_found".
-- If the user corrects themselves ("4000, no, 5000"), make ONE edit with \
-the value said last.
 - One edit per column and group of samples. Nothing the user asked for may \
 be dropped: what you cannot place goes to "unresolved"."""
 
@@ -75,18 +82,21 @@ How to answer:
 sample or column may be invented.
 - Copy the user's exact words for this edit into "said", unchanged.
 - Put the value in "new" exactly as spoken: no unit conversion, no \
-rounding, no rescaling.
-- "old" is the current value shown in the table for that cell, or null for \
-an empty cell.
+rounding, no rescaling. Clearing a cell (the user says clear, empty, \
+remove) is "new": ""; the marker (empty) is not a value.
+- "old" is the current value shown in the table for that cell, quotes \
+left out, or null for an empty cell.
 - Choose "rows" as "all" if no sample is named, else the named samples, a \
-"first"/"last" range for "samples 1 to 3", or "where" when the user names \
-a value in another column to point at rows ("the DMSO one").
-- When the user quotes a current value, it identifies the cell: it is the \
-"old" value or the "where" value.
+"first"/"last" range for "samples 1 to 3", or "where" when the user picks \
+rows by what another column holds ("the samples with variation 20min").
+- Use "anchor" when the user identifies the cell by a value next to it in \
+the same step ("the volume of the DMSO" edits the volume column; the \
+anchor is the solvent column with equals "DMSO").
+- When the user quotes a current value ("the 3000"), it identifies the \
+cell: it is the "old" value.
 - Several columns could be meant? Then "ambiguous" with all of them, never \
 a guess.
 - Nothing in the table matches? Then "not_found".
-- A self-correction ("4000, no, 5000") is ONE edit with the last value.
 - One edit per column and sample group. Do not drop any part of the \
 instruction: anything you cannot place is "unresolved"."""
 
@@ -102,9 +112,11 @@ def user_text(instruction: str, catalog: Catalog, reverse: bool) -> str:
 def resolve(instruction: str, catalog: Catalog, call: CallLLM) -> ProposedEdits:
     """Two passes, agreed. One unreadable answer makes the whole
     instruction unresolved: half a reading is no reading."""
-    schema = proposed_edits_schema(catalog)
+    model = proposed_edits_model(catalog)
+    schema = model.model_json_schema()
     passes = [
-        _pass(instruction, catalog, call, schema, reverse) for reverse in (False, True)
+        _pass(instruction, catalog, (call, model, schema), reverse)
+        for reverse in (False, True)
     ]
     unreadable = [p for p in passes if isinstance(p, Unreadable)]
     if unreadable:
@@ -115,83 +127,108 @@ def resolve(instruction: str, catalog: Catalog, call: CallLLM) -> ProposedEdits:
 
 
 def _pass(
-    instruction: str, catalog: Catalog, call: CallLLM, schema: dict, reverse: bool
+    instruction: str, catalog: Catalog, how: tuple, reverse: bool
 ) -> ProposedEdits | Unreadable:
+    call, model, schema = how
     answer = call(
         system_prompt(reverse), user_text(instruction, catalog, reverse), schema
     )
+    if not isinstance(answer, str):
+        return Unreadable(
+            reason='unreadable', detail='the answer is not text', said=instruction
+        )
     try:
-        data = json.loads(answer)
-        narrowed = proposed_edits_model(catalog).model_validate(data)
-    except (ValueError, ValidationError) as why:  # JSONDecodeError is a ValueError
-        detail = str(why).splitlines()[0]
+        narrowed = model.model_validate(json.loads(answer))
+    except ValueError as why:  # JSON errors and pydantic's ValidationError both
+        detail = str(why).partition('\n')[0] or type(why).__name__
         return Unreadable(reason='unreadable', detail=detail, said=instruction)
     # back to the plain models: the narrowed ones only exist to validate
     return ProposedEdits.model_validate(narrowed.model_dump())
 
 
 def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdits:
-    """Edits in both passes stay, in pass A's order. An edit in one pass
-    only is uncertain: paired with the other pass's edit for the same
-    words when there is one. Unresolved items of either pass are kept."""
-    keys_a = {_edit_key(e, catalog): e for e in a.edits}
-    keys_b = {_edit_key(e, catalog): e for e in b.edits}
-    edits = [e for k, e in keys_a.items() if k in keys_b]
-    only_a = [e for k, e in keys_a.items() if k not in keys_b]
-    only_b = [e for k, e in keys_b.items() if k not in keys_a]
-    uncertain: list[Unresolved] = []
-    for edit in only_a:
-        other = next((e for e in only_b if _words(e.said) == _words(edit.said)), None)
-        readings = [edit] if other is None else [edit, other]
-        if other is not None:
-            only_b.remove(other)
-        uncertain.append(
-            Uncertain(reason='uncertain', readings=readings, said=edit.said)
-        )
-    uncertain += [
-        Uncertain(reason='uncertain', readings=[e], said=e.said) for e in only_b
-    ]
+    """Edits in both passes stay, in pass A's order, unless a pass also
+    left the same words unresolved. Every other edit is uncertain, one
+    item per quote with every reading of it. Unresolved items of either
+    pass are kept once."""
+    keys_a: dict[tuple, Edit] = {}
+    keys_b: dict[tuple, Edit] = {}
+    for edit in a.edits:
+        keys_a.setdefault(
+            _edit_key(edit, catalog), edit
+        )  # a repeat differs in `old` only
+    for edit in b.edits:
+        keys_b.setdefault(_edit_key(edit, catalog), edit)
+    hedged = {_quote(u.said) for u in [*a.unresolved, *b.unresolved]}
+    edits: list[Edit] = []
+    uncertain: dict[str, Uncertain] = {}  # by quote, in order of appearance
+
+    def doubt(edit: Edit, why: str) -> None:
+        quote = _quote(edit.said)
+        if quote in uncertain:
+            item = uncertain[quote]
+            uncertain[quote] = item.model_copy(
+                update={'readings': [*item.readings, edit], 'why': _DIFFER}
+            )
+        else:
+            uncertain[quote] = Uncertain(
+                reason='uncertain', readings=[edit], why=why, said=edit.said
+            )
+
+    for key, edit in keys_a.items():
+        if key not in keys_b:
+            doubt(edit, _ONE_PASS)
+        elif _quote(edit.said) in hedged:
+            doubt(edit, _HEDGED)
+        else:
+            edits.append(edit)
+    for key, edit in keys_b.items():
+        if key not in keys_a:
+            doubt(edit, _ONE_PASS)
     seen: set[tuple] = set()
     unresolved: list[Unresolved] = []
     for item in [*a.unresolved, *b.unresolved]:
-        key = (item.reason, _words(item.said), str(getattr(item, 'candidates', '')))
+        key = (
+            item.reason,
+            _quote(item.said),
+            frozenset(getattr(item, 'candidates', ())),
+        )
         if key not in seen:
             seen.add(key)
             unresolved.append(item)
-    return ProposedEdits(edits=edits, unresolved=[*uncertain, *unresolved])
+    return ProposedEdits(edits=edits, unresolved=[*uncertain.values(), *unresolved])
+
+
+_ONE_PASS = 'only one of the two passes proposed it'
+_DIFFER = 'the two passes read these words differently'
+_HEDGED = 'a pass also left these words unresolved'
 
 
 def _edit_key(edit: Edit, catalog: Catalog) -> tuple:
-    """What two passes must agree on. `old` is left out: ground checks it
-    against the sheet anyway, and the passes may describe the same cell
-    with and without it."""
-    anchor = (edit.anchor.column, _words(edit.anchor.equals)) if edit.anchor else None
-    return (
-        edit.target,
-        _rows_key(edit.rows, catalog),
-        anchor,
-        _words(edit.new),
-        _words(edit.said),
-    )
+    """What two passes must agree on: the cells and the value. Left out:
+    `old`, which ground checks against the sheet anyway, and `said`,
+    which the passes may cut differently for one and the same edit and
+    coverage checks against the instruction. The value is compared as
+    written: material names are case-sensitive (PbI2, Me-4PACz)."""
+    anchor = (edit.anchor.column, edit.anchor.equals.strip()) if edit.anchor else None
+    return (edit.target, _rows_key(edit.rows, catalog), anchor, edit.new.strip())
 
 
 def _rows_key(rows, catalog: Catalog):
-    """A range and the list of the same samples are the same rows."""
+    """Samples listed and the range of the same samples are the same rows;
+    the sheet decides, through the one row resolver. 'all' and 'where'
+    stay what they are: named samples and 'every sample' are two readings."""
+    if isinstance(rows, Samples | Range):
+        try:
+            found, _ = resolve_rows(rows, catalog)
+            return frozenset(found)
+        except Refusal:
+            return tuple(rows.model_dump().items())
     if rows == 'all':
         return 'all'
-    if isinstance(rows, Samples):
-        return (frozenset(rows.samples), rows.subbatch)
-    if isinstance(rows, Range):
-        labels = [s.label for s in catalog.samples if s.label is not None]
-        labels = list(dict.fromkeys(labels))
-        if rows.first in labels and rows.last in labels:
-            first, last = labels.index(rows.first), labels.index(rows.last)
-            if first <= last:
-                return (frozenset(labels[first : last + 1]), rows.subbatch)
-        return ('range', rows.first, rows.last, rows.subbatch)
-    return ('where', rows.where, _words(rows.equals))
+    return ('where', rows.where, None if rows.equals is None else rows.equals.strip())
 
 
-def _words(text: str | None) -> str | None:
-    """Spacing and case are no disagreement."""
-    return None if text is None else re.sub(r'\s+', ' ', text).strip().casefold()
+def _quote(said: str) -> str:
+    """Punctuation at the edges, spacing and case are no disagreement."""
+    return ' '.join(quote_words(said)).casefold()

@@ -11,7 +11,7 @@ import json
 
 from sand.sheet_edit.catalog import Catalog, ColumnInfo
 from sand.sheet_edit.formulas import as_text
-from sand.sheet_edit.workbook import EXPERIMENT_INFO, SAMPLE_HEADER
+from sand.sheet_edit.workbook import EXPERIMENT_INFO, SAMPLE_HEADER, Section
 
 EMPTY = '(empty)'
 
@@ -43,9 +43,9 @@ def table(catalog: Catalog, reverse: bool = False) -> str:
 
 
 def _steps_reversed(catalog: Catalog) -> list[ColumnInfo]:
-    steps: dict[str, list[ColumnInfo]] = {}
+    steps: dict[Section, list[ColumnInfo]] = {}  # two steps may share a label
     for c in catalog.columns:
-        steps.setdefault(c.column.section.label, []).append(c)
+        steps.setdefault(c.column.section, []).append(c)
     return [c for columns in reversed(steps.values()) for c in columns]
 
 

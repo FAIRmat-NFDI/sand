@@ -88,12 +88,13 @@ class NotFound(_Model):
 
 
 class Uncertain(_Model):
-    """The two LLM passes read the words differently (resolve.py). Never
-    in the LLM's schema: only code produces it. One reading when only one
-    pass proposed the edit, two when they proposed different edits."""
+    """The two LLM passes did not agree on these words (resolve.py). Never
+    in the LLM's schema: only code produces it. `readings` are the edits
+    the passes made of them, `why` says how they disagreed."""
 
     reason: Literal['uncertain']
-    readings: list[Edit] = Field(min_length=1, max_length=2)
+    readings: list[Edit] = Field(min_length=1)
+    why: str
     said: str
 
 

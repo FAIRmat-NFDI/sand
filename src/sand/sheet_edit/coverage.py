@@ -140,10 +140,17 @@ def _quoted(
     return quoted, misquoted
 
 
+def quote_words(said: str) -> list[str]:
+    """The words of a quote, without the punctuation at its edges: a
+    trailing period is not part of what the user said. resolve.py
+    compares quotes of two passes by this too."""
+    return said.strip(' .,;:!?').split()
+
+
 def _occurrences(said: str, instruction: str) -> list[Span]:
     """Where `said` is in the instruction: the same words in the same order,
     ignoring case and how much space is between them."""
-    tokens = said.strip(' .,;:!?').split()
+    tokens = quote_words(said)
     if not tokens:
         return []
     pattern = r'\s+'.join(re.escape(t) for t in tokens)

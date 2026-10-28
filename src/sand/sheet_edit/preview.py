@@ -30,7 +30,7 @@ from sand.sheet_edit.edits import (
     Unresolved,
 )
 from sand.sheet_edit.ground import Grounded, Refused, column_name
-from sand.sheet_edit.render import value_text
+from sand.sheet_edit.render import EMPTY, value_text
 
 INDENT = '   '
 NOTHING = 'nothing to edit'
@@ -113,32 +113,45 @@ def _unresolved_lines(item: Unresolved, catalog: Catalog) -> list[str]:
         names = [_where(c) if c else cid for c, cid in zip(columns, item.candidates)]
         return [f'? ambiguous: "{item.said}"', f'{INDENT}{" or ".join(names)}?']
     if isinstance(item, Uncertain):
-        readings = [_reading(edit, catalog) for edit in item.readings]
-        if len(readings) == 1:
-            second = f'only one of two readings proposed {readings[0]}'
-        else:
-            second = f'{" or ".join(readings)}?'
-        return [f'? uncertain: "{item.said}"', f'{INDENT}{second}']
+        readings = ' or '.join(_reading(edit, catalog) for edit in item.readings)
+        return [
+            f'? uncertain: "{item.said}"',
+            f'{INDENT}{readings}',
+            f'{INDENT}{item.why}',
+        ]
     if isinstance(item, Unreadable):
         return [f"? not done, the model's answer could not be read: {item.detail}"]
     return [f'? not found: "{item.said}"']
 
 
 def _reading(edit: Edit, catalog: Catalog) -> str:
-    """'2: Spin Coating · Rotation speed [rpm] → 4000, samples 1–3'."""
+    """'2: Spin Coating · Rotation speed [rpm] → 4000, samples 1–3 of
+    subbatch 1, pointed through Solvent 2 = DMSO': everything two
+    readings may differ in, or the user cannot tell them apart."""
     column = catalog.column(edit.target)
     where = _where(column) if column else edit.target
     rows = edit.rows
+    subbatch = None
     if rows == 'all':
         samples = 'all samples'
     elif isinstance(rows, Samples):
-        samples = f'samples {", ".join(rows.samples)}'
+        samples, subbatch = f'samples {", ".join(rows.samples)}', rows.subbatch
     elif isinstance(rows, Range):
-        samples = f'samples {rows.first}–{rows.last}'
+        samples, subbatch = f'samples {rows.first}–{rows.last}', rows.subbatch
     else:
         held = catalog.column(rows.where)
-        samples = f'where {_where(held) if held else rows.where} = {rows.equals}'
-    return f'{where} → {edit.new}, {samples}'
+        name = _where(held) if held else rows.where
+        samples = f'where {name} ' + (
+            'is empty' if rows.equals is None else f'= {rows.equals}'
+        )
+    text = f'{where} → {edit.new or EMPTY}, {samples}'
+    if subbatch is not None:
+        text += f' of subbatch {subbatch}'
+    if edit.anchor:
+        through = catalog.column(edit.anchor.column)
+        name = through.column.header if through else edit.anchor.column
+        text += f', pointed through {name} = {edit.anchor.equals}'
+    return text
 
 
 def _short(message: str, target: ColumnInfo) -> str:
