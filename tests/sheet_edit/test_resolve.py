@@ -279,6 +279,26 @@ def test_rows_are_the_sheets_rows_with_subbatches(two_subbatches):
     assert isinstance(ask(two_subbatches, a, c).unresolved[0], Uncertain)
 
 
+def test_samples_the_sheet_cannot_place_are_compared_as_said(two_subbatches):
+    # label 1 is in both subbatches and none is said: the rows cannot be
+    # resolved, the words are compared instead, and resolve does not crash
+    same = answer(edit(rows={'samples': ['1', '2'], 'subbatch': None}))
+    proposal = ask(two_subbatches, same)
+    assert len(proposal.edits) == 1
+    other = answer(edit(rows={'samples': ['2', '1'], 'subbatch': None}))
+    assert isinstance(ask(two_subbatches, same, other).unresolved[0], Uncertain)
+
+
+def test_a_hedge_on_the_other_passs_cut_of_the_quote_counts(catalog):
+    a = answer(edit(said='speed 4000'))
+    hedge = {'reason': 'ambiguous', 'candidates': [SPEED, ANNEAL_TIME], 'said': SAID}
+    b = answer(edit(said=SAID), unresolved=[hedge])
+    proposal = ask(catalog, a, b)
+    assert proposal.edits == []
+    assert isinstance(proposal.unresolved[0], Uncertain)
+    assert proposal.unresolved[0].why == 'a pass also left these words unresolved'
+
+
 def test_where_anchor_and_all_are_their_own_readings(catalog):
     everyone = [s.label for s in catalog.samples]
     b = answer(edit(rows={'samples': everyone, 'subbatch': None}))

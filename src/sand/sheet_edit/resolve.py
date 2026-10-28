@@ -188,7 +188,9 @@ def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdi
     for key, edit in keys_a.items():
         if key not in keys_b:
             doubt(edit, _ONE_PASS)
-        elif _quote(edit.said) in hedged:
+        elif hedged & {_quote(edit.said), _quote(keys_b[key].said)}:
+            # the passes may cut the quote differently: a hedge on either
+            # pass's quote counts
             doubt(edit, _HEDGED)
         else:
             edits.append(edit)
@@ -240,12 +242,16 @@ def _rows_agreement_key(rows: RowSpec, catalog: Catalog) -> RowsAgreementKey:
     """Samples listed and the range of the same samples are the same rows;
     the sheet decides, through the one row resolver. 'all' and 'where'
     stay what they are: named samples and 'every sample' are two readings."""
-    if isinstance(rows, Samples | Range):
+    if isinstance(rows, Samples):
         try:
-            found, _ = resolve_rows(rows, catalog)
-            return frozenset(found)
-        except Refusal:
-            return tuple(rows.model_dump().items())
+            return frozenset(resolve_rows(rows, catalog)[0])
+        except Refusal:  # a label the sheet holds twice, no subbatch said
+            return ('samples', tuple(rows.samples), rows.subbatch)
+    if isinstance(rows, Range):
+        try:
+            return frozenset(resolve_rows(rows, catalog)[0])
+        except Refusal:  # "samples 3 to 1", or the same repeated label
+            return ('range', rows.first, rows.last, rows.subbatch)
     if rows == 'all':
         return 'all'
     return ('where', rows.where, None if rows.equals is None else rows.equals.strip())
