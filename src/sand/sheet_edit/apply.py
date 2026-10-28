@@ -30,8 +30,11 @@ from sand.sheet_edit.write import Write, WriteRefused, write_cells
 
 # the LLM call: the instruction and the catalog of the sheet it is about
 Resolve = Callable[[str, Catalog], ProposedEdits]
-# (text hash, state hash) -> what the LLM proposed; only the LLM call is
-# cached, the checks after it are cheap and always rerun
+# (sha256 of the instruction text, sha256 of the sheet bytes) -> what the
+# LLM proposed. The sheet is part of the key because the LLM reads its
+# catalog: "the time of the DMSO" finds nothing on the original sheet and
+# an anchored edit once an earlier input set DMSO. Only the LLM call is
+# cached, the checks after it are cheap and always rerun.
 Cache = dict[tuple[str, str], ProposedEdits]
 
 
