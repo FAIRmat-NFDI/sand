@@ -804,6 +804,17 @@ def test_yes_is_a_true_word(synthetic_xlsx):
     assert result.confidence == 'low'
 
 
+def test_the_tables_empty_marker_is_not_a_value(catalog):
+    result = ground(
+        edit('C019', old='box1', new='(empty)', said='clear the tool name'), catalog
+    )
+    assert isinstance(result, Refused)
+    assert result.reasons == (
+        "Tool/GB name (2: Spin Coating): '(empty)' is how the table shows an "
+        'empty cell, not a value',
+    )
+
+
 def test_clearing_needs_a_clearing_word(catalog):
     tool = 'C019'  # Tool/GB name, 'box1'
     result = ground(edit(tool, old='box1', new='', said='clear the tool name'), catalog)
