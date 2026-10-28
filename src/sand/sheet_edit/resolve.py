@@ -121,7 +121,7 @@ def resolve(instruction: str, catalog: Catalog, call: CallLLM) -> ProposedEdits:
     model = proposed_edits_model(catalog)
     schema = model.model_json_schema()
     passes = [
-        _pass(instruction, catalog, (call, model, schema), second_opinion)
+        _one_opinion(instruction, catalog, (call, model, schema), second_opinion)
         for second_opinion in (False, True)
     ]
     unreadable = [p for p in passes if isinstance(p, Unreadable)]
@@ -132,7 +132,7 @@ def resolve(instruction: str, catalog: Catalog, call: CallLLM) -> ProposedEdits:
     return _agreed(a, b, catalog)
 
 
-def _pass(
+def _one_opinion(
     instruction: str, catalog: Catalog, how: tuple, second_opinion: bool
 ) -> ProposedEdits | Unreadable:
     call, model, schema = how
