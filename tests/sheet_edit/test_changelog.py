@@ -1,6 +1,8 @@
 import datetime
 import hashlib
+import io
 import json
+import zipfile
 
 import pytest
 from openpyxl.utils import column_index_from_string
@@ -229,6 +231,26 @@ def test_check_catches_a_final_file_with_more_in_it(synthetic_xlsx):
         check(synthetic_xlsx, more, forged)
 
 
+def test_check_catches_a_change_outside_the_cell_values(synthetic_xlsx):
+    log, final = logged(synthetic_xlsx, [SOLVENT])
+    hidden = _patched_sheet(final, b'<row r="3"', b'<row r="3" hidden="1"')
+    forged = Changelog(**{**log.__dict__, 'final': hashlib.sha256(hidden).hexdigest()})
+    with pytest.raises(CheckFailed, match='differs .* outside the cell values'):
+        check(synthetic_xlsx, hidden, forged)
+
+
+def _patched_sheet(xlsx: bytes, old: bytes, new: bytes) -> bytes:
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(xlsx)) as src, zipfile.ZipFile(out, 'w') as dst:
+        for item in src.infolist():
+            data = src.read(item.filename)
+            if item.filename == 'xl/worksheets/sheet1.xml':
+                assert old in data
+                data = data.replace(old, new, 1)
+            dst.writestr(item, data)
+    return out.getvalue()
+
+
 def test_check_catches_a_cell_logged_twice(with_results):
     log, final = logged(with_results, [VARIATION_SAID])
     twice = Changelog(**{**log.__dict__, 'entries': log.entries + log.entries[-1:]})
@@ -351,21 +373,59 @@ def test_a_stored_entry_with_other_fields_is_read_by_the_known_ones(synthetic_xl
 
 
 def test_words_and_confirmation_go_together():
-    fields = dict(
-        input=1,
-        cell='M3',
-        row=3,
-        column=13,
-        section='s',
-        header='h',
-        sample='1',
-        old='IPA',
-        new='DMSO',
-    )
     with pytest.raises(ValueError, match='words and confirmation go together'):
-        Entry(**fields, said='x', confirmed_by=None, confirmed_at=None)
+        _entry(said='x', confirmed_by=None, confirmed_at=None)
     with pytest.raises(ValueError, match='needs a timezone'):
         Confirmation(by='Yaru', at=datetime.datetime(2026, 10, 28, 10, 16))
+
+
+@pytest.mark.parametrize(
+    ('fields', 'message'),
+    [
+        ({'cell': 'Z99'}, 'Z99 is not row 3, column 13'),
+        ({'input': []}, r'input must be .*int.*, not \[\]'),
+        ({'input': True}, 'input must be'),
+        ({'row': 0}, 'count from 1'),
+        ({'sample': 1}, 'sample must be'),
+        ({'said': 5}, 'said must be'),
+        ({'confirmed_at': 'yesterday'}, 'Invalid isoformat'),
+    ],
+)
+def test_an_entry_with_a_wrong_field_is_refused(fields, message):
+    with pytest.raises(ValueError, match=message):
+        _entry(**fields)
+
+
+def test_a_stored_entry_with_a_wrong_field_is_not_a_changelog(synthetic_xlsx):
+    log, _ = logged(synthetic_xlsx, [SOLVENT])
+    data = json.loads(to_json(log))
+    data.pop('digest')
+    data['entries'][0]['cell'] = 'Z99'
+    data['digest'] = _digest(data)
+    with pytest.raises(
+        CheckFailed, match='not a changelog: .*Z99 is not row 3, column 13'
+    ):
+        from_json(json.dumps(data))
+
+
+def _entry(**fields) -> Entry:
+    return Entry(
+        **{
+            'input': 1,
+            'cell': 'M3',
+            'row': 3,
+            'column': SOLVENT_2_COLUMN,
+            'section': 's',
+            'header': 'h',
+            'sample': '1',
+            'old': 'IPA',
+            'new': 'DMSO',
+            'said': 'x',
+            'confirmed_by': 'Yaru',
+            'confirmed_at': '2026-10-28T10:16:05+00:00',
+            **fields,
+        }
+    )
 
 
 def test_render(with_results):

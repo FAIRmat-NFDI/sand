@@ -12,7 +12,9 @@ sheet is issue #120.
 """
 
 import datetime
+import io
 import json
+import zipfile
 from dataclasses import asdict, dataclass, fields
 
 from sand.sheet_edit.apply import Step
@@ -20,7 +22,7 @@ from sand.sheet_edit.catalog import Catalog, build, column_id
 from sand.sheet_edit.ground import Grounded
 from sand.sheet_edit.render import value_text
 from sand.sheet_edit.workbook import cell_changes, coord, sha256
-from sand.sheet_edit.write import VerifyFailed, Write, WriteRefused, verify, write_cells
+from sand.sheet_edit.write import VerifyFailed, Write, WriteRefused, write_cells
 
 # cell changes a log entry stands for; a 'type' change always comes with
 # a 'value' change of the same cell and is implied by the new value
@@ -55,6 +57,19 @@ class Entry:
     confirmed_at: str | None  # ISO 8601, UTC
 
     def __post_init__(self):
+        """Also runs on a loaded log: a stored entry is trusted no more
+        than a built one."""
+        _typed(self, 'input', int)
+        _typed(self, 'row', int)
+        _typed(self, 'column', int)
+        for name in ('cell', 'section', 'header', 'sample'):
+            _typed(self, name, str)
+        for name in ('said', 'confirmed_by', 'confirmed_at'):
+            _typed(self, name, str | None)
+        if self.input < 1 or self.row < 1 or self.column < 1:
+            raise ValueError(f'{self.cell}: input, row and column count from 1')
+        if self.cell != coord(self.row, self.column):
+            raise ValueError(f'{self.cell} is not row {self.row}, column {self.column}')
         unset = {
             self.said is None,
             self.confirmed_by is None,
@@ -62,6 +77,8 @@ class Entry:
         }
         if len(unset) != 1:
             raise ValueError(f'{self.cell}: words and confirmation go together')
+        if self.confirmed_at is not None:
+            datetime.datetime.fromisoformat(self.confirmed_at)  # raises otherwise
 
     @property
     def by_formula(self) -> bool:
@@ -75,6 +92,19 @@ class Changelog:
     final: str  # sha256 of the file the last input left
     model: str  # model and prompt version that proposed the edits
     entries: tuple[Entry, ...]  # in the order the cells were written
+
+    def __post_init__(self):
+        for name in ('sheet', 'original', 'final', 'model'):
+            _typed(self, name, str)
+        if not all(isinstance(e, Entry) for e in self.entries):
+            raise ValueError('entries must be Entry')
+
+
+def _typed(obj, name: str, kind) -> None:
+    """bool is an int in Python; here it is not."""
+    value = getattr(obj, name)
+    if isinstance(value, bool) or not isinstance(value, kind):
+        raise ValueError(f'{name} must be {kind}, not {value!r}')
 
 
 class CheckFailed(Exception):
@@ -189,16 +219,21 @@ def check(original: bytes, final: bytes, log: Changelog) -> None:
                 f'replaying it changes {_describe(made)}'
             )
         state = result.xlsx
-    # `verify` with no expected change: every part of the file equal,
-    # not only the cells of the edited sheet
-    try:
-        verify(state, final, [])
-    except VerifyFailed as why:
+    # every part's content must be equal, not only the cells: a hidden
+    # row or a changed column width is a change the log does not cover.
+    # The writer patches the original's XML deterministically, so the
+    # replay reproduces a file sand wrote byte for byte, uncompressed.
+    if _contents(state) != _contents(final):
         cells = sorted({coord(c.row, c.column) for c in cell_changes(state, final)})
-        where = f'at {", ".join(cells)}' if cells else f'outside the cells: {why}'
+        where = f'at {", ".join(cells)}' if cells else 'outside the cell values'
         raise CheckFailed(
             f'the final file differs from the original plus the log {where}'
-        ) from why
+        )
+
+
+def _contents(xlsx: bytes) -> dict[str, bytes]:
+    with zipfile.ZipFile(io.BytesIO(xlsx)) as z:
+        return {name: z.read(name) for name in z.namelist()}
 
 
 def _describe(changes: dict[tuple[int, int], tuple[str, str]]) -> str:
