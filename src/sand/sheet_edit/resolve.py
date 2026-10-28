@@ -103,12 +103,16 @@ a guess.
 instruction: anything you cannot place is "unresolved"."""
 
 
-def system_prompt(reverse: bool) -> str:
-    return f'{_TASK}\n\n{_RULES_B if reverse else _RULES_A}'
+def system_prompt(second_opinion: bool) -> str:
+    """The first pass gets the rules as written, the second opinion the
+    same rules in other words."""
+    return f'{_TASK}\n\n{_RULES_B if second_opinion else _RULES_A}'
 
 
-def user_text(instruction: str, catalog: Catalog, reverse: bool) -> str:
-    return f'{table(catalog, reverse=reverse)}\nInstruction: {instruction}'
+def user_text(instruction: str, catalog: Catalog, second_opinion: bool) -> str:
+    """The first pass reads the table in sheet order, the second opinion
+    the steps last to first."""
+    return f'{table(catalog, reverse=second_opinion)}\nInstruction: {instruction}'
 
 
 def resolve(instruction: str, catalog: Catalog, call: CallLLM) -> ProposedEdits:
@@ -117,8 +121,8 @@ def resolve(instruction: str, catalog: Catalog, call: CallLLM) -> ProposedEdits:
     model = proposed_edits_model(catalog)
     schema = model.model_json_schema()
     passes = [
-        _pass(instruction, catalog, (call, model, schema), reverse)
-        for reverse in (False, True)
+        _pass(instruction, catalog, (call, model, schema), second_opinion)
+        for second_opinion in (False, True)
     ]
     unreadable = [p for p in passes if isinstance(p, Unreadable)]
     if unreadable:
@@ -129,11 +133,13 @@ def resolve(instruction: str, catalog: Catalog, call: CallLLM) -> ProposedEdits:
 
 
 def _pass(
-    instruction: str, catalog: Catalog, how: tuple, reverse: bool
+    instruction: str, catalog: Catalog, how: tuple, second_opinion: bool
 ) -> ProposedEdits | Unreadable:
     call, model, schema = how
     answer = call(
-        system_prompt(reverse), user_text(instruction, catalog, reverse), schema
+        system_prompt(second_opinion),
+        user_text(instruction, catalog, second_opinion),
+        schema,
     )
     if not isinstance(answer, str):
         return Unreadable(

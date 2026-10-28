@@ -100,8 +100,8 @@ def test_two_passes_see_different_prompts_and_the_same_schema(catalog):
     call = FakeCall(answer())
     resolve(SAID, catalog, call)
     (system_a, text_a, schema_a), (system_b, text_b, schema_b) = call.seen
-    assert system_a == system_prompt(reverse=False)
-    assert system_b == system_prompt(reverse=True)
+    assert system_a == system_prompt(second_opinion=False)
+    assert system_b == system_prompt(second_opinion=True)
     assert system_a != system_b
     assert schema_a == schema_b == proposed_edits_schema(catalog)
     assert text_a.endswith(f'\nInstruction: {SAID}')
@@ -155,7 +155,7 @@ def test_the_schema_cannot_express_what_only_code_produces(catalog):
     schema = json.dumps(proposed_edits_schema(catalog))
     assert 'uncertain' not in schema
     assert 'unreadable' not in schema
-    assert user_text(SAID, catalog, reverse=False).startswith('| ID | Step |')
+    assert user_text(SAID, catalog, second_opinion=False).startswith('| ID | Step |')
     assert PROMPT_VERSION == 'v1'
 
 
