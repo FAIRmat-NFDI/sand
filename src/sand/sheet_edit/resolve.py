@@ -38,9 +38,11 @@ from sand.sheet_edit.render import table
 # the prompts below or to the table in render.py, which the model reads
 PROMPT_VERSION = 'v1'
 
-# (system prompt, user text, JSON schema) -> the model's answer, as text;
-# an answer that is not text, or not the schema, makes the instruction
-# unreadable. Transport errors are the caller's to raise.
+# (system prompt, user text, JSON schema) -> the model's answer, as text.
+# The schema is for the provider's structured output; the answer is still
+# validated here (see Unreadable), since a provider may enforce only part
+# of it. An answer that is not text, or not the schema, makes the
+# instruction unreadable. Transport errors are the caller's to raise.
 CallLLM = Callable[[str, str, dict], str]
 
 _TASK = """\

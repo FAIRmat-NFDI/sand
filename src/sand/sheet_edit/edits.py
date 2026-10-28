@@ -99,8 +99,15 @@ class Uncertain(_Model):
 
 
 class Unreadable(_Model):
-    """An LLM answer that was not valid JSON for the schema. Never in the
-    LLM's schema. `said` is the whole instruction: nothing of it is done."""
+    """An LLM answer that is not valid JSON for the schema. Never in the
+    LLM's schema. `said` is the whole instruction: nothing of it is done.
+
+    Structured output makes this rare, not impossible: a provider may
+    enforce only part of the schema (an extra field, an empty sample
+    list, an unknown reason still come back as valid JSON), the answer
+    may be cut off at the token limit, or arrive empty or as prose when
+    the model has no JSON mode. The provider's enforcement cannot be
+    checked from here, so the answer is validated again, always."""
 
     reason: Literal['unreadable']
     detail: str
