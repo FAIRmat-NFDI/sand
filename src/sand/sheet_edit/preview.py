@@ -20,7 +20,15 @@ from collections.abc import Iterable
 
 from sand.sheet_edit.catalog import Catalog, ColumnInfo
 from sand.sheet_edit.coverage import Coverage
-from sand.sheet_edit.edits import Ambiguous, Unresolved
+from sand.sheet_edit.edits import (
+    Ambiguous,
+    Edit,
+    Range,
+    Samples,
+    Uncertain,
+    Unreadable,
+    Unresolved,
+)
 from sand.sheet_edit.ground import Grounded, Refused, column_name
 from sand.sheet_edit.render import value_text
 
@@ -104,7 +112,33 @@ def _unresolved_lines(item: Unresolved, catalog: Catalog) -> list[str]:
         columns = [catalog.column(c) for c in item.candidates]
         names = [_where(c) if c else cid for c, cid in zip(columns, item.candidates)]
         return [f'? ambiguous: "{item.said}"', f'{INDENT}{" or ".join(names)}?']
+    if isinstance(item, Uncertain):
+        readings = [_reading(edit, catalog) for edit in item.readings]
+        if len(readings) == 1:
+            second = f'only one of two readings proposed {readings[0]}'
+        else:
+            second = f'{" or ".join(readings)}?'
+        return [f'? uncertain: "{item.said}"', f'{INDENT}{second}']
+    if isinstance(item, Unreadable):
+        return [f"? not done, the model's answer could not be read: {item.detail}"]
     return [f'? not found: "{item.said}"']
+
+
+def _reading(edit: Edit, catalog: Catalog) -> str:
+    """'2: Spin Coating · Rotation speed [rpm] → 4000, samples 1–3'."""
+    column = catalog.column(edit.target)
+    where = _where(column) if column else edit.target
+    rows = edit.rows
+    if rows == 'all':
+        samples = 'all samples'
+    elif isinstance(rows, Samples):
+        samples = f'samples {", ".join(rows.samples)}'
+    elif isinstance(rows, Range):
+        samples = f'samples {rows.first}–{rows.last}'
+    else:
+        held = catalog.column(rows.where)
+        samples = f'where {_where(held) if held else rows.where} = {rows.equals}'
+    return f'{where} → {edit.new}, {samples}'
 
 
 def _short(message: str, target: ColumnInfo) -> str:

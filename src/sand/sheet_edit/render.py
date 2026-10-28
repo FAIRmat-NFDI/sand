@@ -16,7 +16,9 @@ from sand.sheet_edit.workbook import EXPERIMENT_INFO, SAMPLE_HEADER
 EMPTY = '(empty)'
 
 
-def table(catalog: Catalog) -> str:
+def table(catalog: Catalog, reverse: bool = False) -> str:
+    """`reverse`: the steps last to first, columns within a step as in the
+    sheet; the second LLM pass reads this one (resolve.py)."""
     names = {c.id: c.column.header for c in catalog.columns}
     lines = [
         '| ID | Step | Parameter | Current value |',
@@ -32,12 +34,19 @@ def table(catalog: Catalog) -> str:
                 ]
             )
             + ' |'
-            for c in catalog.columns
+            for c in (_steps_reversed(catalog) if reverse else catalog.columns)
         ),
         '',
         f'Samples: {_sample_line(catalog)}',
     ]
     return '\n'.join(lines) + '\n'
+
+
+def _steps_reversed(catalog: Catalog) -> list[ColumnInfo]:
+    steps: dict[str, list[ColumnInfo]] = {}
+    for c in catalog.columns:
+        steps.setdefault(c.column.section.label, []).append(c)
+    return [c for columns in reversed(steps.values()) for c in columns]
 
 
 def _current(c: ColumnInfo, catalog: Catalog, names: dict[str, str]) -> str:

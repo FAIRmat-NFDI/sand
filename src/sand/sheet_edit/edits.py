@@ -87,7 +87,28 @@ class NotFound(_Model):
     said: str
 
 
-Unresolved = Annotated[Ambiguous | NotFound, Field(discriminator='reason')]
+class Uncertain(_Model):
+    """The two LLM passes read the words differently (resolve.py). Never
+    in the LLM's schema: only code produces it. One reading when only one
+    pass proposed the edit, two when they proposed different edits."""
+
+    reason: Literal['uncertain']
+    readings: list[Edit] = Field(min_length=1, max_length=2)
+    said: str
+
+
+class Unreadable(_Model):
+    """An LLM answer that was not valid JSON for the schema. Never in the
+    LLM's schema. `said` is the whole instruction: nothing of it is done."""
+
+    reason: Literal['unreadable']
+    detail: str
+    said: str
+
+
+Unresolved = Annotated[
+    Ambiguous | NotFound | Uncertain | Unreadable, Field(discriminator='reason')
+]
 
 
 class ProposedEdits(_Model):
