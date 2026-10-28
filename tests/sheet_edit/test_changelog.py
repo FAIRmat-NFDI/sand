@@ -33,7 +33,7 @@ MODEL = 'claude-sonnet-5-5 / prompt v1'
 WHEN = datetime.datetime(
     2026, 10, 28, 12, 16, 5, tzinfo=datetime.timezone(datetime.timedelta(hours=2))
 )
-YARU = Confirmation(by='Yaru', at=WHEN)
+TESTER = Confirmation(by='tester', at=WHEN)
 
 SOLVENT = 'solvent 2 to DMSO for samples 1 to 3'
 SPEED_4000, SPEED_5000 = 'speed 4000', 'speed 5000'
@@ -72,7 +72,7 @@ def resolve(text, catalog):
     return ProposedEdits(edits=PROPOSALS[text], unresolved=[])
 
 
-def applied(original, inputs, who=YARU):
+def applied(original, inputs, who=TESTER):
     """Run, confirm every edit of every input (each on the sheet the
     earlier ones left), run again: the steps and the confirmations."""
     confirmations: dict[str, Confirmation] = {}
@@ -83,7 +83,7 @@ def applied(original, inputs, who=YARU):
     return steps, confirmations
 
 
-def logged(original, inputs, who=YARU):
+def logged(original, inputs, who=TESTER):
     steps, confirmations = applied(original, inputs, who)
     return changelog(original, steps, confirmations, MODEL), steps[-1].state
 
@@ -118,7 +118,7 @@ def test_one_entry_per_written_cell_in_order(synthetic_xlsx):
         old='IPA',
         new='DMSO',
         said=SOLVENT,
-        confirmed_by='Yaru',
+        confirmed_by='tester',
         confirmed_at='2026-10-28T10:16:05+00:00',
     )
     assert [e.input for e in log.entries] == [1] * THREE_ROWS + [2] * ALL_ROWS
@@ -183,9 +183,9 @@ def test_original_plus_log_is_the_final_file(synthetic_xlsx, with_results):
 def test_an_unconfirmed_input_between_two_confirmed_ones(synthetic_xlsx):
     inputs = [SPEED_4000, SOLVENT, SPEED_5000]
     steps = apply_all(synthetic_xlsx, inputs, resolve, set(), {})
-    confirmations = dict.fromkeys(steps[0].interpretation.ready, YARU)
+    confirmations = dict.fromkeys(steps[0].interpretation.ready, TESTER)
     steps = apply_all(synthetic_xlsx, inputs, resolve, set(confirmations), {})
-    confirmations |= dict.fromkeys(steps[2].interpretation.ready, YARU)
+    confirmations |= dict.fromkeys(steps[2].interpretation.ready, TESTER)
     steps = apply_all(synthetic_xlsx, inputs, resolve, set(confirmations), {})
     log = changelog(synthetic_xlsx, steps, confirmations, MODEL)
     assert sorted({e.input for e in log.entries}) == [1, 3]
@@ -209,7 +209,7 @@ def test_a_cleared_cell_checks(synthetic_xlsx):
         old='IPA',
         new=None,
         said='clear solvent 2 of sample 1',
-        confirmed_by='Yaru',
+        confirmed_by='tester',
         confirmed_at='2026-10-28T10:16:05+00:00',
     )
     log = Changelog(
@@ -264,7 +264,7 @@ def test_check_catches_a_formula_result_logged_as_an_edit(with_results):
         log,
         1,
         said='deposition 1800',
-        confirmed_by='Yaru',
+        confirmed_by='tester',
         confirmed_at=WHEN.isoformat(),
     )
     with pytest.raises(
@@ -376,7 +376,7 @@ def test_words_and_confirmation_go_together():
     with pytest.raises(ValueError, match='words and confirmation go together'):
         _entry(said='x', confirmed_by=None, confirmed_at=None)
     with pytest.raises(ValueError, match='needs a timezone'):
-        Confirmation(by='Yaru', at=datetime.datetime(2026, 10, 28, 10, 16))
+        Confirmation(by='tester', at=datetime.datetime(2026, 10, 28, 10, 16))
 
 
 @pytest.mark.parametrize(
@@ -421,7 +421,7 @@ def _entry(**fields) -> Entry:
             'old': 'IPA',
             'new': 'DMSO',
             'said': 'x',
-            'confirmed_by': 'Yaru',
+            'confirmed_by': 'tester',
             'confirmed_at': '2026-10-28T10:16:05+00:00',
             **fields,
         }
@@ -436,13 +436,13 @@ def test_render(with_results):
         f'final     sha256 {log.final}\n'
         f'model     {MODEL}\n'
         '\n'
-        f'1. "{VARIATION_SAID}" · confirmed by Yaru, 2026-10-28 10:16 UTC\n'
+        f'1. "{VARIATION_SAID}" · confirmed by tester, 2026-10-28 10:16 UTC\n'
         '   G3   Experiment Info · Variation                       sample 1  10min → 30min\n'
         '\n'
         '1. by formula\n'
         '   BD3  5: Close Space Sublimation · Deposition Time [s]  sample 1  600 → 1800\n'
         '\n'
-        f'2. "{SOLVENT}" · confirmed by Yaru, 2026-10-28 10:16 UTC\n'
+        f'2. "{SOLVENT}" · confirmed by tester, 2026-10-28 10:16 UTC\n'
         '   M3   1: Cleaning UV-Ozone · Solvent 2                  sample 1  IPA → DMSO\n'
         '   M4   1: Cleaning UV-Ozone · Solvent 2                  sample 2  IPA → DMSO\n'
         '   M5   1: Cleaning UV-Ozone · Solvent 2                  sample 3  IPA → DMSO'

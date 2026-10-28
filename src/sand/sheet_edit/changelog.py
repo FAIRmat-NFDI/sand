@@ -298,7 +298,7 @@ def render(log: Changelog) -> str:
     """The log as the user reads it: one block per edit, one line per
     cell:
 
-        1. "solvent 2 to DMSO for samples 1 to 3" · confirmed by Yaru, 2026-10-28 10:16 UTC
+        1. "solvent 2 to DMSO for samples 1 to 3" · confirmed by tester, 2026-10-28 10:16 UTC
            M3  1: Cleaning UV-Ozone · Solvent 2  sample 1  IPA → DMSO
         1. by formula
            F3  Experiment Info · Nomad ID  sample 1  KIT_…_B1_0_1 → KIT_…_B2_0_1
