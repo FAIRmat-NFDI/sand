@@ -18,6 +18,7 @@ ground.py are the safety net.
 
 import json
 from collections.abc import Callable
+from typing import Literal
 
 from sand.sheet_edit.catalog import Catalog
 from sand.sheet_edit.coverage import quote_words
@@ -25,6 +26,7 @@ from sand.sheet_edit.edits import (
     Edit,
     ProposedEdits,
     Range,
+    RowSpec,
     Samples,
     Uncertain,
     Unreadable,
@@ -159,8 +161,8 @@ def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdi
     left the same words unresolved. Every other edit is uncertain, one
     item per quote with every reading of it. Unresolved items of either
     pass are kept once."""
-    keys_a: dict[tuple, Edit] = {}
-    keys_b: dict[tuple, Edit] = {}
+    keys_a: dict[EditKey, Edit] = {}
+    keys_b: dict[EditKey, Edit] = {}
     for edit in a.edits:
         keys_a.setdefault(
             _edit_key(edit, catalog), edit
@@ -212,7 +214,14 @@ _DIFFER = 'the two passes read these words differently'
 _HEDGED = 'a pass also left these words unresolved'
 
 
-def _edit_key(edit: Edit, catalog: Catalog) -> tuple:
+# the rows of an edit, as compared between the two opinions: the sheet
+# rows when the sample words resolve, else the spec as given
+RowsKey = Literal['all'] | frozenset[int] | tuple
+# (target, rows, anchor, new): what two opinions must agree on
+EditKey = tuple[str, RowsKey, tuple[str, str] | None, str]
+
+
+def _edit_key(edit: Edit, catalog: Catalog) -> EditKey:
     """What two passes must agree on: the cells and the value. Left out:
     `old`, which ground checks against the sheet anyway, and `said`,
     which the passes may cut differently for one and the same edit and
@@ -222,7 +231,7 @@ def _edit_key(edit: Edit, catalog: Catalog) -> tuple:
     return (edit.target, _rows_key(edit.rows, catalog), anchor, edit.new.strip())
 
 
-def _rows_key(rows, catalog: Catalog):
+def _rows_key(rows: RowSpec, catalog: Catalog) -> RowsKey:
     """Samples listed and the range of the same samples are the same rows;
     the sheet decides, through the one row resolver. 'all' and 'where'
     stay what they are: named samples and 'every sample' are two readings."""
