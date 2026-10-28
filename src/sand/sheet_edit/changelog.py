@@ -12,18 +12,15 @@ sheet is issue #120.
 """
 
 import datetime
-import hashlib
 import json
-from dataclasses import asdict, dataclass
-
-from openpyxl.utils import get_column_letter
+from dataclasses import asdict, dataclass, fields
 
 from sand.sheet_edit.apply import Step
-from sand.sheet_edit.catalog import Catalog, build
+from sand.sheet_edit.catalog import Catalog, build, column_id
 from sand.sheet_edit.ground import Grounded
 from sand.sheet_edit.render import value_text
-from sand.sheet_edit.workbook import cell_changes
-from sand.sheet_edit.write import Write, write_cells
+from sand.sheet_edit.workbook import cell_changes, coord, sha256
+from sand.sheet_edit.write import VerifyFailed, Write, WriteRefused, verify, write_cells
 
 # cell changes a log entry stands for; a 'type' change always comes with
 # a 'value' change of the same cell and is implied by the new value
@@ -33,7 +30,11 @@ _LOGGED_FIELDS = {'value', 'computed value'}
 @dataclass(frozen=True)
 class Confirmation:
     by: str  # the user, as the workflow names them
-    at: datetime.datetime
+    at: datetime.datetime  # timezone-aware; an audit time must not be ambiguous
+
+    def __post_init__(self):
+        if self.at.tzinfo is None:
+            raise ValueError('a confirmation time needs a timezone')
 
 
 @dataclass(frozen=True)
@@ -47,11 +48,20 @@ class Entry:
     sample: str  # as the user says it: '1', '1 of subbatch 0', or 'row 5'
     old: object
     new: object
-    # None on a formula result: nobody said it, nobody confirmed it, it
-    # followed from a confirmed edit of the same input
+    # all three None on a formula result: nobody said it, nobody confirmed
+    # it, it followed from a confirmed edit of the same input
     said: str | None
     confirmed_by: str | None
-    confirmed_at: str | None  # ISO 8601
+    confirmed_at: str | None  # ISO 8601, UTC
+
+    def __post_init__(self):
+        unset = {
+            self.said is None,
+            self.confirmed_by is None,
+            self.confirmed_at is None,
+        }
+        if len(unset) != 1:
+            raise ValueError(f'{self.cell}: words and confirmation go together')
 
     @property
     def by_formula(self) -> bool:
@@ -68,7 +78,8 @@ class Changelog:
 
 
 class CheckFailed(Exception):
-    """The final file is not the original plus the log."""
+    """The final file is not the original plus the log, or the log
+    cannot be read."""
 
 
 def changelog(
@@ -90,16 +101,15 @@ def changelog(
                 continue
             cell = (change.row, change.column)
             if change.field == 'value' and cell not in edited:
-                raise ValueError(
-                    f'{_coord(*cell)} was written without a confirmed edit'
-                )
+                raise ValueError(f'{coord(*cell)} was written without a confirmed edit')
             edit, confirmed = edited.get(cell, (None, None))
-            column = catalog.columns[change.column - 1]
-            assert column.column.index == change.column
+            column = catalog.column(column_id(change.column))
+            if column is None:
+                raise ValueError(f'{coord(*cell)} is not a catalog column')
             entries.append(
                 Entry(
                     input=number,
-                    cell=_coord(*cell),
+                    cell=coord(*cell),
                     row=change.row,
                     column=change.column,
                     section=column.column.section.label,
@@ -109,18 +119,14 @@ def changelog(
                     new=change.after,
                     said=edit.edit.said if edit else None,
                     confirmed_by=confirmed.by if confirmed else None,
-                    confirmed_at=(
-                        confirmed.at.isoformat(timespec='seconds')
-                        if confirmed
-                        else None
-                    ),
+                    confirmed_at=_utc_text(confirmed.at) if confirmed else None,
                 )
             )
     catalog = steps[0].interpretation.catalog if steps else build(original)
     return Changelog(
         sheet=catalog.structure.sheet_name,
-        original=_hash(original),
-        final=_hash(steps[-1].state) if steps else _hash(original),
+        original=sha256(original),
+        final=sha256(steps[-1].state) if steps else sha256(original),
         model=model,
         entries=tuple(entries),
     )
@@ -130,30 +136,44 @@ def _confirmed_cells(
     step: Step, confirmations: dict[str, Confirmation]
 ) -> dict[tuple[int, int], tuple[Grounded, Confirmation]]:
     """(row, column) -> the confirmed edit that wrote it, and by whom."""
-    catalog = step.interpretation.catalog
+    catalog: Catalog = step.interpretation.catalog
     cells = {}
     for key, edit in step.interpretation.ready.items():
         if key not in confirmations:
             continue
-        column = _column_index(edit.edit.target, catalog)
+        column = catalog.index(edit.edit.target)
         for row in edit.rows:
             cells[(row, column)] = (edit, confirmations[key])
     return cells
 
 
+def _utc_text(at: datetime.datetime) -> str:
+    return at.astimezone(datetime.UTC).isoformat(timespec='seconds')
+
+
+# --- check -----------------------------------------------------------------
+
+
 def check(original: bytes, final: bytes, log: Changelog) -> None:
     """Replay the log on `original` and raise `CheckFailed` unless the
     result is `final`: same hashes, every logged change made as logged,
-    no other cell different."""
-    if _hash(original) != log.original:
+    and nothing else different, in no part of the file."""
+    if sha256(original) != log.original:
         raise CheckFailed('the original file is not the one the log was made for')
-    if _hash(final) != log.final:
+    if sha256(final) != log.final:
         raise CheckFailed('the final file is not the one the log was made for')
     state = original
     for number in sorted({e.input for e in log.entries}):
         logged = [e for e in log.entries if e.input == number]
+        if len({(e.row, e.column) for e in logged}) != len(logged):
+            raise CheckFailed(f'input {number}: a cell is logged twice')
         writes = [Write(e.row, e.column, e.new) for e in logged if not e.by_formula]
-        result = write_cells(state, writes)
+        try:
+            result = write_cells(state, writes)
+        except (WriteRefused, VerifyFailed) as why:
+            raise CheckFailed(
+                f'input {number}: the log cannot be replayed: {why}'
+            ) from why
         made = {
             (c.row, c.column): (value_text(c.before), value_text(c.after))
             for c in result.changes
@@ -169,39 +189,81 @@ def check(original: bytes, final: bytes, log: Changelog) -> None:
                 f'replaying it changes {_describe(made)}'
             )
         state = result.xlsx
-    unlogged = cell_changes(state, final)
-    if unlogged:
+    # `verify` with no expected change: every part of the file equal,
+    # not only the cells of the edited sheet
+    try:
+        verify(state, final, [])
+    except VerifyFailed as why:
+        cells = sorted({coord(c.row, c.column) for c in cell_changes(state, final)})
+        where = f'at {", ".join(cells)}' if cells else f'outside the cells: {why}'
         raise CheckFailed(
-            'the final file differs from the original plus the log at '
-            + ', '.join(sorted({_coord(c.row, c.column) for c in unlogged}))
-        )
+            f'the final file differs from the original plus the log {where}'
+        ) from why
+
+
+def _describe(changes: dict[tuple[int, int], tuple[str, str]]) -> str:
+    if not changes:
+        return 'nothing'
+    return ', '.join(
+        f'{coord(*cell)} {old or "(empty)"} → {new or "(empty)"}'
+        for cell, (old, new) in sorted(changes.items())
+    )
 
 
 # --- JSON and text ---------------------------------------------------------
 
 
 def to_json(log: Changelog) -> str:
-    """With a `digest` of everything else, so a stored log can be checked
-    for tampering on its own."""
+    """With a `digest` of everything else. It catches corruption and
+    careless edits, not tampering: anyone can recompute a plain hash.
+    Tamper-proofing needs NOMAD-side signing (#120)."""
     body = asdict(log)
     body['entries'] = [_json_entry(e) for e in log.entries]
     return json.dumps({**body, 'digest': _digest(body)}, indent=1, ensure_ascii=False)
 
 
 def from_json(text: str) -> Changelog:
-    data = json.loads(text)
+    """Raises `CheckFailed` for anything that is not an intact changelog."""
+    try:
+        data = json.loads(text)
+    except ValueError as why:
+        raise CheckFailed(f'not a changelog: {why}') from why
+    if not isinstance(data, dict) or 'digest' not in data:
+        raise CheckFailed('not a changelog: no digest')
     digest = data.pop('digest')
     if digest != _digest(data):
-        raise CheckFailed('the log was changed after it was written')
-    entries = tuple(Entry(**e) for e in data.pop('entries'))
-    return Changelog(entries=entries, **data)
+        raise CheckFailed('the log is corrupt or was edited after it was written')
+    try:
+        entries = tuple(_entry(e) for e in data['entries'])
+        head = {f.name: data[f.name] for f in fields(Changelog) if f.name != 'entries'}
+        return Changelog(entries=entries, **head)
+    except (KeyError, TypeError, ValueError) as why:
+        raise CheckFailed(f'not a changelog: {why!r}') from why
+
+
+def _entry(data: dict) -> Entry:
+    return Entry(**{f.name: data[f.name] for f in fields(Entry)})
+
+
+def _json_entry(e: Entry) -> dict:
+    """Cell values that JSON cannot hold (dates, durations) are stored as
+    their text; `check` compares text, so the replay still works."""
+    data = asdict(e)
+    for field in ('old', 'new'):
+        if not isinstance(data[field], str | int | float | bool | None):
+            data[field] = value_text(data[field])
+    return data
+
+
+def _digest(body: dict) -> str:
+    return sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode())
 
 
 def render(log: Changelog) -> str:
     """The log as the user reads it: one block per edit, one line per
     cell:
 
-        1. "solvent 2 to DMSO for samples 1 to 3" · confirmed by Yaru, 2026-10-28 10:16
+        1. "solvent 2 to DMSO for samples 1 to 3" · confirmed by Yaru, 2026-10-28 10:16 UTC
            M3  1: Cleaning UV-Ozone · Solvent 2  sample 1  IPA → DMSO
         1. by formula
            F3  Experiment Info · Nomad ID  sample 1  KIT_…_B1_0_1 → KIT_…_B2_0_1
@@ -236,8 +298,8 @@ def render(log: Changelog) -> str:
 def _block_line(e: Entry) -> str:
     if e.by_formula:
         return f'{e.input}. by formula'
-    at = datetime.datetime.fromisoformat(e.confirmed_at or '')
-    when = at.strftime('%Y-%m-%d %H:%M')
+    assert e.confirmed_at is not None  # Entry's invariant
+    when = datetime.datetime.fromisoformat(e.confirmed_at).strftime('%Y-%m-%d %H:%M %Z')
     return f'{e.input}. "{e.said}" · confirmed by {e.confirmed_by}, {when}'
 
 
@@ -247,43 +309,3 @@ def _where(e: Entry) -> str:
 
 def _sample_text(e: Entry) -> str:
     return e.sample if e.sample.startswith('row ') else f'sample {e.sample}'
-
-
-# --- helpers ---------------------------------------------------------------
-
-
-def _column_index(column_id: str, catalog: Catalog) -> int:
-    column = catalog.column(column_id)
-    assert column is not None  # ground refused the edit otherwise
-    return column.column.index
-
-
-def _coord(row: int, column: int) -> str:
-    return f'{get_column_letter(column)}{row}'
-
-
-def _describe(changes: dict[tuple[int, int], tuple[str, str]]) -> str:
-    if not changes:
-        return 'nothing'
-    return ', '.join(
-        f'{_coord(*cell)} {old or "(empty)"} → {new or "(empty)"}'
-        for cell, (old, new) in sorted(changes.items())
-    )
-
-
-def _json_entry(e: Entry) -> dict:
-    """Cell values that JSON cannot hold (dates, durations) are stored as
-    their text; `check` compares text, so the replay still works."""
-    data = asdict(e)
-    for field in ('old', 'new'):
-        if not isinstance(data[field], str | int | float | bool | None):
-            data[field] = value_text(data[field])
-    return data
-
-
-def _digest(body: dict) -> str:
-    return _hash(json.dumps(body, sort_keys=True, ensure_ascii=False).encode())
-
-
-def _hash(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()

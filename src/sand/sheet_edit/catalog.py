@@ -88,6 +88,14 @@ class Catalog:
     def column(self, column_id: str) -> ColumnInfo | None:
         return next((c for c in self.columns if c.id == column_id), None)
 
+    def index(self, column_id: str) -> int:
+        """The sheet column of a known id. Never positional: the catalog
+        skips columns without a header, so ids and positions differ."""
+        column = self.column(column_id)
+        if column is None:
+            raise KeyError(f'no column {column_id} in the catalog')
+        return column.column.index
+
     def names(self, rows) -> str:
         """Excel rows -> the sample names, for messages: rows (3, 4, 5, 8)
         -> '1–3, 7'. With repeated labels: '1–3 of subbatch 0, 1 of

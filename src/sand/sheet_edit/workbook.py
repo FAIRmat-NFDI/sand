@@ -6,6 +6,7 @@ parser finds them (pandas `header=[0, 1]`): a row-1 label opens a group
 that runs until the next label, so merged cells are not required.
 """
 
+import hashlib
 import io
 import re
 import zipfile
@@ -262,6 +263,16 @@ _NON_DATA_PARTS = re.compile(
 )
 
 
+def coord(row: int, column: int) -> str:
+    """Excel's name of a cell: (3, 13) -> 'M3'."""
+    return f'{get_column_letter(column)}{row}'
+
+
+def sha256(data: bytes) -> str:
+    """How files and texts are identified in logs and cache keys."""
+    return hashlib.sha256(data).hexdigest()
+
+
 @dataclass(frozen=True)
 class CellChange:
     sheet: str
@@ -357,7 +368,7 @@ def workbook_problems(before: bytes, after: bytes) -> list[str]:
         if ch.field == 'computed value' and ch.after is None:
             lost.setdefault((ch.sheet, ch.column), []).append(ch.row)
         else:
-            cell = f'{get_column_letter(ch.column)}{ch.row}'
+            cell = coord(ch.row, ch.column)
             problems.append(
                 f'{ch.sheet!r}!{cell}: {ch.field} {ch.before!r} -> {ch.after!r}'
             )

@@ -20,7 +20,7 @@ from xml.etree import ElementTree
 from xml.sax.saxutils import escape
 
 from openpyxl import load_workbook
-from openpyxl.utils import column_index_from_string, get_column_letter
+from openpyxl.utils import column_index_from_string
 
 from sand.sheet_edit import formulas
 from sand.sheet_edit.formulas import ExcelError, Ref, Unsupported
@@ -29,6 +29,7 @@ from sand.sheet_edit.workbook import (
     HEADER_ROW,
     CellChange,
     changes_between,
+    coord,
 )
 
 NewValue = str | int | float | bool | None
@@ -68,9 +69,9 @@ def write_cells(xlsx: bytes, writes: list[Write]) -> WriteResult:
         if not (1 <= w.row <= ws.max_row and 1 <= w.column <= ws.max_column):
             raise WriteRefused(f'row {w.row}, column {w.column} is outside the sheet')
         if key in new:
-            raise WriteRefused(f'{_coord(*key)} is written twice')
+            raise WriteRefused(f'{coord(*key)} is written twice')
         if w.row < FIRST_SAMPLE_ROW:
-            raise WriteRefused(f'{_coord(*key)} is a header; headers are not edited')
+            raise WriteRefused(f'{coord(*key)} is a header; headers are not edited')
         cell = ws.cell(w.row, w.column)
         if cell.data_type == 'f':
             raise WriteRefused(f'{cell.coordinate} is calculated by a formula')
@@ -96,10 +97,6 @@ def write_cells(xlsx: bytes, writes: list[Write]) -> WriteResult:
     after = _patch(xlsx, new, results)
     _verify(xlsx, after, changes, before_books=(book, values))
     return WriteResult(after, changes)
-
-
-def _coord(row: int, column: int) -> str:
-    return f'{get_column_letter(column)}{row}'
 
 
 # --- types -------------------------------------------------------------------
@@ -303,7 +300,7 @@ def _recompute(book, stored, new: dict[tuple[int, int], NewValue]) -> dict:
 
     def name_of(key: tuple[int, int]) -> str:
         header = ws.cell(HEADER_ROW, key[1]).value
-        return f'{header!r} ({_coord(*key)})' if header else _coord(*key)
+        return f'{header!r} ({coord(*key)})' if header else coord(*key)
 
     def original(ref: Ref):
         return stored.cell(ref.row, ref.column).value
@@ -483,7 +480,7 @@ def _patch_sheet(xml: str, new: dict, results: dict) -> str:
     by_row: dict[int, dict[int, str]] = {}
     for (r, c), value in new.items():
         old = _find_cell(xml, r, c)
-        attrs = old.group(1) if old else f' r="{_coord(r, c)}"'
+        attrs = old.group(1) if old else f' r="{coord(r, c)}"'
         by_row.setdefault(r, {})[c] = _value_cell(attrs, value)
     for (r, c), value in results.items():
         old = _find_cell(xml, r, c)
@@ -499,7 +496,7 @@ def _patch_sheet(xml: str, new: dict, results: dict) -> str:
 
 def _find_cell(xml: str, row: int, column: int) -> re.Match | None:
     return re.search(
-        rf'<c\b([^>]*?\br="{_coord(row, column)}"[^>]*?)(?:/>|>(.*?)</c>)', xml, re.S
+        rf'<c\b([^>]*?\br="{coord(row, column)}"[^>]*?)(?:/>|>(.*?)</c>)', xml, re.S
     )
 
 
