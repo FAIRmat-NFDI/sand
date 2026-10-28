@@ -80,8 +80,8 @@ be dropped: what you cannot place goes to "unresolved"."""
 
 _RULES_B = """\
 How to answer:
-- Every edit must come from the user's words and nothing else. No value, \
-sample or column may be invented.
+- Every edit must come from the user's words and nothing else. Never invent \
+a value, a sample or a column the user did not say.
 - Copy the user's exact words for this edit into "said", unchanged.
 - Put the value in "new" exactly as spoken: no unit conversion, no \
 rounding, no rescaling. Clearing a cell (the user says clear, empty, \
