@@ -15,7 +15,6 @@ the edit itself; a rerun that produces the identical edit keeps it, any
 difference asks again.
 """
 
-import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -25,7 +24,7 @@ from sand.sheet_edit.coverage import Coverage, coverage
 from sand.sheet_edit.edits import ProposedEdits
 from sand.sheet_edit.ground import Grounded, Refused, column_name, ground
 from sand.sheet_edit.preview import preview
-from sand.sheet_edit.workbook import CellChange
+from sand.sheet_edit.workbook import CellChange, sha256
 from sand.sheet_edit.write import Write, WriteRefused, write_cells
 
 # the LLM call: the instruction and the catalog of the sheet it is about
@@ -86,7 +85,7 @@ def interpret_instruction(text: str, sheet: bytes, resolve: Resolve) -> Interpre
         for r in results
     ]
     results = _without_overlaps(results, catalog)
-    state = _hash(sheet)
+    state = sha256(sheet)
     ready = {
         _key(text, state, r): r for r in results if isinstance(r, Grounded) and r.rows
     }
@@ -144,10 +143,10 @@ def apply_all(
     steps = []
     state = original
     for text in inputs:
-        cached = _cached(resolve, cache, _hash(state))
+        cached = _cached(resolve, cache, sha256(state))
         interpretation = interpret_instruction(text, state, cached)
         writes = [
-            Write(row, _column_index(edit, interpretation.catalog), edit.value)
+            Write(row, interpretation.catalog.index(edit.edit.target), edit.value)
             for key, edit in interpretation.ready.items()
             if key in confirmed
             for row in edit.rows
@@ -166,7 +165,7 @@ def apply_all(
 
 def _cached(resolve: Resolve, cache: Cache, state: str) -> Resolve:
     def cached(text: str, catalog: Catalog) -> ProposedEdits:
-        key = (_hash(text.encode()), state)
+        key = (sha256(text.encode()), state)
         if key not in cache:
             cache[key] = resolve(text, catalog)
         return cache[key]
@@ -178,14 +177,4 @@ def _key(text: str, state: str, edit: Grounded) -> str:
     """The confirmation key: the same words, on the same sheet, giving the
     same change."""
     change = [edit.edit.target, list(edit.rows), repr(edit.value)]
-    return _hash(json.dumps([text, state, change]).encode())
-
-
-def _column_index(edit: Grounded, catalog: Catalog) -> int:
-    column = catalog.column(edit.edit.target)
-    assert column is not None  # ground refused the edit otherwise
-    return column.column.index
-
-
-def _hash(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+    return sha256(json.dumps([text, state, change]).encode())
