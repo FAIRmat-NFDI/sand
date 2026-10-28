@@ -161,14 +161,14 @@ def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdi
     left the same words unresolved. Every other edit is uncertain, one
     item per quote with every reading of it. Unresolved items of either
     pass are kept once."""
-    keys_a: dict[EditKey, Edit] = {}
-    keys_b: dict[EditKey, Edit] = {}
+    keys_a: dict[AgreementKey, Edit] = {}
+    keys_b: dict[AgreementKey, Edit] = {}
     for edit in a.edits:
         keys_a.setdefault(
-            _edit_key(edit, catalog), edit
+            _agreement_key(edit, catalog), edit
         )  # a repeat differs in `old` only
     for edit in b.edits:
-        keys_b.setdefault(_edit_key(edit, catalog), edit)
+        keys_b.setdefault(_agreement_key(edit, catalog), edit)
     hedged = {_quote(u.said) for u in [*a.unresolved, *b.unresolved]}
     edits: list[Edit] = []
     uncertain: dict[str, Uncertain] = {}  # by quote, in order of appearance
@@ -216,22 +216,27 @@ _HEDGED = 'a pass also left these words unresolved'
 
 # the rows of an edit, as compared between the two opinions: the sheet
 # rows when the sample words resolve, else the spec as given
-RowsKey = Literal['all'] | frozenset[int] | tuple
+RowsAgreementKey = Literal['all'] | frozenset[int] | tuple
 # (target, rows, anchor, new): what two opinions must agree on
-EditKey = tuple[str, RowsKey, tuple[str, str] | None, str]
+AgreementKey = tuple[str, RowsAgreementKey, tuple[str, str] | None, str]
 
 
-def _edit_key(edit: Edit, catalog: Catalog) -> EditKey:
+def _agreement_key(edit: Edit, catalog: Catalog) -> AgreementKey:
     """What two passes must agree on: the cells and the value. Left out:
     `old`, which ground checks against the sheet anyway, and `said`,
     which the passes may cut differently for one and the same edit and
     coverage checks against the instruction. The value is compared as
     written: material names are case-sensitive (PbI2, Me-4PACz)."""
     anchor = (edit.anchor.column, edit.anchor.equals.strip()) if edit.anchor else None
-    return (edit.target, _rows_key(edit.rows, catalog), anchor, edit.new.strip())
+    return (
+        edit.target,
+        _rows_agreement_key(edit.rows, catalog),
+        anchor,
+        edit.new.strip(),
+    )
 
 
-def _rows_key(rows: RowSpec, catalog: Catalog) -> RowsKey:
+def _rows_agreement_key(rows: RowSpec, catalog: Catalog) -> RowsAgreementKey:
     """Samples listed and the range of the same samples are the same rows;
     the sheet decides, through the one row resolver. 'all' and 'where'
     stay what they are: named samples and 'every sample' are two readings."""
