@@ -1,24 +1,8 @@
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
+from sand.actions import common
 from sand.actions.extract.models import ExtractInput, StoreInput, WriteStatusInput
-
-TOKEN_EXPIRES_S = 15 * 60
-
-
-def _voice_service():
-    from nomad.config import config
-
-    from sand.services.voice_eln import VoiceElnService
-
-    entry_point = config.get_plugin_entry_point('sand.apis:sand_api')
-    return VoiceElnService(base_url=entry_point.nomad_base_url)
-
-
-def _user_token(user_id: str) -> str:
-    from nomad.auth.tokens import generate_simple_token
-
-    return generate_simple_token(user_id, TOKEN_EXPIRES_S)
 
 
 @activity.defn
@@ -28,13 +12,11 @@ async def collect_and_route(data: ExtractInput) -> dict:
 
     Input problems (untranscribed audio, bad form) are the user's to fix,
     not transient: non-retryable."""
-    from nomad.config import config
-
     from sand.hysprint.generate import HysprintInputError, route_inputs
     from sand.hysprint.steps import select_schema
 
-    voice = _voice_service()
-    async with voice.build_client(_user_token(data.user_id)) as client:
+    voice = common.voice_service()
+    async with voice.build_client(common.user_token(data.user_id)) as client:
         inputs = await voice.collect_inputs(
             client, data.upload_id, collection_entry_id=data.collection_entry_id
         )
@@ -52,7 +34,6 @@ async def collect_and_route(data: ExtractInput) -> dict:
     except HysprintInputError as exc:
         raise ApplicationError(str(exc), non_retryable=True) from exc
 
-    entry_point = config.get_plugin_entry_point('sand.apis:sand_api')
     # No API key here, we can set the key in the env for the child workflow
     # since this is only for hysrpint lab.
     return {
@@ -60,7 +41,7 @@ async def collect_and_route(data: ExtractInput) -> dict:
         'step_texts': step_texts,
         'select_schema': select_schema(),
         'input_entry_ids': [i.entry_id for i in inputs],
-        'llm_model_name': entry_point.llm_model_name,
+        'llm_model_name': common.llm_model_name(),
     }
 
 
@@ -89,8 +70,8 @@ async def assemble_and_store(data: StoreInput) -> dict:
 
     grid, sheet_issues = to_sheet(archive)
     xlsx = grid_to_xlsx_bytes(grid)
-    voice = _voice_service()
-    async with voice.build_client(_user_token(data.user_id)) as client:
+    voice = common.voice_service()
+    async with voice.build_client(common.user_token(data.user_id)) as client:
         handle, replaced_edits = await SheetStore(voice).store_extracted(
             client,
             data.upload_id,
@@ -119,8 +100,8 @@ async def write_extraction_status(data: WriteStatusInput) -> None:
     """Write the status file into the experiment upload (the GUI polls it)."""
     from sand.hysprint.sheet import EXTRACTION_STATUS_MAINFILE
 
-    voice = _voice_service()
-    async with voice.build_client(_user_token(data.user_id)) as client:
+    voice = common.voice_service()
+    async with voice.build_client(common.user_token(data.user_id)) as client:
         await voice.writer.write_json(
             client, data.upload_id, EXTRACTION_STATUS_MAINFILE, data.status
         )

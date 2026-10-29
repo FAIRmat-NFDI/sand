@@ -19,7 +19,15 @@ from sand.sheet_edit.edits import (
 )
 from sand.sheet_edit.preview import preview
 from sand.sheet_edit.render import table
-from sand.sheet_edit.resolve import PROMPT_VERSION, resolve, system_prompt, user_text
+from sand.sheet_edit.resolve import (
+    PROMPT_VERSION,
+    agree,
+    prompts,
+    read_answer,
+    resolve,
+    system_prompt,
+    user_text,
+)
 
 SPEED, ANNEAL_TIME, SOLVENT_2, VARIATION, TIME_2 = (
     'C025',
@@ -472,3 +480,24 @@ def test_interpret_instruction_applies_nothing_uncertain_or_unreadable(synthetic
         "? not done, the model's answer could not be read: "
         'Expecting value: line 1 column 1 (char 0)'
     )
+
+
+# --- the three steps the workflow takes ----------------------------------------
+
+
+def test_prompts_are_what_resolve_asks(catalog):
+    call = FakeCall(answer())
+    resolve(SAID, catalog, call)
+    asked = prompts(SAID, catalog)
+    assert [(p.system, p.text, p.schema) for p in asked] == call.seen
+    assert [p.second_opinion for p in asked] == [False, True]
+
+
+def test_read_answer_then_agree_is_resolve(catalog):
+    a, b = answer(edit()), answer(edit(old='3,000'))
+    opinions = [read_answer(x, SAID, catalog) for x in (a, b)]
+    assert agree(opinions, catalog) == ask(catalog, a, b)
+    assert agree([opinions[0], read_answer(None, SAID, catalog)], catalog) == ask(
+        catalog, a, None
+    )
+    assert isinstance(read_answer(None, SAID, catalog), Unreadable)
