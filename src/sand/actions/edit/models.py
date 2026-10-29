@@ -26,16 +26,16 @@ class PrepareInput(JobInput):
     number: int = Field(ge=1)  # 1-based position in `texts`
 
 
-class Answer(BaseModel):
+class LlmAnswer(BaseModel):
     """One pass's answer: the model's JSON as text, or why there is none."""
 
     text: str | None = None
     error: str | None = None
 
 
-class FinishInput(PrepareInput):
+class ApplyInput(PrepareInput):
     entry_id: str
-    answers: list[Answer]  # empty when the proposal came from the cache
+    answers: list[LlmAnswer]  # empty when the proposal came from the cache
 
 
 class WriteStatusInput(BaseModel):

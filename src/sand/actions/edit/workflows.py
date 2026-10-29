@@ -7,11 +7,11 @@ order, each interpreted against the sheet the earlier ones left.
       per input k, IN ORDER (input k reads the sheet after k-1):
         activity prepare_input(k) ──▶ cached, or the two prompts
         two child ExtractionWorkflows IN PARALLEL (the two opinions)
-        activity finish_input(k, answers) ──▶ the user's preview, edits ready
-                                              to confirm, confirmed ones written
+        activity agree_cache_and_apply_input(k, answers)
+            ──▶ the user's preview, edits ready to confirm, confirmed ones written
         status "interpreting k/n"
     status "writing-sheet"
-    activity finish_job ──▶ final sheet stored, changelog checked
+    activity store_final_sheet_and_changelog ──▶ changelog checked, sheet stored
     status "completed" {final, changed, changes, changelog}
     on ANY failure: status "failed" {error}, then re-raise
 
@@ -34,17 +34,17 @@ from temporalio.exceptions import ApplicationError
 with workflow.unsafe.imports_passed_through():
     from sand.actions.common import LLM_CHILD_TIMEOUT, LLM_TASK_QUEUE, error_message
     from sand.actions.edit.activities import (
+        agree_cache_and_apply_input,
         collect_edit_inputs,
-        finish_input,
-        finish_job,
         prepare_input,
+        store_final_sheet_and_changelog,
         write_edit_status,
     )
     from sand.actions.edit.models import (
-        Answer,
+        ApplyInput,
         EditInput,
-        FinishInput,
         JobInput,
+        LlmAnswer,
         PrepareInput,
         WriteStatusInput,
     )
@@ -131,8 +131,8 @@ class EditSheetWorkflow:
                     )
                 )
                 report = await workflow.execute_activity(
-                    finish_input,
-                    FinishInput(
+                    agree_cache_and_apply_input,
+                    ApplyInput(
                         **job.model_dump(),
                         number=number,
                         entry_id=entry_id,
@@ -146,7 +146,7 @@ class EditSheetWorkflow:
 
             await status({'phase': 'writing-sheet', 'model': job.llm_model_name})
             done = await workflow.execute_activity(
-                finish_job,
+                store_final_sheet_and_changelog,
                 job,
                 start_to_close_timeout=timedelta(minutes=15),
                 retry_policy=RetryPolicy(maximum_attempts=3),
@@ -163,7 +163,7 @@ class EditSheetWorkflow:
             raise
 
     @staticmethod
-    async def _ask(prompt: dict, model: str, child_id: str) -> Answer:
+    async def _ask(prompt: dict, model: str, child_id: str) -> LlmAnswer:
         """One opinion from nomad-llm-extraction's ExtractionWorkflow. The
         prompt is passed prebuilt, so the model reads exactly what
         resolve.py composed; the child parses and schema-checks the
@@ -186,6 +186,6 @@ class EditSheetWorkflow:
             execution_timeout=LLM_CHILD_TIMEOUT,
         )
         if result.get('err_message'):
-            return Answer(error=result['err_message'])
+            return LlmAnswer(error=result['err_message'])
         # the child hands back the parsed JSON; read_answer wants the text
-        return Answer(text=json.dumps(result.get('extracted_data')))
+        return LlmAnswer(text=json.dumps(result.get('extracted_data')))

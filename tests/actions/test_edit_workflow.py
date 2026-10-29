@@ -16,8 +16,8 @@ from temporalio.worker import Worker
 
 from sand.actions.common import LLM_TASK_QUEUE, error_message
 from sand.actions.edit.models import (
+    ApplyInput,
     EditInput,
-    FinishInput,
     JobInput,
     PrepareInput,
     WriteStatusInput,
@@ -89,21 +89,21 @@ class Stubs:
                 ],
             }
 
-        @activity.defn(name='finish_input')
-        async def finish(data: FinishInput) -> dict:
-            stubs.record('finish', data)
+        @activity.defn(name='agree_cache_and_apply_input')
+        async def apply(data: ApplyInput) -> dict:
+            stubs.record('apply', data)
             return {'input': data.number, 'preview': f'preview {data.number}'}
 
-        @activity.defn(name='finish_job')
-        async def finish_job(data: JobInput) -> dict:
-            stubs.record('finish_job', data)
+        @activity.defn(name='store_final_sheet_and_changelog')
+        async def store(data: JobInput) -> dict:
+            stubs.record('store_final_sheet_and_changelog', data)
             return {'final': 'abc', 'changed': True, 'changes': 3, 'changelog': 'log'}
 
         @activity.defn(name='write_edit_status')
         async def status(data: WriteStatusInput) -> None:
             stubs.record('status', data.status)
 
-        return [collect, prepare, finish, finish_job, status]
+        return [collect, prepare, apply, store, status]
 
     def record(self, name: str, data: object) -> None:
         if name == self.failing:
@@ -149,16 +149,16 @@ async def test_each_input_in_order_two_opinions_each_then_the_sheet():
         'collect',
         'status',
         'prepare',
-        'finish',
+        'apply',
         'status',
         'prepare',
-        'finish',
+        'apply',
         'status',
         'status',
-        'finish_job',
+        'store_final_sheet_and_changelog',
         'status',
     ]
-    first, second = stubs.of('finish')
+    first, second = stubs.of('apply')
     assert [(f.number, f.entry_id) for f in (first, second)] == [(1, 'e1'), (2, 'e2')]
     assert first.texts == second.texts == ['speed 4000', 'clear solvent 2']
     assert first.llm_model_name == MODEL
@@ -166,7 +166,10 @@ async def test_each_input_in_order_two_opinions_each_then_the_sheet():
     assert first.confirmations == {
         'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00'}
     }
-    assert stubs.of('finish_job')[0].confirmations == first.confirmations
+    assert (
+        stubs.of('store_final_sheet_and_changelog')[0].confirmations
+        == first.confirmations
+    )
 
     # the child got the prompt as composed, the model and temperature 0
     a, b = [json.loads(answer.text)['got'] for answer in first.answers]
@@ -213,15 +216,15 @@ async def test_status_shows_progress_then_the_result():
 async def test_a_cached_input_asks_no_child():
     stubs = Stubs(['speed 4000', 'clear solvent 2'], cached={1})
     await run(stubs)
-    first, second = stubs.of('finish')
+    first, second = stubs.of('apply')
     assert first.answers == []
     assert len(second.answers) == 2  # noqa: PLR2004
 
 
-async def test_an_answer_the_child_cannot_get_reaches_finish_as_an_error():
+async def test_an_answer_the_child_cannot_get_reaches_apply_as_an_error():
     stubs = Stubs(['FAIL this one', 'speed 4000'])
     await run(stubs)
-    first, second = stubs.of('finish')
+    first, second = stubs.of('apply')
     assert [a.text for a in first.answers] == [None, None]
     assert [a.error for a in first.answers] == ['Max retry attempts reached.'] * 2
     assert [a.error for a in second.answers] == [None, None]
@@ -235,7 +238,7 @@ async def test_a_child_that_fails_outright_fails_the_job():
     last = stubs.of('status')[-1]
     assert (last['phase'], last['error']) == ('failed', 'provider down')
     assert [r['input'] for r in last['inputs']] == [1]  # what got through
-    assert len(stubs.of('finish')) == 1
+    assert len(stubs.of('apply')) == 1
 
 
 async def test_prepare_must_give_two_prompts_or_none():
@@ -243,7 +246,7 @@ async def test_prepare_must_give_two_prompts_or_none():
     with pytest.raises(WorkflowFailureError) as failure:
         await run(stubs)
     assert error_message(failure.value) == 'input 1: 1 prompts, not 2'
-    assert stubs.of('finish') == []
+    assert stubs.of('apply') == []
 
 
 async def test_no_inputs_is_a_finished_job_with_nothing_to_do():
@@ -255,11 +258,11 @@ async def test_no_inputs_is_a_finished_job_with_nothing_to_do():
 
 
 async def test_a_failing_activity_fails_the_job_and_says_so_in_the_status():
-    stubs = Stubs(['speed 4000'], failing='finish')
+    stubs = Stubs(['speed 4000'], failing='apply')
     with pytest.raises(WorkflowFailureError) as failure:
         await run(stubs)
-    assert error_message(failure.value) == 'finish broke'
+    assert error_message(failure.value) == 'apply broke'
     last = stubs.of('status')[-1]
     assert last['phase'] == 'failed'
-    assert last['error'] == 'finish broke'
-    assert stubs.of('finish_job') == []
+    assert last['error'] == 'apply broke'
+    assert stubs.of('store_final_sheet_and_changelog') == []

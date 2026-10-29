@@ -16,10 +16,10 @@ class EditActionEntryPoint(ActionEntryPoint):
         from nomad.actions import Action
 
         from sand.actions.edit.activities import (
+            agree_cache_and_apply_input,
             collect_edit_inputs,
-            finish_input,
-            finish_job,
             prepare_input,
+            store_final_sheet_and_changelog,
             write_edit_status,
         )
         from sand.actions.edit.workflows import EditSheetWorkflow
@@ -30,8 +30,8 @@ class EditActionEntryPoint(ActionEntryPoint):
             activities=[
                 collect_edit_inputs,
                 prepare_input,
-                finish_input,
-                finish_job,
+                agree_cache_and_apply_input,
+                store_final_sheet_and_changelog,
                 write_edit_status,
             ],
         )

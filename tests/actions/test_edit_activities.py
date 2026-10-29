@@ -10,10 +10,10 @@ from temporalio.exceptions import ApplicationError
 from sand.actions import common
 from sand.actions.edit import activities
 from sand.actions.edit.models import (
-    Answer,
+    ApplyInput,
     EditInput,
-    FinishInput,
     JobInput,
+    LlmAnswer,
     PrepareInput,
     WriteStatusInput,
 )
@@ -47,7 +47,7 @@ SPEED_EDIT = {
 
 
 def answer(*edits, unresolved=()):
-    return Answer(
+    return LlmAnswer(
         text=json.dumps({'edits': list(edits), 'unresolved': list(unresolved)})
     )
 
@@ -124,9 +124,9 @@ def prepare(upload, number, job_id='job-1', snapshot=None) -> PrepareInput:
     return PrepareInput(**collected.model_dump(), number=number)
 
 
-def finish(upload, number, answers, job_id='job-1', snapshot=None) -> FinishInput:
+def apply(upload, number, answers, job_id='job-1', snapshot=None) -> ApplyInput:
     collected = snapshot or job(upload, job_id)
-    return FinishInput(
+    return ApplyInput(
         **collected.model_dump(),
         number=number,
         entry_id=upload.inputs[number - 1].entry_id,
@@ -194,9 +194,9 @@ async def test_prepare_gives_the_two_prompts_for_the_original_sheet(
     assert upload.writer.written == []
 
 
-async def test_finish_caches_the_agreed_proposal_and_reports_the_edit(upload):
-    report = await activities.finish_input(
-        finish(upload, 1, [answer(SPEED_EDIT), answer(SPEED_EDIT)])
+async def test_apply_caches_the_agreed_proposal_and_reports_the_edit(upload):
+    report = await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT), answer(SPEED_EDIT)])
     )
     assert report['input'] == 1
     assert report['entry_id'] == 'e1'
@@ -222,24 +222,26 @@ async def test_finish_caches_the_agreed_proposal_and_reports_the_edit(upload):
     # the same words on the same sheet: nothing to ask
     prepared = await activities.prepare_input(prepare(upload, 1))
     assert prepared == {'cached': True, 'prompts': []}
-    again = await activities.finish_input(finish(upload, 1, []))
+    again = await activities.agree_cache_and_apply_input(apply(upload, 1, []))
     assert again == {**report, 'from_cache': True}
     assert upload.writer.written == [CACHE_FILE]  # not rewritten
 
 
 async def test_disagreeing_answers_make_the_input_uncertain(upload):
     other = {**SPEED_EDIT, 'target': 'C027'}
-    report = await activities.finish_input(
-        finish(upload, 1, [answer(SPEED_EDIT), answer(other)])
+    report = await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT), answer(other)])
     )
     assert report['ready'] == []
     assert report['preview'].startswith(f'? uncertain: "{SAID}"')
 
 
 async def test_an_answer_the_child_could_not_get_is_this_inputs_problem(upload):
-    report = await activities.finish_input(
-        finish(
-            upload, 1, [answer(SPEED_EDIT), Answer(error='Max retry attempts reached.')]
+    report = await activities.agree_cache_and_apply_input(
+        apply(
+            upload,
+            1,
+            [answer(SPEED_EDIT), LlmAnswer(error='Max retry attempts reached.')],
         )
     )
     assert report['ready'] == []
@@ -253,33 +255,37 @@ async def test_an_answer_the_child_could_not_get_is_this_inputs_problem(upload):
     ] is False
 
 
-async def test_finish_twice_with_the_same_answers_is_one_entry(upload):
+async def test_applying_twice_with_the_same_answers_is_one_entry(upload):
     answers = [answer(SPEED_EDIT)] * 2
-    first = await activities.finish_input(finish(upload, 1, answers))
-    again = await activities.finish_input(finish(upload, 1, answers))
+    first = await activities.agree_cache_and_apply_input(apply(upload, 1, answers))
+    again = await activities.agree_cache_and_apply_input(apply(upload, 1, answers))
     assert again == first
     assert len(cache_file(upload)['proposals']) == 1
 
 
 async def test_the_cache_is_merged_not_written_over(upload):
-    await activities.finish_input(finish(upload, 1, [answer(SPEED_EDIT)] * 2))
+    await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2)
+    )
     data = cache_file(upload)
     data['proposals']['other:key'] = {
         'proposal': {'edits': [], 'unresolved': []},
         'job': 'job-2',
     }
     upload.writer.files[CACHE_FILE] = json.dumps(data).encode()
-    await activities.finish_input(finish(upload, 2, [answer()] * 2))
+    await activities.agree_cache_and_apply_input(apply(upload, 2, [answer()] * 2))
     assert len(cache_file(upload)['proposals']) == 3  # noqa: PLR2004
 
 
-async def test_finish_without_answers_needs_the_cache(upload):
+async def test_applying_without_answers_needs_the_cache(upload):
     with pytest.raises(ApplicationError, match='no answer and no cached proposal'):
-        await activities.finish_input(finish(upload, 1, []))
+        await activities.agree_cache_and_apply_input(apply(upload, 1, []))
 
 
 async def test_a_lost_cache_under_a_running_job_stops_it(upload):
-    await activities.finish_input(finish(upload, 1, [answer(SPEED_EDIT)] * 2))
+    await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2)
+    )
     del upload.writer.files[CACHE_FILE]
     with pytest.raises(ApplicationError, match='has no cached proposal'):
         await activities.prepare_input(prepare(upload, 2))
@@ -298,12 +304,14 @@ async def confirm(upload, key: str) -> None:
 async def test_a_confirmed_edit_is_written_and_the_next_input_sees_the_new_sheet(
     upload, synthetic_xlsx
 ):
-    report = await activities.finish_input(finish(upload, 1, [answer(SPEED_EDIT)] * 2))
+    report = await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2)
+    )
     (ready,) = report['ready']
     before = await activities.prepare_input(prepare(upload, 2))
 
     await confirm(upload, ready['key'])
-    written = await activities.finish_input(finish(upload, 1, []))
+    written = await activities.agree_cache_and_apply_input(apply(upload, 1, []))
     assert written['confirmed'] == [ready['key']]
     assert written['cells_written'] == SAMPLES_1_TO_3
 
@@ -318,12 +326,14 @@ async def test_a_confirmation_made_during_the_job_waits_for_the_next_run(upload)
     answers of input 2 were asked for the sheet without the edit of input
     1, so they are cached and applied for that sheet."""
     collected = job(upload)
-    report = await activities.finish_input(finish(upload, 1, [answer(SPEED_EDIT)] * 2))
+    report = await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2)
+    )
     (ready,) = report['ready']
     prepared = await activities.prepare_input(prepare(upload, 2, snapshot=collected))
     await confirm(upload, ready['key'])  # lands while the model answers
-    second = await activities.finish_input(
-        finish(upload, 2, [answer()] * 2, snapshot=collected)
+    second = await activities.agree_cache_and_apply_input(
+        apply(upload, 2, [answer()] * 2, snapshot=collected)
     )
     assert second['cells_written'] == 0
     assert (await activities.prepare_input(prepare(upload, 2, snapshot=collected))) == {
@@ -331,25 +341,31 @@ async def test_a_confirmation_made_during_the_job_waits_for_the_next_run(upload)
         'prompts': [],
     }
     assert prepared['cached'] is False
-    assert (await activities.finish_job(collected))['changed'] is False
+    assert (await activities.store_final_sheet_and_changelog(collected))[
+        'changed'
+    ] is False
 
     # the next job, collected after the confirmation, writes it
-    assert (await activities.finish_input(finish(upload, 1, [])))['cells_written'] == 3  # noqa: PLR2004
+    assert (await activities.agree_cache_and_apply_input(apply(upload, 1, [])))[
+        'cells_written'
+    ] == 3  # noqa: PLR2004
     assert (await activities.prepare_input(prepare(upload, 2)))['cached'] is False
 
 
 async def test_a_writer_refusal_is_reported_not_raised(upload, monkeypatch):
-    from sand.sheet_edit import apply
+    from sand.sheet_edit import apply as pipeline
     from sand.sheet_edit.write import WriteRefused
 
-    report = await activities.finish_input(finish(upload, 1, [answer(SPEED_EDIT)] * 2))
+    report = await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2)
+    )
     await confirm(upload, report['ready'][0]['key'])
 
     def refuse(state, writes):
         raise WriteRefused('the cell is locked')
 
-    monkeypatch.setattr(apply, 'write_cells', refuse)
-    refused = await activities.finish_input(finish(upload, 1, []))
+    monkeypatch.setattr(pipeline, 'write_cells', refuse)
+    refused = await activities.agree_cache_and_apply_input(apply(upload, 1, []))
     assert refused['refused'] == 'the cell is locked'
     assert refused['cells_written'] == 0
 
@@ -357,10 +373,12 @@ async def test_a_writer_refusal_is_reported_not_raised(upload, monkeypatch):
 # --- the end of the job -----------------------------------------------------------
 
 
-async def test_finish_job_stores_the_final_sheet_with_its_changelog(
+async def test_store_final_sheet_and_changelog_stores_the_final_sheet_with_its_changelog(
     upload, synthetic_xlsx
 ):
-    report = await activities.finish_input(finish(upload, 1, [answer(SPEED_EDIT)] * 2))
+    report = await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2)
+    )
     await confirm(upload, report['ready'][0]['key'])
     clear = {
         'target': 'C013',
@@ -370,9 +388,9 @@ async def test_finish_job_stores_the_final_sheet_with_its_changelog(
         'new': '',
         'said': 'clear solvent 2 of sample 1',
     }
-    await activities.finish_input(finish(upload, 2, [answer(clear)] * 2))
+    await activities.agree_cache_and_apply_input(apply(upload, 2, [answer(clear)] * 2))
 
-    done = await activities.finish_job(job(upload))
+    done = await activities.store_final_sheet_and_changelog(job(upload))
     final = upload.writer.files[FINAL_FILE]
     assert done['final'] == sha256(final)
     assert done['changed'] is True
@@ -383,22 +401,26 @@ async def test_finish_job_stores_the_final_sheet_with_its_changelog(
     assert final != synthetic_xlsx
 
 
-async def test_finish_job_without_confirmations_stores_the_original(
+async def test_store_final_sheet_and_changelog_without_confirmations_stores_the_original(
     upload, synthetic_xlsx
 ):
-    await activities.finish_input(finish(upload, 1, [answer(SPEED_EDIT)] * 2))
-    await activities.finish_input(finish(upload, 2, [answer()] * 2))
-    done = await activities.finish_job(job(upload))
+    await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2)
+    )
+    await activities.agree_cache_and_apply_input(apply(upload, 2, [answer()] * 2))
+    done = await activities.store_final_sheet_and_changelog(job(upload))
     assert done['changed'] is False
     assert done['changes'] == 0
     assert upload.writer.files[FINAL_FILE] == synthetic_xlsx
 
 
 async def test_a_confirmation_matching_nothing_is_counted(upload):
-    await activities.finish_input(finish(upload, 1, [answer(SPEED_EDIT)] * 2))
-    await activities.finish_input(finish(upload, 2, [answer()] * 2))
+    await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2)
+    )
+    await activities.agree_cache_and_apply_input(apply(upload, 2, [answer()] * 2))
     await confirm(upload, 'a key from a reworded input')
-    done = await activities.finish_job(job(upload))
+    done = await activities.store_final_sheet_and_changelog(job(upload))
     assert done['changed'] is False
     assert done['stale_confirmations'] == 1
 
@@ -406,15 +428,17 @@ async def test_a_confirmation_matching_nothing_is_counted(upload):
 async def test_a_failed_check_stores_nothing(upload, monkeypatch):
     from sand.sheet_edit import changelog
 
-    await activities.finish_input(finish(upload, 1, [answer(SPEED_EDIT)] * 2))
-    await activities.finish_input(finish(upload, 2, [answer()] * 2))
+    await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2)
+    )
+    await activities.agree_cache_and_apply_input(apply(upload, 2, [answer()] * 2))
 
     def fail(original, final, log):
         raise changelog.CheckFailed('a cell differs')
 
     monkeypatch.setattr(changelog, 'check', fail)
     with pytest.raises(ApplicationError, match='does not match its changelog'):
-        await activities.finish_job(job(upload))
+        await activities.store_final_sheet_and_changelog(job(upload))
     assert FINAL_FILE not in upload.writer.files
 
 
