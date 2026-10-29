@@ -178,6 +178,8 @@ def agree(opinions: Sequence[Opinion], catalog: Catalog) -> ProposedEdits:
     """The two opinions, in the order of `prompts`, compared. One
     unreadable answer makes the whole instruction unresolved: half a
     reading is no reading."""
+    if len(opinions) != 2:  # noqa: PLR2004
+        raise ValueError(f'two opinions are compared, not {len(opinions)}')
     a, b = opinions
     for opinion in (a, b):
         if isinstance(opinion, Unreadable):

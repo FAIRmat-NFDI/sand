@@ -29,6 +29,7 @@ from datetime import timedelta
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
+from temporalio.exceptions import ApplicationError
 
 with workflow.unsafe.imports_passed_through():
     from sand.actions.common import LLM_CHILD_TIMEOUT, LLM_TASK_QUEUE, error_message
@@ -94,8 +95,13 @@ class EditSheetWorkflow:
                 job_id=job_id,
                 llm_model_name=collected['llm_model_name'],
                 texts=collected['texts'],
+                confirmations=collected['confirmations'],
             )
             total = len(job.texts)
+            if len(collected['input_entry_ids']) != total:
+                raise ApplicationError(
+                    'inputs and entry ids differ', non_retryable=True
+                )
             progress = {
                 'phase': 'interpreting',
                 'inputs_total': total,
@@ -110,6 +116,11 @@ class EditSheetWorkflow:
                     start_to_close_timeout=timedelta(minutes=5),
                     retry_policy=RetryPolicy(maximum_attempts=3),
                 )
+                if len(prepared['prompts']) not in (0, 2):
+                    raise ApplicationError(
+                        f'input {number}: {len(prepared["prompts"])} prompts, not 2',
+                        non_retryable=True,
+                    )
                 # the two opinions at once; none when the proposal is cached
                 answers = await asyncio.gather(
                     *(
@@ -156,8 +167,11 @@ class EditSheetWorkflow:
         """One opinion from nomad-llm-extraction's ExtractionWorkflow. The
         prompt is passed prebuilt, so the model reads exactly what
         resolve.py composed; the child parses and schema-checks the
-        answer and retries with the error a few times. What it cannot get
-        is this input's problem, not the job's."""
+        answer and retries with the error a few times. An answer it
+        reports it could not get is this input's problem; a child that
+        fails outright (no worker, provider down) raises and fails the
+        job, so nothing is cached as unreadable for an infrastructure
+        error."""
         result = await workflow.execute_child_workflow(
             'ExtractionWorkflow',
             {

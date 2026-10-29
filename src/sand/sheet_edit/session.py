@@ -15,6 +15,7 @@ batch parser matches any .xlsx in the upload.
 """
 
 import datetime
+import json
 from dataclasses import dataclass, field
 
 from sand.sheet_edit.apply import Cache
@@ -93,14 +94,25 @@ def llm_cache_json(cache: LlmCache, model: str, prompt_version: str) -> dict:
     }
 
 
-def load_confirmations(data: dict | None) -> dict[str, Confirmation]:
-    """By confirmation key. Raises ValueError on anything malformed: a
-    confirmation decides what is written, so a broken file stops the job
-    instead of silently dropping entries."""
-    if data is None:
+def read_confirmations(raw: bytes | None) -> dict:
+    """The confirmations file's JSON object; no file is no confirmations.
+    Raises ValueError on anything else: a confirmation decides what is
+    written, so a damaged file stops the job instead of reading as
+    "nothing confirmed"."""
+    if raw is None:
         return {}
+    try:
+        data = json.loads(raw)
+    except ValueError as why:
+        raise ValueError(f'the confirmations file is not JSON: {why}') from why
     if not isinstance(data, dict):
         raise ValueError('the confirmations file is not a JSON object')
+    return data
+
+
+def load_confirmations(data: dict) -> dict[str, Confirmation]:
+    """By confirmation key, from the file's JSON (`read_confirmations`).
+    Raises ValueError on a malformed entry, for the same reason."""
     confirmations = {}
     for key, entry in data.items():
         try:

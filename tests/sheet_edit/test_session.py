@@ -1,4 +1,5 @@
 import datetime
+import json
 
 import pytest
 
@@ -11,6 +12,7 @@ from sand.sheet_edit.session import (
     llm_cache_json,
     load_confirmations,
     load_llm_cache,
+    read_confirmations,
 )
 
 MODEL = 'gemini/test'
@@ -96,13 +98,21 @@ def test_confirmations_round_trip():
     data = confirmations_json(confirmations)
     assert data == {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00'}}
     assert load_confirmations(data) == confirmations
-    assert load_confirmations(None) == {}
+    assert read_confirmations(json.dumps(data).encode()) == data
+    assert read_confirmations(None) == {}
+
+
+@pytest.mark.parametrize(
+    'raw', [b'', b'{"k1": {"by": "tester", "at": "2026', b'[]', b'3']
+)
+def test_a_damaged_confirmations_file_is_refused_not_empty(raw):
+    with pytest.raises(ValueError, match='confirmations file'):
+        read_confirmations(raw)
 
 
 @pytest.mark.parametrize(
     'data',
     [
-        ['k1'],
         {'k1': 'tester'},
         {'k1': {'by': 'tester'}},
         {'k1': {'by': '', 'at': '2026-10-28T12:16:05+00:00'}},

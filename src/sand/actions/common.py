@@ -15,3 +15,27 @@ def error_message(exc: BaseException) -> str:
     while getattr(cause, 'cause', None) is not None:
         cause = cause.cause
     return getattr(cause, 'message', None) or str(cause)
+
+
+TOKEN_EXPIRES_S = 15 * 60
+
+
+def voice_service():
+    from nomad.config import config
+
+    from sand.services.voice_eln import VoiceElnService
+
+    entry_point = config.get_plugin_entry_point('sand.apis:sand_api')
+    return VoiceElnService(base_url=entry_point.nomad_base_url)
+
+
+def user_token(user_id: str) -> str:
+    from nomad.auth.tokens import generate_simple_token
+
+    return generate_simple_token(user_id, TOKEN_EXPIRES_S)
+
+
+def llm_model_name() -> str:
+    from nomad.config import config
+
+    return config.get_plugin_entry_point('sand.apis:sand_api').llm_model_name

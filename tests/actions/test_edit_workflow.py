@@ -44,6 +44,8 @@ class FakeExtraction:
     async def run(self, payload: dict) -> dict:
         if 'FAIL' in payload['prompt']:
             return {'extracted_data': {}, 'err_message': 'Max retry attempts reached.'}
+        if 'RAISE' in payload['prompt']:
+            raise ApplicationError('provider down', non_retryable=True)
         return {'extracted_data': {'got': payload}, 'err_message': None}
 
 
@@ -55,6 +57,7 @@ class Stubs:
     texts: list[str]
     cached: set[int] = field(default_factory=set)
     failing: str | None = None  # the activity that raises
+    prompts_for: dict[int, int] = field(default_factory=dict)  # input -> how many
     calls: list[tuple[str, object]] = field(default_factory=list)
 
     def activities(self):
@@ -66,6 +69,9 @@ class Stubs:
             return {
                 'texts': stubs.texts,
                 'input_entry_ids': [f'e{i + 1}' for i in range(len(stubs.texts))],
+                'confirmations': {
+                    'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00'}
+                },
                 'llm_model_name': MODEL,
             }
 
@@ -75,9 +81,12 @@ class Stubs:
             if data.number in stubs.cached:
                 return {'cached': True, 'prompts': []}
             text = data.texts[data.number - 1]
+            how_many = stubs.prompts_for.get(data.number, len(PROMPTS))
             return {
                 'cached': False,
-                'prompts': [{**p, 'text': f'{p["text"]} {text}'} for p in PROMPTS],
+                'prompts': [
+                    {**p, 'text': f'{p["text"]} {text}'} for p in PROMPTS[:how_many]
+                ],
             }
 
         @activity.defn(name='finish_input')
@@ -154,6 +163,10 @@ async def test_each_input_in_order_two_opinions_each_then_the_sheet():
     assert first.texts == second.texts == ['speed 4000', 'clear solvent 2']
     assert first.llm_model_name == MODEL
     assert first.job_id == result['job_id']
+    assert first.confirmations == {
+        'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00'}
+    }
+    assert stubs.of('finish_job')[0].confirmations == first.confirmations
 
     # the child got the prompt as composed, the model and temperature 0
     a, b = [json.loads(answer.text)['got'] for answer in first.answers]
@@ -212,6 +225,25 @@ async def test_an_answer_the_child_cannot_get_reaches_finish_as_an_error():
     assert [a.text for a in first.answers] == [None, None]
     assert [a.error for a in first.answers] == ['Max retry attempts reached.'] * 2
     assert [a.error for a in second.answers] == [None, None]
+
+
+async def test_a_child_that_fails_outright_fails_the_job():
+    stubs = Stubs(['speed 4000', 'RAISE here'])
+    with pytest.raises(WorkflowFailureError) as failure:
+        await run(stubs)
+    assert error_message(failure.value) == 'provider down'
+    last = stubs.of('status')[-1]
+    assert (last['phase'], last['error']) == ('failed', 'provider down')
+    assert [r['input'] for r in last['inputs']] == [1]  # what got through
+    assert len(stubs.of('finish')) == 1
+
+
+async def test_prepare_must_give_two_prompts_or_none():
+    stubs = Stubs(['speed 4000'], prompts_for={1: 1})
+    with pytest.raises(WorkflowFailureError) as failure:
+        await run(stubs)
+    assert error_message(failure.value) == 'input 1: 1 prompts, not 2'
+    assert stubs.of('finish') == []
 
 
 async def test_no_inputs_is_a_finished_job_with_nothing_to_do():

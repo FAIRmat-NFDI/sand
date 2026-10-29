@@ -3,9 +3,12 @@ upload and leaves nothing in memory, so Temporal can retry or replay any
 of them. The sheet is never patched: each activity rebuilds the state
 from the original and the cached proposals (see apply.py)."""
 
+from dataclasses import dataclass
+
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
+from sand.actions import common
 from sand.actions.edit.models import (
     EditInput,
     FinishInput,
@@ -28,44 +31,26 @@ from sand.sheet_edit.session import (
     llm_cache_json,
     load_confirmations,
     load_llm_cache,
+    read_confirmations,
 )
 
-TOKEN_EXPIRES_S = 15 * 60
 XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-
-
-def _voice_service():
-    from nomad.config import config
-
-    from sand.services.voice_eln import VoiceElnService
-
-    entry_point = config.get_plugin_entry_point('sand.apis:sand_api')
-    return VoiceElnService(base_url=entry_point.nomad_base_url)
-
-
-def _user_token(user_id: str) -> str:
-    from nomad.auth.tokens import generate_simple_token
-
-    return generate_simple_token(user_id, TOKEN_EXPIRES_S)
-
-
-def _llm_model_name() -> str:
-    from nomad.config import config
-
-    return config.get_plugin_entry_point('sand.apis:sand_api').llm_model_name
 
 
 @activity.defn
 async def collect_edit_inputs(data: EditInput) -> dict:
-    """The collection's inputs in order, and the model to ask. Input
-    problems are the user's to fix: non-retryable."""
-    voice = _voice_service()
-    async with voice.build_client(_user_token(data.user_id)) as client:
+    """The collection's inputs in order, the confirmations so far and the
+    model to ask. Input problems are the user's to fix: non-retryable."""
+    voice = common.voice_service()
+    async with voice.build_client(common.user_token(data.user_id)) as client:
         inputs = await voice.collect_inputs(
             client, data.upload_id, collection_entry_id=data.collection_entry_id
         )
         original = await voice.writer.read_raw_file(
             client, data.upload_id, ORIGINAL_FILE
+        )
+        confirmations = await voice.writer.read_raw_file(
+            client, data.upload_id, CONFIRMATIONS_FILE
         )
     if original is None:
         raise ApplicationError(
@@ -78,10 +63,16 @@ async def collect_edit_inputs(data: EditInput) -> dict:
             'try again in a moment',
             non_retryable=True,
         )
+    try:
+        confirmed = read_confirmations(confirmations)
+        load_confirmations(confirmed)  # malformed entries stop the job here
+    except ValueError as why:
+        raise ApplicationError(str(why), non_retryable=True) from why
     return {
         'texts': [i.text for i in inputs],
         'input_entry_ids': [i.entry_id for i in inputs],
-        'llm_model_name': _llm_model_name(),
+        'confirmations': confirmed,
+        'llm_model_name': common.llm_model_name(),
     }
 
 
@@ -94,14 +85,15 @@ async def prepare_input(data: PrepareInput) -> dict:
     from sand.sheet_edit.resolve import prompts
 
     files = await _read_files(data)
+    text = _text(data)
     state = _state_before(files, data)
-    if cache_key(_text(data), state) in files.cache.proposals:
+    if cache_key(text, state) in files.cache.proposals:
         return {'cached': True, 'prompts': []}
     return {
         'cached': False,
         'prompts': [
             {'system': p.system, 'text': p.text, 'schema': p.schema}
-            for p in prompts(_text(data), build(state))
+            for p in prompts(text, build(state))
         ],
     }
 
@@ -115,8 +107,8 @@ async def finish_input(data: FinishInput) -> dict:
     from sand.sheet_edit.resolve import agree, read_answer
 
     files = await _read_files(data)
-    state = _state_before(files, data)
     text = _text(data)
+    state = _state_before(files, data)
     key = cache_key(text, state)
     if data.answers:
         catalog = build(state)
@@ -155,77 +147,83 @@ async def finish_job(data: JobInput) -> dict:
         raise ApplicationError(
             f'the final sheet does not match its changelog: {why}', non_retryable=True
         ) from why
-    voice = _voice_service()
-    async with voice.build_client(_user_token(data.user_id)) as client:
+    voice = common.voice_service()
+    async with voice.build_client(common.user_token(data.user_id)) as client:
         await voice.writer.upload_raw_file(
             client, data.upload_id, FINAL_FILE, final, XLSX_CONTENT_TYPE
         )
+    # a confirmation is bound to the words, the sheet and the change: an
+    # input reworded or an earlier edit confirmed since leaves it matching
+    # nothing, and the user should be told to look again
+    ready = {key for step in steps for key in step.interpretation.ready}
     return {
         'final': sha256(final),
         'changed': final != files.original,
         'changes': len(log.entries),
+        'stale_confirmations': len(set(files.confirmations) - ready),
         'changelog': render(log),
     }
 
 
 @activity.defn
 async def write_edit_status(data: WriteStatusInput) -> None:
-    voice = _voice_service()
-    async with voice.build_client(_user_token(data.user_id)) as client:
+    voice = common.voice_service()
+    async with voice.build_client(common.user_token(data.user_id)) as client:
         await voice.writer.write_json(client, data.upload_id, STATUS_FILE, data.status)
 
 
 # --- the upload's files ----------------------------------------------------
 
 
+@dataclass
 class _Files:
-    """One activity's view of the upload: read once, at its start."""
+    """One activity's view of the upload, read once at its start. The
+    confirmations come with the job, not from the file (see JobInput)."""
 
-    def __init__(
-        self, original: bytes, cache: LlmCache, confirmations: dict[str, Confirmation]
-    ):
-        self.original = original
-        self.cache = cache
-        self.confirmations = confirmations
+    original: bytes
+    cache: LlmCache
+    confirmations: dict[str, Confirmation]
 
 
 async def _read_files(data: JobInput) -> _Files:
     from sand.sheet_edit.resolve import PROMPT_VERSION
 
-    voice = _voice_service()
-    async with voice.build_client(_user_token(data.user_id)) as client:
+    voice = common.voice_service()
+    async with voice.build_client(common.user_token(data.user_id)) as client:
         original = await voice.writer.read_raw_file(
             client, data.upload_id, ORIGINAL_FILE
         )
         cache = await voice.writer.read_json(client, data.upload_id, CACHE_FILE)
-        confirmations = await voice.writer.read_json(
-            client, data.upload_id, CONFIRMATIONS_FILE
-        )
     if original is None:
         raise ApplicationError(
             'the sheet to edit is gone from the collection', non_retryable=True
         )
-    try:
-        confirmed = load_confirmations(confirmations)
-    except ValueError as why:
-        raise ApplicationError(str(why), non_retryable=True) from why
     return _Files(
         original,
         load_llm_cache(cache, data.llm_model_name, PROMPT_VERSION, data.job_id),
-        confirmed,
+        load_confirmations(data.confirmations),  # collect checked them
     )
 
 
 async def _write_cache(files: _Files, data: JobInput) -> None:
+    """Merged into the file as it is now, not written over it: another
+    job on the same upload may have added entries since this activity
+    read it."""
     from sand.sheet_edit.resolve import PROMPT_VERSION
 
-    voice = _voice_service()
-    async with voice.build_client(_user_token(data.user_id)) as client:
+    voice = common.voice_service()
+    async with voice.build_client(common.user_token(data.user_id)) as client:
+        stored = await voice.writer.read_json(client, data.upload_id, CACHE_FILE)
+        merged = load_llm_cache(
+            stored, data.llm_model_name, PROMPT_VERSION, data.job_id
+        )
+        for key, proposal in files.cache.proposals.items():
+            merged.add(key, proposal, files.cache.jobs[key])
         await voice.writer.write_json(
             client,
             data.upload_id,
             CACHE_FILE,
-            llm_cache_json(files.cache, data.llm_model_name, PROMPT_VERSION),
+            llm_cache_json(merged, data.llm_model_name, PROMPT_VERSION),
         )
 
 
@@ -233,6 +231,11 @@ async def _write_cache(files: _Files, data: JobInput) -> None:
 
 
 def _text(data: PrepareInput) -> str:
+    if data.number > len(data.texts):
+        raise ApplicationError(
+            f'input {data.number} of {len(data.texts)} does not exist',
+            non_retryable=True,
+        )
     return data.texts[data.number - 1]
 
 
