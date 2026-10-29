@@ -42,6 +42,7 @@ from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
 with workflow.unsafe.imports_passed_through():
+    from sand.actions.common import LLM_CHILD_TIMEOUT, LLM_TASK_QUEUE, error_message
     from sand.actions.extract.activities import (
         assemble_and_store,
         collect_and_route,
@@ -55,19 +56,6 @@ with workflow.unsafe.imports_passed_through():
         SELECT_SYSTEM,
         normalize_variants,
     )
-
-# nomad-llm-extraction registers its ExtractionWorkflow here; children are
-# started BY NAME so sand never imports the peer plugin.
-LLM_TASK_QUEUE = 'cpu-task-queue'
-LLM_CHILD_TIMEOUT = timedelta(minutes=10)
-
-
-def _error_message(exc: BaseException) -> str:
-    """The innermost cause's message (Temporal wraps errors per layer)."""
-    cause: BaseException = exc
-    while getattr(cause, 'cause', None) is not None:
-        cause = cause.cause
-    return getattr(cause, 'message', None) or str(cause)
 
 
 def _drop_skipped(
@@ -182,7 +170,7 @@ class ExtractHysprintWorkflow:
                     )
                 except Exception as exc:
                     raise ApplicationError(
-                        f'LLM extraction failed for {step_name}: {_error_message(exc)}',
+                        f'LLM extraction failed for {step_name}: {error_message(exc)}',
                         non_retryable=True,
                     ) from exc
                 done += 1
@@ -239,7 +227,7 @@ class ExtractHysprintWorkflow:
             # records the real error. Best-effort - never masks the original.
             try:
                 await status(
-                    {'phase': 'failed', 'error': _error_message(exc)}, final=True
+                    {'phase': 'failed', 'error': error_message(exc)}, final=True
                 )
             except Exception:
                 workflow.logger.exception('could not write the failed status')

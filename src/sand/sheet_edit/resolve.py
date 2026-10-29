@@ -17,7 +17,8 @@ ground.py are the safety net.
 """
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Literal
 
 from sand.sheet_edit.catalog import Catalog
@@ -32,6 +33,7 @@ from sand.sheet_edit.edits import (
     Unreadable,
     Unresolved,
     proposed_edits_model,
+    proposed_edits_schema,
 )
 from sand.sheet_edit.ground import Refusal, resolve_rows
 from sand.sheet_edit.render import table
@@ -117,36 +119,52 @@ def user_text(instruction: str, catalog: Catalog, second_opinion: bool) -> str:
     return f'{table(catalog, reverse=second_opinion)}\nInstruction: {instruction}'
 
 
-def resolve(instruction: str, catalog: Catalog, call: CallLLM) -> ProposedEdits:
-    """Two passes, agreed. One unreadable answer makes the whole
-    instruction unresolved: half a reading is no reading."""
-    model = proposed_edits_model(catalog)
-    schema = model.model_json_schema()
-    passes = [
-        _one_opinion(instruction, catalog, (call, model, schema), second_opinion)
+@dataclass(frozen=True)
+class Prompt:
+    """One pass's question to the model. `schema` is the sheet's own
+    (`proposed_edits_schema`), the same for both passes."""
+
+    system: str
+    text: str
+    schema: dict
+    second_opinion: bool
+
+
+Opinion = ProposedEdits | Unreadable
+
+
+def prompts(instruction: str, catalog: Catalog) -> list[Prompt]:
+    """The two passes' prompts, the first opinion first."""
+    schema = proposed_edits_schema(catalog)
+    return [
+        Prompt(
+            system=system_prompt(second_opinion),
+            text=user_text(instruction, catalog, second_opinion),
+            schema=schema,
+            second_opinion=second_opinion,
+        )
         for second_opinion in (False, True)
     ]
-    unreadable = [p for p in passes if isinstance(p, Unreadable)]
-    if unreadable:
-        return ProposedEdits(edits=[], unresolved=unreadable[:1])
-    a, b = passes
-    assert isinstance(a, ProposedEdits) and isinstance(b, ProposedEdits)
-    return _agreed(a, b, catalog)
 
 
-def _one_opinion(
-    instruction: str, catalog: Catalog, how: tuple, second_opinion: bool
-) -> ProposedEdits | Unreadable:
-    call, model, schema = how
-    answer = call(
-        system_prompt(second_opinion),
-        user_text(instruction, catalog, second_opinion),
-        schema,
-    )
+def resolve(instruction: str, catalog: Catalog, call: CallLLM) -> ProposedEdits:
+    """Two passes, agreed, with `call` answering both. The workflow does
+    the same in three steps: `prompts`, its own calls, `read_answer` and
+    `agree`."""
+    opinions = [
+        read_answer(call(p.system, p.text, p.schema), instruction, catalog)
+        for p in prompts(instruction, catalog)
+    ]
+    return agree(opinions, catalog)
+
+
+def read_answer(answer: object, instruction: str, catalog: Catalog) -> Opinion:
+    """One pass's answer, validated against the sheet's schema."""
     if not isinstance(answer, str):
         return Unreadable(
             reason='unreadable', detail='the answer is not text', said=instruction
         )
+    model = proposed_edits_model(catalog)
     try:
         narrowed = model.model_validate(json.loads(answer))
     except ValueError as why:  # JSON errors and pydantic's ValidationError both
@@ -154,6 +172,18 @@ def _one_opinion(
         return Unreadable(reason='unreadable', detail=detail, said=instruction)
     # back to the plain models: the narrowed ones only exist to validate
     return ProposedEdits.model_validate(narrowed.model_dump())
+
+
+def agree(opinions: Sequence[Opinion], catalog: Catalog) -> ProposedEdits:
+    """The two opinions, in the order of `prompts`, compared. One
+    unreadable answer makes the whole instruction unresolved: half a
+    reading is no reading."""
+    a, b = opinions
+    for opinion in (a, b):
+        if isinstance(opinion, Unreadable):
+            return ProposedEdits(edits=[], unresolved=[opinion])
+    assert isinstance(a, ProposedEdits) and isinstance(b, ProposedEdits)
+    return _agreed(a, b, catalog)
 
 
 def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdits:

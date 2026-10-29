@@ -138,3 +138,4 @@ sand = ["apis/static/*", "apis/static/voice/*", "schemas/*"]
 [project.entry-points.'nomad.plugin']
 sand_api = "sand.apis:sand_api"
 sand_extract_action = "sand.actions.extract:extract_action_entry_point"
+sand_edit_action = "sand.actions.edit:edit_action_entry_point"
