@@ -28,6 +28,7 @@ from sand.sheet_edit.session import (
     STATUS_FILE,
     LlmCache,
     cache_key,
+    job_cache_file,
     llm_cache_json,
     load_confirmations,
     load_llm_cache,
@@ -152,6 +153,7 @@ async def store_final_sheet_and_changelog(data: JobInput) -> dict:
         await voice.writer.upload_raw_file(
             client, data.upload_id, FINAL_FILE, final, XLSX_CONTENT_TYPE
         )
+        await _publish_cache(voice.writer, client, files, data)
     # a confirmation is bound to the words, the sheet and the change: an
     # input reworded or an earlier edit confirmed since leaves it matching
     # nothing, and the user should be told to look again
@@ -186,6 +188,8 @@ class _Files:
 
 
 async def _read_files(data: JobInput) -> _Files:
+    """The shared cache under the job's own: what this job got wins over
+    what earlier jobs published."""
     from sand.sheet_edit.resolve import PROMPT_VERSION
 
     voice = common.voice_service()
@@ -193,38 +197,56 @@ async def _read_files(data: JobInput) -> _Files:
         original = await voice.writer.read_raw_file(
             client, data.upload_id, ORIGINAL_FILE
         )
-        cache = await voice.writer.read_json(client, data.upload_id, CACHE_FILE)
+        shared = await voice.writer.read_json(client, data.upload_id, CACHE_FILE)
+        own = await voice.writer.read_json(
+            client, data.upload_id, job_cache_file(data.job_id)
+        )
     if original is None:
         raise ApplicationError(
             'the sheet to edit is gone from the collection', non_retryable=True
         )
+    cache = load_llm_cache(shared, data.llm_model_name, PROMPT_VERSION, data.job_id)
+    cache.update(load_llm_cache(own, data.llm_model_name, PROMPT_VERSION, data.job_id))
     return _Files(
         original,
-        load_llm_cache(cache, data.llm_model_name, PROMPT_VERSION, data.job_id),
+        cache,
         load_confirmations(data.confirmations),  # collect checked them
     )
 
 
 async def _write_cache(files: _Files, data: JobInput) -> None:
-    """Merged into the file as it is now, not written over it: another
-    job on the same upload may have added entries since this activity
-    read it."""
+    """The job's own file, this job's entries only: one writer, so
+    another job on the same upload cannot lose them."""
     from sand.sheet_edit.resolve import PROMPT_VERSION
 
     voice = common.voice_service()
     async with voice.build_client(common.user_token(data.user_id)) as client:
-        stored = await voice.writer.read_json(client, data.upload_id, CACHE_FILE)
-        merged = load_llm_cache(
-            stored, data.llm_model_name, PROMPT_VERSION, data.job_id
-        )
-        for key, proposal in files.cache.proposals.items():
-            merged.add(key, proposal, files.cache.jobs[key])
         await voice.writer.write_json(
             client,
             data.upload_id,
-            CACHE_FILE,
-            llm_cache_json(merged, data.llm_model_name, PROMPT_VERSION),
+            job_cache_file(data.job_id),
+            llm_cache_json(
+                files.cache.of_job(data.job_id), data.llm_model_name, PROMPT_VERSION
+            ),
         )
+
+
+async def _publish_cache(writer, client, files: _Files, data: JobInput) -> None:
+    """The job's readable answers into the shared cache, for later jobs;
+    its own file goes. Two jobs publishing at once can lose each other's
+    entries here, which costs a later job model calls, not a result."""
+    from sand.sheet_edit.resolve import PROMPT_VERSION
+
+    shared = await writer.read_json(client, data.upload_id, CACHE_FILE)
+    merged = load_llm_cache(shared, data.llm_model_name, PROMPT_VERSION, data.job_id)
+    merged.update(files.cache.of_job(data.job_id, readable_only=True))
+    await writer.write_json(
+        client,
+        data.upload_id,
+        CACHE_FILE,
+        llm_cache_json(merged, data.llm_model_name, PROMPT_VERSION),
+    )
+    await writer.delete_raw_file(client, data.upload_id, job_cache_file(data.job_id))
 
 
 # --- the state chain ----------------------------------------------------------

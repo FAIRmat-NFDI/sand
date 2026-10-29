@@ -27,6 +27,7 @@ from sand.sheet_edit.session import (
     FINAL_FILE,
     ORIGINAL_FILE,
     STATUS_FILE,
+    job_cache_file,
 )
 from sand.sheet_edit.workbook import sha256
 
@@ -72,6 +73,9 @@ class FakeWriter:
         await self.upload_raw_file(
             client, upload_id, name, json.dumps(payload).encode(), 'application/json'
         )
+
+    async def delete_raw_file(self, client, upload_id, name):
+        self.files.pop(name, None)
 
 
 @dataclass
@@ -134,8 +138,11 @@ def apply(upload, number, answers, job_id='job-1', snapshot=None) -> ApplyInput:
     )
 
 
-def cache_file(upload) -> dict:
-    return json.loads(upload.writer.files[CACHE_FILE])
+JOB_CACHE = job_cache_file('job-1')
+
+
+def cache_file(upload, name=JOB_CACHE) -> dict:
+    return json.loads(upload.writer.files[name])
 
 
 # --- collect ---------------------------------------------------------------------
@@ -212,7 +219,7 @@ async def test_apply_caches_the_agreed_proposal_and_reports_the_edit(upload):
     )
     assert report['preview'].startswith(ready['line'])
 
-    assert upload.writer.written == [CACHE_FILE]
+    assert upload.writer.written == [JOB_CACHE]  # the job's own, not the shared
     data = cache_file(upload)
     assert (data['model'], data['prompt_version']) == (MODEL, PROMPT_VERSION)
     (entry,) = data['proposals'].values()
@@ -224,7 +231,7 @@ async def test_apply_caches_the_agreed_proposal_and_reports_the_edit(upload):
     assert prepared == {'cached': True, 'prompts': []}
     again = await activities.agree_cache_and_apply_input(apply(upload, 1, []))
     assert again == {**report, 'from_cache': True}
-    assert upload.writer.written == [CACHE_FILE]  # not rewritten
+    assert upload.writer.written == [JOB_CACHE]  # not rewritten
 
 
 async def test_disagreeing_answers_make_the_input_uncertain(upload):
@@ -248,8 +255,12 @@ async def test_an_answer_the_child_could_not_get_is_this_inputs_problem(upload):
     assert report['preview'] == (
         "? not done, the model's answer could not be read: Max retry attempts reached."
     )
-    # the next job asks again
     assert (await activities.prepare_input(prepare(upload, 1)))['cached'] is True
+    # the next job asks again: an unreadable answer is never published
+    await activities.agree_cache_and_apply_input(apply(upload, 2, [answer()] * 2))
+    await activities.store_final_sheet_and_changelog(job(upload))
+    (published,) = cache_file(upload, CACHE_FILE)['proposals'].values()
+    assert published['proposal']['unresolved'] == []  # input 2 only
     assert (await activities.prepare_input(prepare(upload, 1, 'job-2')))[
         'cached'
     ] is False
@@ -263,18 +274,42 @@ async def test_applying_twice_with_the_same_answers_is_one_entry(upload):
     assert len(cache_file(upload)['proposals']) == 1
 
 
-async def test_the_cache_is_merged_not_written_over(upload):
+async def test_two_jobs_on_one_upload_cannot_lose_each_others_answers(upload):
+    """Each running job writes its own file; the shared cache is only
+    published at a job's end, and a job never reads it mid-run for
+    what it got itself."""
+    a, b = 'job-a', 'job-b'
     await activities.agree_cache_and_apply_input(
-        apply(upload, 1, [answer(SPEED_EDIT)] * 2)
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2, job_id=a)
     )
-    data = cache_file(upload)
-    data['proposals']['other:key'] = {
-        'proposal': {'edits': [], 'unresolved': []},
-        'job': 'job-2',
-    }
-    upload.writer.files[CACHE_FILE] = json.dumps(data).encode()
-    await activities.agree_cache_and_apply_input(apply(upload, 2, [answer()] * 2))
-    assert len(cache_file(upload)['proposals']) == 3  # noqa: PLR2004
+    await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2, job_id=b)
+    )
+    await activities.agree_cache_and_apply_input(
+        apply(upload, 2, [answer()] * 2, job_id=b)
+    )
+    await activities.store_final_sheet_and_changelog(job(upload, job_id=b))
+    assert job_cache_file(b) not in upload.writer.files
+    assert len(cache_file(upload, CACHE_FILE)['proposals']) == 2  # noqa: PLR2004
+
+    # job a goes on: its own answer for input 1 is still there, and what b
+    # published serves it for input 2
+    assert (await activities.prepare_input(prepare(upload, 2, job_id=a)))[
+        'cached'
+    ] is True
+    report = await activities.agree_cache_and_apply_input(
+        apply(upload, 2, [], job_id=a)
+    )
+    assert report['from_cache'] is True
+    await activities.store_final_sheet_and_changelog(job(upload, job_id=a))
+    assert job_cache_file(a) not in upload.writer.files
+    shared = cache_file(upload, CACHE_FILE)['proposals']
+    assert sorted(e['job'] for e in shared.values()) == [a, b]
+
+    # the next job starts from everything both published
+    assert (await activities.prepare_input(prepare(upload, 2, job_id='job-c')))[
+        'cached'
+    ] is True
 
 
 async def test_applying_without_answers_needs_the_cache(upload):
@@ -286,7 +321,7 @@ async def test_a_lost_cache_under_a_running_job_stops_it(upload):
     await activities.agree_cache_and_apply_input(
         apply(upload, 1, [answer(SPEED_EDIT)] * 2)
     )
-    del upload.writer.files[CACHE_FILE]
+    del upload.writer.files[JOB_CACHE]
     with pytest.raises(ApplicationError, match='has no cached proposal'):
         await activities.prepare_input(prepare(upload, 2))
 

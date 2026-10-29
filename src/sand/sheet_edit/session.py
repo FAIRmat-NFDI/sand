@@ -2,16 +2,22 @@
 beside the original sheet.
 
     sheet_edit/original.xlsx.orig   the uploaded sheet, never modified
-    sheet_edit/llm_cache.json       the workflow's: what the model answered
+    sheet_edit/llm_cache.json       the workflow's: what the model answered,
+                                    published by every finished job
+    sheet_edit/llm_cache.<job>.json one running job's answers (its own)
     sheet_edit/confirmations.json   the API's: which edits the user confirmed
     sheet_edit/final.xlsx.orig      the workflow's: original + confirmed edits
     sheet_edit/status.json          the workflow's: progress, previews
 
-Two state files with one writer each, so a confirmation made in the
-browser while the job runs is never overwritten by the job. Both are
-sand's own working files: nothing parses them, and losing the cache
-costs model calls, not data. `.orig`, not `.xlsx`: NOMAD's hysprint
-batch parser matches any .xlsx in the upload.
+One writer per file. The API writes the confirmations, so a confirmation
+made in the browser while the job runs is never overwritten by the job.
+A running job writes only its own cache file, so two jobs on one upload
+cannot lose each other's answers while they run; a job publishes its
+answers into the shared cache only at its end, where a lost entry costs
+a model call in a later job, never the running one. All are sand's own
+working files: nothing parses them, and losing a cache costs model
+calls, not data. `.orig`, not `.xlsx`: NOMAD's hysprint batch parser
+matches any .xlsx in the upload.
 """
 
 import datetime
@@ -32,6 +38,12 @@ STATUS_FILE = 'sheet_edit/status.json'
 CacheKey = tuple[str, str]
 
 
+def job_cache_file(job_id: str) -> str:
+    """The running job's own cache file; the id is hashed, Temporal's ids
+    hold characters a file name should not."""
+    return f'sheet_edit/llm_cache.{sha256(job_id.encode())[:16]}.json'
+
+
 def cache_key(text: str, state: bytes) -> CacheKey:
     """The key `apply_all` looks proposals up by."""
     return (sha256(text.encode()), sha256(state))
@@ -48,6 +60,25 @@ class LlmCache:
     def add(self, key: CacheKey, proposal: ProposedEdits, job: str) -> None:
         self.proposals[key] = proposal
         self.jobs[key] = job
+
+    def update(self, other: 'LlmCache') -> None:
+        """`other`'s entries win."""
+        for key, proposal in other.proposals.items():
+            self.add(key, proposal, other.jobs[key])
+
+    def of_job(self, job: str, readable_only: bool = False) -> 'LlmCache':
+        """The entries one job got; without its unreadable answers when
+        they are published for later jobs, which should ask again."""
+        cache = LlmCache()
+        for key, proposal in self.proposals.items():
+            if self.jobs[key] != job:
+                continue
+            if readable_only and any(
+                isinstance(u, Unreadable) for u in proposal.unresolved
+            ):
+                continue
+            cache.add(key, proposal, job)
+        return cache
 
 
 def load_llm_cache(
