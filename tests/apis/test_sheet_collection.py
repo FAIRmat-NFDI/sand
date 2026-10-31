@@ -124,7 +124,7 @@ async def test_sheet_with_problems_is_refused_before_creating(voice, synthetic_x
 
     response = await post_sheet(voice, edited(synthetic_xlsx, rename_info))
 
-    assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
     assert response.json() == {
         'detail': {
             'problems': [
@@ -141,7 +141,7 @@ async def test_sheet_with_problems_is_refused_before_creating(voice, synthetic_x
 async def test_not_a_spreadsheet(voice):
     response = await post_sheet(voice, b'not a spreadsheet')
 
-    assert response.status_code == HTTPStatus.UNPROCESSABLE_CONTENT
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
     [problem] = response.json()['detail']['problems']
     assert problem.startswith('not a readable .xlsx file')
     assert voice.created == []
