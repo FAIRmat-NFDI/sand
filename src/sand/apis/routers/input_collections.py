@@ -1,6 +1,7 @@
 import asyncio
 import json
 from datetime import datetime, timezone
+from pathlib import PurePath
 
 from fastapi import APIRouter, Form, HTTPException, Request, Response, UploadFile
 from nomad.utils import generate_entry_id
@@ -22,15 +23,26 @@ from sand.models.input_collections import (
     ReviseInputRequest,
     ReviseInputResponse,
     ReviseLabelRequest,
+    SheetCollectionResponse,
+    SheetColumnModel,
+    SheetSummaryModel,
     SheetUploadResponse,
 )
-from sand.services.nomad_api import NomadAPIError, NomadAuthError, check_response
+from sand.services.nomad_api import (
+    XLSX_CONTENT_TYPE,
+    NomadAPIError,
+    NomadAuthError,
+    check_response,
+)
 from sand.services.voice_eln import (
     AUDIO_EXTENSIONS,
     AudioUpload,
     VoiceElnService,
     normalize_audio_filename,
 )
+from sand.sheet_edit import catalog
+from sand.sheet_edit.session import ORIGINAL_FILE
+from sand.sheet_edit.workbook import ingest_problems, sha256
 
 router = APIRouter()
 
@@ -180,6 +192,60 @@ async def create_hysprint_input_collection(
 
     return InputCollectionSummaryModel(
         name=name, **_entry_response(voice, result.upload_id, result.entry_id)
+    )
+
+
+@router.post(
+    '/input-collections/from-sheet',
+    response_model=SheetCollectionResponse,
+    status_code=201,
+)
+async def create_sheet_input_collection(
+    file: UploadFile,
+    request: Request,
+    *,
+    name: str = Form(''),
+) -> SheetCollectionResponse:
+    """An experiment that starts from an uploaded hysprint-style sheet:
+    the edit job's original, stored unchanged.
+
+    A sheet the ingest checks refuse is refused before anything is
+    created; the problems are the user's to fix and come back verbatim
+    under `detail.problems`. The name defaults to the file's.
+    """
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    xlsx = await _read_upload(file)
+    problems = ingest_problems(xlsx)
+    if problems:
+        raise HTTPException(status_code=422, detail={'problems': problems})
+    sheet = catalog.build(xlsx)
+    name = name.strip() or PurePath(file.filename or '').stem or 'sheet'
+
+    try:
+        async with voice.build_client(token) as client:
+            result = await voice.create_input_collection(client, name)
+            await voice.writer.upload_raw_file(
+                client, result.upload_id, ORIGINAL_FILE, xlsx, XLSX_CONTENT_TYPE
+            )
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return SheetCollectionResponse(
+        name=name,
+        sheet=SheetSummaryModel(
+            name=sheet.structure.sheet_name,
+            samples=[s.label for s in sheet.samples if s.label is not None],
+            columns=[
+                SheetColumnModel(
+                    id=c.id, section=c.column.section.label, header=c.column.header
+                )
+                for c in sheet.columns
+            ],
+            sha256=sha256(xlsx),
+        ),
+        **_entry_response(voice, result.upload_id, result.entry_id),
     )
 
 
@@ -440,9 +506,6 @@ async def delete_input(
     return Response(status_code=204)
 
 
-XLSX_MEDIA_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-
-
 @router.get('/input-collections/{upload_id}/sheet')
 async def download_sheet(
     upload_id: str,
@@ -466,7 +529,7 @@ async def download_sheet(
         )
     return Response(
         content=xlsx,
-        media_type=XLSX_MEDIA_TYPE,
+        media_type=XLSX_CONTENT_TYPE,
         headers={
             'Content-Disposition': f'attachment; filename="{DERIVED_SHEET_MAINFILE}"'
         },

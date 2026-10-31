@@ -91,6 +91,23 @@ class ExtractJobResponse(BaseModel):
     job_id: str  # the action workflow id; poll /extract-status for progress
 
 
+class SheetColumnModel(BaseModel):
+    id: str  # the catalog's column id, stable across edits
+    section: str  # as written in row 1, e.g. '2: Spin Coating'
+    header: str
+
+
+class SheetSummaryModel(BaseModel):
+    name: str  # the worksheet's name
+    samples: list[str]  # the Sample values, in sheet order
+    columns: list[SheetColumnModel]
+    sha256: str  # of the stored original
+
+
+class SheetCollectionResponse(InputCollectionSummaryModel):
+    sheet: SheetSummaryModel
+
+
 class SheetUploadResponse(BaseModel):
     # False: uploaded bytes equal the stored sheet; the derived links are
     # still verified (and a failed previous parse repaired) either way.

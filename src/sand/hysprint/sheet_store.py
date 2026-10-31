@@ -14,10 +14,12 @@ import httpx
 from nomad.utils import generate_entry_id
 
 from sand.hysprint.sheet import DERIVED_SHEET_MAINFILE, EXTRACTED_JSON_MAINFILE
-from sand.services.nomad_api import entry_mainfiles, processed_entry_ids
+from sand.services.nomad_api import (
+    XLSX_CONTENT_TYPE,
+    entry_mainfiles,
+    processed_entry_ids,
+)
 from sand.services.voice_eln import EntryHandle, VoiceElnService
-
-XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 
 def _sheet_hash_matches(current_xlsx: bytes, extraction: bytes | None) -> bool:

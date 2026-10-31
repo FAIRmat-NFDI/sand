@@ -13,6 +13,8 @@ from nomad.utils import generate_entry_id
 # Lowest HTTP status code that counts as an error response.
 HTTP_ERROR_STATUS = 400
 
+XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
 
 def gui_upload_url(base_url: str, upload_id: str) -> str:
     """The new NOMAD GUI's page of an upload (a "project" there), built
