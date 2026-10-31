@@ -2,6 +2,7 @@ import asyncio
 import json
 from datetime import datetime, timezone
 from pathlib import PurePath
+from urllib.parse import quote
 
 from fastapi import APIRouter, Form, HTTPException, Request, Response, UploadFile
 from nomad.utils import generate_entry_id
@@ -115,13 +116,14 @@ STALE_JOB_S = 30 * 60
 # 'starting' reservation snapshot covers the window until the workflow's
 # first own snapshot. A multi-process deployment could still race in the
 # instant between two processes' checks - accepted for the lab scale.
-_start_locks: dict[str, asyncio.Lock] = {}
+_upload_locks: dict[str, asyncio.Lock] = {}
 
 
-def _start_lock(upload_id: str) -> asyncio.Lock:
-    lock = _start_locks.get(upload_id)
+def _upload_lock(upload_id: str) -> asyncio.Lock:
+    """For every read-then-write of one of the upload's files."""
+    lock = _upload_locks.get(upload_id)
     if lock is None:
-        lock = _start_locks[upload_id] = asyncio.Lock()
+        lock = _upload_locks[upload_id] = asyncio.Lock()
     return lock
 
 
@@ -667,7 +669,7 @@ async def start_extract_async(
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
-    async with _start_lock(upload_id):
+    async with _upload_lock(upload_id):
         try:
             async with voice.build_client(token) as client:
                 status = await voice.writer.read_json(
@@ -756,7 +758,7 @@ async def start_edit_async(
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
-    async with _start_lock(upload_id):
+    async with _upload_lock(upload_id):
         try:
             async with voice.build_client(token) as client:
                 status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
@@ -835,6 +837,23 @@ async def _edit_status(
     return status
 
 
+async def _completed_status(
+    client, voice: VoiceElnService, upload_id: str, collection_entry_id: str
+) -> dict:
+    """The status of the last job, which must have completed: what the
+    final sheet and the changelog are checked against."""
+    status = await _edit_status(client, voice, upload_id, collection_entry_id)
+    if _job_running(status, None):
+        raise HTTPException(
+            status_code=409, detail='an edit job is running; wait for it'
+        )
+    if status.get('phase') != 'completed':
+        raise HTTPException(
+            status_code=409, detail='the last edit job did not complete; run it again'
+        )
+    return status
+
+
 async def _read_edit_status(
     voice: VoiceElnService, token: str, upload_id: str, collection_entry_id: str
 ) -> dict:
@@ -901,7 +920,7 @@ async def confirm_edits(
     if not body.keys:
         raise HTTPException(status_code=400, detail='no keys to confirm')
     try:
-        async with voice.build_client(token) as client:
+        async with _upload_lock(upload_id), voice.build_client(token) as client:
             status = await _edit_status(client, voice, upload_id, collection_entry_id)
             ready = {
                 edit['key']
@@ -909,6 +928,12 @@ async def confirm_edits(
                 for edit in report.get('ready', [])
             }
             unknown = sorted(set(body.keys) - ready)
+            if unknown and _job_running(status, None):
+                # the running job's reports replace the old ones as it goes
+                raise HTTPException(
+                    status_code=409,
+                    detail='an edit job is running; confirm when it has finished',
+                )
             if unknown:
                 raise HTTPException(
                     status_code=422,
@@ -951,16 +976,9 @@ async def download_final_sheet(
 
     try:
         async with voice.build_client(token) as client:
-            status = await _edit_status(client, voice, upload_id, collection_entry_id)
-            if _job_running(status, None):
-                raise HTTPException(
-                    status_code=409, detail='an edit job is running; wait for it'
-                )
-            if status.get('phase') != 'completed':
-                raise HTTPException(
-                    status_code=409,
-                    detail='the last edit job did not complete; run it again',
-                )
+            status = await _completed_status(
+                client, voice, upload_id, collection_entry_id
+            )
             final = await voice.writer.read_raw_file(client, upload_id, FINAL_FILE)
             if final is None:
                 raise HTTPException(status_code=404, detail='no final sheet stored')
@@ -977,12 +995,21 @@ async def download_final_sheet(
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
-    filename = name.replace('"', '') + '.xlsx'
     return Response(
         content=final,
         media_type=XLSX_CONTENT_TYPE,
-        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+        headers={'Content-Disposition': _attachment(f'{name}.xlsx')},
     )
+
+
+def _attachment(filename: str) -> str:
+    """Headers are latin-1: an ASCII fallback plus the real name encoded
+    (RFC 6266), so an experiment named in any script downloads."""
+    ascii_name = ''.join(
+        c if c.isascii() and c.isprintable() and c not in '"\\' else '_'
+        for c in filename
+    )
+    return f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(filename)}'
 
 
 @router.get('/input-collections/{upload_id}/changelog')
@@ -1002,7 +1029,9 @@ async def read_changelog(
         raise HTTPException(status_code=400, detail='format is text or json')
     try:
         async with voice.build_client(token) as client:
-            status = await _edit_status(client, voice, upload_id, collection_entry_id)
+            status = await _completed_status(
+                client, voice, upload_id, collection_entry_id
+            )
             raw = await voice.writer.read_raw_file(client, upload_id, CHANGELOG_FILE)
     except NomadAPIError as exc:
         raise _http_error(exc) from exc

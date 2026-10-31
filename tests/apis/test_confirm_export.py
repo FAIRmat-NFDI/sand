@@ -1,12 +1,13 @@
 """Confirming edits, downloading the final sheet, reading the changelog,
 against a fake NOMAD."""
 
+import asyncio
 import json
 from datetime import datetime, timezone
 from http import HTTPStatus
 
 import pytest
-from nomad_fakes import COLLECTION, UPLOAD, USERNAME, FakeVoice, api
+from nomad_fakes import COLLECTION, UPLOAD, USER, USERNAME, FakeVoice, api
 
 from sand.services.nomad_api import XLSX_CONTENT_TYPE
 from sand.sheet_edit import changelog
@@ -97,11 +98,51 @@ async def test_a_confirmed_key_keeps_its_first_record(voice):
     assert records['k2']['by'] == USERNAME
 
 
-async def test_confirming_while_a_job_runs_is_fine(voice):
-    # read once at a job's start: this lands in the next run
+async def test_two_confirms_at_once_both_survive(voice):
+    put_status(voice, 'completed')
+
+    responses = await asyncio.gather(confirm(voice, ['k1']), confirm(voice, ['k2']))
+
+    assert [r.status_code for r in responses] == [HTTPStatus.OK] * 2
+    assert sorted(confirmations(voice)) == ['k1', 'k2']
+
+
+async def test_by_falls_back_to_the_user_id(voice):
+    put_status(voice, 'completed')
+    voice.me = {'user_id': USER}
+
+    await confirm(voice, ['k1'])
+
+    assert confirmations(voice)['k1']['by'] == USER
+
+
+async def test_a_failed_write_leaves_the_file_and_reports(voice):
+    put_status(voice, 'completed')
+    voice.writer.writes_allowed = 0
+
+    response = await confirm(voice, ['k1'])
+
+    assert response.status_code == HTTPStatus.BAD_GATEWAY
+    assert CONFIRMATIONS_FILE not in voice.writer.files
+
+
+async def test_confirming_a_running_jobs_ready_edit_is_fine(voice):
+    # confirmations are read once at a job's start: this lands in the next run
     put_status(voice, 'interpreting')
 
     assert (await confirm(voice, ['k1'])).status_code == HTTPStatus.OK
+
+
+async def test_a_key_the_running_job_has_not_reported_yet_waits(voice):
+    # the job starts with no reports; the page may still show the old ones
+    put_status(voice, 'collecting', inputs=[])
+
+    response = await confirm(voice, ['k1'])
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert response.json()['detail'] == (
+        'an edit job is running; confirm when it has finished'
+    )
 
 
 async def test_only_a_ready_edit_of_the_last_job_can_be_confirmed(voice):
@@ -149,7 +190,20 @@ async def test_the_final_sheet_downloads_under_the_experiments_name(
     assert response.content == synthetic_xlsx
     assert response.headers['content-type'] == XLSX_CONTENT_TYPE
     assert response.headers['content-disposition'] == (
-        'attachment; filename="batch 7.xlsx"'
+        'attachment; filename="batch 7.xlsx"; filename*=UTF-8\'\'batch%207.xlsx'
+    )
+
+
+async def test_a_name_in_any_script_downloads(voice, synthetic_xlsx):
+    put_final(voice, synthetic_xlsx)
+    voice.name = 'Batch 7 – 测试 "x"'
+
+    response = await get(voice, 'final-sheet')
+
+    assert response.status_code == HTTPStatus.OK, response.text
+    assert response.headers['content-disposition'] == (
+        'attachment; filename="Batch 7 _ __ _x_.xlsx"; '
+        "filename*=UTF-8''Batch%207%20%E2%80%93%20%E6%B5%8B%E8%AF%95%20%22x%22.xlsx"
     )
 
 
@@ -233,6 +287,21 @@ async def test_a_changelog_of_another_job_is_not_served(voice, synthetic_xlsx):
 
     assert response.status_code == HTTPStatus.CONFLICT
     assert "not the last job's" in response.json()['detail']
+
+
+@pytest.mark.parametrize('phase', ['interpreting', 'failed'])
+async def test_no_changelog_while_running_or_after_failure(
+    voice, synthetic_xlsx, phase
+):
+    put_final(voice, synthetic_xlsx, phase=phase)
+
+    response = await get(voice, 'changelog')
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert response.json()['detail'] in (
+        'an edit job is running; wait for it',
+        'the last edit job did not complete; run it again',
+    )
 
 
 async def test_no_changelog_stored(voice, synthetic_xlsx):

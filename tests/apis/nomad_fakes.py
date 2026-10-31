@@ -23,10 +23,14 @@ def nomad_down(step: str) -> NomadAPIError:
     return NomadAPIError(503, 'NOMAD is down', step=step)
 
 
-def nomad(request: httpx.Request) -> httpx.Response:
+def nomad(me: dict):
     """What the endpoints ask NOMAD directly, beside the voice service."""
-    assert request.url.path == '/users/me'
-    return httpx.Response(200, json={'user_id': USER, 'username': USERNAME})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == '/users/me'
+        return httpx.Response(200, json=me)
+
+    return handler
 
 
 @dataclass
@@ -63,6 +67,7 @@ class FakeVoice:
     writer: FakeWriter = field(default_factory=FakeWriter)
     inputs: list[CollectedInput] = field(default_factory=list)
     name: str = 'batch 7'
+    me: dict = field(default_factory=lambda: {'user_id': USER, 'username': USERNAME})
     created: list[str] = field(default_factory=list)
     deleted: list[str] = field(default_factory=list)
     undeletable: bool = False
@@ -70,7 +75,9 @@ class FakeVoice:
     def build_client(self, token):
         assert token == TOKEN
         return contextlib.nullcontext(
-            httpx.AsyncClient(transport=httpx.MockTransport(nomad), base_url='http://n')
+            httpx.AsyncClient(
+                transport=httpx.MockTransport(nomad(self.me)), base_url='http://n'
+            )
         )
 
     def entry_url(self, upload_id, entry_id):
