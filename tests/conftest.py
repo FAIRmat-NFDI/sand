@@ -3,8 +3,10 @@ from pathlib import Path
 
 import pytest
 
-# the synthetic sheet lives with the sheet_edit tests
+# the synthetic sheet lives with the sheet_edit tests, the NOMAD fakes
+# with the api tests
 sys.path.insert(0, str(Path(__file__).parent / 'sheet_edit'))
+sys.path.insert(0, str(Path(__file__).parent / 'apis'))
 
 from synthetic_sheet import build  # noqa: E402
 

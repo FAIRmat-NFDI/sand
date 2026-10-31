@@ -115,6 +115,14 @@ class SheetCollectionResponse(InputCollectionSummaryModel):
     sheet: SheetSummaryModel
 
 
+class ConfirmEditsRequest(BaseModel):
+    keys: list[str]  # from the reports' ready edits (GET .../edits)
+
+
+class ConfirmEditsResponse(BaseModel):
+    confirmed: list[str]  # every confirmed key, the new ones included
+
+
 class SheetUploadResponse(BaseModel):
     # False: uploaded bytes equal the stored sheet; the derived links are
     # still verified (and a failed previous parse repaired) either way.

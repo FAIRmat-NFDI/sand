@@ -712,6 +712,17 @@ class VoiceElnService:
                 refs.append(ref)
                 await self.writer.write_archive(client, upload_id, mainfile, archive)
 
+    async def input_collection_name(
+        self, client: httpx.AsyncClient, upload_id: str, collection_entry_id: str
+    ) -> str:
+        mainfile = await self.resolve_collection_mainfile(
+            client, upload_id, collection_entry_id
+        )
+        archive = await self.writer.read_archive(client, upload_id, mainfile)
+        data = archive.get('data')
+        name = data.get('name') if isinstance(data, dict) else None
+        return str(name).strip() if name else 'experiment'
+
     async def resolve_collection_mainfile(
         self,
         client: httpx.AsyncClient,
