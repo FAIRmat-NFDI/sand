@@ -873,6 +873,24 @@ async def _edit_status(
         raise HTTPException(
             status_code=404, detail='no edit job for this experiment yet'
         )
+    confirmed = await voice.writer.read_json(client, upload_id, CONFIRMATIONS_FILE)
+    return _with_confirmations(status, confirmed or {})
+
+
+def _with_confirmations(status: dict, confirmed: dict) -> dict:
+    """The reports say what the job knew when it ran; a confirmation made
+    since shows at once, as `confirmed_since`: it waits for the next run."""
+    for report in status.get('inputs', []):
+        if not isinstance(report, dict):
+            continue
+        known = set(report.get('confirmed', []))
+        since = [
+            edit['key']
+            for edit in report.get('ready', [])
+            if edit['key'] in confirmed and edit['key'] not in known
+        ]
+        report['confirmed'] = [*report.get('confirmed', []), *since]
+        report['confirmed_since'] = since
     return status
 
 

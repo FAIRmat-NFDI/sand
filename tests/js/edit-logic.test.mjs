@@ -53,6 +53,9 @@ test("the summary line of a completed job", () => {
     editSummary({ changes: 1, inputs: [REPORT] }),
     "1 cell changed · 1 edit awaits confirmation");
   assert.equal(
+    editSummary({ changes: 0, inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] }),
+    "0 cells changed · 1 edit confirmed, not yet applied: apply the updates");
+  assert.equal(
     editSummary({
       changes: 4,
       stale_confirmations: 1,

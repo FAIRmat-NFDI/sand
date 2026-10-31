@@ -413,6 +413,12 @@ body:not(.mode-edit) .edit-only {
   margin: 0 0 16px;
 }
 
+/* Error text that shows and hides by the `hidden` attribute (.error-text
+   is display:none until a script shows it) */
+.problem-text {
+  color: #d32f2f;
+}
+
 /* Error */
 .error-text {
   color: #d32f2f;

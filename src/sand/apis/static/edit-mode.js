@@ -106,9 +106,8 @@ async function confirmEdit(experiment, key) {
       showError("Could not confirm: " + await errorDetail(res));
       return;
     }
-    applyStatus.textContent = "Confirmed. Apply the updates to write them into the sheet.";
-    // the status endpoint shows the confirmation in the next poll
-    startPolling(experiment, 500);
+    // the status shows the confirmation (as not yet applied) at once
+    startPolling(experiment);
   } catch (err) {
     showError("Network error: " + err.message);
   }

@@ -44,8 +44,15 @@ class FakeWriter:
         return self.files.get(name)
 
     async def read_json(self, client, upload_id, name):
+        # like the real writer: None when absent or not a JSON object
         raw = self.files.get(name)
-        return None if raw is None else json.loads(raw)
+        if raw is None:
+            return None
+        try:
+            payload = json.loads(raw)
+        except ValueError:
+            return None
+        return payload if isinstance(payload, dict) else None
 
     async def upload_raw_file(self, client, upload_id, name, content, content_type):
         assert upload_id == UPLOAD

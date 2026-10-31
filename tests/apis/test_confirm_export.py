@@ -176,6 +176,43 @@ async def test_a_damaged_confirmations_file_is_never_overwritten(voice):
     assert voice.writer.files[CONFIRMATIONS_FILE] == b'{"k1": "yes"}'
 
 
+async def test_the_status_shows_a_confirmation_as_waiting_for_the_next_run(voice):
+    put_status(voice, 'completed')
+    await confirm(voice, ['k1'])
+
+    for path in ('edit-status', 'edits'):
+        [report] = (await get(voice, path)).json()['inputs']
+        assert report['confirmed'] == ['k1']
+        assert report['confirmed_since'] == ['k1']
+
+
+async def test_a_confirmation_the_job_applied_is_not_since(voice):
+    put_status(
+        voice, 'completed', inputs=[{'input': 1, 'ready': READY, 'confirmed': ['k1']}]
+    )
+    voice.writer.files[CONFIRMATIONS_FILE] = json.dumps(
+        {
+            'k1': {'by': 'user', 'at': '2026-10-28T12:16:05+00:00'},
+            'k9': {'by': 'user', 'at': '2026-10-28T12:16:05+00:00'},
+        }
+    ).encode()
+
+    [report] = (await get(voice, 'edits')).json()['inputs']
+
+    assert report['confirmed'] == ['k1']
+    assert report['confirmed_since'] == []  # k9 is nobody's ready edit
+
+
+async def test_a_damaged_confirmations_file_does_not_break_the_status(voice):
+    put_status(voice, 'completed')
+    voice.writer.files[CONFIRMATIONS_FILE] = b'not json'
+
+    response = await get(voice, 'edits')
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()['inputs'][0]['confirmed_since'] == []
+
+
 # --- final sheet ------------------------------------------------------------------
 
 

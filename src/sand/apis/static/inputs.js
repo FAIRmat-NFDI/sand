@@ -317,6 +317,7 @@ function renderReport(report) {
   box.className = "input-report";
   box.addEventListener("click", (e) => e.stopPropagation());
   const confirmed = new Set(report.confirmed || []);
+  const since = new Set(report.confirmed_since || []);
   for (const edit of report.ready || []) {
     const row = document.createElement("div");
     row.className = "report-edit";
@@ -327,7 +328,7 @@ function renderReport(report) {
     if (confirmed.has(edit.key)) {
       const mark = document.createElement("span");
       mark.className = "report-confirmed";
-      mark.textContent = "✓ confirmed";
+      mark.textContent = since.has(edit.key) ? "✓ confirmed, apply to write" : "✓ confirmed";
       row.append(mark);
     } else {
       const btn = document.createElement("button");
@@ -352,7 +353,7 @@ function renderReport(report) {
   }
   if (report.refused) {
     const p = document.createElement("p");
-    p.className = "report-note error-text";
+    p.className = "report-note problem-text";
     p.textContent = "Not written: " + report.refused;
     box.append(p);
   }
@@ -371,6 +372,8 @@ export function setEditMode(on) {
   reports = {};
   jobRunning = false;
   inputsHint.textContent = on ? HINTS.edit : HINTS.hysprint;
+  // the list may have rendered before the mode was known
+  if (shown && !inlineEditing && !revising) renderInputs(shown.experiment, shown.items);
 }
 
 // The job's reports (by entry id), from the Apply card's polling.
