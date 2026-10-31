@@ -41,6 +41,18 @@
 
         <div id="new-experiment-form" hidden>
           <hr class="divider">
+          <p class="section-hint">Start from a sheet: upload the Excel file, then speak or type the updates to make to it.</p>
+          <div class="controls sheet-form">
+            <input type="file" id="sheet-file" accept=".xlsx" aria-label="The Excel sheet to update">
+            <input class="form-input" id="sheet-name" placeholder="Name (defaults to the file name)" aria-label="Name of the experiment">
+            <button class="btn btn-primary" id="create-from-sheet-btn" type="button">
+              <span class="material-icons">upload_file</span>
+              Create from sheet
+            </button>
+          </div>
+          <ul class="error-text sheet-problems" id="sheet-problems" role="alert" hidden></ul>
+          <hr class="divider">
+          <p class="section-hint">Or describe a new hysprint experiment:</p>
           <div class="form-grid">
             <label>Project name <input class="form-input" id="exp-project"></label>
             <label>Batch <input class="form-input" id="exp-batch"></label>
@@ -132,13 +144,13 @@
               <span class="material-icons">refresh</span>
             </button>
           </div>
-          <p class="section-hint">Time-ordered, as the extraction reads them. Click one to revise it in place; click its time to move it.</p>
+          <p class="section-hint" id="inputs-hint">Time-ordered, as the extraction reads them. Click one to revise it in place; click its time to move it.</p>
           <ul class="inputs-list" id="inputs-list">
             <li class="inputs-empty">Select an experiment to see its inputs.</li>
           </ul>
         </section>
 
-        <section class="card section section-extract">
+        <section class="card section section-extract hysprint-only">
           <h2 class="section-title"><span class="material-icons">science</span>Extraction</h2>
           <div class="controls">
             <button class="btn btn-secondary" id="extract-btn" type="button">
@@ -162,6 +174,29 @@
             <p class="audio-entry-text" id="derived-entry"></p>
             <p class="status-text" id="extract-summary"></p>
             <p class="error-text" id="sheet-issues"></p>
+          </div>
+        </section>
+
+        <section class="card section section-apply edit-only">
+          <h2 class="section-title"><span class="material-icons">playlist_add_check</span>Apply updates</h2>
+          <p class="section-hint" id="sheet-summary"></p>
+          <div class="controls">
+            <button class="btn btn-secondary" id="apply-btn" type="button">
+              <span class="material-icons">play_arrow</span>
+              Apply updates
+            </button>
+            <button class="btn btn-outlined" id="download-final-btn" type="button">
+              <span class="material-icons">download</span>
+              Download sheet
+            </button>
+            <span class="status-text" id="apply-status" role="status"></span>
+          </div>
+          <p class="section-hint">Each update is read against the sheet; confirm the edits you want under the inputs, then apply again to write them. The sheet you download is the original plus the confirmed edits.</p>
+
+          <div class="extract-result" id="apply-result" hidden>
+            <hr class="divider">
+            <p class="status-text" id="apply-summary"></p>
+            <pre class="changelog-text" id="changelog-text"></pre>
           </div>
         </section>
       </div>

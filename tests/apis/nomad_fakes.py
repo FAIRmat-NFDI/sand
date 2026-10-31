@@ -70,6 +70,7 @@ class FakeVoice:
     me: dict = field(default_factory=lambda: {'user_id': USER, 'username': USERNAME})
     created: list[str] = field(default_factory=list)
     deleted: list[str] = field(default_factory=list)
+    moved: list[tuple[str, str]] = field(default_factory=list)
     undeletable: bool = False
 
     def build_client(self, token):
@@ -95,6 +96,12 @@ class FakeVoice:
     async def collect_inputs(self, client, upload_id, collection_entry_id):
         assert (upload_id, collection_entry_id) == (UPLOAD, COLLECTION)
         return self.inputs
+
+    async def revise_input_datetime(
+        self, client, upload_id, entry_id, datetime_value, collection_entry_id
+    ):
+        self.moved.append((entry_id, datetime_value))
+        return 'note'
 
     async def input_collection_name(self, client, upload_id, collection_entry_id):
         assert (upload_id, collection_entry_id) == (UPLOAD, COLLECTION)

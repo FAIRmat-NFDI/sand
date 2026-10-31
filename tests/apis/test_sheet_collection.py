@@ -62,6 +62,29 @@ async def test_good_sheet_becomes_a_collection(voice, synthetic_xlsx):
     }
 
 
+async def test_sheet_summary_is_the_uploaded_sheets(voice, synthetic_xlsx):
+    created = (await post_sheet(voice, synthetic_xlsx)).json()
+
+    async with api(voice) as client:
+        response = await client.get(
+            f'/api/input-collections/{UPLOAD}/sheet-summary',
+            params={'collection_entry_id': COLLECTION},
+        )
+
+    assert response.status_code == HTTPStatus.OK, response.text
+    assert response.json() == created['sheet']
+
+
+async def test_no_sheet_summary_without_a_sheet(voice):
+    async with api(voice) as client:
+        response = await client.get(
+            f'/api/input-collections/{UPLOAD}/sheet-summary',
+            params={'collection_entry_id': COLLECTION},
+        )
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+
+
 async def test_real_kit_sheet_is_accepted(voice, real_kit_xlsx):
     # a round trip through openpyxl would lose its formula results; the
     # writer never saves that way, so only the ingest checks decide

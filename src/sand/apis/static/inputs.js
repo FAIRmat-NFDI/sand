@@ -4,14 +4,35 @@
 // label renames it (free text, for scanning the list). Audio
 // revisions go to corrected_transcript (clearing withdraws them); note
 // revisions overwrite the note text.
+//
+// Edit mode (an experiment that started from a sheet): the inputs are
+// the updates, in the order they were made - the time is fixed - and
+// under each one the job's report: what it changes, with a confirm
+// button per ready edit.
 
 import { errorDetail, experimentUrl } from "./api.js";
+import { previewNotes } from "./edit-logic.js";
 import { selectedExperiment } from "./experiments.js";
 import { clearError, confirmDialog, showEntryLink, showError } from "./ui.js";
 
 const inputsList = document.getElementById("inputs-list");
 const inputsCount = document.getElementById("inputs-count");
 const refreshInputsBtn = document.getElementById("refresh-inputs-btn");
+const inputsHint = document.getElementById("inputs-hint");
+
+const HINTS = {
+  hysprint: "Time-ordered, as the extraction reads them. Click one to revise it in place; click its time to move it.",
+  edit: "The updates in the order they were made. Click one to revise its words; apply the updates to see what each one changes.",
+};
+
+let editMode = false;
+// edit mode: the job's reports by entry id, whether a job runs (no
+// confirming meanwhile), and the confirm handler of the Apply card
+let reports = {};
+let jobRunning = false;
+let onConfirm = null;
+// the last rendered list, re-rendered when the reports change
+let shown = null;
 
 let inputsGeneration = 0;
 let inputsRefreshTimer = null;
@@ -289,6 +310,78 @@ async function deleteInput(item, experiment, button) {
   startInputsRefresh(experiment);
 }
 
+// --- edit mode: the report under an input --------------------------------------
+
+function renderReport(report) {
+  const box = document.createElement("div");
+  box.className = "input-report";
+  box.addEventListener("click", (e) => e.stopPropagation());
+  const confirmed = new Set(report.confirmed || []);
+  for (const edit of report.ready || []) {
+    const row = document.createElement("div");
+    row.className = "report-edit";
+    const line = document.createElement("span");
+    line.className = "report-line";
+    line.textContent = edit.line;
+    row.append(line);
+    if (confirmed.has(edit.key)) {
+      const mark = document.createElement("span");
+      mark.className = "report-confirmed";
+      mark.textContent = "✓ confirmed";
+      row.append(mark);
+    } else {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-primary btn-small";
+      btn.textContent = "Confirm";
+      btn.disabled = jobRunning || !onConfirm;
+      btn.title = jobRunning ? "Wait for the running job" : "Confirm this edit";
+      btn.addEventListener("click", () => {
+        btn.disabled = true;
+        onConfirm(edit.key);
+      });
+      row.append(btn);
+    }
+    box.append(row);
+  }
+  for (const note of previewNotes(report)) {
+    const p = document.createElement("p");
+    p.className = "report-note";
+    p.textContent = note;
+    box.append(p);
+  }
+  if (report.refused) {
+    const p = document.createElement("p");
+    p.className = "report-note error-text";
+    p.textContent = "Not written: " + report.refused;
+    box.append(p);
+  }
+  if (report.cells_written) {
+    const p = document.createElement("p");
+    p.className = "report-written";
+    p.textContent = report.cells_written + (report.cells_written === 1 ? " cell written" : " cells written");
+    box.append(p);
+  }
+  return box;
+}
+
+// Switch the card between the hysprint and the edit layout.
+export function setEditMode(on) {
+  editMode = on;
+  reports = {};
+  jobRunning = false;
+  inputsHint.textContent = on ? HINTS.edit : HINTS.hysprint;
+}
+
+// The job's reports (by entry id), from the Apply card's polling.
+export function setReports(byEntry, running, confirm) {
+  reports = byEntry;
+  jobRunning = running;
+  onConfirm = confirm;
+  // an open editor is left alone: the next poll renders the reports
+  if (shown && !inlineEditing && !revising) renderInputs(shown.experiment, shown.items);
+}
+
 // --- list ------------------------------------------------------------------
 
 function showInputsPlaceholder(message) {
@@ -297,9 +390,11 @@ function showInputsPlaceholder(message) {
   li.textContent = message;
   inputsList.replaceChildren(li);
   inputsCount.textContent = "";
+  shown = null;
 }
 
 function renderInputs(experiment, items) {
+  shown = { experiment, items };
   if (!items.length) {
     showInputsPlaceholder("No inputs yet - record or write a note.");
     return;
@@ -334,17 +429,25 @@ function renderInputs(experiment, items) {
       beginLabelEdit(labelBtn, item, experiment);
     });
     meta.append(labelBtn);
-    const when = document.createElement("button");
-    when.type = "button";
-    when.className = "input-when";
     const time = inputTime(item);
-    when.textContent = "· " + (time || "set time");
-    when.title = "Click to change the time (reorders the inputs)";
-    when.addEventListener("click", (e) => {
-      e.stopPropagation();
-      beginTimeEdit(when, item, experiment);
-    });
-    meta.append(when);
+    if (editMode) {
+      // the time is when the update was made: not editable
+      const when = document.createElement("span");
+      when.className = "input-when input-when-fixed";
+      when.textContent = time ? "· " + time : "";
+      meta.append(when);
+    } else {
+      const when = document.createElement("button");
+      when.type = "button";
+      when.className = "input-when";
+      when.textContent = "· " + (time || "set time");
+      when.title = "Click to change the time (reorders the inputs)";
+      when.addEventListener("click", (e) => {
+        e.stopPropagation();
+        beginTimeEdit(when, item, experiment);
+      });
+      meta.append(when);
+    }
     if (item.corrected) {
       const badge = document.createElement("span");
       badge.className = "input-badge";
@@ -388,6 +491,7 @@ function renderInputs(experiment, items) {
     }
 
     li.append(meta, text);
+    if (editMode && reports[item.entry_id]) li.append(renderReport(reports[item.entry_id]));
     li.tabIndex = 0;
     li.setAttribute("aria-label", "Revise the " + inputDescription(item));
     li.addEventListener("click", () => beginRevision(item, experiment, li, text));

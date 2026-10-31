@@ -306,6 +306,13 @@ body {
 .section-note { grid-area: note; }
 .section-inputs { grid-area: inputs; }
 .section-extract { grid-area: extract; }
+.section-apply { grid-area: extract; }
+
+/* edit mode (an experiment that started from a sheet) swaps the cards */
+.mode-edit .hysprint-only,
+body:not(.mode-edit) .edit-only {
+  display: none;
+}
 
 @media (min-width: 960px) {
   .workspace {
@@ -860,4 +867,67 @@ body {
 
 .voice-checks .voice-checks-result::before {
   content: none;
+}
+
+/* --- edit mode ------------------------------------------------------------- */
+
+.sheet-form input[type="file"] {
+  max-width: 100%;
+}
+
+.sheet-problems {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.input-meta .input-when-fixed {
+  cursor: default;
+}
+
+.input-meta .input-when-fixed:hover {
+  color: inherit;
+  text-decoration: none;
+}
+
+.input-report {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed #e0e0e0;
+  font-size: 0.88rem;
+  cursor: default;
+}
+
+.report-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+
+.report-edit .report-line {
+  flex: 1;
+  min-width: 0;
+}
+
+.report-confirmed {
+  color: #2e7d32;
+  white-space: nowrap;
+}
+
+.report-note,
+.report-written {
+  margin: 4px 0;
+  color: #616161;
+}
+
+.changelog-text {
+  margin: 8px 0 0;
+  padding: 8px;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  background: #f7f7f7;
+  border-radius: 4px;
 }

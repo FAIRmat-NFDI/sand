@@ -312,23 +312,53 @@ async def create_sheet_input_collection(
 
     return SheetCollectionResponse(
         name=name,
-        sheet=SheetSummaryModel(
-            name=sheet.structure.sheet_name,
-            samples=[
-                SheetSampleModel(label=s.label or f'row {s.row}', subbatch=s.subbatch)
-                for s in sheet.samples
-            ],
-            needs_subbatch=sheet.needs_subbatch,
-            columns=[
-                SheetColumnModel(
-                    id=c.id, section=c.column.section.label, header=c.column.header
-                )
-                for c in sheet.columns
-            ],
-            sha256=sha256(xlsx),
-        ),
+        sheet=_sheet_summary(sheet, xlsx),
         **_entry_response(voice, result.upload_id, result.entry_id),
     )
+
+
+def _sheet_summary(sheet: catalog.Catalog, xlsx: bytes) -> SheetSummaryModel:
+    return SheetSummaryModel(
+        name=sheet.structure.sheet_name,
+        samples=[
+            SheetSampleModel(label=s.label or f'row {s.row}', subbatch=s.subbatch)
+            for s in sheet.samples
+        ],
+        needs_subbatch=sheet.needs_subbatch,
+        columns=[
+            SheetColumnModel(
+                id=c.id, section=c.column.section.label, header=c.column.header
+            )
+            for c in sheet.columns
+        ],
+        sha256=sha256(xlsx),
+    )
+
+
+@router.get(
+    '/input-collections/{upload_id}/sheet-summary', response_model=SheetSummaryModel
+)
+async def sheet_summary(
+    upload_id: str,
+    request: Request,
+    collection_entry_id: str,
+) -> SheetSummaryModel:
+    """The uploaded sheet as the edit job sees it; 404 when the
+    experiment did not start from a sheet (the page's mode switch)."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    try:
+        async with voice.build_client(token) as client:
+            xlsx = await voice.writer.read_raw_file(client, upload_id, ORIGINAL_FILE)
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    if xlsx is None:
+        raise HTTPException(
+            status_code=404, detail='this experiment did not start from a sheet'
+        )
+    return _sheet_summary(await asyncio.to_thread(catalog.build, xlsx), xlsx)
 
 
 @router.post(
@@ -510,12 +540,21 @@ async def revise_input_datetime(
     request: Request,
     collection_entry_id: str,
 ) -> ReviseInputResponse:
-    """Set the datetime of one input, reordering it on the timeline."""
+    """Set the datetime of one input, reordering it on the timeline.
+
+    Not for an experiment that started from a sheet: there the time is
+    when the update was made, and the order of updates is the record."""
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
     try:
         async with voice.build_client(token) as client:
+            if await voice.writer.read_raw_file(client, upload_id, ORIGINAL_FILE):
+                raise HTTPException(
+                    status_code=409,
+                    detail='the time of an update is when it was made; '
+                    'it cannot be changed',
+                )
             kind = await voice.revise_input_datetime(
                 client,
                 upload_id,
