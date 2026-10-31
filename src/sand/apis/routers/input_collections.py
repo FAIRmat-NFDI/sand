@@ -2,6 +2,7 @@ import asyncio
 import json
 from datetime import datetime, timezone
 from pathlib import PurePath
+from urllib.parse import quote
 
 from fastapi import APIRouter, Form, HTTPException, Request, Response, UploadFile
 from nomad.utils import generate_entry_id
@@ -11,6 +12,8 @@ from sand.hysprint import EXPERIMENT_INFO_LABEL, EXPERIMENT_INFO_MAINFILE
 from sand.hysprint.sheet import DERIVED_SHEET_MAINFILE, EXTRACTION_STATUS_MAINFILE
 from sand.hysprint.sheet_store import SheetStore
 from sand.models.input_collections import (
+    ConfirmEditsRequest,
+    ConfirmEditsResponse,
     CreateHysprintExperimentRequest,
     CreateNoteRequest,
     InputCollectionListResponse,
@@ -41,8 +44,18 @@ from sand.services.voice_eln import (
     VoiceElnService,
     normalize_audio_filename,
 )
-from sand.sheet_edit import catalog
-from sand.sheet_edit.session import ORIGINAL_FILE, STATUS_FILE
+from sand.sheet_edit import catalog, changelog
+from sand.sheet_edit.session import (
+    CHANGELOG_FILE,
+    CONFIRMATIONS_FILE,
+    FINAL_FILE,
+    ORIGINAL_FILE,
+    STATUS_FILE,
+    Confirmation,
+    confirmations_json,
+    load_confirmations,
+    read_confirmations,
+)
 from sand.sheet_edit.workbook import ingest_problems, sha256
 
 router = APIRouter()
@@ -103,13 +116,14 @@ STALE_JOB_S = 30 * 60
 # 'starting' reservation snapshot covers the window until the workflow's
 # first own snapshot. A multi-process deployment could still race in the
 # instant between two processes' checks - accepted for the lab scale.
-_start_locks: dict[str, asyncio.Lock] = {}
+_upload_locks: dict[str, asyncio.Lock] = {}
 
 
-def _start_lock(upload_id: str) -> asyncio.Lock:
-    lock = _start_locks.get(upload_id)
+def _upload_lock(upload_id: str) -> asyncio.Lock:
+    """For every read-then-write of one of the upload's files."""
+    lock = _upload_locks.get(upload_id)
     if lock is None:
-        lock = _start_locks[upload_id] = asyncio.Lock()
+        lock = _upload_locks[upload_id] = asyncio.Lock()
     return lock
 
 
@@ -143,10 +157,14 @@ def _reservation(collection_entry_id: str, phase: str, **fields) -> dict:
     }
 
 
-async def _user_id(client) -> str:
+async def _me(client) -> dict:
     me = await client.get('/users/me')
     check_response(me, step='whoami')
-    return me.json()['user_id']
+    return me.json()
+
+
+async def _user_id(client) -> str:
+    return (await _me(client))['user_id']
 
 
 async def _start_action(action_id: str, data) -> str:
@@ -651,7 +669,7 @@ async def start_extract_async(
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
-    async with _start_lock(upload_id):
+    async with _upload_lock(upload_id):
         try:
             async with voice.build_client(token) as client:
                 status = await voice.writer.read_json(
@@ -740,7 +758,7 @@ async def start_edit_async(
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
-    async with _start_lock(upload_id):
+    async with _upload_lock(upload_id):
         try:
             async with voice.build_client(token) as client:
                 status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
@@ -807,14 +825,9 @@ async def start_edit_async(
 
 
 async def _edit_status(
-    voice: VoiceElnService, token: str, upload_id: str, collection_entry_id: str
+    client, voice: VoiceElnService, upload_id: str, collection_entry_id: str
 ) -> dict:
-    try:
-        async with voice.build_client(token) as client:
-            status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
-    except NomadAPIError as exc:
-        raise _http_error(exc) from exc
-
+    status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
     # the status file is upload-level and an upload can hold several
     # collections: only report a status belonging to the requested one
     if status is None or status.get('collection_entry_id') != collection_entry_id:
@@ -824,6 +837,33 @@ async def _edit_status(
     return status
 
 
+async def _completed_status(
+    client, voice: VoiceElnService, upload_id: str, collection_entry_id: str
+) -> dict:
+    """The status of the last job, which must have completed: what the
+    final sheet and the changelog are checked against."""
+    status = await _edit_status(client, voice, upload_id, collection_entry_id)
+    if _job_running(status, None):
+        raise HTTPException(
+            status_code=409, detail='an edit job is running; wait for it'
+        )
+    if status.get('phase') != 'completed':
+        raise HTTPException(
+            status_code=409, detail='the last edit job did not complete; run it again'
+        )
+    return status
+
+
+async def _read_edit_status(
+    voice: VoiceElnService, token: str, upload_id: str, collection_entry_id: str
+) -> dict:
+    try:
+        async with voice.build_client(token) as client:
+            return await _edit_status(client, voice, upload_id, collection_entry_id)
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+
 @router.get('/input-collections/{upload_id}/edit-status')
 async def edit_status(
     upload_id: str,
@@ -831,7 +871,7 @@ async def edit_status(
     collection_entry_id: str,
 ) -> dict:
     """The edit job's progress: the status file the workflow writes."""
-    return await _edit_status(
+    return await _read_edit_status(
         _voice_service(request),
         get_bearer_token(request),
         upload_id,
@@ -848,7 +888,7 @@ async def edit_reports(
     """What the job made of each input, in input order: text, preview,
     the edits ready to confirm (with their keys), what was written or
     refused. Partial while the phase is not completed."""
-    status = await _edit_status(
+    status = await _read_edit_status(
         _voice_service(request),
         get_bearer_token(request),
         upload_id,
@@ -859,3 +899,156 @@ async def edit_reports(
         'phase': status.get('phase'),
         'inputs': status.get('inputs', []),
     }
+
+
+@router.post(
+    '/input-collections/{upload_id}/edits/confirm', response_model=ConfirmEditsResponse
+)
+async def confirm_edits(
+    upload_id: str,
+    body: ConfirmEditsRequest,
+    request: Request,
+    collection_entry_id: str,
+) -> ConfirmEditsResponse:
+    """Confirm ready edits by their keys. Only recorded here; the next
+    job run writes them into the sheet (its answers are cached, so the
+    run costs no model calls). A key must be a ready edit of the last
+    job's reports. An already confirmed key keeps its first record."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    if not body.keys:
+        raise HTTPException(status_code=400, detail='no keys to confirm')
+    try:
+        async with _upload_lock(upload_id), voice.build_client(token) as client:
+            status = await _edit_status(client, voice, upload_id, collection_entry_id)
+            ready = {
+                edit['key']
+                for report in status.get('inputs', [])
+                for edit in report.get('ready', [])
+            }
+            unknown = sorted(set(body.keys) - ready)
+            if unknown and _job_running(status, None):
+                # the running job's reports replace the old ones as it goes
+                raise HTTPException(
+                    status_code=409,
+                    detail='an edit job is running; confirm when it has finished',
+                )
+            if unknown:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f'not a ready edit of the last job: {", ".join(unknown)}',
+                )
+            raw = await voice.writer.read_raw_file(
+                client, upload_id, CONFIRMATIONS_FILE
+            )
+            try:
+                confirmed = load_confirmations(read_confirmations(raw))
+            except ValueError as why:
+                # an audit file is never overwritten; this needs a look
+                raise HTTPException(
+                    status_code=409, detail=f'confirmations file damaged: {why}'
+                ) from why
+            me = await _me(client)
+            by = me.get('username') or me.get('name') or me['user_id']
+            now = datetime.now(timezone.utc)
+            for key in body.keys:
+                confirmed.setdefault(key, Confirmation(by=by, at=now))
+            await voice.writer.write_json(
+                client, upload_id, CONFIRMATIONS_FILE, confirmations_json(confirmed)
+            )
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return ConfirmEditsResponse(confirmed=sorted(confirmed))
+
+
+@router.get('/input-collections/{upload_id}/final-sheet')
+async def download_final_sheet(
+    upload_id: str,
+    request: Request,
+    collection_entry_id: str,
+) -> Response:
+    """The sheet the last completed job left: the original plus the
+    confirmed edits, as an xlsx download named after the experiment."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    try:
+        async with voice.build_client(token) as client:
+            status = await _completed_status(
+                client, voice, upload_id, collection_entry_id
+            )
+            final = await voice.writer.read_raw_file(client, upload_id, FINAL_FILE)
+            if final is None:
+                raise HTTPException(status_code=404, detail='no final sheet stored')
+            if sha256(final) != status.get('final'):
+                # another collection's job, or a file touched by hand
+                raise HTTPException(
+                    status_code=409,
+                    detail='the stored sheet is not the one the last job '
+                    'recorded; run the job again',
+                )
+            name = await voice.input_collection_name(
+                client, upload_id, collection_entry_id
+            )
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return Response(
+        content=final,
+        media_type=XLSX_CONTENT_TYPE,
+        headers={'Content-Disposition': _attachment(f'{name}.xlsx')},
+    )
+
+
+def _attachment(filename: str) -> str:
+    """Headers are latin-1: an ASCII fallback plus the real name encoded
+    (RFC 6266), so an experiment named in any script downloads."""
+    ascii_name = ''.join(
+        c if c.isascii() and c.isprintable() and c not in '"\\' else '_'
+        for c in filename
+    )
+    return f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(filename)}'
+
+
+@router.get('/input-collections/{upload_id}/changelog')
+async def read_changelog(
+    upload_id: str,
+    request: Request,
+    collection_entry_id: str,
+    format: str = 'text',  # noqa: A002
+) -> Response:
+    """What the final sheet changed against the original, cell by cell,
+    with who confirmed each edit and when: rendered text, or the stored
+    JSON (`format=json`). Only an intact log of the last job is served."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    if format not in ('text', 'json'):
+        raise HTTPException(status_code=400, detail='format is text or json')
+    try:
+        async with voice.build_client(token) as client:
+            status = await _completed_status(
+                client, voice, upload_id, collection_entry_id
+            )
+            raw = await voice.writer.read_raw_file(client, upload_id, CHANGELOG_FILE)
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    if raw is None:
+        raise HTTPException(status_code=404, detail='no changelog stored')
+    try:
+        log = changelog.from_json(raw.decode())
+    except (UnicodeDecodeError, changelog.CheckFailed) as why:
+        raise HTTPException(
+            status_code=409, detail=f'changelog damaged: {why}'
+        ) from why
+    if log.final != status.get('final'):
+        raise HTTPException(
+            status_code=409,
+            detail="the stored changelog is not the last job's; run the job again",
+        )
+    if format == 'json':
+        return Response(content=raw, media_type='application/json')
+    return Response(content=changelog.render(log), media_type='text/plain')

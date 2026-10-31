@@ -23,6 +23,7 @@ from sand.sheet_edit.changelog import Confirmation
 from sand.sheet_edit.edits import ProposedEdits
 from sand.sheet_edit.session import (
     CACHE_FILE,
+    CHANGELOG_FILE,
     CONFIRMATIONS_FILE,
     FINAL_FILE,
     ORIGINAL_FILE,
@@ -35,6 +36,8 @@ from sand.sheet_edit.session import (
     load_llm_cache,
     read_confirmations,
 )
+
+JSON_TYPE = 'application/json'
 
 
 @activity.defn
@@ -134,7 +137,13 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
 async def store_final_sheet_and_changelog(data: JobInput) -> dict:
     """Write the final sheet and the changelog that explains it; the two
     are checked against the original before anything is stored."""
-    from sand.sheet_edit.changelog import CheckFailed, changelog, check, render
+    from sand.sheet_edit.changelog import (
+        CheckFailed,
+        changelog,
+        check,
+        render,
+        to_json,
+    )
     from sand.sheet_edit.workbook import sha256
 
     files = await _read_files(data)
@@ -151,6 +160,9 @@ async def store_final_sheet_and_changelog(data: JobInput) -> dict:
     async with voice.build_client(common.user_token(data.user_id)) as client:
         await voice.writer.upload_raw_file(
             client, data.upload_id, FINAL_FILE, final, XLSX_CONTENT_TYPE
+        )
+        await voice.writer.upload_raw_file(
+            client, data.upload_id, CHANGELOG_FILE, to_json(log).encode(), JSON_TYPE
         )
         await _publish_cache(voice.writer, client, files, data)
     # a confirmation is bound to the words, the sheet and the change: an

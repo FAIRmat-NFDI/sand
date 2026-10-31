@@ -2,72 +2,24 @@
 running-job guard), status, per-input reports."""
 
 import asyncio
-import contextlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 
-import httpx
 import pytest
-from fastapi import FastAPI
+from nomad_fakes import COLLECTION, UPLOAD, USER, FakeVoice, api, note
 
 from sand.apis.routers import input_collections
-from sand.apis.routers.input_collections import STALE_JOB_S, router
+from sand.apis.routers.input_collections import STALE_JOB_S
 from sand.hysprint.sheet import EXTRACTION_STATUS_MAINFILE
 from sand.services.nomad_api import NomadAPIError
-from sand.services.voice_eln import CollectedInput
 from sand.sheet_edit.session import ORIGINAL_FILE, STATUS_FILE
 
 pytestmark = pytest.mark.asyncio
 
-UPLOAD = 'upload-1'
-COLLECTION = 'collection-1'
-USER = 'user-1'
 EDIT_ACTION = 'sand.actions.edit:edit_action_entry_point'
 EXTRACT_ACTION = 'sand.actions.extract:extract_action_entry_point'
-
-
-def nomad(request: httpx.Request) -> httpx.Response:
-    assert request.url.path == '/users/me'
-    return httpx.Response(200, json={'user_id': USER})
-
-
-@dataclass
-class FakeWriter:
-    files: dict[str, bytes] = field(default_factory=dict)
-    writes_allowed: int | None = None  # None: all
-
-    async def read_raw_file(self, client, upload_id, name):
-        return self.files.get(name)
-
-    async def read_json(self, client, upload_id, name):
-        raw = self.files.get(name)
-        return None if raw is None else json.loads(raw)
-
-    async def write_json(self, client, upload_id, name, payload):
-        assert upload_id == UPLOAD
-        if self.writes_allowed == 0:
-            raise NomadAPIError(503, 'NOMAD is down', step='upload_raw_file')
-        if self.writes_allowed is not None:
-            self.writes_allowed -= 1
-        self.files[name] = json.dumps(payload).encode()
-
-
-@dataclass
-class FakeVoice:
-    writer: FakeWriter = field(default_factory=FakeWriter)
-    inputs: list[CollectedInput] = field(default_factory=list)
-
-    def build_client(self, token):
-        assert token == 'tok'
-        return contextlib.nullcontext(
-            httpx.AsyncClient(transport=httpx.MockTransport(nomad), base_url='http://n')
-        )
-
-    async def collect_inputs(self, client, upload_id, collection_entry_id):
-        assert (upload_id, collection_entry_id) == (UPLOAD, COLLECTION)
-        return self.inputs
 
 
 @dataclass
@@ -86,11 +38,7 @@ class FakeStarter:
 def voice(synthetic_xlsx) -> FakeVoice:
     voice = FakeVoice()
     voice.writer.files[ORIGINAL_FILE] = synthetic_xlsx
-    voice.inputs = [
-        CollectedInput(
-            entry_id='n1', kind='note', text='speed 4000', label='', datetime=None
-        )
-    ]
+    voice.inputs = [note('n1', 'speed 4000')]
     return voice
 
 
@@ -99,17 +47,6 @@ def starter(monkeypatch) -> FakeStarter:
     starter = FakeStarter()
     monkeypatch.setattr(input_collections, '_start_action', starter)
     return starter
-
-
-def api(voice: FakeVoice) -> httpx.AsyncClient:
-    app = FastAPI()
-    app.include_router(router, prefix='/api')
-    app.state.voice_eln = voice
-    return httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app),
-        base_url='http://sand',
-        headers={'Authorization': 'Bearer tok'},
-    )
 
 
 async def start(voice, job='edit-async'):
@@ -252,9 +189,7 @@ async def test_no_inputs(voice, starter):
 
 
 async def test_an_input_still_transcribing(voice, starter):
-    voice.inputs.append(
-        CollectedInput(entry_id='a1', kind='audio', text=None, label='', datetime=None)
-    )
+    voice.inputs.append(note('a1', None))
 
     response = await start(voice)
 

@@ -1,17 +1,12 @@
 """POST /input-collections/from-sheet against a fake NOMAD."""
 
-import contextlib
-from dataclasses import dataclass, field
 from http import HTTPStatus
 
-import httpx
 import pytest
-from fastapi import FastAPI
+from nomad_fakes import COLLECTION, FakeVoice, api
 from synthetic_sheet import edited
 
-from sand.apis.routers.input_collections import router
-from sand.services.nomad_api import XLSX_CONTENT_TYPE, NomadAPIError
-from sand.services.voice_eln import EntryHandle
+from sand.services.nomad_api import XLSX_CONTENT_TYPE
 from sand.sheet_edit import catalog
 from sand.sheet_edit.session import ORIGINAL_FILE
 from sand.sheet_edit.workbook import sha256
@@ -19,63 +14,11 @@ from sand.sheet_edit.workbook import sha256
 pytestmark = pytest.mark.asyncio
 
 UPLOAD = 'upload-1'
-ENTRY = 'entry-1'
-
-
-def nomad_down(step: str) -> NomadAPIError:
-    return NomadAPIError(503, 'NOMAD is down', step=step)
-
-
-@dataclass
-class FakeWriter:
-    files: dict[str, bytes] = field(default_factory=dict)
-    failing: bool = False
-
-    async def upload_raw_file(self, client, upload_id, name, content, content_type):
-        assert upload_id == UPLOAD
-        assert content_type == XLSX_CONTENT_TYPE
-        if self.failing:
-            raise nomad_down('upload_raw_file')
-        self.files[name] = content
-
-
-@dataclass
-class FakeVoice:
-    writer: FakeWriter = field(default_factory=FakeWriter)
-    created: list[str] = field(default_factory=list)
-    deleted: list[str] = field(default_factory=list)
-    undeletable: bool = False
-
-    def build_client(self, token):
-        assert token == 'tok'
-        return contextlib.nullcontext(object())
-
-    async def create_input_collection(self, client, name):
-        self.created.append(name)
-        return EntryHandle(upload_id=UPLOAD, entry_id=ENTRY)
-
-    async def delete_input_collection(self, client, upload_id):
-        if self.undeletable:
-            raise nomad_down('delete_upload')
-        self.deleted.append(upload_id)
-
-    def entry_url(self, upload_id, entry_id):
-        return f'http://nomad/{upload_id}/{entry_id}'
 
 
 @pytest.fixture
 def voice() -> FakeVoice:
     return FakeVoice()
-
-
-def api(voice: FakeVoice, token: str | None = 'tok') -> httpx.AsyncClient:
-    app = FastAPI()
-    app.include_router(router, prefix='/api')
-    app.state.voice_eln = voice
-    headers = {} if token is None else {'Authorization': f'Bearer {token}'}
-    return httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url='http://sand', headers=headers
-    )
 
 
 async def post_sheet(voice, xlsx: bytes, filename='batch.xlsx', token='tok', **form):
@@ -93,12 +36,13 @@ async def test_good_sheet_becomes_a_collection(voice, synthetic_xlsx):
     assert response.status_code == HTTPStatus.CREATED, response.text
     body = response.json()
     assert body['upload_id'] == UPLOAD
-    assert body['entry_id'] == ENTRY
-    assert body['entry_url'] == f'http://nomad/{UPLOAD}/{ENTRY}'
+    assert body['entry_id'] == COLLECTION
+    assert body['entry_url'] == f'http://nomad/{UPLOAD}/{COLLECTION}'
     assert body['name'] == 'batch 7'
     assert voice.created == ['batch 7']
     # the bytes are stored as they came: the job verifies against them
     assert voice.writer.files == {ORIGINAL_FILE: synthetic_xlsx}
+    assert voice.writer.types == {ORIGINAL_FILE: XLSX_CONTENT_TYPE}
 
     # the summary is the catalog the job will edit against
     built = catalog.build(synthetic_xlsx)

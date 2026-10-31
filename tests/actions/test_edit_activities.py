@@ -18,11 +18,13 @@ from sand.actions.edit.models import (
     WriteStatusInput,
 )
 from sand.services.voice_eln import CollectedInput
+from sand.sheet_edit import changelog
 from sand.sheet_edit.catalog import build
 from sand.sheet_edit.edits import proposed_edits_schema
 from sand.sheet_edit.resolve import PROMPT_VERSION, system_prompt
 from sand.sheet_edit.session import (
     CACHE_FILE,
+    CHANGELOG_FILE,
     CONFIRMATIONS_FILE,
     FINAL_FILE,
     ORIGINAL_FILE,
@@ -428,6 +430,10 @@ async def test_store_final_sheet_and_changelog_stores_the_final_sheet_with_its_c
     done = await activities.store_final_sheet_and_changelog(job(upload))
     final = upload.writer.files[FINAL_FILE]
     assert done['final'] == sha256(final)
+    # the log beside the sheet is the one the status renders
+    stored = changelog.from_json(upload.writer.files[CHANGELOG_FILE].decode())
+    assert stored.final == sha256(final)
+    assert changelog.render(stored) == done['changelog']
     assert done['changed'] is True
     assert done['changes'] == SAMPLES_1_TO_3  # input 2 is not confirmed
     assert done['stale_confirmations'] == 0

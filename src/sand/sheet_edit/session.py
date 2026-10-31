@@ -7,6 +7,7 @@ beside the original sheet.
     sheet_edit/llm_cache.<job>.json one running job's answers (its own)
     sheet_edit/confirmations.json   the API's: which edits the user confirmed
     sheet_edit/final.xlsx.orig      the workflow's: original + confirmed edits
+    sheet_edit/changelog.json       the workflow's: what the final sheet changed
     sheet_edit/status.json          the workflow's: progress, previews
 
 One writer per file. The API writes the confirmations, so a confirmation
@@ -31,6 +32,7 @@ from sand.sheet_edit.workbook import sha256
 
 ORIGINAL_FILE = 'sheet_edit/original.xlsx.orig'
 FINAL_FILE = 'sheet_edit/final.xlsx.orig'
+CHANGELOG_FILE = 'sheet_edit/changelog.json'
 CACHE_FILE = 'sheet_edit/llm_cache.json'
 CONFIRMATIONS_FILE = 'sheet_edit/confirmations.json'
 STATUS_FILE = 'sheet_edit/status.json'
