@@ -16,6 +16,7 @@ from sand.actions.edit.models import (
     PrepareInput,
     WriteStatusInput,
 )
+from sand.services.nomad_api import XLSX_CONTENT_TYPE
 from sand.sheet_edit.apply import Step, apply_all
 from sand.sheet_edit.catalog import Catalog
 from sand.sheet_edit.changelog import Confirmation
@@ -34,8 +35,6 @@ from sand.sheet_edit.session import (
     load_llm_cache,
     read_confirmations,
 )
-
-XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 
 @activity.defn

@@ -13,6 +13,8 @@ from nomad.utils import generate_entry_id
 # Lowest HTTP status code that counts as an error response.
 HTTP_ERROR_STATUS = 400
 
+XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
 
 def gui_upload_url(base_url: str, upload_id: str) -> str:
     """The new NOMAD GUI's page of an upload (a "project" there), built
@@ -96,6 +98,14 @@ async def create_upload(
             f'Expected JSON with upload_id, got: {response.text[:500]}',
             step='create_upload',
         )
+
+
+async def delete_upload(client: httpx.AsyncClient, upload_id: str) -> None:
+    """Already gone is fine. NOMAD refuses while the upload processes."""
+    response = await client.delete(f'/uploads/{upload_id}')
+    if response.status_code == HTTPStatus.NOT_FOUND:
+        return
+    check_response(response, step='delete_upload')
 
 
 async def entry_mainfile(

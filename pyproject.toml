@@ -46,6 +46,7 @@ dev = [
     "pytest",
     "structlog",
     "pytest-asyncio",
+    "fastapi",  # the API runs inside NOMAD; tests build their own app
 ]
 
 [tool.uv]

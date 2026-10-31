@@ -15,6 +15,7 @@ from sand.services.nomad_api import (
     build_client,
     check_response,
     create_upload,
+    delete_upload,
     entry_id_from_ref,
     entry_mainfile,
     entry_ref,
@@ -187,6 +188,12 @@ class VoiceElnService:
             )
             for entry in entries
         ]
+
+    async def delete_input_collection(
+        self, client: httpx.AsyncClient, upload_id: str
+    ) -> None:
+        """The whole upload: a collection is one upload."""
+        await delete_upload(client, upload_id)
 
     async def create_input_collection(
         self, client: httpx.AsyncClient, name: str
