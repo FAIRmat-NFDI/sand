@@ -25,6 +25,7 @@ from sand.models.input_collections import (
     ReviseLabelRequest,
     SheetCollectionResponse,
     SheetColumnModel,
+    SheetSampleModel,
     SheetSummaryModel,
     SheetUploadResponse,
 )
@@ -226,9 +227,22 @@ async def create_sheet_input_collection(
     try:
         async with voice.build_client(token) as client:
             result = await voice.create_input_collection(client, name)
-            await voice.writer.upload_raw_file(
-                client, result.upload_id, ORIGINAL_FILE, xlsx, XLSX_CONTENT_TYPE
-            )
+            try:
+                await voice.writer.upload_raw_file(
+                    client, result.upload_id, ORIGINAL_FILE, xlsx, XLSX_CONTENT_TYPE
+                )
+            except NomadAPIError as exc:
+                # without its sheet the collection is an experiment whose
+                # edit job can only fail: take it back
+                try:
+                    await voice.delete_input_collection(client, result.upload_id)
+                except NomadAPIError:
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f'{_nomad_detail(exc)}; the half-made experiment '
+                        f'{result.upload_id} could not be removed either',
+                    ) from exc
+                raise
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
@@ -236,7 +250,11 @@ async def create_sheet_input_collection(
         name=name,
         sheet=SheetSummaryModel(
             name=sheet.structure.sheet_name,
-            samples=[s.label for s in sheet.samples if s.label is not None],
+            samples=[
+                SheetSampleModel(label=s.label or f'row {s.row}', subbatch=s.subbatch)
+                for s in sheet.samples
+            ],
+            needs_subbatch=sheet.needs_subbatch,
             columns=[
                 SheetColumnModel(
                     id=c.id, section=c.column.section.label, header=c.column.header

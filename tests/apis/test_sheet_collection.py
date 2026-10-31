@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from synthetic_sheet import edited
 
 from sand.apis.routers.input_collections import router
-from sand.services.nomad_api import XLSX_CONTENT_TYPE
+from sand.services.nomad_api import XLSX_CONTENT_TYPE, NomadAPIError
 from sand.services.voice_eln import EntryHandle
 from sand.sheet_edit import catalog
 from sand.sheet_edit.session import ORIGINAL_FILE
@@ -22,13 +22,20 @@ UPLOAD = 'upload-1'
 ENTRY = 'entry-1'
 
 
+def nomad_down(step: str) -> NomadAPIError:
+    return NomadAPIError(503, 'NOMAD is down', step=step)
+
+
 @dataclass
 class FakeWriter:
     files: dict[str, bytes] = field(default_factory=dict)
+    failing: bool = False
 
     async def upload_raw_file(self, client, upload_id, name, content, content_type):
         assert upload_id == UPLOAD
         assert content_type == XLSX_CONTENT_TYPE
+        if self.failing:
+            raise nomad_down('upload_raw_file')
         self.files[name] = content
 
 
@@ -36,6 +43,8 @@ class FakeWriter:
 class FakeVoice:
     writer: FakeWriter = field(default_factory=FakeWriter)
     created: list[str] = field(default_factory=list)
+    deleted: list[str] = field(default_factory=list)
+    undeletable: bool = False
 
     def build_client(self, token):
         assert token == 'tok'
@@ -44,6 +53,11 @@ class FakeVoice:
     async def create_input_collection(self, client, name):
         self.created.append(name)
         return EntryHandle(upload_id=UPLOAD, entry_id=ENTRY)
+
+    async def delete_input_collection(self, client, upload_id):
+        if self.undeletable:
+            raise nomad_down('delete_upload')
+        self.deleted.append(upload_id)
 
     def entry_url(self, upload_id, entry_id):
         return f'http://nomad/{upload_id}/{entry_id}'
@@ -91,8 +105,11 @@ async def test_good_sheet_becomes_a_collection(voice, synthetic_xlsx):
     sheet = body['sheet']
     assert sheet['name'] == built.structure.sheet_name
     assert sheet['sha256'] == sha256(synthetic_xlsx)
-    assert sheet['samples'] == [s.label for s in built.samples]
-    assert sheet['samples'][:3] == ['1', '2', '3']
+    assert sheet['samples'] == [
+        {'label': s.label, 'subbatch': s.subbatch} for s in built.samples
+    ]
+    assert [s['label'] for s in sheet['samples']][:3] == ['1', '2', '3']
+    assert sheet['needs_subbatch'] is False
     assert [(c['id'], c['section'], c['header']) for c in sheet['columns']] == [
         (c.id, c.column.section.label, c.column.header) for c in built.columns
     ]
@@ -108,6 +125,30 @@ async def test_real_kit_sheet_is_accepted(voice, real_kit_xlsx):
 
     assert response.status_code == HTTPStatus.CREATED, response.text
     assert voice.writer.files == {ORIGINAL_FILE: real_kit_xlsx}
+
+
+async def test_nomad_failing_after_creation_takes_the_collection_back(
+    voice, synthetic_xlsx
+):
+    voice.writer.failing = True
+
+    response = await post_sheet(voice, synthetic_xlsx)
+
+    assert response.status_code == HTTPStatus.BAD_GATEWAY
+    assert voice.created == ['batch']
+    assert voice.deleted == [UPLOAD]
+
+
+async def test_a_collection_that_cannot_be_taken_back_is_named(voice, synthetic_xlsx):
+    voice.writer.failing = True
+    voice.undeletable = True
+
+    response = await post_sheet(voice, synthetic_xlsx)
+
+    assert response.status_code == HTTPStatus.BAD_GATEWAY
+    assert response.json()['detail'] == (
+        f'NOMAD is down; the half-made experiment {UPLOAD} could not be removed either'
+    )
 
 
 async def test_name_defaults_to_the_file_name(voice, synthetic_xlsx):

@@ -100,6 +100,14 @@ async def create_upload(
         )
 
 
+async def delete_upload(client: httpx.AsyncClient, upload_id: str) -> None:
+    """Already gone is fine. NOMAD refuses while the upload processes."""
+    response = await client.delete(f'/uploads/{upload_id}')
+    if response.status_code == HTTPStatus.NOT_FOUND:
+        return
+    check_response(response, step='delete_upload')
+
+
 async def entry_mainfile(
     client: httpx.AsyncClient, upload_id: str, entry_id: str, step: str
 ) -> str:

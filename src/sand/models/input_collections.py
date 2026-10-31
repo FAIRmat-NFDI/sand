@@ -97,9 +97,16 @@ class SheetColumnModel(BaseModel):
     header: str
 
 
+class SheetSampleModel(BaseModel):
+    label: str  # the Sample value as users say it
+    subbatch: str | None
+
+
 class SheetSummaryModel(BaseModel):
     name: str  # the worksheet's name
-    samples: list[str]  # the Sample values, in sheet order
+    samples: list[SheetSampleModel]  # in sheet order
+    # labels repeat across subbatches: a sample is named with its subbatch
+    needs_subbatch: bool
     columns: list[SheetColumnModel]
     sha256: str  # of the stored original
 
