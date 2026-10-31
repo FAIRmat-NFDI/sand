@@ -207,8 +207,8 @@ async def create_sheet_input_collection(
     *,
     name: str = Form(''),
 ) -> SheetCollectionResponse:
-    """An experiment that starts from an uploaded hysprint-style sheet:
-    the edit job's original, stored unchanged.
+    """An experiment that starts from an uploaded lab sheet: the edit
+    job's original, stored unchanged.
 
     A sheet the ingest checks refuse is refused before anything is
     created; the problems are the user's to fix and come back verbatim
@@ -218,10 +218,11 @@ async def create_sheet_input_collection(
     token = get_bearer_token(request)
 
     xlsx = await _read_upload(file)
-    problems = ingest_problems(xlsx)
+    # openpyxl work in a thread: a large sheet must not stall the API
+    problems = await asyncio.to_thread(ingest_problems, xlsx)
     if problems:
         raise HTTPException(status_code=422, detail={'problems': problems})
-    sheet = catalog.build(xlsx)
+    sheet = await asyncio.to_thread(catalog.build, xlsx)
     name = name.strip() or PurePath(file.filename or '').stem or 'sheet'
 
     try:

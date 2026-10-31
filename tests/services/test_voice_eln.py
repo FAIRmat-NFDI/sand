@@ -766,3 +766,30 @@ async def test_concurrent_adds_keep_both_references():
     assert sorted(notes) == sorted(
         entry_ref(UPLOAD_ID, handle.entry_id) for handle in (first, second)
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('status', [HTTPStatus.OK, HTTPStatus.NOT_FOUND])
+async def test_delete_input_collection_deletes_the_upload(status):
+    requests = []
+
+    def handler(request):
+        requests.append((request.method, request.url.path))
+        return httpx.Response(status)
+
+    async with _client(handler) as client:
+        await _service().delete_input_collection(client, 'up1')
+
+    assert requests == [('DELETE', '/nomad-oasis/api/v1/uploads/up1')]
+
+
+@pytest.mark.asyncio
+async def test_delete_input_collection_reports_a_refusal():
+    def handler(request):
+        return httpx.Response(HTTPStatus.BAD_REQUEST, json={'detail': 'processing'})
+
+    async with _client(handler) as client:
+        with pytest.raises(NomadAPIError) as info:
+            await _service().delete_input_collection(client, 'up1')
+
+    assert info.value.step == 'delete_upload'
