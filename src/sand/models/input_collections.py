@@ -87,8 +87,8 @@ class ReviseDatetimeRequest(BaseModel):
     datetime: str  # ISO 8601; reorders the input on the experiment timeline
 
 
-class ExtractJobResponse(BaseModel):
-    job_id: str  # the action workflow id; poll /extract-status for progress
+class JobResponse(BaseModel):
+    job_id: str  # the action workflow id; poll the job's status endpoint
 
 
 class SheetColumnModel(BaseModel):
