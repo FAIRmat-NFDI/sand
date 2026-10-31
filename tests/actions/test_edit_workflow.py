@@ -149,9 +149,11 @@ async def test_each_input_in_order_two_opinions_each_then_the_sheet():
         'collect',
         'status',
         'prepare',
+        'status',
         'apply',
         'status',
         'prepare',
+        'status',
         'apply',
         'status',
         'status',
@@ -194,15 +196,14 @@ async def test_status_shows_progress_then_the_result():
     statuses = stubs.of('status')
     assert [s['phase'] for s in statuses] == [
         'collecting',
-        'interpreting',
-        'interpreting',
-        'interpreting',
+        *['interpreting'] * 5,
         'writing-sheet',
         'completed',
     ]
-    assert [s.get('inputs_done') for s in statuses[1:4]] == [0, 1, 2]
-    assert all(s['inputs_total'] == 2 for s in statuses[1:4])  # noqa: PLR2004
-    assert [len(s['inputs']) for s in statuses] == [0, 0, 1, 2, 2, 2]
+    # before and after each input's LLM calls
+    assert [s.get('inputs_done') for s in statuses[1:6]] == [0, 0, 1, 1, 2]
+    assert all(s['inputs_total'] == 2 for s in statuses[1:6])  # noqa: PLR2004
+    assert [len(s['inputs']) for s in statuses] == [0, 0, 0, 1, 1, 2, 2, 2]
     done = statuses[-1]
     assert done['collection_entry_id'] == 'c1'
     assert done['model'] == MODEL

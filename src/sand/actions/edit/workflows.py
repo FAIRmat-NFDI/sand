@@ -121,6 +121,9 @@ class EditSheetWorkflow:
                         f'input {number}: {len(prepared["prompts"])} prompts, not 2',
                         non_retryable=True,
                     )
+                # a snapshot between the activities: the API's staleness
+                # guard must not open while one input is being worked on
+                await status({**progress, 'inputs_done': number - 1})
                 # the two opinions at once; none when the proposal is cached
                 answers = await asyncio.gather(
                     *(

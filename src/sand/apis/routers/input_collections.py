@@ -13,12 +13,12 @@ from sand.hysprint.sheet_store import SheetStore
 from sand.models.input_collections import (
     CreateHysprintExperimentRequest,
     CreateNoteRequest,
-    ExtractJobResponse,
     InputCollectionListResponse,
     InputCollectionResponse,
     InputCollectionSummaryModel,
     InputItemModel,
     InputListResponse,
+    JobResponse,
     ReviseDatetimeRequest,
     ReviseInputRequest,
     ReviseInputResponse,
@@ -42,7 +42,7 @@ from sand.services.voice_eln import (
     normalize_audio_filename,
 )
 from sand.sheet_edit import catalog
-from sand.sheet_edit.session import ORIGINAL_FILE
+from sand.sheet_edit.session import ORIGINAL_FILE, STATUS_FILE
 from sand.sheet_edit.workbook import ingest_problems, sha256
 
 router = APIRouter()
@@ -97,7 +97,7 @@ async def _read_upload(file: UploadFile) -> bytes:
 
 # A crashed worker can leave a non-terminal status behind; after this long
 # without an update the guard stops trusting it and allows a fresh start.
-STALE_EXTRACTION_S = 30 * 60
+STALE_JOB_S = 30 * 60
 
 # Serializes check-then-start per upload within this process, and the
 # 'starting' reservation snapshot covers the window until the workflow's
@@ -113,8 +113,13 @@ def _start_lock(upload_id: str) -> asyncio.Lock:
     return lock
 
 
-def _extraction_running(status: dict | None, collection_entry_id: str) -> bool:
-    if not status or status.get('collection_entry_id') != collection_entry_id:
+def _job_running(status: dict | None, collection_entry_id: str | None) -> bool:
+    """NOMAD picks the workflow id, so a duplicate cannot be rejected
+    there: the status file is the guard. None: any collection's job
+    counts (the edit job's files are the upload's, not a collection's)."""
+    if not status:
+        return False
+    if collection_entry_id and status.get('collection_entry_id') != collection_entry_id:
         return False
     if status.get('phase') in ('completed', 'failed'):
         return False
@@ -123,7 +128,47 @@ def _extraction_running(status: dict | None, collection_entry_id: str) -> bool:
         age = datetime.now(timezone.utc) - datetime.fromisoformat(updated)
     except (TypeError, ValueError):
         return False
-    return age.total_seconds() < STALE_EXTRACTION_S
+    return age.total_seconds() < STALE_JOB_S
+
+
+def _reservation(collection_entry_id: str, phase: str, **fields) -> dict:
+    """A status written by the API: visible to any check until the
+    workflow's first own snapshot replaces it."""
+    return {
+        'job_id': 'starting',
+        'phase': phase,
+        'collection_entry_id': collection_entry_id,
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+        **fields,
+    }
+
+
+async def _user_id(client) -> str:
+    me = await client.get('/users/me')
+    check_response(me, step='whoami')
+    return me.json()['user_id']
+
+
+async def _start_action(action_id: str, data) -> str:
+    # the async variant: the sync one blocks the API event loop while
+    # it sets up its Mongo/Temporal infrastructure
+    from nomad.actions.manager import start_action_async
+
+    return await start_action_async(action_id=action_id, data=data)
+
+
+async def _release_reservation(
+    voice: VoiceElnService, token: str, upload_id: str, file: str, status: dict
+) -> None:
+    """A start that failed must not block retries until the staleness
+    timeout; a NOMAD error here is secondary to the one being reported.
+    Accepted: a start that raised after Temporal did create the workflow
+    opens the guard while that job runs."""
+    try:
+        async with voice.build_client(token) as client:
+            await voice.writer.write_json(client, upload_id, file, status)
+    except NomadAPIError:
+        pass
 
 
 def _entry_response(voice: VoiceElnService, upload_id: str, entry_id: str) -> dict:
@@ -595,18 +640,14 @@ async def upload_sheet(
 
 @router.post(
     '/input-collections/{upload_id}/extract-async',
-    response_model=ExtractJobResponse,
+    response_model=JobResponse,
 )
 async def start_extract_async(
     upload_id: str,
     request: Request,
     collection_entry_id: str,
-) -> ExtractJobResponse:
-    """SKELETON (issue #19, PR 1): start the extraction action and return
-    a job id; poll /extract-status for progress. The workflow only writes
-    status markers for now - PR 2 moves the real pipeline into it. The
-    Extract button still uses the synchronous /extract.
-    """
+) -> JobResponse:
+    """Start the extraction action; poll /extract-status for progress."""
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
@@ -616,7 +657,7 @@ async def start_extract_async(
                 status = await voice.writer.read_json(
                     client, upload_id, EXTRACTION_STATUS_MAINFILE
                 )
-                if _extraction_running(status, collection_entry_id):
+                if _job_running(status, collection_entry_id):
                     raise HTTPException(
                         status_code=409,
                         detail='an extraction is already running for this '
@@ -626,65 +667,38 @@ async def start_extract_async(
                 await voice.collect_inputs(
                     client, upload_id, collection_entry_id=collection_entry_id
                 )
-                me = await client.get('/users/me')
-                check_response(me, step='whoami')
-                user_id = me.json()['user_id']
-                # reservation: visible to any check until the workflow's
-                # first own snapshot replaces it
+                user_id = await _user_id(client)
                 await voice.writer.write_json(
                     client,
                     upload_id,
                     EXTRACTION_STATUS_MAINFILE,
-                    {
-                        'job_id': 'starting',
-                        'phase': 'starting',
-                        'collection_entry_id': collection_entry_id,
-                        'updated_at': datetime.now(timezone.utc).isoformat(),
-                        'steps': [],
-                    },
+                    _reservation(collection_entry_id, 'starting', steps=[]),
                 )
         except NomadAPIError as exc:
             raise _http_error(exc) from exc
 
-        # the async variant: the sync one blocks the API event loop while
-        # it sets up its Mongo/Temporal infrastructure
-        from nomad.actions.manager import start_action_async
-
         from sand.actions.extract.models import ExtractInput
 
         try:
-            job_id = await start_action_async(
-                action_id='sand.actions.extract:extract_action_entry_point',
-                data=ExtractInput(
+            job_id = await _start_action(
+                'sand.actions.extract:extract_action_entry_point',
+                ExtractInput(
                     upload_id=upload_id,
                     user_id=user_id,
                     collection_entry_id=collection_entry_id,
                 ),
             )
         except Exception as exc:
-            # release the reservation, or the guard would block retries
-            # until the staleness timeout
-            try:
-                async with voice.build_client(token) as client:
-                    await voice.writer.write_json(
-                        client,
-                        upload_id,
-                        EXTRACTION_STATUS_MAINFILE,
-                        {
-                            'job_id': 'starting',
-                            'phase': 'failed',
-                            'error': f'could not start the extraction: {exc}',
-                            'collection_entry_id': collection_entry_id,
-                            'updated_at': datetime.now(timezone.utc).isoformat(),
-                            'steps': [],
-                        },
-                    )
-            except NomadAPIError:
-                pass
-            raise HTTPException(
-                status_code=502, detail=f'could not start the extraction: {exc}'
-            ) from exc
-    return ExtractJobResponse(job_id=job_id)
+            error = f'could not start the extraction: {exc}'
+            await _release_reservation(
+                voice,
+                token,
+                upload_id,
+                EXTRACTION_STATUS_MAINFILE,
+                _reservation(collection_entry_id, 'failed', error=error, steps=[]),
+            )
+            raise HTTPException(status_code=502, detail=error) from exc
+    return JobResponse(job_id=job_id)
 
 
 @router.get('/input-collections/{upload_id}/extract-status')
@@ -713,3 +727,135 @@ async def extract_status(
             status_code=404, detail='no extraction status for this collection yet'
         )
     return status
+
+
+@router.post('/input-collections/{upload_id}/edit-async', response_model=JobResponse)
+async def start_edit_async(
+    upload_id: str,
+    request: Request,
+    collection_entry_id: str,
+) -> JobResponse:
+    """Start the edit job: every input interpreted against the uploaded
+    sheet, the confirmed edits written. Poll /edit-status for progress."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    async with _start_lock(upload_id):
+        try:
+            async with voice.build_client(token) as client:
+                status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
+                if _job_running(status, None):
+                    raise HTTPException(
+                        status_code=409,
+                        detail='an edit job is already running on this sheet; '
+                        'wait for it to finish',
+                    )
+                original = await voice.writer.read_raw_file(
+                    client, upload_id, ORIGINAL_FILE
+                )
+                if original is None:
+                    raise HTTPException(
+                        status_code=422,
+                        detail='no sheet was uploaded for editing in this experiment',
+                    )
+                inputs = await voice.collect_inputs(
+                    client, upload_id, collection_entry_id=collection_entry_id
+                )
+                if not inputs:
+                    raise HTTPException(
+                        status_code=422, detail='nothing to apply: add an update first'
+                    )
+                pending = [i for i in inputs if i.text is None]
+                if pending:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f'{len(pending)} input(s) not transcribed or '
+                        'processed yet; try again in a moment',
+                    )
+                user_id = await _user_id(client)
+                await voice.writer.write_json(
+                    client,
+                    upload_id,
+                    STATUS_FILE,
+                    _reservation(collection_entry_id, 'starting', inputs=[]),
+                )
+        except NomadAPIError as exc:
+            raise _http_error(exc) from exc
+
+        from sand.actions.edit.models import EditInput
+
+        try:
+            job_id = await _start_action(
+                'sand.actions.edit:edit_action_entry_point',
+                EditInput(
+                    upload_id=upload_id,
+                    user_id=user_id,
+                    collection_entry_id=collection_entry_id,
+                ),
+            )
+        except Exception as exc:
+            error = f'could not start the edit job: {exc}'
+            await _release_reservation(
+                voice,
+                token,
+                upload_id,
+                STATUS_FILE,
+                _reservation(collection_entry_id, 'failed', error=error, inputs=[]),
+            )
+            raise HTTPException(status_code=502, detail=error) from exc
+    return JobResponse(job_id=job_id)
+
+
+async def _edit_status(
+    voice: VoiceElnService, token: str, upload_id: str, collection_entry_id: str
+) -> dict:
+    try:
+        async with voice.build_client(token) as client:
+            status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    # the status file is upload-level and an upload can hold several
+    # collections: only report a status belonging to the requested one
+    if status is None or status.get('collection_entry_id') != collection_entry_id:
+        raise HTTPException(
+            status_code=404, detail='no edit job for this experiment yet'
+        )
+    return status
+
+
+@router.get('/input-collections/{upload_id}/edit-status')
+async def edit_status(
+    upload_id: str,
+    request: Request,
+    collection_entry_id: str,
+) -> dict:
+    """The edit job's progress: the status file the workflow writes."""
+    return await _edit_status(
+        _voice_service(request),
+        get_bearer_token(request),
+        upload_id,
+        collection_entry_id,
+    )
+
+
+@router.get('/input-collections/{upload_id}/edits')
+async def edit_reports(
+    upload_id: str,
+    request: Request,
+    collection_entry_id: str,
+) -> dict:
+    """What the job made of each input, in input order: text, preview,
+    the edits ready to confirm (with their keys), what was written or
+    refused. Partial while the phase is not completed."""
+    status = await _edit_status(
+        _voice_service(request),
+        get_bearer_token(request),
+        upload_id,
+        collection_entry_id,
+    )
+    return {
+        'job_id': status.get('job_id'),
+        'phase': status.get('phase'),
+        'inputs': status.get('inputs', []),
+    }
