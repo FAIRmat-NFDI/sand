@@ -122,8 +122,11 @@ class EditSheetWorkflow:
                         non_retryable=True,
                     )
                 # a snapshot between the activities: the API's staleness
-                # guard must not open while one input is being worked on
-                await status({**progress, 'inputs_done': number - 1})
+                # guard must not open while one input is being worked on.
+                # Patched: jobs started before this write existed replay
+                # without it (tests/actions/histories).
+                if workflow.patched('input-snapshot'):
+                    await status({**progress, 'inputs_done': number - 1})
                 # the two opinions at once; none when the proposal is cached
                 answers = await asyncio.gather(
                     *(
