@@ -1,6 +1,7 @@
 """The edit job's endpoints against a fake NOMAD: start (with the
 running-job guard), status, per-input reports."""
 
+import asyncio
 import contextlib
 import json
 from dataclasses import dataclass, field
@@ -13,6 +14,7 @@ from fastapi import FastAPI
 
 from sand.apis.routers import input_collections
 from sand.apis.routers.input_collections import STALE_JOB_S, router
+from sand.hysprint.sheet import EXTRACTION_STATUS_MAINFILE
 from sand.services.nomad_api import NomadAPIError
 from sand.services.voice_eln import CollectedInput
 from sand.sheet_edit.session import ORIGINAL_FILE, STATUS_FILE
@@ -23,6 +25,7 @@ UPLOAD = 'upload-1'
 COLLECTION = 'collection-1'
 USER = 'user-1'
 EDIT_ACTION = 'sand.actions.edit:edit_action_entry_point'
+EXTRACT_ACTION = 'sand.actions.extract:extract_action_entry_point'
 
 
 def nomad(request: httpx.Request) -> httpx.Response:
@@ -33,6 +36,7 @@ def nomad(request: httpx.Request) -> httpx.Response:
 @dataclass
 class FakeWriter:
     files: dict[str, bytes] = field(default_factory=dict)
+    writes_allowed: int | None = None  # None: all
 
     async def read_raw_file(self, client, upload_id, name):
         return self.files.get(name)
@@ -43,6 +47,10 @@ class FakeWriter:
 
     async def write_json(self, client, upload_id, name, payload):
         assert upload_id == UPLOAD
+        if self.writes_allowed == 0:
+            raise NomadAPIError(503, 'NOMAD is down', step='upload_raw_file')
+        if self.writes_allowed is not None:
+            self.writes_allowed -= 1
         self.files[name] = json.dumps(payload).encode()
 
 
@@ -104,10 +112,10 @@ def api(voice: FakeVoice) -> httpx.AsyncClient:
     )
 
 
-async def start(voice):
+async def start(voice, job='edit-async'):
     async with api(voice) as client:
         return await client.post(
-            f'/api/input-collections/{UPLOAD}/edit-async',
+            f'/api/input-collections/{UPLOAD}/{job}',
             params={'collection_entry_id': COLLECTION},
         )
 
@@ -183,13 +191,41 @@ async def test_a_finished_or_stale_job_does_not_block(voice, starter, phase, age
     assert len(starter.started) == 1
 
 
-async def test_another_collections_job_does_not_block(voice, starter):
+async def test_another_collections_running_job_blocks_too(voice, starter):
+    # the sheet, the status and the final file are the upload's
     put_status(voice, 'interpreting', collection='collection-2')
+
+    response = await start(voice)
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert starter.started == []
+
+
+async def test_another_collections_finished_job_does_not_block(voice, starter):
+    put_status(voice, 'completed', collection='collection-2')
 
     response = await start(voice)
 
     assert response.status_code == HTTPStatus.OK, response.text
     assert status_file(voice)['collection_entry_id'] == COLLECTION
+
+
+async def test_an_unreadable_updated_at_does_not_block(voice, starter):
+    put_status(voice, 'interpreting', updated_at='yesterday')
+
+    response = await start(voice)
+
+    assert response.status_code == HTTPStatus.OK, response.text
+
+
+async def test_two_starts_at_once_give_one_job(voice, starter):
+    responses = await asyncio.gather(start(voice), start(voice))
+
+    assert sorted(r.status_code for r in responses) == [
+        HTTPStatus.OK,
+        HTTPStatus.CONFLICT,
+    ]
+    assert len(starter.started) == 1
 
 
 async def test_no_uploaded_sheet(voice, starter):
@@ -215,6 +251,21 @@ async def test_no_inputs(voice, starter):
     assert starter.started == []
 
 
+async def test_an_input_still_transcribing(voice, starter):
+    voice.inputs.append(
+        CollectedInput(entry_id='a1', kind='audio', text=None, label='', datetime=None)
+    )
+
+    response = await start(voice)
+
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert response.json()['detail'] == (
+        '1 input(s) not transcribed or processed yet; try again in a moment'
+    )
+    assert starter.started == []
+    assert STATUS_FILE not in voice.writer.files
+
+
 async def test_a_start_that_fails_releases_the_reservation(voice, starter):
     starter.failing = True
 
@@ -232,6 +283,19 @@ async def test_a_start_that_fails_releases_the_reservation(voice, starter):
     assert (await start(voice)).status_code == HTTPStatus.OK
 
 
+async def test_a_release_that_fails_still_reports_the_start_error(voice, starter):
+    starter.failing = True
+    voice.writer.writes_allowed = 1  # the reservation, then NOMAD is down
+
+    response = await start(voice)
+
+    assert response.status_code == HTTPStatus.BAD_GATEWAY
+    assert response.json()['detail'] == (
+        'could not start the edit job: temporal unreachable'
+    )
+    assert status_file(voice)['phase'] == 'starting'  # not released
+
+
 async def test_nomad_error_while_checking(voice, starter):
     async def refuse(client, upload_id, name):
         raise NomadAPIError(404, 'Upload upload-1 does not exist', step='upload_status')
@@ -242,6 +306,36 @@ async def test_nomad_error_while_checking(voice, starter):
 
     assert response.status_code == HTTPStatus.NOT_FOUND
     assert starter.started == []
+
+
+async def test_nomad_error_while_collecting_writes_no_reservation(voice, starter):
+    async def refuse(client, upload_id, collection_entry_id):
+        raise NomadAPIError(400, 'not an input collection', step='collect_inputs')
+
+    voice.collect_inputs = refuse
+
+    response = await start(voice)
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert starter.started == []
+    assert STATUS_FILE not in voice.writer.files
+
+
+async def test_extract_start_reserves_its_own_status(voice, starter):
+    response = await start(voice, 'extract-async')
+
+    assert response.status_code == HTTPStatus.OK, response.text
+    assert response.json() == {'job_id': 'job-1'}
+    [(action_id, data)] = starter.started
+    assert action_id == EXTRACT_ACTION
+    assert (data.upload_id, data.user_id, data.collection_entry_id) == (
+        UPLOAD,
+        USER,
+        COLLECTION,
+    )
+    reserved = json.loads(voice.writer.files[EXTRACTION_STATUS_MAINFILE])
+    assert (reserved['phase'], reserved['steps']) == ('starting', [])
+    assert STATUS_FILE not in voice.writer.files
 
 
 async def test_status_is_the_file_for_this_collection(voice):

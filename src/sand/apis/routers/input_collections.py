@@ -113,10 +113,13 @@ def _start_lock(upload_id: str) -> asyncio.Lock:
     return lock
 
 
-def _job_running(status: dict | None, collection_entry_id: str) -> bool:
+def _job_running(status: dict | None, collection_entry_id: str | None) -> bool:
     """NOMAD picks the workflow id, so a duplicate cannot be rejected
-    there: the status file is the guard."""
-    if not status or status.get('collection_entry_id') != collection_entry_id:
+    there: the status file is the guard. None: any collection's job
+    counts (the edit job's files are the upload's, not a collection's)."""
+    if not status:
+        return False
+    if collection_entry_id and status.get('collection_entry_id') != collection_entry_id:
         return False
     if status.get('phase') in ('completed', 'failed'):
         return False
@@ -158,7 +161,9 @@ async def _release_reservation(
     voice: VoiceElnService, token: str, upload_id: str, file: str, status: dict
 ) -> None:
     """A start that failed must not block retries until the staleness
-    timeout; a NOMAD error here is secondary to the one being reported."""
+    timeout; a NOMAD error here is secondary to the one being reported.
+    Accepted: a start that raised after Temporal did create the workflow
+    opens the guard while that job runs."""
     try:
         async with voice.build_client(token) as client:
             await voice.writer.write_json(client, upload_id, file, status)
@@ -739,11 +744,11 @@ async def start_edit_async(
         try:
             async with voice.build_client(token) as client:
                 status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
-                if _job_running(status, collection_entry_id):
+                if _job_running(status, None):
                     raise HTTPException(
                         status_code=409,
-                        detail='an edit job is already running for this '
-                        'experiment; wait for it to finish',
+                        detail='an edit job is already running on this sheet; '
+                        'wait for it to finish',
                     )
                 original = await voice.writer.read_raw_file(
                     client, upload_id, ORIGINAL_FILE
@@ -759,6 +764,13 @@ async def start_edit_async(
                 if not inputs:
                     raise HTTPException(
                         status_code=422, detail='nothing to apply: add an update first'
+                    )
+                pending = [i for i in inputs if i.text is None]
+                if pending:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f'{len(pending)} input(s) not transcribed or '
+                        'processed yet; try again in a moment',
                     )
                 user_id = await _user_id(client)
                 await voice.writer.write_json(
