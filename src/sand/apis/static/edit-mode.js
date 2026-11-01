@@ -25,6 +25,11 @@ let pollTimer = null;
 let pollGeneration = 0;
 let current = null; // the experiment the card shows
 
+// a response for an experiment no longer shown must not touch the card
+function stillShown(experiment) {
+  return current !== null && current.entry_id === experiment.entry_id;
+}
+
 function stopPolling() {
   pollGeneration += 1;
   if (pollTimer) clearTimeout(pollTimer);
@@ -94,23 +99,27 @@ function confirmHandler(experiment) {
   return (key) => confirmEdit(experiment, key);
 }
 
+// true when confirmed; false lets the tile offer the button again
 async function confirmEdit(experiment, key) {
   clearError();
+  let ok = false;
   try {
     const res = await fetch(experimentUrl(experiment, "edits/confirm"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ keys: [key] }),
     });
-    if (!res.ok) {
+    if (res.ok) {
+      ok = true;
+    } else {
       showError("Could not confirm: " + await errorDetail(res));
-      return;
     }
-    // the status shows the confirmation (as not yet applied) at once
-    startPolling(experiment);
   } catch (err) {
     showError("Network error: " + err.message);
   }
+  // the status shows the confirmation (as not yet applied) at once
+  if (ok && stillShown(experiment)) startPolling(experiment);
+  return ok;
 }
 
 // The card for a newly selected experiment with an uploaded sheet
@@ -141,13 +150,13 @@ async function applyEdits() {
     const res = await fetch(experimentUrl(experiment, "edit-async"), { method: "POST" });
     if (!res.ok) {
       showError("Could not apply the updates: " + await errorDetail(res));
-      idle();
+      if (stillShown(experiment)) idle();
       return;
     }
-    startPolling(experiment, 2000);
+    if (stillShown(experiment)) startPolling(experiment, 2000);
   } catch (err) {
     showError("Network error: " + err.message);
-    idle();
+    if (stillShown(experiment)) idle();
   }
 }
 

@@ -337,9 +337,9 @@ function renderReport(report) {
       btn.textContent = "Confirm";
       btn.disabled = jobRunning || !onConfirm;
       btn.title = jobRunning ? "Wait for the running job" : "Confirm this edit";
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         btn.disabled = true;
-        onConfirm(edit.key);
+        if (!(await onConfirm(edit.key))) btn.disabled = false;
       });
       row.append(btn);
     }
@@ -377,6 +377,7 @@ export function setEditMode(on) {
 }
 
 // The job's reports (by entry id), from the Apply card's polling.
+// `confirm(key)` resolves false when the confirmation did not go through.
 export function setReports(byEntry, running, confirm) {
   reports = byEntry;
   jobRunning = running;
