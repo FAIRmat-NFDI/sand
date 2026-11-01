@@ -8,6 +8,9 @@ const experimentSelect = document.getElementById("experiment-select");
 const experimentLink = document.getElementById("experiment-link");
 const newExperimentBtn = document.getElementById("new-experiment-btn");
 const newExperimentForm = document.getElementById("new-experiment-form");
+const sheetFile = document.getElementById("sheet-file");
+const sheetName = document.getElementById("sheet-name");
+const sheetProblems = document.getElementById("sheet-problems");
 const SELECTED_EXPERIMENT_KEY = "sand.selectedExperiment";
 
 let experimentsById = {};
@@ -164,7 +167,54 @@ async function createExperiment() {
   }
 }
 
+// An experiment that starts from an uploaded sheet: its updates edit
+// the sheet (edit mode). A refused sheet shows the problems verbatim.
+async function createFromSheet() {
+  clearError();
+  sheetProblems.replaceChildren();
+  sheetProblems.hidden = true;
+  const file = sheetFile.files[0];
+  if (!file) {
+    showError("Choose the Excel file to start from.");
+    return;
+  }
+  const form = new FormData();
+  form.append("file", file);
+  form.append("name", sheetName.value.trim());
+  try {
+    const res = await fetch("api/input-collections/from-sheet", { method: "POST", body: form });
+    if (res.status === 422) {
+      const body = await res.json().catch(() => null);
+      const problems = body?.detail?.problems;
+      if (Array.isArray(problems)) {
+        for (const problem of problems) {
+          const li = document.createElement("li");
+          li.textContent = problem;
+          sheetProblems.append(li);
+        }
+        sheetProblems.hidden = false;
+        showError("The sheet cannot be edited as it is; see the problems below the form.");
+        return;
+      }
+    }
+    if (!res.ok) {
+      showError("Could not create the experiment: " + await errorDetail(res));
+      return;
+    }
+    const created = await res.json();
+    newExperimentForm.hidden = true;
+    sheetFile.value = "";
+    sheetName.value = "";
+    addExperimentOption(created);
+    experimentSelect.value = created.entry_id;
+    selectionChanged();
+  } catch (err) {
+    showError("Network error: " + err.message);
+  }
+}
+
 export function initExperiments() {
+  document.getElementById("create-from-sheet-btn").addEventListener("click", createFromSheet);
   experimentSelect.addEventListener("change", selectionChanged);
   newExperimentBtn.addEventListener("click", () => {
     newExperimentForm.hidden = !newExperimentForm.hidden;
