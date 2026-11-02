@@ -38,7 +38,8 @@ export function pendingKeys(reports) {
   return keys;
 }
 
-// an input one of whose edits is confirmed: its words are a record
+// an input one of whose edits was just confirmed: its words are a
+// record (the inputs list says so too, as `locked`, from the file)
 export function inputLocked(report) {
   return Boolean(report && (report.confirmed || []).length);
 }

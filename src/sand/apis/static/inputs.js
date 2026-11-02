@@ -375,7 +375,7 @@ function renderInputs(experiment, items) {
     li.dataset.entryId = item.entry_id;
     // a confirmed update is a record: no revising, no deleting (the
     // server refuses both); a correction is a new update
-    const locked = inputLocked(reports[item.entry_id]);
+    const locked = item.locked || inputLocked(reports[item.entry_id]);
     if (locked) li.classList.add("input-locked");
 
     const meta = document.createElement("div");

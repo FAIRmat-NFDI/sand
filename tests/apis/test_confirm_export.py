@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from http import HTTPStatus
 
 import pytest
-from nomad_fakes import COLLECTION, UPLOAD, USER, USERNAME, FakeVoice, api
+from nomad_fakes import COLLECTION, UPLOAD, USER, USERNAME, FakeVoice, api, note
 
 from sand.services.nomad_api import XLSX_CONTENT_TYPE
 from sand.sheet_edit import changelog
@@ -187,6 +187,34 @@ async def test_a_confirmation_names_its_input(voice):
 
     record = json.loads(voice.writer.files[CONFIRMATIONS_FILE])['k1']
     assert record['input'] == 'n1'
+
+
+async def test_words_revised_since_the_run_are_not_confirmed(voice):
+    voice.inputs = [note('n1', 'time 1 is 1100')]
+    put_status(
+        voice,
+        'completed',
+        inputs=[
+            {
+                'input': 1,
+                'entry_id': 'n1',
+                'text': 'time 1 is 1000',
+                'ready': READY,
+                'confirmed': [],
+            }
+        ],
+    )
+
+    response = await confirm(voice, ['k1'])
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert response.json()['detail'] == (
+        'the words of an input changed since the last run; apply the updates again, then confirm'
+    )
+    assert CONFIRMATIONS_FILE not in voice.writer.files
+    # the same words: confirmed
+    voice.inputs = [note('n1', 'time 1 is 1000')]
+    assert (await confirm(voice, ['k1'])).status_code == HTTPStatus.OK
 
 
 async def test_the_status_shows_a_confirmation_as_waiting_for_the_next_run(voice):

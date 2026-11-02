@@ -470,6 +470,7 @@ async def list_inputs(
             inputs = await voice.collect_inputs(
                 client, upload_id, collection_entry_id=collection_entry_id
             )
+            locked = await _locked_inputs(client, voice, upload_id)
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
@@ -486,6 +487,7 @@ async def list_inputs(
                 corrected=item.corrected,
                 status=item.status,
                 deletable=item.entry_id not in undeletable,
+                locked=item.entry_id in locked,
             )
             for item in inputs
         ]
@@ -893,6 +895,18 @@ async def _edit_status(
     return _with_confirmations(status, confirmed or {})
 
 
+async def _locked_inputs(client, voice: VoiceElnService, upload_id: str) -> set[str]:
+    """The inputs (entry ids) named by a confirmation: their words are a
+    record. A damaged file is read as nothing locked here (a listing);
+    the endpoints that change an input refuse on it."""
+    raw = await voice.writer.read_raw_file(client, upload_id, CONFIRMATIONS_FILE)
+    try:
+        confirmed = load_confirmations(read_confirmations(raw))
+    except ValueError:
+        return set()
+    return {c.input for c in confirmed.values() if c.input is not None}
+
+
 async def _confirmed_input(
     client,
     voice: VoiceElnService,
@@ -1033,12 +1047,12 @@ async def confirm_edits(
     try:
         async with _upload_lock(upload_id), voice.build_client(token) as client:
             status = await _edit_status(client, voice, upload_id, collection_entry_id)
-            ready = {
-                edit['key']: report.get('entry_id')
+            reports = {
+                edit['key']: report
                 for report in status.get('inputs', [])
                 for edit in report.get('ready', [])
             }
-            unknown = sorted(set(body.keys) - set(ready))
+            unknown = sorted(set(body.keys) - set(reports))
             if unknown and _job_running(status, None):
                 # the running job's reports replace the old ones as it goes
                 raise HTTPException(
@@ -1049,6 +1063,26 @@ async def confirm_edits(
                 raise HTTPException(
                     status_code=422,
                     detail=f'not a ready edit of the last job: {", ".join(unknown)}',
+                )
+            # a confirmation locks the input's words for good: they must be
+            # the words the report read, not a revision made since
+            inputs = await voice.collect_inputs(
+                client, upload_id, collection_entry_id=collection_entry_id
+            )
+            texts = {i.entry_id: i.text for i in inputs}
+            changed = sorted(
+                {
+                    reports[key].get('entry_id')
+                    for key in body.keys
+                    if texts.get(reports[key].get('entry_id'))
+                    != reports[key].get('text')
+                }
+            )
+            if changed:
+                raise HTTPException(
+                    status_code=409,
+                    detail='the words of an input changed since the last run; '
+                    'apply the updates again, then confirm',
                 )
             raw = await voice.writer.read_raw_file(
                 client, upload_id, CONFIRMATIONS_FILE
@@ -1064,7 +1098,10 @@ async def confirm_edits(
             by = me.get('username') or me.get('name') or me['user_id']
             now = datetime.now(timezone.utc)
             for key in body.keys:
-                confirmed.setdefault(key, Confirmation(by=by, at=now, input=ready[key]))
+                confirmed.setdefault(
+                    key,
+                    Confirmation(by=by, at=now, input=reports[key].get('entry_id')),
+                )
             await voice.writer.write_json(
                 client, upload_id, CONFIRMATIONS_FILE, confirmations_json(confirmed)
             )

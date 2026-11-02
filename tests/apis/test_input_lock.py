@@ -5,7 +5,7 @@ import json
 from http import HTTPStatus
 
 import pytest
-from nomad_fakes import COLLECTION, UPLOAD, FakeVoice, api
+from nomad_fakes import COLLECTION, UPLOAD, FakeVoice, api, note
 
 from sand.sheet_edit.session import CONFIRMATIONS_FILE, STATUS_FILE
 
@@ -144,3 +144,20 @@ async def test_a_damaged_confirmations_file_locks_every_input(voice):
 
     assert response.status_code == HTTPStatus.CONFLICT
     assert response.json()['detail'].startswith('confirmations file damaged')
+
+
+async def test_the_inputs_list_says_which_are_records(voice):
+    voice.inputs = [note('n1', 'time 1 is 1000'), note('n2', 'speed 4000')]
+    put_confirmations(voice, 'k1', input='n1')
+
+    async with api(voice) as client:
+        response = await client.get(
+            f'/api/input-collections/{UPLOAD}/inputs',
+            params={'collection_entry_id': COLLECTION},
+        )
+
+    assert response.status_code == HTTPStatus.OK
+    assert [(i['entry_id'], i['locked']) for i in response.json()['inputs']] == [
+        ('n1', True),
+        ('n2', False),
+    ]
