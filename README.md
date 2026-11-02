@@ -179,7 +179,9 @@ same browser; sand warns when the login is about to end.
 3. Each update is **read** as soon as it is saved. Under it the page
    shows the edits it is ready to write, each with a **Confirm** button,
    and the reason for anything it could not place. A revised update is
-   read again.
+   read again. Nothing is read while a recording is still being
+   transcribed; a recording whose transcription failed has to be deleted
+   first.
 4. **Confirm** the edits that are right, one by one or all at once. They
    are written into the sheet a moment later; a confirmed update is a
    record and cannot be revised or deleted. A wrong reading is not

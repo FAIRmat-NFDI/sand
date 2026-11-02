@@ -51,6 +51,9 @@ let reportsShown = {}; // the last status's reports, by entry id
 let readFor = null; // readKey of the inputs the last job was started for
 let wroteFor = null; // unwrittenKey the last write was started for
 let writeTimer = null; // {timer, experiment}: the write about to start
+// a job found failed before the inputs list arrived: its readKey is the
+// list's, whatever it turns out to be (no restart on a reload)
+const FAILED_BEFORE_INPUTS = Symbol("failed");
 
 // a response for an experiment no longer shown must not touch the card
 function stillShown(experiment) {
@@ -86,6 +89,12 @@ function idle() {
   running = false;
   applyStatus.textContent = "";
   applyStatus.classList.remove("busy");
+  gateDownload(unwrittenShown);
+}
+
+function note(text) {
+  applyStatus.textContent = text;
+  applyStatus.classList.remove("busy");
 }
 
 function busy(text) {
@@ -102,16 +111,16 @@ function showPending(keys) {
   confirmAllLabelEl.textContent = confirmAllLabel(keys.length);
 }
 
-// the sheet to download is the last run's: not before confirmed edits
-// are written into it
+// the sheet to download is the last run's: not while a job runs, not
+// before confirmed edits are written into it
 let unwrittenShown = 0; // the shown experiment's gate, kept across a download
 
 function gateDownload(unwritten) {
   unwrittenShown = unwritten;
-  downloadFinalBtn.disabled = unwritten > 0 || downloading;
+  downloadFinalBtn.disabled = unwritten > 0 || downloading || running;
   downloadFinalBtn.title = unwritten > 0
     ? unwritten + " confirmed edit" + (unwritten === 1 ? " is" : "s are") + " being written into the sheet"
-    : "";
+    : running ? "The updates are being read" : "";
 }
 
 function renderResult(status) {
@@ -138,6 +147,17 @@ async function poll(experiment, generation) {
     return;
   }
   if (generation !== pollGeneration) return;
+  if (!res.ok && res.status !== 404) {
+    // a server hiccup: keep asking; anything else (the login ended) is
+    // told and polling stops
+    if (res.status >= 500) {
+      later(experiment, generation);
+      return;
+    }
+    showError("Could not read the job's status: " + await errorDetail(res));
+    if (generation === pollGeneration) idle();
+    return;
+  }
   statusKnown = true;
   if (res.status === 404) {
     idle();
@@ -171,12 +191,17 @@ async function poll(experiment, generation) {
   }
   if (status.phase === "failed") {
     idle();
+    // not started again for these inputs by itself (Read again does)
+    readFor = inputsSeen && inputsSeen.entryId === experiment.entry_id
+      ? readKey(inputsSeen.items)
+      : FAILED_BEFORE_INPUTS;
     showError("Reading the updates failed: " + (status.error || "unknown error"));
     readAgainBtn.hidden = false;
     return;
   }
   readAgainBtn.hidden = true;
   busy(describeEditPhase(status));
+  gateDownload(unwrittenShown);
   later(experiment, generation);
 }
 
@@ -186,6 +211,7 @@ async function poll(experiment, generation) {
 // reason: a job that failed stays failed until Read again.
 function settle(experiment, status) {
   if (!stillShown(experiment) || running || confirming === experiment.entry_id) return;
+  if (inputsSeen && inputsSeen.entryId === experiment.entry_id) waitingNote(inputsSeen.items);
   const unwritten = status ? unwrittenKey(status) : "";
   if (unwritten) {
     if (unwritten === wroteFor || writeTimer) return;
@@ -206,7 +232,21 @@ function settle(experiment, status) {
 // is read without a click
 function inputsLoaded(experiment, items) {
   inputsSeen = { entryId: experiment.entry_id, items };
-  if (stillShown(experiment) && statusKnown) settle(experiment, lastStatus);
+  if (!stillShown(experiment)) return;
+  if (readFor === FAILED_BEFORE_INPUTS) readFor = readKey(items);
+  if (statusKnown) settle(experiment, lastStatus);
+}
+
+// no job starts while an input has no text (the server refuses): the
+// card says what it waits for, and when waiting is no use
+function waitingNote(items) {
+  if (items.some((item) => !item.text && item.status === "FAILED")) {
+    note("A recording could not be transcribed: delete it, then the updates are read.");
+  } else if (items.some((item) => !item.text)) {
+    busy("Waiting for the transcript...");
+  } else if (!running) {
+    note("");
+  }
 }
 
 function confirmHandler(experiment) {
@@ -243,9 +283,14 @@ async function confirmEdit(experiment, key) {
 async function confirmAll(experiment) {
   clearError();
   // no job may start on a snapshot without these confirmations: settle
-  // waits too (startJob or the poll gives the button back)
+  // waits too (startJob or the poll gives the button back), and a write
+  // already due goes with this one
   confirmAllBtn.disabled = true;
   confirming = experiment.entry_id;
+  if (writeTimer && writeTimer.experiment.entry_id === experiment.entry_id) {
+    clearTimeout(writeTimer.timer);
+    writeTimer = null;
+  }
   let ok;
   try {
     ok = await postConfirm(experiment, pending);
@@ -259,11 +304,7 @@ async function confirmAll(experiment) {
     return;
   }
   // the write was asked for: it starts even if the user moved on
-  if (stillShown(experiment)) {
-    confirmAllBtn.hidden = true;
-    if (writeTimer) clearTimeout(writeTimer.timer);
-    writeTimer = null;
-  }
+  if (stillShown(experiment)) confirmAllBtn.hidden = true;
   await startJob(experiment);
 }
 
@@ -325,24 +366,33 @@ async function startJob(experiment) {
     applyResult.hidden = true;
     changelogFold.open = false;
     busy("Starting...");
+    gateDownload(unwrittenShown);
+    // no confirming on the way out: the job's reservation refuses it
+    setReports(reportsShown, true, confirmHandler(experiment));
   }
   try {
     const res = await fetch(experimentUrl(experiment, "edit-async"), { method: "POST" });
     if (!res.ok) {
-      // 409: a job runs already (another tab): its progress is shown
-      if (res.status !== 409) {
-        showError("Could not read the updates: " + await errorDetail(res));
-        if (stillShown(experiment)) readAgainBtn.hidden = false;
+      // 409: a job runs already (another tab), its progress is shown;
+      // 422: an input is not ready (a recording being transcribed), the
+      // next inputs list starts the job
+      if (res.status !== 409 && res.status !== 422) {
+        const detail = await errorDetail(res);
+        if (stillShown(experiment)) {
+          showError("Could not read the updates: " + detail);
+          readAgainBtn.hidden = false;
+        }
       }
       // a poll puts the card back as the server sees it (pending edits,
       // confirmations already made)
       if (stillShown(experiment)) startPolling(experiment);
       return;
     }
-    if (stillShown(experiment)) startPolling(experiment, 2000);
+    // the reservation is written when the POST returns: polled at once
+    if (stillShown(experiment)) startPolling(experiment);
   } catch (err) {
-    showError("Network error: " + err.message);
     if (stillShown(experiment)) {
+      showError("Network error: " + err.message);
       readAgainBtn.hidden = false;
       startPolling(experiment);
     }
