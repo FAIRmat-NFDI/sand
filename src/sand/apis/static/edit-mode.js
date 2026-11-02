@@ -29,6 +29,7 @@ let pollTimer = null;
 let pollGeneration = 0;
 let current = null; // the experiment the card shows
 let pending = []; // keys of the last completed job's unconfirmed edits
+let confirming = false; // a confirm-all request is on its way
 
 // a response for an experiment no longer shown must not touch the card
 function stillShown(experiment) {
@@ -58,6 +59,7 @@ function idle() {
 
 function showPending(keys) {
   pending = keys;
+  if (confirming) return; // the button comes back from its own request
   confirmAllBtn.hidden = keys.length === 0;
   confirmAllBtn.disabled = false;
   confirmAllLabelEl.textContent = confirmAllLabel(keys.length);
@@ -142,10 +144,18 @@ async function confirmEdit(experiment, key) {
 async function confirmAll(experiment) {
   clearError();
   confirmAllBtn.disabled = true;
-  const ok = await postConfirm(experiment, pending);
+  confirming = true;
+  let ok;
+  try {
+    ok = await postConfirm(experiment, pending);
+  } finally {
+    confirming = false;
+  }
   if (!stillShown(experiment)) return;
   if (!ok) {
-    confirmAllBtn.disabled = false;
+    // the server's view decides what is still pending (another tab may
+    // have run a job)
+    startPolling(experiment);
     return;
   }
   confirmAllBtn.hidden = true;
@@ -185,13 +195,15 @@ async function startJob(experiment) {
     const res = await fetch(experimentUrl(experiment, "edit-async"), { method: "POST" });
     if (!res.ok) {
       showError("Could not apply the updates: " + await errorDetail(res));
-      if (stillShown(experiment)) idle();
+      // a poll puts the card back as the server sees it (pending edits,
+      // confirmations already made)
+      if (stillShown(experiment)) startPolling(experiment);
       return;
     }
     if (stillShown(experiment)) startPolling(experiment, 2000);
   } catch (err) {
     showError("Network error: " + err.message);
-    if (stillShown(experiment)) idle();
+    if (stillShown(experiment)) startPolling(experiment);
   }
 }
 
@@ -231,9 +243,10 @@ export async function fetchSheetSummary(experiment) {
 
 export function initEdit() {
   applyBtn.addEventListener("click", applyEdits);
+  // the card's experiment, not the selection: they differ while a newly
+  // selected experiment's summary is loading
   confirmAllBtn.addEventListener("click", () => {
-    const experiment = requireExperiment();
-    if (experiment) confirmAll(experiment);
+    if (current) confirmAll(current);
   });
   downloadFinalBtn.addEventListener("click", downloadFinal);
 }
