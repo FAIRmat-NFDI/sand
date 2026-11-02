@@ -5,7 +5,8 @@
 // Audio revisions go to corrected_transcript (clearing withdraws them);
 // note revisions overwrite the note text. Under each input, once a job
 // ran, its report: what it changes, with a confirm button per ready
-// edit.
+// edit. The Sheet card hears of every loaded list (setInputsListener)
+// and starts the job that reads a new or revised input.
 
 import { errorDetail, experimentUrl } from "./api.js";
 import { inputLocked, previewNotes } from "./edit-logic.js";
@@ -17,10 +18,11 @@ const inputsCount = document.getElementById("inputs-count");
 const refreshInputsBtn = document.getElementById("refresh-inputs-btn");
 
 // the job's reports by entry id, whether a job runs (no confirming
-// meanwhile), and the confirm handler of the Apply card
+// meanwhile), and the confirm handler of the Sheet card
 let reports = {};
 let jobRunning = false;
 let onConfirm = null;
+let onInputsLoaded = null; // (experiment, items) after every load
 // the last rendered list, re-rendered when the reports change; a change
 // that arrives while an editor is open renders when the editor closes
 let shown = null;
@@ -287,7 +289,7 @@ function renderReport(report) {
     if (confirmed.has(edit.key)) {
       const mark = document.createElement("span");
       mark.className = "report-confirmed";
-      mark.textContent = since.has(edit.key) ? "✓ confirmed, not written yet" : "✓ confirmed";
+      mark.textContent = since.has(edit.key) ? "✓ confirmed, writing..." : "✓ written";
       row.append(mark);
     } else {
       const btn = document.createElement("button");
@@ -295,7 +297,7 @@ function renderReport(report) {
       btn.className = "btn btn-primary btn-small";
       btn.textContent = "Confirm";
       btn.disabled = jobRunning || !onConfirm;
-      btn.title = jobRunning ? "Wait for the running job" : "Confirm this edit";
+      btn.title = jobRunning ? "Wait: the updates are being read" : "Confirm this edit";
       btn.addEventListener("click", async () => {
         btn.disabled = true;
         if (!(await onConfirm(edit.key))) btn.disabled = false;
@@ -319,13 +321,17 @@ function renderReport(report) {
   return box;
 }
 
-// The job's reports (by entry id), from the Apply card's polling.
+// The job's reports (by entry id), from the Sheet card's polling.
 // `confirm(key)` resolves false when the confirmation did not go through.
 export function setReports(byEntry, running, confirm) {
   reports = byEntry;
   jobRunning = running;
   onConfirm = confirm;
   renderIfIdle();
+}
+
+export function setInputsListener(fn) {
+  onInputsLoaded = fn;
 }
 
 // an open editor is left alone (its field would be wiped); the render
@@ -406,7 +412,7 @@ function renderInputs(experiment, items) {
     if (locked) {
       const badge = document.createElement("span");
       badge.className = "input-badge input-locked-badge";
-      badge.textContent = "· 🔒 confirmed";
+      badge.textContent = "· ✓ applied";
       badge.title = "A confirmed update is a record; a correction is a new update.";
       meta.append(badge);
     }
@@ -492,6 +498,7 @@ async function loadInputs(experiment, generation) {
     return;
   }
   renderInputs(experiment, data.inputs);
+  if (onInputsLoaded) onInputsLoaded(experiment, data.inputs);
   // keep refreshing while any audio still has no text and no failure
   if (data.inputs.some((i) => i.kind === "audio" && !i.text && i.status !== "FAILED")) {
     inputsRefreshTimer = setTimeout(() => loadInputs(experiment, generation), 5000);

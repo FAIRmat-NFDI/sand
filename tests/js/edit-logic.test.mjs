@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputLocked, pendingKeys,
-  previewNotes, reportsByEntry, unwrittenCount, writtenLines,
+  confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputLocked, inputsToRead,
+  pendingKeys, previewNotes, readKey, reportsByEntry, unwrittenCount, unwrittenKey, writtenLines,
 } from "../../src/sand/apis/static/edit-logic.js";
 
 const REPORT = {
@@ -53,7 +53,34 @@ test("pending keys are the ready edits nobody confirmed", () => {
 
 test("confirmed edits the last run did not write", () => {
   assert.equal(unwrittenCount({ inputs: [REPORT] }), 0);
-  assert.equal(unwrittenCount({ inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] }), 1);
+  assert.equal(unwrittenKey({ inputs: [REPORT] }), "");
+  const since = { inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] };
+  assert.equal(unwrittenCount(since), 1);
+  assert.equal(unwrittenKey(since), "k1");
+  assert.equal(
+    unwrittenKey({ inputs: [{ ...REPORT, confirmed_since: ["k2"] }, { ...REPORT, confirmed_since: ["k1"] }] }),
+    "k1\nk2");
+});
+
+test("the inputs a job has to read", () => {
+  const note = { entry_id: "n1", text: REPORT.text };
+  const reports = { n1: REPORT };
+  assert.deepEqual(inputsToRead([note], reports), []);
+  // no report yet, a report of other words, a report without its input
+  assert.deepEqual(inputsToRead([note, { entry_id: "n2", text: "anneal 120" }], reports), ["n2"]);
+  assert.deepEqual(inputsToRead([{ ...note, text: "speed 4500" }], reports), ["n1"]);
+  assert.deepEqual(inputsToRead([], reports), ["n1"]);
+  assert.deepEqual(inputsToRead([note], {}), ["n1"]);
+  // nothing while a recording is still transcribed: the job would refuse
+  assert.deepEqual(inputsToRead([note, { entry_id: "a1", text: null }], {}), []);
+});
+
+test("the read key tells the inputs and their words apart", () => {
+  const items = [{ entry_id: "n1", text: "a" }, { entry_id: "n2", text: "b" }];
+  assert.equal(readKey(items), readKey(items.map((i) => ({ ...i }))));
+  assert.notEqual(readKey(items), readKey([items[0]]));
+  assert.notEqual(readKey(items), readKey([items[0], { entry_id: "n2", text: "c" }]));
+  assert.notEqual(readKey(items), readKey([{ entry_id: "n1", text: "a\n\nn2\nb" }]));
 });
 
 test("an input is locked once one of its edits is confirmed", () => {
@@ -63,8 +90,8 @@ test("an input is locked once one of its edits is confirmed", () => {
 });
 
 test("the confirm-all button names the pending edits", () => {
-  assert.equal(confirmAllLabel(1), "Confirm the edit and write");
-  assert.equal(confirmAllLabel(3), "Confirm all 3 edits and write");
+  assert.equal(confirmAllLabel(1), "Confirm the edit");
+  assert.equal(confirmAllLabel(3), "Confirm all 3 edits");
 });
 
 test("the preview notes are what the ready edits do not show", () => {
@@ -82,7 +109,7 @@ test("the summary line of a completed job", () => {
   assert.equal(editSummary({ changes: 1, inputs: [REPORT] }), "1 edit waits for your confirmation");
   assert.equal(
     editSummary({ changes: 0, inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] }),
-    "1 edit confirmed, not written yet: apply the updates");
+    "1 edit confirmed, being written");
   assert.equal(
     editSummary({
       changes: 4,

@@ -1,21 +1,23 @@
-// The Apply card: run the edit job on the experiment's updates, show
-// its progress, the changelog, and the final sheet to download.
-// Confirmations are sent from the input tiles (inputs.js) through
-// confirmEdit, or all at once from here; a job then writes them.
+// The Sheet card: what the edit job did, the confirm-all button, and
+// the final sheet to download. The job runs by itself: it reads an
+// update as soon as it is saved (or its words revised), and writes the
+// confirmed edits a moment after a confirmation. Confirmations come
+// from the input tiles (inputs.js) through confirmEdit, or all at once
+// from here.
 //
 // The job's status file is polled, and selecting an experiment resumes
 // an unfinished job's polling (reload-proof).
 
 import { errorDetail, experimentUrl } from "./api.js";
 import {
-  confirmAllLabel, describeEditPhase, downloadFilename, editSummary, pendingKeys, reportsByEntry,
-  unwrittenCount, writtenLines,
+  confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputsToRead, pendingKeys,
+  readKey, reportsByEntry, unwrittenCount, unwrittenKey, writtenLines,
 } from "./edit-logic.js";
 import { requireExperiment } from "./experiments.js";
-import { setReports } from "./inputs.js";
+import { setInputsListener, setReports } from "./inputs.js";
 import { clearError, showError } from "./ui.js";
 
-const applyBtn = document.getElementById("apply-btn");
+const readAgainBtn = document.getElementById("read-again-btn");
 const confirmAllBtn = document.getElementById("confirm-all-btn");
 const confirmAllLabelEl = document.getElementById("confirm-all-label");
 const applyStatus = document.getElementById("apply-status");
@@ -28,12 +30,27 @@ const downloadFinalBtn = document.getElementById("download-final-btn");
 const sheetSummaryEl = document.getElementById("sheet-summary");
 
 const POLL_MS = 3000;
+// confirmations made one after the other go into one write
+const WRITE_DELAY_MS = 2000;
 let pollTimer = null;
 let pollGeneration = 0;
 let current = null; // the experiment the card shows
 let downloading = false;
 let pending = []; // keys of the last completed job's unconfirmed edits
 let confirming = null; // entry id of the experiment whose confirm-all is on its way
+
+// what decides whether a job must start by itself: the inputs list as
+// last loaded (any experiment: it can arrive before the card switches),
+// the last status, and what the last job was started for (a job that
+// failed is not started again for the same reason; Read again does)
+let inputsSeen = null; // {entryId, items}
+let statusKnown = false; // the shown experiment's status was fetched once
+let running = false; // a job of the shown experiment runs, or is being started
+let lastStatus = null; // the last completed status of the shown experiment
+let reportsShown = {}; // the last status's reports, by entry id
+let readFor = null; // readKey of the inputs the last job was started for
+let wroteFor = null; // unwrittenKey the last write was started for
+let writeTimer = null; // {timer, experiment}: the write about to start
 
 // a response for an experiment no longer shown must not touch the card
 function stillShown(experiment) {
@@ -56,8 +73,17 @@ function later(experiment, generation) {
   pollTimer = setTimeout(() => poll(experiment, generation), POLL_MS);
 }
 
+// the write waits for no one: leaving the experiment starts it now
+function flushWrite() {
+  if (!writeTimer) return;
+  clearTimeout(writeTimer.timer);
+  const { experiment } = writeTimer;
+  writeTimer = null;
+  startJob(experiment);
+}
+
 function idle() {
-  applyBtn.disabled = false;
+  running = false;
   applyStatus.textContent = "";
 }
 
@@ -78,7 +104,7 @@ function gateDownload(unwritten) {
   unwrittenShown = unwritten;
   downloadFinalBtn.disabled = unwritten > 0 || downloading;
   downloadFinalBtn.title = unwritten > 0
-    ? unwritten + " confirmed edit" + (unwritten === 1 ? " is" : "s are") + " not in the sheet yet: apply the updates first"
+    ? unwritten + " confirmed edit" + (unwritten === 1 ? " is" : "s are") + " being written into the sheet"
     : "";
 }
 
@@ -98,7 +124,6 @@ function renderResult(status) {
 
 async function poll(experiment, generation) {
   if (generation !== pollGeneration) return;
-  applyBtn.disabled = true;
   let res;
   try {
     res = await fetch(experimentUrl(experiment, "edit-status"));
@@ -107,10 +132,14 @@ async function poll(experiment, generation) {
     return;
   }
   if (generation !== pollGeneration) return;
+  statusKnown = true;
   if (res.status === 404) {
     idle();
+    lastStatus = null;
+    reportsShown = {};
     showPending([]);
     setReports({}, false, confirmHandler(experiment));
+    settle(experiment, null);
     return;
   }
   const status = await res.json().catch(() => null);
@@ -119,21 +148,55 @@ async function poll(experiment, generation) {
     later(experiment, generation);
     return;
   }
-  const running = status.phase !== "completed" && status.phase !== "failed";
-  setReports(reportsByEntry(status), running, confirmHandler(experiment));
+  running = status.phase !== "completed" && status.phase !== "failed";
+  reportsShown = reportsByEntry(status);
+  setReports(reportsShown, running, confirmHandler(experiment));
   showPending(status.phase === "completed" ? pendingKeys(status.inputs || []) : []);
   if (status.phase === "completed") {
     idle();
+    lastStatus = status;
     renderResult(status);
+    settle(experiment, status);
     return;
   }
   if (status.phase === "failed") {
     idle();
-    showError("Applying the updates failed: " + (status.error || "unknown error"));
+    showError("Reading the updates failed: " + (status.error || "unknown error"));
+    readAgainBtn.hidden = false;
     return;
   }
+  readAgainBtn.hidden = true;
   applyStatus.textContent = describeEditPhase(status);
   later(experiment, generation);
+}
+
+// After a status settled: write what was confirmed since the last run
+// (a moment later, so a row of confirmations makes one write), else
+// read what no job has read in these words. Nothing twice for the same
+// reason: a job that failed stays failed until Read again.
+function settle(experiment, status) {
+  if (!stillShown(experiment) || running || confirming === experiment.entry_id) return;
+  const unwritten = status ? unwrittenKey(status) : "";
+  if (unwritten) {
+    if (unwritten === wroteFor || writeTimer) return;
+    const timer = setTimeout(() => {
+      writeTimer = null;
+      if (stillShown(experiment) && !running) startJob(experiment);
+    }, WRITE_DELAY_MS);
+    writeTimer = { timer, experiment };
+    return;
+  }
+  if (!inputsSeen || inputsSeen.entryId !== experiment.entry_id) return;
+  const toRead = inputsToRead(inputsSeen.items, reportsShown);
+  if (!toRead.length || readKey(inputsSeen.items) === readFor) return;
+  startJob(experiment);
+}
+
+// the inputs list as just loaded (inputs.js): a new or revised update
+// is read without a click
+function inputsLoaded(experiment, items) {
+  inputsSeen = { entryId: experiment.entry_id, items };
+  if (stillShown(experiment) && statusKnown) settle(experiment, lastStatus);
 }
 
 function confirmHandler(experiment) {
@@ -156,11 +219,12 @@ async function postConfirm(experiment, keys) {
   return false;
 }
 
-// true when confirmed; false lets the tile offer the button again
+// true when confirmed; false lets the tile offer the button again. The
+// poll that follows shows the confirmation at once and (settle) starts
+// the write a moment later.
 async function confirmEdit(experiment, key) {
   clearError();
   const ok = await postConfirm(experiment, [key]);
-  // the status shows the confirmation (as not written yet) at once
   if (ok && stillShown(experiment)) startPolling(experiment);
   return ok;
 }
@@ -168,10 +232,9 @@ async function confirmEdit(experiment, key) {
 // every pending edit of the last job, then the job that writes them
 async function confirmAll(experiment) {
   clearError();
-  // no job may start on a snapshot without these confirmations: Apply
-  // waits too (startJob or the poll gives it back)
+  // no job may start on a snapshot without these confirmations: settle
+  // waits too (startJob or the poll gives the button back)
   confirmAllBtn.disabled = true;
-  applyBtn.disabled = true;
   confirming = experiment.entry_id;
   let ok;
   try {
@@ -186,7 +249,11 @@ async function confirmAll(experiment) {
     return;
   }
   // the write was asked for: it starts even if the user moved on
-  if (stillShown(experiment)) confirmAllBtn.hidden = true;
+  if (stillShown(experiment)) {
+    confirmAllBtn.hidden = true;
+    if (writeTimer) clearTimeout(writeTimer.timer);
+    writeTimer = null;
+  }
   await startJob(experiment);
 }
 
@@ -194,10 +261,17 @@ async function confirmAll(experiment) {
 // (summary from GET .../sheet-summary), or none.
 export function showEdit(experiment, summary) {
   stopPolling();
+  flushWrite();
   current = experiment;
+  statusKnown = false;
+  lastStatus = null;
+  reportsShown = {};
+  readFor = null;
+  wroteFor = null;
   idle();
   showPending([]);
   gateDownload(0);
+  readAgainBtn.hidden = true;
   applyResult.hidden = true;
   changelogEl.textContent = "";
   changelogFold.open = false; // the fold is per result, not per page
@@ -212,7 +286,6 @@ export function showEdit(experiment, summary) {
   if (!summary) {
     // made before sheets, or by the other tool of this page's past
     sheetSummaryEl.textContent = "This experiment has no sheet to update.";
-    applyBtn.disabled = true;
     return;
   }
   sheetSummaryEl.textContent = "Sheet “" + summary.name + "”: "
@@ -220,18 +293,25 @@ export function showEdit(experiment, summary) {
   startPolling(experiment);
 }
 
-async function applyEdits() {
+// the fallback after a failed job: the same inputs, read once more
+function readAgain() {
   clearError();
-  const experiment = requireExperiment();
-  if (experiment) await startJob(experiment);
+  if (!current) return;
+  readFor = null;
+  wroteFor = null;
+  readAgainBtn.hidden = true;
+  startJob(current);
 }
 
 // posts the start whatever is shown; the card is touched only while
 // it still shows this experiment
 async function startJob(experiment) {
   if (stillShown(experiment)) {
-    applyBtn.disabled = true;
+    running = true;
+    if (inputsSeen && inputsSeen.entryId === experiment.entry_id) readFor = readKey(inputsSeen.items);
+    wroteFor = lastStatus ? unwrittenKey(lastStatus) : null;
     confirmAllBtn.hidden = true;
+    readAgainBtn.hidden = true;
     applyResult.hidden = true;
     changelogFold.open = false;
     applyStatus.textContent = "Starting...";
@@ -239,7 +319,11 @@ async function startJob(experiment) {
   try {
     const res = await fetch(experimentUrl(experiment, "edit-async"), { method: "POST" });
     if (!res.ok) {
-      showError("Could not apply the updates: " + await errorDetail(res));
+      // 409: a job runs already (another tab): its progress is shown
+      if (res.status !== 409) {
+        showError("Could not read the updates: " + await errorDetail(res));
+        if (stillShown(experiment)) readAgainBtn.hidden = false;
+      }
       // a poll puts the card back as the server sees it (pending edits,
       // confirmations already made)
       if (stillShown(experiment)) startPolling(experiment);
@@ -248,7 +332,10 @@ async function startJob(experiment) {
     if (stillShown(experiment)) startPolling(experiment, 2000);
   } catch (err) {
     showError("Network error: " + err.message);
-    if (stillShown(experiment)) startPolling(experiment);
+    if (stillShown(experiment)) {
+      readAgainBtn.hidden = false;
+      startPolling(experiment);
+    }
   }
 }
 
@@ -290,7 +377,8 @@ export async function fetchSheetSummary(experiment) {
 }
 
 export function initEdit() {
-  applyBtn.addEventListener("click", applyEdits);
+  setInputsListener(inputsLoaded);
+  readAgainBtn.addEventListener("click", readAgain);
   // the card's experiment, not the selection: they differ while a newly
   // selected experiment's summary is loading
   confirmAllBtn.addEventListener("click", () => {
