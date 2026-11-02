@@ -44,35 +44,14 @@
           <p class="section-hint">Start from a sheet: upload the Excel file, then speak or type the updates to make to it.</p>
           <div class="controls sheet-form">
             <input type="file" id="sheet-file" accept=".xlsx" aria-label="The Excel sheet to update">
-            <input class="form-input" id="sheet-name" placeholder="Name (defaults to the file name)" aria-label="Name of the experiment">
+            <input class="form-input" id="sheet-name" placeholder="Experiment name (defaults to the file name)" aria-label="Experiment name, as shown in the list">
             <button class="btn btn-primary" id="create-from-sheet-btn" type="button">
               <span class="material-icons">upload_file</span>
               Create from sheet
             </button>
-          </div>
-          <ul class="problem-text sheet-problems" id="sheet-problems" role="alert" hidden></ul>
-          <hr class="divider">
-          <p class="section-hint">Or describe a new hysprint experiment:</p>
-          <div class="form-grid">
-            <label>Project name <input class="form-input" id="exp-project"></label>
-            <label>Batch <input class="form-input" id="exp-batch"></label>
-            <label>Subbatch <input class="form-input" id="exp-subbatch"></label>
-            <label>First sample <input class="form-input" id="exp-first-sample"></label>
-            <label>Number of samples <input class="form-input" id="exp-n-samples" type="number" min="1"></label>
-            <label>Substrate material <input class="form-input" id="exp-substrate-material" value="Glass"></label>
-            <label>Substrate conductive layer <input class="form-input" id="exp-substrate-conductive-layer" value="ITO"></label>
-            <label>Number of pixels <input class="form-input" id="exp-number-of-pixels" type="number" min="1" value="6"></label>
-            <label>Sample dimension <input class="form-input" id="exp-sample-dimension" placeholder="optional"></label>
-            <label>Sample area [cm&sup2;] <input class="form-input" id="exp-sample-area" type="number" step="any" placeholder="optional"></label>
-            <label>Pixel area [cm&sup2;] <input class="form-input" id="exp-pixel-area" type="number" step="any" placeholder="optional"></label>
-            <label>Sheet resistance [Ohms/square] <input class="form-input" id="exp-sheet-resistance" type="number" step="any" placeholder="optional"></label>
-            <label>Transmission [%] <input class="form-input" id="exp-transmission" type="number" step="any" placeholder="optional"></label>
-            <label>Number of junctions <input class="form-input" id="exp-number-of-junctions" type="number" min="1" placeholder="optional"></label>
-          </div>
-          <div class="controls">
-            <button class="btn btn-primary" id="create-experiment-btn" type="button">Create</button>
             <button class="btn btn-outlined" id="cancel-experiment-btn" type="button">Cancel</button>
           </div>
+          <ul class="problem-text sheet-problems" id="sheet-problems" role="alert" hidden></ul>
         </div>
 
       </div>
@@ -126,7 +105,7 @@
         <section class="card section section-note">
           <h2 class="section-title"><span class="material-icons">edit_note</span><label for="text">Note</label></h2>
           <input class="form-input label-input" id="note-label" placeholder="Label (optional)" aria-label="Label for the note">
-          <textarea class="text-field" id="text" placeholder="Type a step note and save it to the selected experiment."></textarea>
+          <textarea class="text-field" id="text" placeholder="Type an update of the sheet, e.g. &quot;spin coating speed is now 4000 for samples 1 to 3&quot;."></textarea>
           <div class="controls">
             <button class="btn btn-primary" id="save-note-btn" type="button">
               <span class="material-icons">note_add</span>
@@ -144,40 +123,13 @@
               <span class="material-icons">refresh</span>
             </button>
           </div>
-          <p class="section-hint" id="inputs-hint">Time-ordered, as the extraction reads them. Click one to revise it in place; click its time to move it.</p>
+          <p class="section-hint" id="inputs-hint">The updates in the order they were made. Click one to revise its words; apply the updates to see what each one changes.</p>
           <ul class="inputs-list" id="inputs-list">
             <li class="inputs-empty">Select an experiment to see its inputs.</li>
           </ul>
         </section>
 
-        <section class="card section section-extract hysprint-only">
-          <h2 class="section-title"><span class="material-icons">science</span>Extraction</h2>
-          <div class="controls">
-            <button class="btn btn-secondary" id="extract-btn" type="button">
-              <span class="material-icons">science</span>
-              Extract hysprint experiment
-            </button>
-            <button class="btn btn-outlined" id="download-sheet-btn" type="button">
-              <span class="material-icons">download</span>
-              Download sheet
-            </button>
-            <button class="btn btn-outlined" id="upload-sheet-btn" type="button" title="Upload an edited sheet">
-              <span class="material-icons">upload</span>
-              Upload sheet
-            </button>
-            <input type="file" id="upload-sheet-input" accept=".xlsx" hidden>
-            <span class="status-text" id="extract-status"></span>
-          </div>
-
-          <div class="extract-result" id="extract-result" hidden>
-            <hr class="divider">
-            <p class="audio-entry-text" id="derived-entry"></p>
-            <p class="status-text" id="extract-summary"></p>
-            <p class="error-text" id="sheet-issues"></p>
-          </div>
-        </section>
-
-        <section class="card section section-apply edit-only">
+        <section class="card section section-apply">
           <h2 class="section-title"><span class="material-icons">playlist_add_check</span>Apply updates</h2>
           <p class="section-hint" id="sheet-summary"></p>
           <div class="controls">
@@ -197,7 +149,7 @@
           </div>
           <p class="section-hint">Each update is read against the sheet and its edits are shown under the input. Confirm them one by one, or all at once with the button, and they are written. The sheet you download is the original plus the confirmed edits.</p>
 
-          <div class="extract-result" id="apply-result" hidden>
+          <div class="apply-result" id="apply-result" hidden>
             <hr class="divider">
             <p class="status-text" id="apply-summary"></p>
             <pre class="changelog-text" id="changelog-text"></pre>

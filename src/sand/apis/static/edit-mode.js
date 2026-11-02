@@ -1,10 +1,10 @@
-// The Apply card of edit mode: run the edit job on the experiment's
-// updates, show its progress, the changelog, and the final sheet to
-// download. Confirmations are sent from the input tiles (inputs.js)
-// through confirmEdit; applying again writes them into the sheet.
+// The Apply card: run the edit job on the experiment's updates, show
+// its progress, the changelog, and the final sheet to download.
+// Confirmations are sent from the input tiles (inputs.js) through
+// confirmEdit, or all at once from here; a job then writes them.
 //
-// Like the extraction: the job's status file is polled, and selecting
-// an experiment resumes an unfinished job's polling (reload-proof).
+// The job's status file is polled, and selecting an experiment resumes
+// an unfinished job's polling (reload-proof).
 
 import { errorDetail, experimentUrl } from "./api.js";
 import {
@@ -173,6 +173,12 @@ export function showEdit(experiment, summary) {
   changelogEl.textContent = "";
   if (!experiment) {
     sheetSummaryEl.textContent = "";
+    return;
+  }
+  if (!summary) {
+    // made before sheets, or by the other tool of this page's past
+    sheetSummaryEl.textContent = "This experiment has no sheet to update.";
+    applyBtn.disabled = true;
     return;
   }
   sheetSummaryEl.textContent = "Sheet “" + summary.name + "”: "
