@@ -134,6 +134,7 @@ def apply_all(  # noqa: PLR0913
     resolve: Resolve,
     confirmed: set[str],
     cache: Cache,
+    *,
     cached_only: bool = False,
 ) -> list[Step]:
     """Every input in order, each against the sheet the earlier ones
