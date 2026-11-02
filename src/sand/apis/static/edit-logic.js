@@ -38,6 +38,12 @@ export function pendingKeys(reports) {
   return keys;
 }
 
+// the label of the button that confirms every pending edit and writes
+export function confirmAllLabel(pending) {
+  if (pending === 1) return "Confirm the edit and write";
+  return "Confirm all " + pending + " edits and write";
+}
+
 // the preview without the lines the ready edits already show
 export function previewNotes(report) {
   const shown = new Set((report.ready || []).map((edit) => edit.line));
@@ -56,7 +62,7 @@ export function editSummary(status) {
   const pending = pendingKeys(reports).length;
   if (pending) parts.push(count(pending, "edit awaits confirmation", "edits await confirmation"));
   const since = reports.reduce((n, report) => n + (report.confirmed_since || []).length, 0);
-  if (since) parts.push(count(since, "edit confirmed", "edits confirmed") + ", not yet applied: apply the updates");
+  if (since) parts.push(count(since, "edit confirmed", "edits confirmed") + ", not written yet: apply the updates");
   const refused = reports.filter((report) => report.refused).length;
   if (refused) parts.push(count(refused, "update refused", "updates refused"));
   if (status.stale_confirmations) {

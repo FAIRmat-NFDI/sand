@@ -13,7 +13,7 @@ from sand.sheet_edit.edits import (
     Samples,
 )
 from sand.sheet_edit.ground import ground
-from sand.sheet_edit.preview import NOTHING, edit_lines, preview
+from sand.sheet_edit.preview import NOTHING, edit_lines, edit_summary, preview
 
 SPEED, TIME, ANNEAL_TIME, VARIATION, NOTES = 'C025', 'C026', 'C027', 'C007', 'C029'
 DATE, SUBSTRATE, CLEAN_SOLVENT_2, VOLUME_3, SOLVENT_3 = (
@@ -83,6 +83,22 @@ def test_an_edit_reads_as_step_header_change_samples_and_words(catalog):
         '2: Spin Coating · Rotation speed [rpm]: 3000 → 4000, all 12 samples',
         '   from "speed 4000"',
     ]
+
+
+def test_an_edit_in_parts_for_the_gui(catalog):
+    assert edit_summary(ground(edit(), catalog), catalog) == {
+        'step': '2: Spin Coating',
+        'column': 'Rotation speed [rpm]',
+        'old': '3000',
+        'new': '4000',
+        'samples': 'all 12 samples',
+    }
+    noop = edit_summary(ground(edit(new='3000', said='speed 3000'), catalog), catalog)
+    assert (noop['old'], noop['new'], noop['samples']) == (
+        '3000',
+        '3000',
+        'all 12 samples',
+    )
 
 
 def test_the_whole_outcome_of_one_instruction(catalog):

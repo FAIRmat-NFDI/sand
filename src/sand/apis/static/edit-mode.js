@@ -7,12 +7,16 @@
 // an experiment resumes an unfinished job's polling (reload-proof).
 
 import { errorDetail, experimentUrl } from "./api.js";
-import { describeEditPhase, downloadFilename, editSummary, reportsByEntry } from "./edit-logic.js";
+import {
+  confirmAllLabel, describeEditPhase, downloadFilename, editSummary, pendingKeys, reportsByEntry,
+} from "./edit-logic.js";
 import { requireExperiment } from "./experiments.js";
 import { setReports } from "./inputs.js";
 import { clearError, showError } from "./ui.js";
 
 const applyBtn = document.getElementById("apply-btn");
+const confirmAllBtn = document.getElementById("confirm-all-btn");
+const confirmAllLabelEl = document.getElementById("confirm-all-label");
 const applyStatus = document.getElementById("apply-status");
 const applyResult = document.getElementById("apply-result");
 const applySummary = document.getElementById("apply-summary");
@@ -24,6 +28,7 @@ const POLL_MS = 3000;
 let pollTimer = null;
 let pollGeneration = 0;
 let current = null; // the experiment the card shows
+let pending = []; // keys of the last completed job's unconfirmed edits
 
 // a response for an experiment no longer shown must not touch the card
 function stillShown(experiment) {
@@ -51,6 +56,13 @@ function idle() {
   applyStatus.textContent = "";
 }
 
+function showPending(keys) {
+  pending = keys;
+  confirmAllBtn.hidden = keys.length === 0;
+  confirmAllBtn.disabled = false;
+  confirmAllLabelEl.textContent = confirmAllLabel(keys.length);
+}
+
 function renderResult(status) {
   applySummary.textContent = editSummary(status);
   changelogEl.textContent = status.changelog || "";
@@ -70,6 +82,7 @@ async function poll(experiment, generation) {
   if (generation !== pollGeneration) return;
   if (res.status === 404) {
     idle();
+    showPending([]);
     setReports({}, false, confirmHandler(experiment));
     return;
   }
@@ -81,6 +94,7 @@ async function poll(experiment, generation) {
   }
   const running = status.phase !== "completed" && status.phase !== "failed";
   setReports(reportsByEntry(status), running, confirmHandler(experiment));
+  showPending(status.phase === "completed" ? pendingKeys(status.inputs || []) : []);
   if (status.phase === "completed") {
     idle();
     renderResult(status);
@@ -99,27 +113,43 @@ function confirmHandler(experiment) {
   return (key) => confirmEdit(experiment, key);
 }
 
-// true when confirmed; false lets the tile offer the button again
-async function confirmEdit(experiment, key) {
-  clearError();
-  let ok = false;
+// true when confirmed
+async function postConfirm(experiment, keys) {
   try {
     const res = await fetch(experimentUrl(experiment, "edits/confirm"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keys: [key] }),
+      body: JSON.stringify({ keys }),
     });
-    if (res.ok) {
-      ok = true;
-    } else {
-      showError("Could not confirm: " + await errorDetail(res));
-    }
+    if (res.ok) return true;
+    showError("Could not confirm: " + await errorDetail(res));
   } catch (err) {
     showError("Network error: " + err.message);
   }
-  // the status shows the confirmation (as not yet applied) at once
+  return false;
+}
+
+// true when confirmed; false lets the tile offer the button again
+async function confirmEdit(experiment, key) {
+  clearError();
+  const ok = await postConfirm(experiment, [key]);
+  // the status shows the confirmation (as not written yet) at once
   if (ok && stillShown(experiment)) startPolling(experiment);
   return ok;
+}
+
+// every pending edit of the last job, then the job that writes them
+async function confirmAll(experiment) {
+  clearError();
+  confirmAllBtn.disabled = true;
+  const ok = await postConfirm(experiment, pending);
+  if (!stillShown(experiment)) return;
+  if (!ok) {
+    confirmAllBtn.disabled = false;
+    return;
+  }
+  confirmAllBtn.hidden = true;
+  await startJob(experiment);
 }
 
 // The card for a newly selected experiment with an uploaded sheet
@@ -128,6 +158,7 @@ export function showEdit(experiment, summary) {
   stopPolling();
   current = experiment;
   idle();
+  showPending([]);
   applyResult.hidden = true;
   changelogEl.textContent = "";
   if (!experiment) {
@@ -142,8 +173,12 @@ export function showEdit(experiment, summary) {
 async function applyEdits() {
   clearError();
   const experiment = requireExperiment();
-  if (!experiment) return;
+  if (experiment) await startJob(experiment);
+}
+
+async function startJob(experiment) {
   applyBtn.disabled = true;
+  confirmAllBtn.hidden = true;
   applyResult.hidden = true;
   applyStatus.textContent = "Starting...";
   try {
@@ -196,5 +231,9 @@ export async function fetchSheetSummary(experiment) {
 
 export function initEdit() {
   applyBtn.addEventListener("click", applyEdits);
+  confirmAllBtn.addEventListener("click", () => {
+    const experiment = requireExperiment();
+    if (experiment) confirmAll(experiment);
+  });
   downloadFinalBtn.addEventListener("click", downloadFinal);
 }
