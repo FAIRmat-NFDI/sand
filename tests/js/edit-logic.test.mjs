@@ -10,7 +10,7 @@ const REPORT = {
   input: 1,
   entry_id: "n1",
   text: "speed 4000 for samples 1 to 3",
-  preview: "2: Spin Coating · Rotation speed [rpm]: 3000 → 4000, samples 1–3\n⚠ not applied: \"and dry\"",
+  preview: "2: Spin Coating · Rotation speed [rpm]: 3000 → 4000, samples 1–3\n⚠ no update in: \"and dry\"",
   ready: [{ key: "k1", line: "2: Spin Coating · Rotation speed [rpm]: 3000 → 4000, samples 1–3" }],
   confirmed: [],
   cells_written: 0,
@@ -49,7 +49,9 @@ test("the confirm-all button names the pending edits", () => {
 });
 
 test("the preview notes are what the ready edits do not show", () => {
-  assert.deepEqual(previewNotes(REPORT), ["⚠ not applied: \"and dry\""]);
+  assert.deepEqual(previewNotes(REPORT), ["⚠ no update in: \"and dry\""]);
+  const withWords = { ...REPORT, preview: REPORT.ready[0].line + "\n   from \"speed 4000\"\n   · read from 'four thousand'" };
+  assert.deepEqual(previewNotes(withWords), ["   · read from 'four thousand'"]);
   assert.deepEqual(previewNotes({ ...REPORT, preview: "" }), []);
 });
 

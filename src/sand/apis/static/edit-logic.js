@@ -44,10 +44,12 @@ export function confirmAllLabel(pending) {
   return "Confirm all " + pending + " edits and write";
 }
 
-// the preview without the lines the ready edits already show
+// the preview without the lines the ready edits already show, nor the
+// words each came from (the input's own text is right above)
 export function previewNotes(report) {
   const shown = new Set((report.ready || []).map((edit) => edit.line));
-  return (report.preview || "").split("\n").filter((line) => line && !shown.has(line));
+  return (report.preview || "").split("\n")
+    .filter((line) => line && !shown.has(line) && !/^\s+from "/.test(line));
 }
 
 function count(n, one, many) {

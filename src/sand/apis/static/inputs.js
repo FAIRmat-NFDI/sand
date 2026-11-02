@@ -1,14 +1,11 @@
-// The Inputs card: every recording/note of the experiment, in extraction
-// order. Clicking a row turns its text into an editor in place (one row
-// at a time); clicking its time moves it on the timeline, clicking its
-// label renames it (free text, for scanning the list). Audio
-// revisions go to corrected_transcript (clearing withdraws them); note
-// revisions overwrite the note text.
-//
-// Edit mode (an experiment that started from a sheet): the inputs are
-// the updates, in the order they were made - the time is fixed - and
-// under each one the job's report: what it changes, with a confirm
-// button per ready edit.
+// The Inputs card: every recording/note of the experiment, the updates
+// of its sheet in the order they were made (the time is fixed). Clicking
+// a row turns its text into an editor in place (one row at a time);
+// clicking its label renames it (free text, for scanning the list).
+// Audio revisions go to corrected_transcript (clearing withdraws them);
+// note revisions overwrite the note text. Under each input, once a job
+// ran, its report: what it changes, with a confirm button per ready
+// edit.
 
 import { errorDetail, experimentUrl } from "./api.js";
 import { previewNotes } from "./edit-logic.js";
@@ -18,16 +15,9 @@ import { clearError, confirmDialog, showEntryLink, showError } from "./ui.js";
 const inputsList = document.getElementById("inputs-list");
 const inputsCount = document.getElementById("inputs-count");
 const refreshInputsBtn = document.getElementById("refresh-inputs-btn");
-const inputsHint = document.getElementById("inputs-hint");
 
-const HINTS = {
-  hysprint: "Time-ordered, as the extraction reads them. Click one to revise it in place; click its time to move it.",
-  edit: "The updates in the order they were made. Click one to revise its words; apply the updates to see what each one changes.",
-};
-
-let editMode = false;
-// edit mode: the job's reports by entry id, whether a job runs (no
-// confirming meanwhile), and the confirm handler of the Apply card
+// the job's reports by entry id, whether a job runs (no confirming
+// meanwhile), and the confirm handler of the Apply card
 let reports = {};
 let jobRunning = false;
 let onConfirm = null;
@@ -38,8 +28,8 @@ let inputsGeneration = 0;
 let inputsRefreshTimer = null;
 // {item, experiment, li, textEl, editor, saveBtn} while a row is edited
 let revising = null;
-// while a time or label editor is open, list re-renders are held off so
-// the input field is not wiped mid-edit (same for a revision editor)
+// while a label editor is open, list re-renders are held off so the
+// input field is not wiped mid-edit (same for a revision editor)
 let inlineEditing = false;
 
 function inputUrl(experiment, item, path) {
@@ -58,73 +48,6 @@ function inputTime(item) {
 function inputDescription(item) {
   return (item.kind === "audio" ? "recording" : "note")
     + (inputTime(item) ? " from " + inputTime(item) : "");
-}
-
-// --- time edit -------------------------------------------------------------
-
-function toLocalInputValue(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n) => String(n).padStart(2, "0");
-  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
-    + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
-}
-
-function beginTimeEdit(whenSpan, item, experiment) {
-  if (inlineEditing) return;
-  inlineEditing = true;
-  const editor = document.createElement("input");
-  editor.type = "datetime-local";
-  editor.className = "input-time-edit";
-  editor.setAttribute("aria-label", "Time of this input (reorders the inputs)");
-  editor.value = toLocalInputValue(item.datetime);
-  editor.addEventListener("click", (e) => e.stopPropagation());
-  let done = false;
-  const finish = (refresh) => {
-    if (done) return;
-    done = true;
-    inlineEditing = false;
-    editor.replaceWith(whenSpan);
-    // the server returns once NOMAD reprocessed the entry
-    if (refresh) startInputsRefresh(experiment);
-  };
-  let saving = false;
-  const commit = async () => {
-    // disabling the focused editor below fires blur -> commit again
-    if (done || saving) return;
-    if (!editor.value || toLocalInputValue(item.datetime) === editor.value) {
-      finish(false);
-      return;
-    }
-    const iso = new Date(editor.value).toISOString();
-    clearError();
-    saving = true;
-    editor.disabled = true;
-    try {
-      const res = await fetch(inputUrl(experiment, item, "datetime"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ datetime: iso }),
-      });
-      if (!res.ok) {
-        showError("Could not change the time: " + await errorDetail(res));
-        finish(false);
-        return;
-      }
-      finish(true);
-    } catch (err) {
-      showError("Network error: " + err.message);
-      finish(false);
-    }
-  };
-  editor.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") commit();
-    if (e.key === "Escape") finish(false);
-  });
-  editor.addEventListener("blur", commit);
-  whenSpan.replaceWith(editor);
-  editor.focus();
 }
 
 // --- label edit ------------------------------------------------------------
@@ -391,16 +314,6 @@ function renderReport(report) {
   return box;
 }
 
-// Switch the card between the hysprint and the edit layout.
-export function setEditMode(on) {
-  editMode = on;
-  reports = {};
-  jobRunning = false;
-  inputsHint.textContent = on ? HINTS.edit : HINTS.hysprint;
-  // the list may have rendered before the mode was known
-  if (shown && !inlineEditing && !revising) renderInputs(shown.experiment, shown.items);
-}
-
 // The job's reports (by entry id), from the Apply card's polling.
 // `confirm(key)` resolves false when the confirmation did not go through.
 export function setReports(byEntry, running, confirm) {
@@ -459,24 +372,11 @@ function renderInputs(experiment, items) {
     });
     meta.append(labelBtn);
     const time = inputTime(item);
-    if (editMode) {
-      // the time is when the update was made: not editable
-      const when = document.createElement("span");
-      when.className = "input-when input-when-fixed";
-      when.textContent = time ? "· " + time : "";
-      meta.append(when);
-    } else {
-      const when = document.createElement("button");
-      when.type = "button";
-      when.className = "input-when";
-      when.textContent = "· " + (time || "set time");
-      when.title = "Click to change the time (reorders the inputs)";
-      when.addEventListener("click", (e) => {
-        e.stopPropagation();
-        beginTimeEdit(when, item, experiment);
-      });
-      meta.append(when);
-    }
+    // the time is when the update was made: not editable
+    const when = document.createElement("span");
+    when.className = "input-when";
+    when.textContent = time ? "· " + time : "";
+    meta.append(when);
     if (item.corrected) {
       const badge = document.createElement("span");
       badge.className = "input-badge";
@@ -520,7 +420,7 @@ function renderInputs(experiment, items) {
     }
 
     li.append(meta, text);
-    if (editMode && reports[item.entry_id]) li.append(renderReport(reports[item.entry_id]));
+    if (reports[item.entry_id]) li.append(renderReport(reports[item.entry_id]));
     li.tabIndex = 0;
     li.setAttribute("aria-label", "Revise the " + inputDescription(item));
     li.addEventListener("click", () => beginRevision(item, experiment, li, text));
