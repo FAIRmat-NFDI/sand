@@ -2,9 +2,10 @@
 // selection to the cards that depend on it.
 
 import { initAuth, login } from "./api.js";
+import { fetchSheetSummary, initEdit, showEdit } from "./edit-mode.js";
 import { initExperiments, loadExperiments, onExperimentSelected } from "./experiments.js";
 import { initExtract, showExtraction } from "./extract.js";
-import { initInputs, showInputs } from "./inputs.js";
+import { initInputs, setEditMode, showInputs } from "./inputs.js";
 import { clearLiveTranscript, initLiveToggle } from "./live-transcript.js";
 import { initNotes } from "./notes.js";
 import { initRecord } from "./record.js";
@@ -64,13 +65,45 @@ initRecord();
 initNotes();
 initInputs();
 initExtract();
+initEdit();
 initLiveToggle();
 initVoiceMode();
 
-onExperimentSelected((experiment) => {
-  showExtraction(experiment);
+const NOTE_PLACEHOLDERS = {
+  hysprint: "Type a step note and save it to the selected experiment.",
+  edit: "Type an update of the sheet, e.g. \"spin coating speed is now 4000 for samples 1 to 3\".",
+};
+
+// Edit mode for an experiment that started from a sheet, the hysprint
+// cards for any other. Decided per selection; a stale answer (the
+// selection changed meanwhile) is dropped.
+let selectionGeneration = 0;
+
+function applyMode(experiment, summary) {
+  const edit = Boolean(summary);
+  document.body.classList.toggle("mode-edit", edit);
+  document.getElementById("text").placeholder = edit ? NOTE_PLACEHOLDERS.edit : NOTE_PLACEHOLDERS.hysprint;
+  setEditMode(edit);
+  showExtraction(edit ? null : experiment);
+  showEdit(edit ? experiment : null, summary);
+}
+
+onExperimentSelected(async (experiment) => {
+  const generation = ++selectionGeneration;
   showInputs(experiment);
   clearLiveTranscript();
+  if (!experiment) {
+    applyMode(null, null);
+    return;
+  }
+  let summary = null;
+  try {
+    summary = await fetchSheetSummary(experiment);
+  } catch (err) {
+    showError("Could not read the experiment's sheet: " + err.message);
+  }
+  if (generation !== selectionGeneration) return;
+  applyMode(experiment, summary);
 });
 
 document.getElementById("login-btn").addEventListener("click", login);
