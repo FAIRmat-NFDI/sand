@@ -69,9 +69,9 @@ test("the confirm-all button names the pending edits", () => {
 
 test("the preview notes are what the ready edits do not show", () => {
   assert.deepEqual(previewNotes(REPORT), ["? not found: \"and dry\""]);
-  // the coverage warning, in the researcher's words
-  assert.deepEqual(previewNotes({ ...REPORT, preview: REPORT.preview + "\n⚠ no update in: \"anneal at 120\"" }),
-    ["? not found: \"and dry\"", "No edit made from \"anneal at 120\""]);
+  // the coverage warning is hidden (it mostly names the step)
+  assert.deepEqual(previewNotes({ ...REPORT, preview: REPORT.preview + "\n⚠ no update in: \"step 1 cleaning\"" }),
+    ["? not found: \"and dry\""]);
   const withWords = { ...REPORT, preview: REPORT.ready[0].line + "\n   from \"speed 4000\"\n   · read from 'four thousand'" };
   assert.deepEqual(previewNotes(withWords), ["   · read from 'four thousand'"]);
   assert.deepEqual(previewNotes({ ...REPORT, preview: "" }), []);

@@ -50,14 +50,16 @@ export function confirmAllLabel(pending) {
   return "Confirm all " + pending + " edits and write";
 }
 
-// the preview without the lines the ready edits already show and the
-// words each came from (the input's own text is right above); the
-// coverage warning is reworded: it means part of the update made no edit
+// the preview without the lines the ready edits already show, the words
+// each came from (the input's own text is right above), and the coverage
+// warning: it means part of the update made no edit, but it fires on the
+// step named ("step 1 UV ozone cleaning") more often than on a dropped
+// clause, so it is hidden until the check is precise (kit_known_gaps)
 export function previewNotes(report) {
   const shown = new Set((report.ready || []).map((edit) => edit.line));
   return (report.preview || "").split("\n")
-    .filter((line) => line && !shown.has(line) && !/^\s+from "/.test(line))
-    .map((line) => line.replace(/^⚠ no update in: /, "No edit made from "));
+    .filter((line) => line && !shown.has(line) && !/^\s+from "/.test(line)
+      && !line.startsWith("⚠ no update in:"));
 }
 
 // the edits the last run wrote, one line each in the researcher's words:
