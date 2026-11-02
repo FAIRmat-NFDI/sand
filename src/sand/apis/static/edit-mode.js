@@ -22,6 +22,7 @@ const applyStatus = document.getElementById("apply-status");
 const applyResult = document.getElementById("apply-result");
 const applySummary = document.getElementById("apply-summary");
 const changelogEl = document.getElementById("changelog-text");
+const changelogFold = document.querySelector(".changelog-details");
 const changedList = document.getElementById("changed-list");
 const downloadFinalBtn = document.getElementById("download-final-btn");
 const sheetSummaryEl = document.getElementById("sheet-summary");
@@ -199,6 +200,7 @@ export function showEdit(experiment, summary) {
   gateDownload(0);
   applyResult.hidden = true;
   changelogEl.textContent = "";
+  changelogFold.open = false; // the fold is per result, not per page
   if (!experiment || !summary) {
     // nothing to poll: the tiles forget the last job's reports here
     setReports({}, false, null);
@@ -231,6 +233,7 @@ async function startJob(experiment) {
     applyBtn.disabled = true;
     confirmAllBtn.hidden = true;
     applyResult.hidden = true;
+    changelogFold.open = false;
     applyStatus.textContent = "Starting...";
   }
   try {

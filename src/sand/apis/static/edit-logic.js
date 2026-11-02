@@ -50,14 +50,14 @@ export function confirmAllLabel(pending) {
   return "Confirm all " + pending + " edits and write";
 }
 
-// the preview without the lines the ready edits already show, the words
-// each came from (the input's own text is right above), and the clauses
-// holding no update (nothing to act on)
+// the preview without the lines the ready edits already show and the
+// words each came from (the input's own text is right above); the
+// coverage warning is reworded: it means part of the update made no edit
 export function previewNotes(report) {
   const shown = new Set((report.ready || []).map((edit) => edit.line));
   return (report.preview || "").split("\n")
-    .filter((line) => line && !shown.has(line) && !/^\s+from "/.test(line)
-      && !line.startsWith("⚠ no update in:"));
+    .filter((line) => line && !shown.has(line) && !/^\s+from "/.test(line))
+    .map((line) => line.replace(/^⚠ no update in: /, "No edit made from "));
 }
 
 // the edits the last run wrote, one line each in the researcher's words:
