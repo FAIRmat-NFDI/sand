@@ -51,7 +51,9 @@ flowchart LR
   LLM only proposes; deterministic checks decide whether a proposed edit
   fits the sheet, and nothing is written without a confirmation. The
   final sheet is rebuilt from the original every time, then verified
-  cell by cell.
+  cell by cell. An update the model already answered on the same sheet
+  is replayed from its saved answer, not sent to the model again, so a
+  run costs model calls only for new or revised updates.
 - The time of an update is the time it was made and cannot be changed:
   the order of updates is the order they were made.
 

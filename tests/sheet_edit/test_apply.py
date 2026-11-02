@@ -204,6 +204,27 @@ def test_only_the_llm_call_is_cached_and_only_for_the_same_state(synthetic_xlsx)
     assert llm.calls[5:] == ['speed 3000']
 
 
+def test_cached_only_stops_before_the_first_input_the_model_was_not_asked(
+    synthetic_xlsx,
+):
+    llm, cache = FakeLLM(), {}
+    first = run(synthetic_xlsx, [SOLVENT, TIME], cache=cache, llm=llm)
+    replayed = apply_all(
+        synthetic_xlsx, [SOLVENT, TIME, SPEED_SAID], llm, set(), cache, cached_only=True
+    )
+    assert [s.text for s in replayed] == [SOLVENT, TIME]
+    assert [keys(s) for s in replayed] == [keys(first[0]), keys(first[1])]
+    assert llm.calls == [SOLVENT, TIME]  # nothing asked
+    # input 1 confirmed: input 2's sheet is new, so the replay ends after 1
+    confirmed = keys(first[0])
+    written = apply_all(
+        synthetic_xlsx, [SOLVENT, TIME], llm, confirmed, cache, cached_only=True
+    )
+    assert [s.text for s in written] == [SOLVENT]
+    assert len(written[0].written) == THREE_ROWS
+    assert apply_all(synthetic_xlsx, [], llm, set(), cache, cached_only=True) == []
+
+
 def test_a_confirmation_holds_only_for_the_identical_edit(synthetic_xlsx):
     confirmed = keys(run(synthetic_xlsx, [SOLVENT])[0])
     # the same words again: still confirmed

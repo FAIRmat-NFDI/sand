@@ -20,6 +20,7 @@ from sand.actions.edit.models import (
     EditInput,
     JobInput,
     PrepareInput,
+    ReplayInput,
     WriteStatusInput,
 )
 from sand.actions.edit.workflows import TEMPERATURE, EditSheetWorkflow
@@ -52,7 +53,8 @@ class FakeExtraction:
 @dataclass
 class Stubs:
     """The activities, recording every call; `cached` says which inputs
-    prepare reports as already answered."""
+    the model already answered: the leading ones are replayed, a later
+    one makes prepare report nothing to ask."""
 
     texts: list[str]
     cached: set[int] = field(default_factory=set)
@@ -73,6 +75,20 @@ class Stubs:
                     'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00'}
                 },
                 'llm_model_name': MODEL,
+            }
+
+        @activity.defn(name='replay_cached_inputs')
+        async def replay(data: ReplayInput) -> dict:
+            stubs.record('replay', data)
+            replayed = 0
+            while replayed + 1 in stubs.cached:
+                replayed += 1
+            return {
+                'replayed': replayed,
+                'reports': [
+                    {'input': k, 'preview': f'preview {k}', 'from_cache': True}
+                    for k in range(1, replayed + 1)
+                ],
             }
 
         @activity.defn(name='prepare_input')
@@ -103,7 +119,7 @@ class Stubs:
         async def status(data: WriteStatusInput) -> None:
             stubs.record('status', data.status)
 
-        return [collect, prepare, apply, store, status]
+        return [collect, replay, prepare, apply, store, status]
 
     def record(self, name: str, data: object) -> None:
         if name == self.failing:
@@ -148,6 +164,8 @@ async def test_each_input_in_order_two_opinions_each_then_the_sheet():
         'status',
         'collect',
         'status',
+        'replay',
+        'status',
         'prepare',
         'status',
         'apply',
@@ -168,6 +186,9 @@ async def test_each_input_in_order_two_opinions_each_then_the_sheet():
     assert first.confirmations == {
         'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00'}
     }
+    (replay,) = stubs.of('replay')
+    assert (replay.texts, replay.entry_ids) == (first.texts, ['e1', 'e2'])
+    assert replay.confirmations == first.confirmations
     assert (
         stubs.of('store_final_sheet_and_changelog')[0].confirmations
         == first.confirmations
@@ -196,14 +217,16 @@ async def test_status_shows_progress_then_the_result():
     statuses = stubs.of('status')
     assert [s['phase'] for s in statuses] == [
         'collecting',
+        'replaying',
         *['interpreting'] * 5,
         'writing-sheet',
         'completed',
     ]
     # before and after each input's LLM calls
-    assert [s.get('inputs_done') for s in statuses[1:6]] == [0, 0, 1, 1, 2]
-    assert all(s['inputs_total'] == 2 for s in statuses[1:6])  # noqa: PLR2004
-    assert [len(s['inputs']) for s in statuses] == [0, 0, 0, 1, 1, 2, 2, 2]
+    assert [s.get('inputs_done') for s in statuses[2:7]] == [0, 0, 1, 1, 2]
+    assert all(s['inputs_total'] == 2 for s in statuses[1:7])  # noqa: PLR2004
+    assert all(s['inputs_replayed'] == 0 for s in statuses[2:7])
+    assert [len(s['inputs']) for s in statuses] == [0, 0, 0, 0, 1, 1, 2, 2, 2]
     done = statuses[-1]
     assert done['collection_entry_id'] == 'c1'
     assert done['model'] == MODEL
@@ -214,12 +237,55 @@ async def test_status_shows_progress_then_the_result():
     assert done['job_id'] == statuses[0]['job_id']
 
 
-async def test_a_cached_input_asks_no_child():
-    stubs = Stubs(['speed 4000', 'clear solvent 2'], cached={1})
+async def test_the_leading_cached_inputs_are_replayed_in_one_go():
+    stubs = Stubs(['speed 4000', 'clear solvent 2', 'speed 3000'], cached={1, 2})
+    result = await run(stubs)
+    # one activity for inputs 1 and 2, then input 3 as usual
+    assert [n for n, _ in stubs.calls if n != 'status'] == [
+        'collect',
+        'replay',
+        'prepare',
+        'apply',
+        'store_final_sheet_and_changelog',
+    ]
+    (third,) = stubs.of('apply')
+    assert (third.number, len(third.answers)) == (3, 2)
+    assert [r['input'] for r in result['inputs']] == [1, 2, 3]
+    assert [r.get('from_cache') for r in result['inputs']] == [True, True, None]
+    interpreting = [s for s in stubs.of('status') if s['phase'] == 'interpreting']
+    assert [s['inputs_done'] for s in interpreting] == [2, 2, 3]
+    assert all(s['inputs_replayed'] == 2 for s in interpreting)  # noqa: PLR2004
+    assert [len(s['inputs']) for s in interpreting] == [2, 2, 3]
+
+
+async def test_everything_cached_is_replayed_then_written():
+    stubs = Stubs(['speed 4000', 'clear solvent 2'], cached={1, 2})
+    result = await run(stubs)
+    assert stubs.of('prepare') == stubs.of('apply') == []
+    assert [r['input'] for r in result['inputs']] == [1, 2]
+    assert [s['phase'] for s in stubs.of('status')] == [
+        'collecting',
+        'replaying',
+        'interpreting',
+        'writing-sheet',
+        'completed',
+    ]
+
+
+async def test_a_cached_input_after_a_new_one_asks_no_child():
+    stubs = Stubs(['speed 4000', 'clear solvent 2'], cached={2})
     await run(stubs)
+    assert stubs.of('replay')[0].texts == ['speed 4000', 'clear solvent 2']
     first, second = stubs.of('apply')
-    assert first.answers == []
-    assert len(second.answers) == 2  # noqa: PLR2004
+    assert len(first.answers) == 2  # noqa: PLR2004
+    assert second.answers == []
+
+
+async def test_a_replay_that_does_not_add_up_fails_the_job():
+    stubs = Stubs(['speed 4000'], cached={1, 2})  # 2 replayed of 1
+    with pytest.raises(WorkflowFailureError) as failure:
+        await run(stubs)
+    assert error_message(failure.value) == 'replayed 2 of 1 inputs with 2 reports'
 
 
 async def test_an_answer_the_child_cannot_get_reaches_apply_as_an_error():
@@ -253,7 +319,7 @@ async def test_prepare_must_give_two_prompts_or_none():
 async def test_no_inputs_is_a_finished_job_with_nothing_to_do():
     stubs = Stubs([])
     result = await run(stubs)
-    assert stubs.of('prepare') == []
+    assert stubs.of('replay') == stubs.of('prepare') == []
     assert result['inputs'] == []
     assert stubs.of('status')[-1]['phase'] == 'completed'
 

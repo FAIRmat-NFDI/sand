@@ -35,6 +35,14 @@ test("the phase as the user reads it", () => {
     describeEditPhase({ phase: "interpreting", inputs_done: 3, inputs_total: 3 }),
     "Reading update 3 of 3...");
   assert.equal(describeEditPhase({ phase: "interpreting" }), "Reading update 1 of ?...");
+  assert.equal(describeEditPhase({ phase: "replaying" }), "Checking the earlier updates...");
+  // three replayed, two read: the count is over the two
+  assert.equal(
+    describeEditPhase({ phase: "interpreting", inputs_done: 3, inputs_total: 5, inputs_replayed: 3 }),
+    "Reading update 1 of 2...");
+  assert.equal(
+    describeEditPhase({ phase: "interpreting", inputs_done: 4, inputs_total: 5, inputs_replayed: 3 }),
+    "Reading update 2 of 2...");
   assert.equal(describeEditPhase({ phase: "writing-sheet" }), "Writing the sheet...");
 });
 

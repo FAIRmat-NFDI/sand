@@ -7,9 +7,14 @@ export function describeEditPhase(status) {
       return "Starting...";
     case "collecting":
       return "Collecting the updates...";
+    case "replaying":
+      return "Checking the earlier updates...";
     case "interpreting": {
-      const total = status.inputs_total ?? 0;
-      const current = Math.min((status.inputs_done ?? 0) + 1, total || 1);
+      // counted over the updates the model is asked about: the earlier
+      // ones were replayed from their saved answers
+      const replayed = status.inputs_replayed ?? 0;
+      const total = (status.inputs_total ?? 0) - replayed;
+      const current = Math.min((status.inputs_done ?? 0) - replayed + 1, total || 1);
       return "Reading update " + current + " of " + (total || "?") + "...";
     }
     case "writing-sheet":

@@ -22,6 +22,10 @@ class JobInput(BaseModel):
     confirmations: dict[str, dict]  # the file's JSON, by confirmation key
 
 
+class ReplayInput(JobInput):
+    entry_ids: list[str]  # one per text, for the reports
+
+
 class PrepareInput(JobInput):
     number: int = Field(ge=1)  # 1-based position in `texts`
 

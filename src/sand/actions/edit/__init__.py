@@ -19,6 +19,7 @@ class EditActionEntryPoint(ActionEntryPoint):
             agree_cache_and_apply_input,
             collect_edit_inputs,
             prepare_input,
+            replay_cached_inputs,
             store_final_sheet_and_changelog,
             write_edit_status,
         )
@@ -29,6 +30,7 @@ class EditActionEntryPoint(ActionEntryPoint):
             workflow=EditSheetWorkflow,
             activities=[
                 collect_edit_inputs,
+                replay_cached_inputs,
                 prepare_input,
                 agree_cache_and_apply_input,
                 store_final_sheet_and_changelog,
