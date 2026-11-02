@@ -29,7 +29,7 @@ let pollTimer = null;
 let pollGeneration = 0;
 let current = null; // the experiment the card shows
 let pending = []; // keys of the last completed job's unconfirmed edits
-let confirming = false; // a confirm-all request is on its way
+let confirming = null; // entry id of the experiment whose confirm-all is on its way
 
 // a response for an experiment no longer shown must not touch the card
 function stillShown(experiment) {
@@ -59,7 +59,8 @@ function idle() {
 
 function showPending(keys) {
   pending = keys;
-  if (confirming) return; // the button comes back from its own request
+  // this experiment's own confirm-all brings the button back itself
+  if (current && confirming === current.entry_id) return;
   confirmAllBtn.hidden = keys.length === 0;
   confirmAllBtn.disabled = false;
   confirmAllLabelEl.textContent = confirmAllLabel(keys.length);
@@ -143,22 +144,25 @@ async function confirmEdit(experiment, key) {
 // every pending edit of the last job, then the job that writes them
 async function confirmAll(experiment) {
   clearError();
+  // no job may start on a snapshot without these confirmations: Apply
+  // waits too (startJob or the poll gives it back)
   confirmAllBtn.disabled = true;
-  confirming = true;
+  applyBtn.disabled = true;
+  confirming = experiment.entry_id;
   let ok;
   try {
     ok = await postConfirm(experiment, pending);
   } finally {
-    confirming = false;
+    confirming = null;
   }
-  if (!stillShown(experiment)) return;
   if (!ok) {
     // the server's view decides what is still pending (another tab may
     // have run a job)
-    startPolling(experiment);
+    if (stillShown(experiment)) startPolling(experiment);
     return;
   }
-  confirmAllBtn.hidden = true;
+  // the write was asked for: it starts even if the user moved on
+  if (stillShown(experiment)) confirmAllBtn.hidden = true;
   await startJob(experiment);
 }
 
@@ -196,11 +200,15 @@ async function applyEdits() {
   if (experiment) await startJob(experiment);
 }
 
+// posts the start whatever is shown; the card is touched only while
+// it still shows this experiment
 async function startJob(experiment) {
-  applyBtn.disabled = true;
-  confirmAllBtn.hidden = true;
-  applyResult.hidden = true;
-  applyStatus.textContent = "Starting...";
+  if (stillShown(experiment)) {
+    applyBtn.disabled = true;
+    confirmAllBtn.hidden = true;
+    applyResult.hidden = true;
+    applyStatus.textContent = "Starting...";
+  }
   try {
     const res = await fetch(experimentUrl(experiment, "edit-async"), { method: "POST" });
     if (!res.ok) {
