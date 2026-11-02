@@ -78,6 +78,8 @@ class FakeVoice:
     created: list[str] = field(default_factory=list)
     deleted: list[str] = field(default_factory=list)
     moved: list[tuple[str, str]] = field(default_factory=list)
+    revised: list[tuple[str, str]] = field(default_factory=list)
+    removed: list[str] = field(default_factory=list)
     undeletable: bool = False
 
     def build_client(self, token):
@@ -109,6 +111,17 @@ class FakeVoice:
     ):
         self.moved.append((entry_id, datetime_value))
         return 'note'
+
+    async def revise_input(
+        self, client, upload_id, entry_id, text, collection_entry_id
+    ):
+        self.revised.append((entry_id, text))
+        return 'note'
+
+    async def delete_input(
+        self, client, upload_id, entry_id, collection_entry_id, undeletable
+    ):
+        self.removed.append(entry_id)
 
     async def input_collection_name(self, client, upload_id, collection_entry_id):
         assert (upload_id, collection_entry_id) == (UPLOAD, COLLECTION)

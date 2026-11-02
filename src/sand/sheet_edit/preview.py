@@ -10,7 +10,7 @@ next to each line. One instruction's whole outcome reads as
     ✗ not applied: "speed 4100"
        Rotation speed [rpm] (2: Spin Coating): '4100' is not in your words; you said 4000
     ? not found: "anneal at 120"
-    ⚠ not applied: "time 40"
+    ⚠ no update in: "time 40"
 
 The first character says what to do: nothing (fine, or a · to glance at),
 ? (confirm one by one), ✗ or ⚠ (rephrase), = (nothing to change).
@@ -47,7 +47,7 @@ def preview(
     lines = [line for result in results for line in edit_lines(result, catalog)]
     for item in unresolved:
         lines += _unresolved_lines(item, catalog)
-    lines += [f'⚠ not applied: "{clause}"' for clause in coverage.not_applied]
+    lines += [f'⚠ no update in: "{clause}"' for clause in coverage.not_applied]
     lines += [f'⚠ misquoted: "{said}"' for said in coverage.misquoted]
     return '\n'.join(lines) or NOTHING
 

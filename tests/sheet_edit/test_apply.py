@@ -127,7 +127,7 @@ def test_a_misquoted_edit_is_refused_and_shown_once(synthetic_xlsx):
     assert result.preview == (
         '✗ not applied: "speed 4000"\n'
         '   "speed 4000" is not in your instruction\n'
-        '⚠ not applied: "speed 4100"'
+        '⚠ no update in: "speed 4100"'
     )
     assert result.ready == {}
 
