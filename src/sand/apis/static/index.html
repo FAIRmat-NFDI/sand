@@ -123,7 +123,7 @@
               <span class="material-icons">refresh</span>
             </button>
           </div>
-          <p class="section-hint">The updates in the order they were made. Click one to revise its words; apply the updates to see what each one changes.</p>
+          <p class="section-hint">The updates in the order they were made. Each one is read as soon as it is saved and shows the edits it makes. Click an update to revise its words.</p>
           <ul class="inputs-list" id="inputs-list">
             <li class="inputs-empty">Select an experiment to see its inputs.</li>
           </ul>
@@ -133,13 +133,13 @@
           <h2 class="section-title"><span class="material-icons">table_chart</span>Sheet</h2>
           <p class="section-hint" id="sheet-summary"></p>
           <div class="controls">
-            <button class="btn btn-secondary" id="apply-btn" type="button">
-              <span class="material-icons">play_arrow</span>
-              Apply updates
-            </button>
             <button class="btn btn-primary" id="confirm-all-btn" type="button" hidden>
               <span class="material-icons">done_all</span>
-              <span id="confirm-all-label">Confirm all and write</span>
+              <span id="confirm-all-label">Confirm all</span>
+            </button>
+            <button class="btn btn-outlined" id="read-again-btn" type="button" hidden>
+              <span class="material-icons">replay</span>
+              Read again
             </button>
             <button class="btn btn-outlined" id="download-final-btn" type="button">
               <span class="material-icons">download</span>
@@ -147,7 +147,7 @@
             </button>
             <span class="status-text" id="apply-status" role="status"></span>
           </div>
-          <p class="section-hint">Apply reads each update and shows its edits under the input. Confirm the right ones, one by one or all at once, and they are written. The sheet you download is the original plus the confirmed edits.</p>
+          <p class="section-hint">Confirm the edits that are right, one by one or all at once: they are written into the sheet by themselves. The sheet you download is the original plus the confirmed edits.</p>
 
           <div class="apply-result" id="apply-result" hidden>
             <hr class="divider">

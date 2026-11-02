@@ -1,4 +1,4 @@
-// Edit mode's pure logic: what the Apply card and the input tiles show
+// Edit mode's pure logic: what the Sheet card and the input tiles show
 // for a job status. No DOM, so it runs under node's test runner.
 
 export function describeEditPhase(status) {
@@ -10,7 +10,7 @@ export function describeEditPhase(status) {
     case "interpreting": {
       const total = status.inputs_total ?? 0;
       const current = Math.min((status.inputs_done ?? 0) + 1, total || 1);
-      return "Interpreting update " + current + " of " + (total || "?") + "...";
+      return "Reading update " + current + " of " + (total || "?") + "...";
     }
     case "writing-sheet":
       return "Writing the sheet...";
@@ -44,10 +44,30 @@ export function inputLocked(report) {
   return Boolean(report && (report.confirmed || []).length);
 }
 
-// the label of the button that confirms every pending edit and writes
+// the label of the button that confirms every pending edit
 export function confirmAllLabel(pending) {
-  if (pending === 1) return "Confirm the edit and write";
-  return "Confirm all " + pending + " edits and write";
+  if (pending === 1) return "Confirm the edit";
+  return "Confirm all " + pending + " edits";
+}
+
+// The inputs no job has read in these words: without a report, with a
+// report of other words (revised), or a report without an input
+// (deleted). Empty while an input has no text yet, and with no inputs
+// at all: the job refuses to start then.
+export function inputsToRead(items, reports) {
+  if (!items.length || items.some((item) => !item.text)) return [];
+  const ids = items
+    .filter((item) => !reports[item.entry_id] || reports[item.entry_id].text !== item.text)
+    .map((item) => item.entry_id);
+  const present = new Set(items.map((item) => item.entry_id));
+  for (const id of Object.keys(reports)) if (!present.has(id)) ids.push(id);
+  return ids;
+}
+
+// what a job is started for: the inputs and their words. The same key
+// after a failed job is the same failure, so it is not started again.
+export function readKey(items) {
+  return JSON.stringify(items.map((item) => [item.entry_id, item.text || ""]));
 }
 
 // the preview without the lines the ready edits already show, the words
@@ -85,6 +105,11 @@ export function unwrittenCount(status) {
   return (status.inputs || []).reduce((n, report) => n + (report.confirmed_since || []).length, 0);
 }
 
+// those edits' keys, as one string: "" when the last run wrote everything
+export function unwrittenKey(status) {
+  return (status.inputs || []).flatMap((report) => report.confirmed_since || []).sort().join("\n");
+}
+
 function count(n, one, many) {
   return n === 1 ? "1 " + one : n + " " + many;
 }
@@ -99,7 +124,7 @@ export function editSummary(status) {
   const pending = pendingKeys(reports).length;
   if (pending) parts.push(count(pending, "edit waits", "edits wait") + " for your confirmation");
   const since = unwrittenCount(status);
-  if (since) parts.push(count(since, "edit confirmed", "edits confirmed") + ", not written yet: apply the updates");
+  if (since) parts.push(count(since, "edit confirmed", "edits confirmed") + ", being written");
   const refused = reports.filter((report) => report.refused).length;
   if (refused) parts.push(count(refused, "update could not", "updates could not") + " be written");
   // stale confirmations (status.stale_confirmations) are not a line: an

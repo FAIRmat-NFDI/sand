@@ -14,10 +14,10 @@ plus a changelog.
 - **Review** all updates of an experiment in the order they were made,
   correct their text, or delete one (its NOMAD entry and, for a recording,
   the audio).
-- **Apply**: an LLM turns each update into cell edits. Every edit is shown
-  and must be confirmed before it is written. An update the sheet cannot
-  take (unknown sample, unknown column, a value of the wrong kind) is
-  refused with the reason; sand never guesses.
+- **Read**: as soon as an update is saved, an LLM turns it into cell
+  edits. Every edit is shown and must be confirmed before it is written.
+  An update the sheet cannot take (unknown sample, unknown column, a
+  value of the wrong kind) is refused with the reason; sand never guesses.
 - **Download** the final sheet and read the changelog of what changed and
   why.
 - **Voice mode**: start and stop recordings by voice, for work where the
@@ -32,7 +32,7 @@ flowchart LR
     api --> upload[(NOMAD upload<br/>= one experiment:<br/>sheet + updates)]
     upload -- audio --> eln[nomad-voice-eln<br/>transcribes]
     eln --> upload
-    api -- apply --> job[edit job<br/>on the action worker]
+    api -- read, write --> job[edit job<br/>on the action worker]
     job -- asks --> llm[nomad-llm-extraction<br/>LLM]
     job --> result[final sheet + changelog<br/>in the upload]
 ```
@@ -44,12 +44,14 @@ flowchart LR
 - sand does not transcribe or store anything itself: audio, transcripts
   and corrections live in the NOMAD entries; the sheets and the changelog
   are files of the upload.
-- **Applying** runs as a NOMAD action on the action worker. Updates are
-  interpreted in time order against the sheet as the earlier confirmed
-  updates left it. The LLM only proposes; deterministic checks decide
-  whether a proposed edit fits the sheet, and nothing is written without a
-  confirmation. The final sheet is rebuilt from the original every time,
-  then verified cell by cell.
+- **Reading and writing** is one job, a NOMAD action on the action
+  worker. The page starts it when an update is saved or revised, and
+  again a moment after a confirmation. Updates are interpreted in time
+  order against the sheet as the earlier confirmed updates left it. The
+  LLM only proposes; deterministic checks decide whether a proposed edit
+  fits the sheet, and nothing is written without a confirmation. The
+  final sheet is rebuilt from the original every time, then verified
+  cell by cell.
 - The time of an update is the time it was made and cannot be changed:
   the order of updates is the order they were made.
 
@@ -174,16 +176,22 @@ same browser; sand warns when the login is about to end.
    the step, the value and the samples it applies to. The updates appear
    on the right in the order they were made; a transcript can be
    corrected there.
-3. **Apply the updates**. The job interprets every update; under each
-   one the page shows the edits it is ready to write, each with a
-   **Confirm** button, and the reason for anything it could not place.
-4. **Confirm** the edits that are right. A wrong reading is not confirmed:
-   correct the update's text or add a new update, then apply again.
-5. **Apply** again: the confirmed edits are written into the sheet. Edits
-   already confirmed are kept across runs, as long as their update and the
-   sheet they were made for did not change.
-6. **Download** the final sheet. The changelog below the summary lists
-   every cell changed, the update it came from and who confirmed it.
+3. Each update is **read** as soon as it is saved. Under it the page
+   shows the edits it is ready to write, each with a **Confirm** button,
+   and the reason for anything it could not place. A revised update is
+   read again. Nothing is read while a recording is still being
+   transcribed; a recording whose transcription failed has to be deleted
+   first.
+4. **Confirm** the edits that are right, one by one or all at once. They
+   are written into the sheet a moment later; a confirmed update is a
+   record and cannot be revised or deleted. A wrong reading is not
+   confirmed: correct the update's text or add a new update.
+5. **Download** the final sheet. The list under the summary names every
+   edit written; the changelog, folded below it, holds every cell
+   changed, the update it came from and who confirmed it.
+
+**Read again** appears when a reading failed (for example when the LLM
+could not be reached) and starts it once more.
 
 Sheets and the changelog are files of the upload in NOMAD, so they can be
 read there as well.

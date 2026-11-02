@@ -67,7 +67,7 @@ initEdit();
 initLiveToggle();
 initVoiceMode();
 
-// The Apply card needs the experiment's sheet summary; a stale answer
+// The Sheet card needs the experiment's sheet summary; a stale answer
 // (the selection changed meanwhile) is dropped.
 let selectionGeneration = 0;
 
