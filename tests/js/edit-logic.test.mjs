@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import {
   confirmAllLabel, describeEditPhase, downloadFilename, editSummary, pendingKeys, previewNotes,
-  reportsByEntry,
+  reportsByEntry, unwrittenCount,
 } from "../../src/sand/apis/static/edit-logic.js";
 
 const REPORT = {
@@ -41,6 +41,11 @@ test("pending keys are the ready edits nobody confirmed", () => {
   assert.deepEqual(pendingKeys([REPORT]), ["k1"]);
   assert.deepEqual(pendingKeys([{ ...REPORT, confirmed: ["k1"] }]), []);
   assert.deepEqual(pendingKeys([{ ...REPORT, ready: [] }]), []);
+});
+
+test("confirmed edits the last run did not write", () => {
+  assert.equal(unwrittenCount({ inputs: [REPORT] }), 0);
+  assert.equal(unwrittenCount({ inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] }), 1);
 });
 
 test("the confirm-all button names the pending edits", () => {

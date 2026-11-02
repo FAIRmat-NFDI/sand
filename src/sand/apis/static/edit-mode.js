@@ -9,6 +9,7 @@
 import { errorDetail, experimentUrl } from "./api.js";
 import {
   confirmAllLabel, describeEditPhase, downloadFilename, editSummary, pendingKeys, reportsByEntry,
+  unwrittenCount,
 } from "./edit-logic.js";
 import { requireExperiment } from "./experiments.js";
 import { setReports } from "./inputs.js";
@@ -66,7 +67,17 @@ function showPending(keys) {
   confirmAllLabelEl.textContent = confirmAllLabel(keys.length);
 }
 
+// the sheet to download is the last run's: not before confirmed edits
+// are written into it
+function gateDownload(unwritten) {
+  downloadFinalBtn.disabled = unwritten > 0;
+  downloadFinalBtn.title = unwritten > 0
+    ? unwritten + " confirmed edit" + (unwritten === 1 ? " is" : "s are") + " not in the sheet yet: apply the updates first"
+    : "";
+}
+
 function renderResult(status) {
+  gateDownload(unwrittenCount(status));
   applySummary.textContent = editSummary(status);
   changelogEl.textContent = status.changelog || "";
   applyResult.hidden = false;
@@ -173,6 +184,7 @@ export function showEdit(experiment, summary) {
   current = experiment;
   idle();
   showPending([]);
+  gateDownload(0);
   applyResult.hidden = true;
   changelogEl.textContent = "";
   if (!experiment) {

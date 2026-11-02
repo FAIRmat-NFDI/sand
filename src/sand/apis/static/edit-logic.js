@@ -50,6 +50,11 @@ export function previewNotes(report) {
   return (report.preview || "").split("\n").filter((line) => line && !shown.has(line));
 }
 
+// confirmed edits the last run did not write: the final sheet lacks them
+export function unwrittenCount(status) {
+  return (status.inputs || []).reduce((n, report) => n + (report.confirmed_since || []).length, 0);
+}
+
 function count(n, one, many) {
   return n === 1 ? "1 " + one : n + " " + many;
 }
@@ -61,7 +66,7 @@ export function editSummary(status) {
   const parts = [count(status.changes ?? 0, "cell changed", "cells changed")];
   const pending = pendingKeys(reports).length;
   if (pending) parts.push(count(pending, "edit awaits confirmation", "edits await confirmation"));
-  const since = reports.reduce((n, report) => n + (report.confirmed_since || []).length, 0);
+  const since = unwrittenCount(status);
   if (since) parts.push(count(since, "edit confirmed", "edits confirmed") + ", not written yet: apply the updates");
   const refused = reports.filter((report) => report.refused).length;
   if (refused) parts.push(count(refused, "update refused", "updates refused"));
