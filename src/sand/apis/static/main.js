@@ -79,11 +79,14 @@ onExperimentSelected(async (experiment) => {
     showEdit(null, null);
     return;
   }
-  let summary = null;
+  let summary;
   try {
     summary = await fetchSheetSummary(experiment);
   } catch (err) {
+    if (generation !== selectionGeneration) return;
     showError("Could not read the experiment's sheet: " + err.message);
+    showEdit(null, null); // unknown whether there is a sheet: no claim
+    return;
   }
   if (generation !== selectionGeneration) return;
   showEdit(experiment, summary);
