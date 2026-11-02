@@ -1,14 +1,15 @@
-// The Apply card of edit mode: run the edit job on the experiment's
-// updates, show its progress, the changelog, and the final sheet to
-// download. Confirmations are sent from the input tiles (inputs.js)
-// through confirmEdit; applying again writes them into the sheet.
+// The Apply card: run the edit job on the experiment's updates, show
+// its progress, the changelog, and the final sheet to download.
+// Confirmations are sent from the input tiles (inputs.js) through
+// confirmEdit, or all at once from here; a job then writes them.
 //
-// Like the extraction: the job's status file is polled, and selecting
-// an experiment resumes an unfinished job's polling (reload-proof).
+// The job's status file is polled, and selecting an experiment resumes
+// an unfinished job's polling (reload-proof).
 
 import { errorDetail, experimentUrl } from "./api.js";
 import {
   confirmAllLabel, describeEditPhase, downloadFilename, editSummary, pendingKeys, reportsByEntry,
+  unwrittenCount,
 } from "./edit-logic.js";
 import { requireExperiment } from "./experiments.js";
 import { setReports } from "./inputs.js";
@@ -28,6 +29,7 @@ const POLL_MS = 3000;
 let pollTimer = null;
 let pollGeneration = 0;
 let current = null; // the experiment the card shows
+let downloading = false;
 let pending = []; // keys of the last completed job's unconfirmed edits
 let confirming = null; // entry id of the experiment whose confirm-all is on its way
 
@@ -66,7 +68,20 @@ function showPending(keys) {
   confirmAllLabelEl.textContent = confirmAllLabel(keys.length);
 }
 
+// the sheet to download is the last run's: not before confirmed edits
+// are written into it
+let unwrittenShown = 0; // the shown experiment's gate, kept across a download
+
+function gateDownload(unwritten) {
+  unwrittenShown = unwritten;
+  downloadFinalBtn.disabled = unwritten > 0 || downloading;
+  downloadFinalBtn.title = unwritten > 0
+    ? unwritten + " confirmed edit" + (unwritten === 1 ? " is" : "s are") + " not in the sheet yet: apply the updates first"
+    : "";
+}
+
 function renderResult(status) {
+  gateDownload(unwrittenCount(status));
   applySummary.textContent = editSummary(status);
   changelogEl.textContent = status.changelog || "";
   applyResult.hidden = false;
@@ -173,10 +188,21 @@ export function showEdit(experiment, summary) {
   current = experiment;
   idle();
   showPending([]);
+  gateDownload(0);
   applyResult.hidden = true;
   changelogEl.textContent = "";
+  if (!experiment || !summary) {
+    // nothing to poll: the tiles forget the last job's reports here
+    setReports({}, false, null);
+  }
   if (!experiment) {
     sheetSummaryEl.textContent = "";
+    return;
+  }
+  if (!summary) {
+    // made before sheets, or by the other tool of this page's past
+    sheetSummaryEl.textContent = "This experiment has no sheet to update.";
+    applyBtn.disabled = true;
     return;
   }
   sheetSummaryEl.textContent = "Sheet “" + summary.name + "”: "
@@ -219,6 +245,7 @@ async function downloadFinal() {
   clearError();
   const experiment = requireExperiment();
   if (!experiment) return;
+  downloading = true;
   downloadFinalBtn.disabled = true;
   try {
     const res = await fetch(experimentUrl(experiment, "final-sheet"));
@@ -236,7 +263,9 @@ async function downloadFinal() {
   } catch (err) {
     showError("Network error: " + err.message);
   } finally {
-    downloadFinalBtn.disabled = false;
+    // the button follows the gate of whatever the card shows now
+    downloading = false;
+    gateDownload(unwrittenShown);
   }
 }
 

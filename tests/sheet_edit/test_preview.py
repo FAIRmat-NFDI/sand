@@ -284,13 +284,13 @@ def test_what_nothing_used_comes_last(catalog):
     assert lines(catalog, edit(said=said), instruction=said) == [
         '2: Spin Coating · Rotation speed [rpm]: 3000 → 4000, all 12 samples',
         '   from "speed 4000 and time 40"',
-        '⚠ not applied: "time 40"',
+        '⚠ no update in: "time 40"',
     ]
     # a misquoted edit still reads as an edit: replay (PR 14) drops it
     assert lines(catalog, edit(said='speed to 4000'), instruction='speed 4000') == [
         '2: Spin Coating · Rotation speed [rpm]: 3000 → 4000, all 12 samples',
         '   from "speed to 4000"',
-        '⚠ not applied: "speed 4000"',
+        '⚠ no update in: "speed 4000"',
         '⚠ misquoted: "speed to 4000"',
     ]
 
