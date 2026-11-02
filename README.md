@@ -1,14 +1,25 @@
 # sand
 
-A voice and text assistant for the lab. Researchers record or type what they
-do during an experiment; sand stores it in NOMAD and turns it into structured
-data with an LLM.
+A voice and text assistant that keeps a lab's Excel sheet up to date.
+Researchers say or type what changed during an experiment ("spin coating
+speed is now 4000 for samples 1 to 3"); sand reads the sheet, works out
+which cells the update means, and writes them once the researcher has
+confirmed. The original file is never modified; the result is a new sheet
+plus a changelog.
 
-- **Record** spoken notes, with a live transcript while speaking.
-- **Write** notes by hand.
-- **Review** all inputs of an experiment in time order, correct their text,
-  or delete one (its NOMAD entry and, for a recording, the audio).
-- **Extract** the experiment into structured data for a lab's format.
+- **Start from a sheet**: upload the lab's batch sheet; it is checked and
+  stored in NOMAD unchanged.
+- **Record** spoken updates, with a live transcript while speaking.
+- **Write** updates by hand.
+- **Review** all updates of an experiment in the order they were made,
+  correct their text, or delete one (its NOMAD entry and, for a recording,
+  the audio).
+- **Apply**: an LLM turns each update into cell edits. Every edit is shown
+  and must be confirmed before it is written. An update the sheet cannot
+  take (unknown sample, unknown column, a value of the wrong kind) is
+  refused with the reason; sand never guesses.
+- **Download** the final sheet and read the changelog of what changed and
+  why.
 - **Voice mode**: start and stop recordings by voice, for work where the
   hands are not free (e.g. in a glove box).
 
@@ -18,23 +29,40 @@ data with an LLM.
 flowchart LR
     user([Researcher]) --> ui[sand page<br/>in the browser]
     ui --> api[sand API<br/>inside NOMAD]
-    api --> upload[(NOMAD upload<br/>= one experiment)]
+    api --> upload[(NOMAD upload<br/>= one experiment:<br/>sheet + updates)]
     upload -- audio --> eln[nomad-voice-eln<br/>transcribes]
     eln --> upload
-    api -- extract --> llm[nomad-llm-extraction<br/>LLM]
-    llm --> result[structured data<br/>in NOMAD]
+    api -- apply --> job[edit job<br/>on the action worker]
+    job -- asks --> llm[nomad-llm-extraction<br/>LLM]
+    job --> result[final sheet + changelog<br/>in the upload]
 ```
 
-- An **experiment** is one NOMAD upload. It holds an `InputCollection` entry
-  and every recording (`AudioInput`) and note (`WrittenNote`) made for it.
-  These entry types come from
+- An **experiment** is one NOMAD upload. It holds the uploaded sheet, an
+  `InputCollection` entry and every recording (`AudioInput`) and note
+  (`WrittenNote`) made for it. These entry types come from
   [`nomad-voice-eln`](https://github.com/FAIRmat-NFDI/nomad-voice-eln).
-- sand does not transcribe or store anything itself: audio, transcripts and
-  corrections live in the NOMAD entries.
-- **Extraction** runs as a NOMAD action on the action worker. The LLM reads
-  the inputs in time order and fills in the lab's format.
-  Currently supported format: **hysprint** (solar cell processing; the result
-  is a batch sheet read by [`nomad-hysprint`](https://github.com/nomad-hzb/nomad-hysprint)).
+- sand does not transcribe or store anything itself: audio, transcripts
+  and corrections live in the NOMAD entries; the sheets and the changelog
+  are files of the upload.
+- **Applying** runs as a NOMAD action on the action worker. Updates are
+  interpreted in time order against the sheet as the earlier confirmed
+  updates left it. The LLM only proposes; deterministic checks decide
+  whether a proposed edit fits the sheet, and nothing is written without a
+  confirmation. The final sheet is rebuilt from the original every time,
+  then verified cell by cell.
+- The time of an update is the time it was made and cannot be changed:
+  the order of updates is the order they were made.
+
+### The sheet
+
+The sheet is the lab's batch sheet: one row per sample, one column per
+value. Cell A1 is `Experiment Info`; the rest of row 1 holds the step
+labels with their position (`1: Spin Coating`), row 2 the column
+headers, samples start at row 3 with a `Sample` column. The upload is
+refused, with each problem listed, when the sheet is not of this form:
+no headers in row 2, merged cells below row 1, a step label without its
+position, a column with values but no header, a sample row without a
+sample name.
 
 ## Setup
 
@@ -49,6 +77,13 @@ Install these plugins in the same NOMAD:
 - [`nomad-voice-eln`](https://github.com/FAIRmat-NFDI/nomad-voice-eln)
 - [`nomad-llm-extraction`](https://github.com/FAIRmat-NFDI/nomad-llm-extraction)
 
+API keys for the services the action worker calls:
+
+- a [Groq](https://groq.com) key: transcription (Whisper)
+- the key of the LLM provider of your `llm_model_name`, e.g. a Gemini key
+- optional: a [Deepgram](https://deepgram.com) key for the live transcript
+  while recording
+
 ### 1. Add sand to the distribution
 
 From the root of `nomad-distro-dev`:
@@ -60,24 +95,21 @@ uv add packages/sand
 
 ### 2. Configure `nomad.yaml`
 
-`uv run poe setup` (step 3) creates `nomad.yaml` if it is missing. Enable the
-entry points and set sand's options:
+`uv run poe setup` (step 3) creates `nomad.yaml` if it is missing. Enable
+the entry points and set sand's options:
 
 ```yaml
 plugins:
   entry_points:
     include:
       - sand.apis:sand_api
-      - sand.actions.extract:extract_action_entry_point
+      - sand.actions.edit:edit_action_entry_point
       - nomad_gui.apis:gui_api
       - nomad_voice_eln.schema_packages:schema_package_entry_point
       - nomad_voice_eln.parsers:parser_entry_point
       - nomad_voice_eln.actions.transcribe:transcribe_action_entry_point
       - nomad_voice_eln.actions.record_note:record_note_action_entry_point
       - nomad_llm_extraction.actions:llm_extractor_action_entry_point
-      # the extraction format
-      - nomad_hysprint.schema_packages:hysprint_package
-      - nomad_hysprint.parsers:hysprint_experiment_parser
     options:
       sand.apis:sand_api:
         llm_model_name: 'gemini/gemini-2.5-flash'  # LiteLLM notation
@@ -92,6 +124,8 @@ plugins:
 ```
 
 `include` is a whitelist: every other plugin you use must be listed too.
+The edit job runs on the CPU task queue of the action worker, like the
+LLM action it calls.
 
 > [!WARNING]
 > Do not commit real API keys.
@@ -107,14 +141,16 @@ uv sync
 uv run poe start
 ```
 
-In a second terminal, start the action worker. Transcription and extraction
-run there, so it needs the API keys:
+In a second terminal, start the action worker. Transcription and the edit
+job run there, so it needs the API keys:
 
 ```sh
 export GROQ_API_KEY=<your-groq-key>       # transcription (Whisper)
-export GEMINI_API_KEY=<your-gemini-key>   # extraction; the key of your llm_model_name's provider
+export GEMINI_API_KEY=<your-gemini-key>   # the edit job; the key of your llm_model_name's provider
 uv run poe cpuworker
 ```
+
+Plugins load at startup: after a change to `nomad.yaml`, restart both.
 
 ### 4. Open sand
 
@@ -128,6 +164,29 @@ http://localhost:8000/nomad-oasis/dashboards/sand/
 **Login:** sand has no login of its own. It uses the NOMAD GUI's, which
 renews the login token while it is open. Keep a NOMAD GUI tab open in the
 same browser; sand warns when the login is about to end.
+
+## Using it
+
+1. **New experiment** → choose the sheet (`.xlsx`), give the experiment a
+   name, **Create from sheet**. A refused sheet lists its problems; fix
+   the file and upload again.
+2. **Record** or **write** updates. Say or type one change at a time, with
+   the step, the value and the samples it applies to. The updates appear
+   on the right in the order they were made; a transcript can be
+   corrected there.
+3. **Apply the updates**. The job interprets every update; under each
+   one the page shows the edits it is ready to write, each with a
+   **Confirm** button, and the reason for anything it could not place.
+4. **Confirm** the edits that are right. A wrong reading is not confirmed:
+   correct the update's text or add a new update, then apply again.
+5. **Apply** again: the confirmed edits are written into the sheet. Edits
+   already confirmed are kept across runs, as long as their update and the
+   sheet they were made for did not change.
+6. **Download** the final sheet. The changelog below the summary lists
+   every cell changed, the update it came from and who confirmed it.
+
+Sheets and the changelog are files of the upload in NOMAD, so they can be
+read there as well.
 
 ## Voice mode
 
@@ -165,7 +224,7 @@ No beep: the command was not understood, say it again.
 
 - Pause briefly before and after a command. A command in the middle of a
   sentence is part of the note.
-- Start speaking the note after the rising beep.
+- Start speaking the update after the rising beep.
 - A headset or clip-on microphone works much better than a laptop mic.
 - The Record and Stop buttons keep working.
 - English only.
