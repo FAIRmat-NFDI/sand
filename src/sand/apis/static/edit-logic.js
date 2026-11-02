@@ -50,12 +50,32 @@ export function confirmAllLabel(pending) {
   return "Confirm all " + pending + " edits and write";
 }
 
-// the preview without the lines the ready edits already show, nor the
-// words each came from (the input's own text is right above)
+// the preview without the lines the ready edits already show, the words
+// each came from (the input's own text is right above), and the clauses
+// holding no update (nothing to act on)
 export function previewNotes(report) {
   const shown = new Set((report.ready || []).map((edit) => edit.line));
   return (report.preview || "").split("\n")
-    .filter((line) => line && !shown.has(line) && !/^\s+from "/.test(line));
+    .filter((line) => line && !shown.has(line) && !/^\s+from "/.test(line)
+      && !line.startsWith("⚠ no update in:"));
+}
+
+// the edits the last run wrote, one line each in the researcher's words:
+// "Time 1 [s] → 100, all 42 samples (1: Cleaning UV-Ozone)"
+export function writtenLines(status) {
+  const lines = [];
+  for (const report of status.inputs || []) {
+    if (report.refused) continue;
+    const confirmed = new Set(report.confirmed || []);
+    const since = new Set(report.confirmed_since || []);
+    for (const edit of report.ready || []) {
+      if (!confirmed.has(edit.key) || since.has(edit.key)) continue;
+      lines.push(edit.column === undefined
+        ? edit.line
+        : edit.column + " → " + edit.new + ", " + edit.samples + " (" + edit.step + ")");
+    }
+  }
+  return lines;
 }
 
 // confirmed edits the last run did not write: the final sheet lacks them
@@ -67,22 +87,22 @@ function count(n, one, many) {
   return n === 1 ? "1 " + one : n + " " + many;
 }
 
-// one line for a completed job, e.g.
-// "4 cells changed · 2 edits await confirmation · 1 update refused"
+// one line for a completed job, in the researcher's terms, e.g.
+// "2 edits written · 1 edit waits for your confirmation"
 export function editSummary(status) {
   const reports = status.inputs || [];
-  const parts = [count(status.changes ?? 0, "cell changed", "cells changed")];
+  const parts = [];
+  const written = writtenLines(status).length;
+  if (written) parts.push(count(written, "edit written", "edits written"));
   const pending = pendingKeys(reports).length;
-  if (pending) parts.push(count(pending, "edit awaits confirmation", "edits await confirmation"));
+  if (pending) parts.push(count(pending, "edit waits", "edits wait") + " for your confirmation");
   const since = unwrittenCount(status);
   if (since) parts.push(count(since, "edit confirmed", "edits confirmed") + ", not written yet: apply the updates");
   const refused = reports.filter((report) => report.refused).length;
-  if (refused) parts.push(count(refused, "update refused", "updates refused"));
-  if (status.stale_confirmations) {
-    parts.push(count(status.stale_confirmations, "confirmation is stale", "confirmations are stale")
-      + " (the input changed since): look again");
-  }
-  return parts.join(" · ");
+  if (refused) parts.push(count(refused, "update could not", "updates could not") + " be written");
+  // stale confirmations (status.stale_confirmations) are not a line: an
+  // edit that lost its confirmation shows as waiting again
+  return parts.join(" · ") || "Nothing written yet.";
 }
 
 // the name the server gave the download (RFC 6266), else the fallback

@@ -316,12 +316,6 @@ function renderReport(report) {
     p.textContent = "Not written: " + report.refused;
     box.append(p);
   }
-  if (report.cells_written) {
-    const p = document.createElement("p");
-    p.className = "report-written";
-    p.textContent = report.cells_written + (report.cells_written === 1 ? " cell written" : " cells written");
-    box.append(p);
-  }
   return box;
 }
 

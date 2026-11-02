@@ -3,15 +3,23 @@ import { test } from "node:test";
 
 import {
   confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputLocked, pendingKeys,
-  previewNotes, reportsByEntry, unwrittenCount,
+  previewNotes, reportsByEntry, unwrittenCount, writtenLines,
 } from "../../src/sand/apis/static/edit-logic.js";
 
 const REPORT = {
   input: 1,
   entry_id: "n1",
   text: "speed 4000 for samples 1 to 3",
-  preview: "2: Spin Coating · Rotation speed [rpm]: 3000 → 4000, samples 1–3\n⚠ no update in: \"and dry\"",
-  ready: [{ key: "k1", line: "2: Spin Coating · Rotation speed [rpm]: 3000 → 4000, samples 1–3" }],
+  preview: "2: Spin Coating · Rotation speed [rpm]: 3000 → 4000, samples 1–3\n? not found: \"and dry\"",
+  ready: [{
+    key: "k1",
+    line: "2: Spin Coating · Rotation speed [rpm]: 3000 → 4000, samples 1–3",
+    step: "2: Spin Coating",
+    column: "Rotation speed [rpm]",
+    old: "3000",
+    new: "4000",
+    samples: "samples 1–3",
+  }],
   confirmed: [],
   cells_written: 0,
   refused: null,
@@ -60,28 +68,44 @@ test("the confirm-all button names the pending edits", () => {
 });
 
 test("the preview notes are what the ready edits do not show", () => {
-  assert.deepEqual(previewNotes(REPORT), ["⚠ no update in: \"and dry\""]);
+  assert.deepEqual(previewNotes(REPORT), ["? not found: \"and dry\""]);
+  // words with no update in them are nothing to act on
+  assert.deepEqual(previewNotes({ ...REPORT, preview: REPORT.preview + "\n⚠ no update in: \"hello\"" }),
+    ["? not found: \"and dry\""]);
   const withWords = { ...REPORT, preview: REPORT.ready[0].line + "\n   from \"speed 4000\"\n   · read from 'four thousand'" };
   assert.deepEqual(previewNotes(withWords), ["   · read from 'four thousand'"]);
   assert.deepEqual(previewNotes({ ...REPORT, preview: "" }), []);
 });
 
 test("the summary line of a completed job", () => {
-  assert.equal(editSummary({ changes: 0, inputs: [] }), "0 cells changed");
-  assert.equal(
-    editSummary({ changes: 1, inputs: [REPORT] }),
-    "1 cell changed · 1 edit awaits confirmation");
+  assert.equal(editSummary({ changes: 0, inputs: [] }), "Nothing written yet.");
+  assert.equal(editSummary({ changes: 1, inputs: [REPORT] }), "1 edit waits for your confirmation");
   assert.equal(
     editSummary({ changes: 0, inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] }),
-    "0 cells changed · 1 edit confirmed, not written yet: apply the updates");
+    "1 edit confirmed, not written yet: apply the updates");
   assert.equal(
     editSummary({
       changes: 4,
       stale_confirmations: 1,
-      inputs: [REPORT, { ...REPORT, entry_id: "n2", ready: [], refused: "a formula error" }],
+      inputs: [
+        { ...REPORT, confirmed: ["k1"] },
+        { ...REPORT, entry_id: "n2", ready: [], refused: "a formula error" },
+      ],
     }),
-    "4 cells changed · 1 edit awaits confirmation · 1 update refused"
-      + " · 1 confirmation is stale (the input changed since): look again");
+    "1 edit written · 1 update could not be written");
+});
+
+test("the edits written, in the researcher's words", () => {
+  assert.deepEqual(writtenLines({ inputs: [REPORT] }), []);
+  assert.deepEqual(
+    writtenLines({ inputs: [{ ...REPORT, confirmed: ["k1"] }] }),
+    ["Rotation speed [rpm] → 4000, samples 1–3 (2: Spin Coating)"]);
+  // confirmed since the run: not written yet; refused: not written
+  assert.deepEqual(writtenLines({ inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] }), []);
+  assert.deepEqual(writtenLines({ inputs: [{ ...REPORT, confirmed: ["k1"], refused: "a formula error" }] }), []);
+  // a report of an older job has only the line
+  const old = { ...REPORT, confirmed: ["k1"], ready: [{ key: "k1", line: "the line" }] };
+  assert.deepEqual(writtenLines({ inputs: [old] }), ["the line"]);
 });
 
 test("the download name comes from the server when it says one", () => {
