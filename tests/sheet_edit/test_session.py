@@ -94,9 +94,15 @@ def test_a_malformed_entry_does_not_take_the_others_down():
 
 
 def test_confirmations_round_trip():
-    confirmations = {'k1': Confirmation(by='tester', at=WHEN)}
+    confirmations = {
+        'k1': Confirmation(by='tester', at=WHEN),
+        'k2': Confirmation(by='tester', at=WHEN, input='n2'),
+    }
     data = confirmations_json(confirmations)
-    assert data == {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00'}}
+    assert data == {
+        'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00'},
+        'k2': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00', 'input': 'n2'},
+    }
     assert load_confirmations(data) == confirmations
     assert read_confirmations(json.dumps(data).encode()) == data
     assert read_confirmations(None) == {}

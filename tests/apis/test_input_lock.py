@@ -26,9 +26,12 @@ def put_status(voice, reports, collection=COLLECTION):
     ).encode()
 
 
-def put_confirmations(voice, *keys):
+def put_confirmations(voice, *keys, input=None):
+    record = {'by': 'user', 'at': '2026-10-28T12:16:05+00:00'}
+    if input is not None:
+        record['input'] = input
     voice.writer.files[CONFIRMATIONS_FILE] = json.dumps(
-        {key: {'by': 'user', 'at': '2026-10-28T12:16:05+00:00'} for key in keys}
+        {key: record for key in keys}
     ).encode()
 
 
@@ -110,3 +113,34 @@ async def test_no_job_yet_or_another_collections_job_locks_nothing():
         collection='collection-2',
     )
     assert (await revise(voice)).status_code == HTTPStatus.OK
+
+
+async def test_the_lock_outlives_the_key_and_the_status(voice):
+    # confirmed as k1; an earlier input got written since, so the input's
+    # key is k7 now, and another collection's job replaced the status
+    put_confirmations(voice, 'k1', input='n1')
+    put_status(
+        voice,
+        [
+            {
+                'input': 1,
+                'entry_id': 'n1',
+                'ready': [{'key': 'k7', 'line': '...'}],
+                'confirmed': [],
+            }
+        ],
+    )
+    assert (await revise(voice)).status_code == HTTPStatus.CONFLICT
+    put_status(voice, [], collection='collection-2')
+    assert (await revise(voice)).status_code == HTTPStatus.CONFLICT
+    assert (await delete(voice)).status_code == HTTPStatus.CONFLICT
+    assert (await revise(voice, 'n2')).status_code == HTTPStatus.OK
+
+
+async def test_a_damaged_confirmations_file_locks_every_input(voice):
+    voice.writer.files[CONFIRMATIONS_FILE] = b'not json'
+
+    response = await revise(voice)
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert response.json()['detail'].startswith('confirmations file damaged')

@@ -513,7 +513,7 @@ async def revise_input(
     token = get_bearer_token(request)
 
     try:
-        async with voice.build_client(token) as client:
+        async with _upload_lock(upload_id), voice.build_client(token) as client:
             if await _confirmed_input(
                 client, voice, upload_id, collection_entry_id, entry_id
             ):
@@ -621,7 +621,7 @@ async def delete_input(
     token = get_bearer_token(request)
 
     try:
-        async with voice.build_client(token) as client:
+        async with _upload_lock(upload_id), voice.build_client(token) as client:
             if await _confirmed_input(
                 client, voice, upload_id, collection_entry_id, entry_id
             ):
@@ -900,12 +900,30 @@ async def _confirmed_input(
     collection_entry_id: str,
     entry_id: str,
 ) -> bool:
-    """Whether an edit of this input, as the last job read it, is
-    confirmed. The words are a record then: a confirmation is bound to
-    them, and the sheet's history is appended to, never rewritten."""
+    """Whether an edit of this input was ever confirmed. Its words are a
+    record then: the sheet's history is appended to, never rewritten.
+    The confirmations name their input, so the lock outlives the key
+    (which changes with the sheet state before the input) and the status
+    file (another collection's job may replace it). A damaged file locks
+    everything: it needs a look, like the confirm endpoint says."""
+    raw = await voice.writer.read_raw_file(client, upload_id, CONFIRMATIONS_FILE)
+    try:
+        confirmed = load_confirmations(read_confirmations(raw))
+    except ValueError as why:
+        raise HTTPException(
+            status_code=409, detail=f'confirmations file damaged: {why}'
+        ) from why
+    if any(c.input == entry_id for c in confirmed.values()):
+        return True
+    # records made before confirmations named their input: by key
     status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
     if status is None or status.get('collection_entry_id') != collection_entry_id:
         return False
+    overlaid = _with_confirmations(status, confirmations_json(confirmed))
+    for report in overlaid.get('inputs', []):
+        if isinstance(report, dict) and report.get('entry_id') == entry_id:
+            return bool(report.get('confirmed'))
+    return False
     confirmed = await voice.writer.read_json(client, upload_id, CONFIRMATIONS_FILE)
     for report in _with_confirmations(status, confirmed or {}).get('inputs', []):
         if isinstance(report, dict) and report.get('entry_id') == entry_id:
@@ -1016,11 +1034,11 @@ async def confirm_edits(
         async with _upload_lock(upload_id), voice.build_client(token) as client:
             status = await _edit_status(client, voice, upload_id, collection_entry_id)
             ready = {
-                edit['key']
+                edit['key']: report.get('entry_id')
                 for report in status.get('inputs', [])
                 for edit in report.get('ready', [])
             }
-            unknown = sorted(set(body.keys) - ready)
+            unknown = sorted(set(body.keys) - set(ready))
             if unknown and _job_running(status, None):
                 # the running job's reports replace the old ones as it goes
                 raise HTTPException(
@@ -1046,7 +1064,7 @@ async def confirm_edits(
             by = me.get('username') or me.get('name') or me['user_id']
             now = datetime.now(timezone.utc)
             for key in body.keys:
-                confirmed.setdefault(key, Confirmation(by=by, at=now))
+                confirmed.setdefault(key, Confirmation(by=by, at=now, input=ready[key]))
             await voice.writer.write_json(
                 client, upload_id, CONFIRMATIONS_FILE, confirmations_json(confirmed)
             )

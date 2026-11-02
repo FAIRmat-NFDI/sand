@@ -176,6 +176,19 @@ async def test_a_damaged_confirmations_file_is_never_overwritten(voice):
     assert voice.writer.files[CONFIRMATIONS_FILE] == b'{"k1": "yes"}'
 
 
+async def test_a_confirmation_names_its_input(voice):
+    put_status(
+        voice,
+        'completed',
+        inputs=[{'input': 1, 'entry_id': 'n1', 'ready': READY, 'confirmed': []}],
+    )
+
+    await confirm(voice, ['k1'])
+
+    record = json.loads(voice.writer.files[CONFIRMATIONS_FILE])['k1']
+    assert record['input'] == 'n1'
+
+
 async def test_the_status_shows_a_confirmation_as_waiting_for_the_next_run(voice):
     put_status(voice, 'completed')
     await confirm(voice, ['k1'])

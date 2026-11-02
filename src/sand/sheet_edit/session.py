@@ -155,12 +155,21 @@ def load_confirmations(data: dict) -> dict[str, Confirmation]:
             when = datetime.datetime.fromisoformat(at)
         except (KeyError, TypeError, ValueError) as why:
             raise ValueError(f'confirmation {key!r} is malformed: {entry!r}') from why
-        confirmations[key] = Confirmation(by=by, at=when)  # ValueError if naive
+        entry_id = entry.get('input')
+        if entry_id is not None and not isinstance(entry_id, str):
+            raise ValueError(f'confirmation {key!r} is malformed: {entry!r}')
+        confirmations[key] = Confirmation(
+            by=by, at=when, input=entry_id
+        )  # naive: ValueError
     return confirmations
 
 
 def confirmations_json(confirmations: dict[str, Confirmation]) -> dict:
     return {
-        key: {'by': c.by, 'at': c.at.isoformat(timespec='seconds')}
+        key: {
+            'by': c.by,
+            'at': c.at.isoformat(timespec='seconds'),
+            **({'input': c.input} if c.input is not None else {}),
+        }
         for key, c in confirmations.items()
     }
