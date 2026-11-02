@@ -130,7 +130,7 @@
         </section>
 
         <section class="card section section-apply">
-          <h2 class="section-title"><span class="material-icons">playlist_add_check</span>Apply updates</h2>
+          <h2 class="section-title"><span class="material-icons">table_chart</span>Sheet</h2>
           <p class="section-hint" id="sheet-summary"></p>
           <div class="controls">
             <button class="btn btn-secondary" id="apply-btn" type="button">
@@ -147,12 +147,16 @@
             </button>
             <span class="status-text" id="apply-status" role="status"></span>
           </div>
-          <p class="section-hint">Each update is read against the sheet and its edits are shown under the input. Confirm them one by one, or all at once with the button, and they are written. The sheet you download is the original plus the confirmed edits.</p>
+          <p class="section-hint">Apply reads each update and shows its edits under the input. Confirm the right ones, one by one or all at once, and they are written. The sheet you download is the original plus the confirmed edits.</p>
 
           <div class="apply-result" id="apply-result" hidden>
             <hr class="divider">
             <p class="status-text" id="apply-summary"></p>
-            <pre class="changelog-text" id="changelog-text"></pre>
+            <ul class="changed-list" id="changed-list"></ul>
+            <details class="changelog-details">
+              <summary>Full changelog, for the record</summary>
+              <pre class="changelog-text" id="changelog-text"></pre>
+            </details>
           </div>
         </section>
       </div>

@@ -903,10 +903,29 @@ body {
   white-space: nowrap;
 }
 
-.report-note,
-.report-written {
+.report-note {
   margin: 4px 0;
   color: #616161;
+}
+
+.changed-list {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  font-size: 0.9rem;
+}
+
+.changed-list li {
+  margin: 2px 0;
+}
+
+.changelog-details {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: #616161;
+}
+
+.changelog-details summary {
+  cursor: pointer;
 }
 
 .changelog-text {
