@@ -312,6 +312,34 @@ async function deleteInput(item, experiment, button) {
 
 // --- edit mode: the report under an input --------------------------------------
 
+// "Time 1 [s]  900 → 1000" over "1: Cleaning UV-Ozone · all 42 samples";
+// a report of an older job has only the line
+function renderEditWhat(edit) {
+  const what = document.createElement("div");
+  what.className = "report-what";
+  if (edit.column === undefined) {
+    what.textContent = edit.line;
+    return what;
+  }
+  const column = document.createElement("span");
+  column.className = "report-column";
+  column.textContent = edit.column;
+  const change = document.createElement("span");
+  change.className = "report-change";
+  const oldValue = document.createElement("span");
+  oldValue.className = "report-old";
+  oldValue.textContent = edit.old;
+  const newValue = document.createElement("span");
+  newValue.className = "report-new";
+  newValue.textContent = edit.new;
+  change.append(oldValue, " → ", newValue);
+  const where = document.createElement("span");
+  where.className = "report-where";
+  where.textContent = edit.step + " · " + edit.samples;
+  what.append(column, change, where);
+  return what;
+}
+
 function renderReport(report) {
   const box = document.createElement("div");
   box.className = "input-report";
@@ -321,14 +349,11 @@ function renderReport(report) {
   for (const edit of report.ready || []) {
     const row = document.createElement("div");
     row.className = "report-edit";
-    const line = document.createElement("span");
-    line.className = "report-line";
-    line.textContent = edit.line;
-    row.append(line);
+    row.append(renderEditWhat(edit));
     if (confirmed.has(edit.key)) {
       const mark = document.createElement("span");
       mark.className = "report-confirmed";
-      mark.textContent = since.has(edit.key) ? "✓ confirmed, apply to write" : "✓ confirmed";
+      mark.textContent = since.has(edit.key) ? "✓ confirmed, not written yet" : "✓ confirmed";
       row.append(mark);
     } else {
       const btn = document.createElement("button");

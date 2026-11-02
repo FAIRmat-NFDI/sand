@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  describeEditPhase, downloadFilename, editSummary, pendingKeys, previewNotes, reportsByEntry,
+  confirmAllLabel, describeEditPhase, downloadFilename, editSummary, pendingKeys, previewNotes,
+  reportsByEntry,
 } from "../../src/sand/apis/static/edit-logic.js";
 
 const REPORT = {
@@ -42,6 +43,11 @@ test("pending keys are the ready edits nobody confirmed", () => {
   assert.deepEqual(pendingKeys([{ ...REPORT, ready: [] }]), []);
 });
 
+test("the confirm-all button names the pending edits", () => {
+  assert.equal(confirmAllLabel(1), "Confirm the edit and write");
+  assert.equal(confirmAllLabel(3), "Confirm all 3 edits and write");
+});
+
 test("the preview notes are what the ready edits do not show", () => {
   assert.deepEqual(previewNotes(REPORT), ["⚠ not applied: \"and dry\""]);
   assert.deepEqual(previewNotes({ ...REPORT, preview: "" }), []);
@@ -54,7 +60,7 @@ test("the summary line of a completed job", () => {
     "1 cell changed · 1 edit awaits confirmation");
   assert.equal(
     editSummary({ changes: 0, inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] }),
-    "0 cells changed · 1 edit confirmed, not yet applied: apply the updates");
+    "0 cells changed · 1 edit confirmed, not written yet: apply the updates");
   assert.equal(
     editSummary({
       changes: 4,

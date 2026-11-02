@@ -906,13 +906,44 @@ body:not(.mode-edit) .edit-only {
 .report-edit {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 4px 0;
+  gap: 12px;
+  margin: 6px 0;
+  padding: 6px 10px;
+  background: #fafafa;
+  border-radius: 6px;
 }
 
-.report-edit .report-line {
+.report-what {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+}
+
+.report-column {
+  font-weight: 600;
+}
+
+.report-change {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  white-space: nowrap;
+}
+
+.report-old {
+  color: #757575;
+}
+
+.report-new {
+  font-weight: 600;
+  color: #1565c0;
+}
+
+.report-where {
+  flex-basis: 100%;
+  font-size: 0.8rem;
+  color: #757575;
 }
 
 .report-confirmed {

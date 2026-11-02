@@ -303,7 +303,7 @@ def _report(
 ) -> dict:
     """One input as the GUI shows it: the preview, and each edit that may
     be confirmed with its key."""
-    from sand.sheet_edit.preview import edit_lines
+    from sand.sheet_edit.preview import edit_lines, edit_summary
 
     catalog = step.interpretation.catalog
     written = {(c.row, c.column) for c in step.written if c.field == 'value'}
@@ -314,7 +314,11 @@ def _report(
         'from_cache': from_cache,
         'preview': step.interpretation.preview,
         'ready': [
-            {'key': key, 'line': edit_lines(edit, catalog)[0]}
+            {
+                'key': key,
+                'line': edit_lines(edit, catalog)[0],
+                **edit_summary(edit, catalog),
+            }
             for key, edit in step.interpretation.ready.items()
         ],
         'confirmed': [key for key in step.interpretation.ready if key in confirmed],

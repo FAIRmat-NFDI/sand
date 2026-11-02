@@ -71,6 +71,26 @@ def edit_lines(result: Grounded | Refused, catalog: Catalog) -> list[str]:
     return lines
 
 
+def edit_summary(result: Grounded, catalog: Catalog) -> dict[str, str]:
+    """The edit's parts for the GUI: step, column, old and new value, the
+    samples. A no-op (no rows to write) has old == new."""
+    target = catalog.column(result.edit.target)
+    assert target is not None  # ground refused it otherwise
+    new = value_text(result.value)
+    if result.rows:
+        held = {r: g.value for g in target.groups for r in g.rows}
+        old = value_text(held.get(result.rows[0]))
+    else:
+        old = new
+    return {
+        'step': target.column.section.label,
+        'column': target.column.header,
+        'old': old,
+        'new': new,
+        'samples': _samples(result.rows or result.unchanged, catalog),
+    }
+
+
 def _change(result: Grounded, target: ColumnInfo, catalog: Catalog) -> str:
     """'3000 → 4000, all 12 samples'. The rows written all hold the same
     value: check O refused the edit otherwise."""
