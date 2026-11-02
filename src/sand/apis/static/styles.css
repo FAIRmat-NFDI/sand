@@ -245,7 +245,7 @@ body {
   margin: 8px 0 0;
 }
 
-/* Extract result card */
+/* Result title */
 .results-title {
   font-size: 1rem;
   font-weight: 600;
@@ -253,8 +253,8 @@ body {
   margin-bottom: 8px;
 }
 
-/* Sections: Record, Note and Extraction on the left, the Inputs
-   timeline beside them on wide screens; one column otherwise. */
+/* Sections: Record, Note and Apply on the left, the Inputs timeline
+   beside them on wide screens; one column otherwise. */
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

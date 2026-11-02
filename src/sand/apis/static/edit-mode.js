@@ -171,6 +171,10 @@ export function showEdit(experiment, summary) {
   showPending([]);
   applyResult.hidden = true;
   changelogEl.textContent = "";
+  if (!experiment || !summary) {
+    // nothing to poll: the tiles forget the last job's reports here
+    setReports({}, false, null);
+  }
   if (!experiment) {
     sheetSummaryEl.textContent = "";
     return;
