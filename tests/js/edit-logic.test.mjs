@@ -43,16 +43,15 @@ test("pending keys are the ready edits nobody confirmed", () => {
   assert.deepEqual(pendingKeys([{ ...REPORT, ready: [] }]), []);
 });
 
-<<<<<<< HEAD
 test("confirmed edits the last run did not write", () => {
   assert.equal(unwrittenCount({ inputs: [REPORT] }), 0);
   assert.equal(unwrittenCount({ inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] }), 1);
-=======
+});
+
 test("an input is locked once one of its edits is confirmed", () => {
   assert.equal(inputLocked(undefined), false);
   assert.equal(inputLocked(REPORT), false);
   assert.equal(inputLocked({ ...REPORT, confirmed: ["k1"] }), true);
->>>>>>> origin/confirm-all
 });
 
 test("the confirm-all button names the pending edits", () => {
