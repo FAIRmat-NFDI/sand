@@ -8,7 +8,7 @@
 // edit.
 
 import { errorDetail, experimentUrl } from "./api.js";
-import { previewNotes } from "./edit-logic.js";
+import { inputLocked, previewNotes } from "./edit-logic.js";
 import { selectedExperiment } from "./experiments.js";
 import { clearError, confirmDialog, showEntryLink, showError } from "./ui.js";
 
@@ -21,8 +21,10 @@ const refreshInputsBtn = document.getElementById("refresh-inputs-btn");
 let reports = {};
 let jobRunning = false;
 let onConfirm = null;
-// the last rendered list, re-rendered when the reports change
+// the last rendered list, re-rendered when the reports change; a change
+// that arrives while an editor is open renders when the editor closes
 let shown = null;
+let renderPending = false;
 
 let inputsGeneration = 0;
 let inputsRefreshTimer = null;
@@ -68,6 +70,7 @@ function beginLabelEdit(labelBtn, item, experiment) {
     done = true;
     inlineEditing = false;
     editor.replaceWith(labelBtn);
+    if (renderPending) renderIfIdle();
     // the server returns once NOMAD reprocessed the entry
     if (refresh) startInputsRefresh(experiment);
   };
@@ -158,6 +161,8 @@ async function beginRevision(item, experiment, li, textEl) {
   box.append(editor, actions);
   textEl.replaceWith(box);
   li.classList.add("selected");
+  // no confirming words that are about to change
+  for (const btn of li.querySelectorAll(".input-report button")) btn.disabled = true;
   revising = { item, experiment, li, textEl, editor, saveBtn };
   // fit the whole text, capped by the CSS max-height
   editor.style.height = editor.scrollHeight + 2 + "px";
@@ -172,6 +177,12 @@ function endRevision(refocus = false) {
   revising = null;
   editor.parentElement.replaceWith(textEl);
   li.classList.remove("selected");
+  for (const btn of li.querySelectorAll(".input-report button")) btn.disabled = false;
+  if (renderPending) {
+    renderIfIdle(); // replaces the tiles
+    if (refocus) inputsList.querySelector(`[data-entry-id="${CSS.escape(li.dataset.entryId)}"]`)?.focus();
+    return;
+  }
   if (refocus && li.isConnected) li.focus();
 }
 
@@ -320,8 +331,19 @@ export function setReports(byEntry, running, confirm) {
   reports = byEntry;
   jobRunning = running;
   onConfirm = confirm;
-  // an open editor is left alone: the next poll renders the reports
-  if (shown && !inlineEditing && !revising) renderInputs(shown.experiment, shown.items);
+  renderIfIdle();
+}
+
+// an open editor is left alone (its field would be wiped); the render
+// happens when it closes
+function renderIfIdle() {
+  if (!shown) return;
+  if (inlineEditing || revising) {
+    renderPending = true;
+    return;
+  }
+  renderPending = false;
+  renderInputs(shown.experiment, shown.items);
 }
 
 // --- list ------------------------------------------------------------------
@@ -351,6 +373,10 @@ function renderInputs(experiment, items) {
     const li = document.createElement("li");
     li.className = "input-tile";
     li.dataset.entryId = item.entry_id;
+    // a confirmed update is a record: no revising, no deleting (the
+    // server refuses both); a correction is a new update
+    const locked = item.locked || inputLocked(reports[item.entry_id]);
+    if (locked) li.classList.add("input-locked");
 
     const meta = document.createElement("div");
     meta.className = "input-meta";
@@ -383,6 +409,13 @@ function renderInputs(experiment, items) {
       badge.textContent = "· ✎ corrected";
       meta.append(badge);
     }
+    if (locked) {
+      const badge = document.createElement("span");
+      badge.className = "input-badge input-locked-badge";
+      badge.textContent = "· 🔒 confirmed";
+      badge.title = "A confirmed update is a record; a correction is a new update.";
+      meta.append(badge);
+    }
     const nomadLink = document.createElement("a");
     nomadLink.href = item.entry_url;
     nomadLink.target = "_blank";
@@ -392,7 +425,7 @@ function renderInputs(experiment, items) {
     nomadLink.title = "View on NOMAD";
     nomadLink.addEventListener("click", (e) => e.stopPropagation());
     meta.append(nomadLink);
-    if (item.deletable) {
+    if (item.deletable && !locked) {
       const deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
       deleteBtn.className = "btn btn-icon input-delete";
@@ -422,15 +455,19 @@ function renderInputs(experiment, items) {
     li.append(meta, text);
     if (reports[item.entry_id]) li.append(renderReport(reports[item.entry_id]));
     li.tabIndex = 0;
-    li.setAttribute("aria-label", "Revise the " + inputDescription(item));
-    li.addEventListener("click", () => beginRevision(item, experiment, li, text));
-    li.addEventListener("keydown", (e) => {
-      // only the tile itself: Enter/Space on its time button, link or
-      // editor must keep their own action
-      if (e.target !== li || (e.key !== "Enter" && e.key !== " ")) return;
-      e.preventDefault();
-      beginRevision(item, experiment, li, text);
-    });
+    if (locked) {
+      li.setAttribute("aria-label", "Confirmed " + inputDescription(item));
+    } else {
+      li.setAttribute("aria-label", "Revise the " + inputDescription(item));
+      li.addEventListener("click", () => beginRevision(item, experiment, li, text));
+      li.addEventListener("keydown", (e) => {
+        // only the tile itself: Enter/Space on its link or editor must
+        // keep their own action
+        if (e.target !== li || (e.key !== "Enter" && e.key !== " ")) return;
+        e.preventDefault();
+        beginRevision(item, experiment, li, text);
+      });
+    }
     inputsList.append(li);
     if (item.entry_id === focusedId) li.focus();
   }

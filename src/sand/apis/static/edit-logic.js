@@ -38,6 +38,12 @@ export function pendingKeys(reports) {
   return keys;
 }
 
+// an input one of whose edits was just confirmed: its words are a
+// record (the inputs list says so too, as `locked`, from the file)
+export function inputLocked(report) {
+  return Boolean(report && (report.confirmed || []).length);
+}
+
 // the label of the button that confirms every pending edit and writes
 export function confirmAllLabel(pending) {
   if (pending === 1) return "Confirm the edit and write";
