@@ -30,11 +30,11 @@ test("the phase as the user reads it", () => {
   assert.equal(describeEditPhase({ phase: "collecting" }), "Collecting the updates...");
   assert.equal(
     describeEditPhase({ phase: "interpreting", inputs_done: 0, inputs_total: 3 }),
-    "Interpreting update 1 of 3...");
+    "Reading update 1 of 3...");
   assert.equal(
     describeEditPhase({ phase: "interpreting", inputs_done: 3, inputs_total: 3 }),
-    "Interpreting update 3 of 3...");
-  assert.equal(describeEditPhase({ phase: "interpreting" }), "Interpreting update 1 of ?...");
+    "Reading update 3 of 3...");
+  assert.equal(describeEditPhase({ phase: "interpreting" }), "Reading update 1 of ?...");
   assert.equal(describeEditPhase({ phase: "writing-sheet" }), "Writing the sheet...");
 });
 

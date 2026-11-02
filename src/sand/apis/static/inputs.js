@@ -453,7 +453,17 @@ function renderInputs(experiment, items) {
     }
 
     li.append(meta, text);
-    if (reports[item.entry_id]) li.append(renderReport(reports[item.entry_id]));
+    // a report of other words (revised since) is not this update's
+    const report = reports[item.entry_id];
+    if (report && (report.text === undefined || report.text === item.text)) {
+      li.append(renderReport(report));
+    } else if (item.text && onConfirm) {
+      // the job reads it (now, or as soon as the page starts it)
+      const p = document.createElement("p");
+      p.className = "report-note report-pending";
+      p.textContent = jobRunning ? "Reading the update..." : "Waiting to be read...";
+      li.append(p);
+    }
     li.tabIndex = 0;
     if (locked) {
       li.setAttribute("aria-label", "Confirmed " + inputDescription(item));

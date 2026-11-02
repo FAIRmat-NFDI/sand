@@ -10,7 +10,7 @@ export function describeEditPhase(status) {
     case "interpreting": {
       const total = status.inputs_total ?? 0;
       const current = Math.min((status.inputs_done ?? 0) + 1, total || 1);
-      return "Interpreting update " + current + " of " + (total || "?") + "...";
+      return "Reading update " + current + " of " + (total || "?") + "...";
     }
     case "writing-sheet":
       return "Writing the sheet...";

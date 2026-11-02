@@ -85,6 +85,12 @@ function flushWrite() {
 function idle() {
   running = false;
   applyStatus.textContent = "";
+  applyStatus.classList.remove("busy");
+}
+
+function busy(text) {
+  applyStatus.textContent = text;
+  applyStatus.classList.add("busy");
 }
 
 function showPending(keys) {
@@ -149,7 +155,11 @@ async function poll(experiment, generation) {
     return;
   }
   running = status.phase !== "completed" && status.phase !== "failed";
-  reportsShown = reportsByEntry(status);
+  // while the job runs, the last run's reports stay under the inputs it
+  // has not reached yet (its own replace them one by one)
+  reportsShown = running
+    ? { ...reportsShown, ...reportsByEntry(status) }
+    : reportsByEntry(status);
   setReports(reportsShown, running, confirmHandler(experiment));
   showPending(status.phase === "completed" ? pendingKeys(status.inputs || []) : []);
   if (status.phase === "completed") {
@@ -166,7 +176,7 @@ async function poll(experiment, generation) {
     return;
   }
   readAgainBtn.hidden = true;
-  applyStatus.textContent = describeEditPhase(status);
+  busy(describeEditPhase(status));
   later(experiment, generation);
 }
 
@@ -314,7 +324,7 @@ async function startJob(experiment) {
     readAgainBtn.hidden = true;
     applyResult.hidden = true;
     changelogFold.open = false;
-    applyStatus.textContent = "Starting...";
+    busy("Starting...");
   }
   try {
     const res = await fetch(experimentUrl(experiment, "edit-async"), { method: "POST" });

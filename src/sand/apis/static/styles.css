@@ -908,6 +908,31 @@ body {
   color: #616161;
 }
 
+/* the job is at work: a turning ring before the text */
+.report-pending,
+.status-text.busy {
+  color: #616161;
+  font-style: italic;
+}
+
+.report-pending::before,
+.status-text.busy::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 2px solid #2A4CDF;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: turning 0.8s linear infinite;
+}
+
+@keyframes turning {
+  to { transform: rotate(360deg); }
+}
+
 .changed-list {
   margin: 8px 0 0;
   padding-left: 20px;
