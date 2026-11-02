@@ -514,6 +514,14 @@ async def revise_input(
 
     try:
         async with voice.build_client(token) as client:
+            if await _confirmed_input(
+                client, voice, upload_id, collection_entry_id, entry_id
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail='a confirmed update is a record and cannot be changed; '
+                    'add a new update instead',
+                )
             kind = await voice.revise_input(
                 client,
                 upload_id,
@@ -614,6 +622,14 @@ async def delete_input(
 
     try:
         async with voice.build_client(token) as client:
+            if await _confirmed_input(
+                client, voice, upload_id, collection_entry_id, entry_id
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail='a confirmed update is a record and cannot be deleted; '
+                    'add a new update that sets the value back',
+                )
             await voice.delete_input(
                 client,
                 upload_id,
@@ -875,6 +891,26 @@ async def _edit_status(
         )
     confirmed = await voice.writer.read_json(client, upload_id, CONFIRMATIONS_FILE)
     return _with_confirmations(status, confirmed or {})
+
+
+async def _confirmed_input(
+    client,
+    voice: VoiceElnService,
+    upload_id: str,
+    collection_entry_id: str,
+    entry_id: str,
+) -> bool:
+    """Whether an edit of this input, as the last job read it, is
+    confirmed. The words are a record then: a confirmation is bound to
+    them, and the sheet's history is appended to, never rewritten."""
+    status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
+    if status is None or status.get('collection_entry_id') != collection_entry_id:
+        return False
+    confirmed = await voice.writer.read_json(client, upload_id, CONFIRMATIONS_FILE)
+    for report in _with_confirmations(status, confirmed or {}).get('inputs', []):
+        if isinstance(report, dict) and report.get('entry_id') == entry_id:
+            return bool(report.get('confirmed'))
+    return False
 
 
 def _with_confirmations(status: dict, confirmed: dict) -> dict:

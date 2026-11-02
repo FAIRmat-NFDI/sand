@@ -8,7 +8,7 @@
 // edit.
 
 import { errorDetail, experimentUrl } from "./api.js";
-import { previewNotes } from "./edit-logic.js";
+import { inputLocked, previewNotes } from "./edit-logic.js";
 import { selectedExperiment } from "./experiments.js";
 import { clearError, confirmDialog, showEntryLink, showError } from "./ui.js";
 
@@ -351,6 +351,10 @@ function renderInputs(experiment, items) {
     const li = document.createElement("li");
     li.className = "input-tile";
     li.dataset.entryId = item.entry_id;
+    // a confirmed update is a record: no revising, no deleting (the
+    // server refuses both); a correction is a new update
+    const locked = inputLocked(reports[item.entry_id]);
+    if (locked) li.classList.add("input-locked");
 
     const meta = document.createElement("div");
     meta.className = "input-meta";
@@ -383,6 +387,13 @@ function renderInputs(experiment, items) {
       badge.textContent = "· ✎ corrected";
       meta.append(badge);
     }
+    if (locked) {
+      const badge = document.createElement("span");
+      badge.className = "input-badge input-locked-badge";
+      badge.textContent = "· 🔒 confirmed";
+      badge.title = "A confirmed update is a record; a correction is a new update.";
+      meta.append(badge);
+    }
     const nomadLink = document.createElement("a");
     nomadLink.href = item.entry_url;
     nomadLink.target = "_blank";
@@ -392,7 +403,7 @@ function renderInputs(experiment, items) {
     nomadLink.title = "View on NOMAD";
     nomadLink.addEventListener("click", (e) => e.stopPropagation());
     meta.append(nomadLink);
-    if (item.deletable) {
+    if (item.deletable && !locked) {
       const deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
       deleteBtn.className = "btn btn-icon input-delete";
@@ -422,15 +433,19 @@ function renderInputs(experiment, items) {
     li.append(meta, text);
     if (reports[item.entry_id]) li.append(renderReport(reports[item.entry_id]));
     li.tabIndex = 0;
-    li.setAttribute("aria-label", "Revise the " + inputDescription(item));
-    li.addEventListener("click", () => beginRevision(item, experiment, li, text));
-    li.addEventListener("keydown", (e) => {
-      // only the tile itself: Enter/Space on its time button, link or
-      // editor must keep their own action
-      if (e.target !== li || (e.key !== "Enter" && e.key !== " ")) return;
-      e.preventDefault();
-      beginRevision(item, experiment, li, text);
-    });
+    if (locked) {
+      li.setAttribute("aria-label", "Confirmed " + inputDescription(item));
+    } else {
+      li.setAttribute("aria-label", "Revise the " + inputDescription(item));
+      li.addEventListener("click", () => beginRevision(item, experiment, li, text));
+      li.addEventListener("keydown", (e) => {
+        // only the tile itself: Enter/Space on its link or editor must
+        // keep their own action
+        if (e.target !== li || (e.key !== "Enter" && e.key !== " ")) return;
+        e.preventDefault();
+        beginRevision(item, experiment, li, text);
+      });
+    }
     inputsList.append(li);
     if (item.entry_id === focusedId) li.focus();
   }

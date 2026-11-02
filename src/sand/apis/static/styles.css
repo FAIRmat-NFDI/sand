@@ -492,6 +492,16 @@ body {
   background: #f2f2f2;
 }
 
+.input-tile.input-locked {
+  cursor: default;
+  border-left-color: #a5d6a7;
+}
+
+.input-tile.input-locked:hover {
+  background: #fafafa;
+}
+
+
 .input-tile.selected {
   background: #fff8e1;
   border-left-color: #f9a825;
@@ -553,8 +563,14 @@ body {
   width: 14em;
 }
 
-.input-meta .input-badge {
+.input-meta .input-badge,
+.input-meta .input-when {
   color: #2e7d32;
+  white-space: nowrap;
+}
+
+.input-meta .input-when {
+  color: inherit;
 }
 
 .input-meta .input-nomad-link {
