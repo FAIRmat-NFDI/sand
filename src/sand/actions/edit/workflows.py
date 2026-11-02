@@ -139,7 +139,8 @@ class EditSheetWorkflow:
                 'inputs_replayed': replayed,
                 'model': job.llm_model_name,
             }
-            await status({**progress, 'inputs_done': replayed})
+            if replayed < total:
+                await status({**progress, 'inputs_done': replayed})
 
             for number, entry_id in enumerate(collected['input_entry_ids'], 1):
                 if number <= replayed:

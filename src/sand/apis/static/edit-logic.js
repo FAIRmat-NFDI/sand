@@ -14,6 +14,7 @@ export function describeEditPhase(status) {
       // ones were replayed from their saved answers
       const replayed = status.inputs_replayed ?? 0;
       const total = (status.inputs_total ?? 0) - replayed;
+      if (replayed && !total) return "Checking the earlier updates...";
       const current = Math.min((status.inputs_done ?? 0) - replayed + 1, total || 1);
       return "Reading update " + current + " of " + (total || "?") + "...";
     }

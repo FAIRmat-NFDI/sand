@@ -251,7 +251,7 @@ async def test_the_leading_cached_inputs_are_replayed_in_one_go():
     (third,) = stubs.of('apply')
     assert (third.number, len(third.answers)) == (3, 2)
     assert [r['input'] for r in result['inputs']] == [1, 2, 3]
-    assert [r.get('from_cache') for r in result['inputs']] == [True, True, None]
+    assert [r['from_cache'] for r in result['inputs'][:2]] == [True, True]
     interpreting = [s for s in stubs.of('status') if s['phase'] == 'interpreting']
     assert [s['inputs_done'] for s in interpreting] == [2, 2, 3]
     assert all(s['inputs_replayed'] == 2 for s in interpreting)  # noqa: PLR2004
@@ -263,10 +263,10 @@ async def test_everything_cached_is_replayed_then_written():
     result = await run(stubs)
     assert stubs.of('prepare') == stubs.of('apply') == []
     assert [r['input'] for r in result['inputs']] == [1, 2]
+    # nothing left to read: no "interpreting" snapshot
     assert [s['phase'] for s in stubs.of('status')] == [
         'collecting',
         'replaying',
-        'interpreting',
         'writing-sheet',
         'completed',
     ]

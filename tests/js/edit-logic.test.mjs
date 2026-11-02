@@ -43,6 +43,9 @@ test("the phase as the user reads it", () => {
   assert.equal(
     describeEditPhase({ phase: "interpreting", inputs_done: 4, inputs_total: 5, inputs_replayed: 3 }),
     "Reading update 2 of 2...");
+  assert.equal(
+    describeEditPhase({ phase: "interpreting", inputs_done: 3, inputs_total: 3, inputs_replayed: 3 }),
+    "Checking the earlier updates...");
   assert.equal(describeEditPhase({ phase: "writing-sheet" }), "Writing the sheet...");
 });
 
