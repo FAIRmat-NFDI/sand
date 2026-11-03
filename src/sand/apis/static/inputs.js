@@ -9,7 +9,7 @@
 // and starts the job that reads a new or revised input.
 
 import { errorDetail, experimentUrl } from "./api.js";
-import { inputLocked, pendingKeys, previewNotes } from "./edit-logic.js";
+import { inputLocked, inputState, previewNotes } from "./edit-logic.js";
 import { selectedExperiment } from "./experiments.js";
 import { clearError, confirmDialog, showEntryLink, showError } from "./ui.js";
 
@@ -383,14 +383,7 @@ function renderInputs(experiment, items) {
     // a report of other words (revised since) is not this update's
     const report = reports[item.entry_id];
     const reported = report && (report.text === undefined || report.text === item.text);
-    // the rail dot shows the state: reading (turning), edits ready
-    // (blue), applied (green), refused (red); hollow while waiting
-    if (reported && report.refused) li.classList.add("input-refused");
-    else if (reported && pendingKeys([report]).length) li.classList.add("input-ready");
-    else if (!reported && item.text && onConfirm && jobRunning) li.classList.add("input-reading");
 
-    const body = document.createElement("div");
-    body.className = "input-body";
     const meta = document.createElement("div");
     meta.className = "input-meta";
     const icon = document.createElement("span");
@@ -410,25 +403,31 @@ function renderInputs(experiment, items) {
       beginLabelEdit(labelBtn, item, experiment);
     });
     meta.append(labelBtn);
+    // the time is when the update was made: not editable
+    const when = document.createElement("span");
+    when.className = "input-when";
+    when.textContent = inputTime(item);
+    meta.append(when);
     if (item.corrected) {
       const badge = document.createElement("span");
       badge.className = "input-badge";
       badge.textContent = "corrected";
       meta.append(badge);
     }
-    if (locked) {
-      // "applied" once the last run wrote every confirmed edit
-      const badge = document.createElement("span");
-      badge.className = "input-badge input-applied";
-      badge.textContent = (reported && (report.confirmed_since || []).length) ? "confirmed" : "applied";
-      badge.title = "A confirmed update is a record; a correction is a new update.";
-      meta.append(badge);
+    // the state and the hover actions, at the right
+    const right = document.createElement("span");
+    right.className = "input-right";
+    meta.append(right);
+    const state = inputState(item, report, jobRunning, Boolean(onConfirm));
+    if (state) {
+      const chip = document.createElement("span");
+      chip.className = "input-state is-" + state.state;
+      chip.textContent = state.label;
+      if (state.state === "applied") {
+        chip.title = "A confirmed update is a record; a correction is a new update.";
+      }
+      right.append(chip);
     }
-    // the time is when the update was made: not editable
-    const when = document.createElement("span");
-    when.className = "input-when";
-    when.textContent = inputTime(item);
-    meta.append(when);
     const nomadLink = document.createElement("a");
     nomadLink.href = item.entry_url;
     nomadLink.target = "_blank";
@@ -437,7 +436,7 @@ function renderInputs(experiment, items) {
     nomadLink.textContent = "open_in_new";
     nomadLink.title = "View on NOMAD";
     nomadLink.addEventListener("click", (e) => e.stopPropagation());
-    meta.append(nomadLink);
+    right.append(nomadLink);
     if (item.deletable && !locked) {
       const deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
@@ -452,7 +451,7 @@ function renderInputs(experiment, items) {
         e.stopPropagation();
         deleteInput(item, experiment, deleteBtn);
       });
-      meta.append(deleteBtn);
+      right.append(deleteBtn);
     }
 
     const text = document.createElement("div");
@@ -465,17 +464,8 @@ function renderInputs(experiment, items) {
       text.classList.add("input-pending");
     }
 
-    body.append(meta, text);
-    if (reported) {
-      body.append(renderReport(report));
-    } else if (item.text && onConfirm) {
-      // the job reads it (now, or as soon as the page starts it)
-      const p = document.createElement("p");
-      p.className = "report-note report-pending";
-      p.textContent = jobRunning ? "Reading the update..." : "Waiting to be read...";
-      body.append(p);
-    }
-    li.append(body);
+    li.append(meta, text);
+    if (reported) li.append(renderReport(report));
     li.tabIndex = 0;
     if (locked) {
       li.setAttribute("aria-label", "Confirmed " + inputDescription(item));

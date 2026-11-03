@@ -450,13 +450,11 @@ body {
   color: #444;
 }
 
-/* Inputs card: the updates as a timeline. A thin rail runs down the
-   left with one dot per update; the dot tells its state (hollow while
-   it waits, turning while it is read, blue once it has edits to
-   confirm, green once applied, red when refused). Beside the rail: a
-   meta line, the words, then one ledger row per edit. Clicking the
-   words opens a revision editor in place. The list scrolls internally
-   so it never pushes anything below it. */
+/* Inputs card: one card per update, like a commit on GitHub: a tinted
+   header strip (kind, time, label, one state chip, the hover actions),
+   the words, then the edits it makes as rows inside the same card.
+   Clicking the words opens a revision editor in place. The list
+   scrolls internally so it never pushes anything below it. */
 .inputs-header {
   display: flex;
   align-items: center;
@@ -477,11 +475,9 @@ body {
 }
 
 .inputs-list {
-  --rail: #d9dce2;
-  --dot: #b5bac4;
   list-style: none;
-  margin: 14px 0 0;
-  padding: 2px 2px 2px 0;
+  margin: 12px 0 0;
+  padding: 2px;
   max-height: 380px;
   overflow-y: auto;
 }
@@ -494,136 +490,72 @@ body {
 }
 
 .input-tile {
-  position: relative;
-  padding-left: 24px;
+  border: 1px solid #d5d9e0;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
   cursor: pointer;
 }
 
 .input-tile + .input-tile {
-  margin-top: 4px;
+  margin-top: 10px;
 }
 
-/* the dot, and the rail from it down to the next dot */
-.input-tile::before {
-  content: "";
-  position: absolute;
-  left: 2px;
-  top: 13px;
-  width: 10px;
-  height: 10px;
-  border: 2px solid var(--dot);
-  border-radius: 50%;
-  background: #fff;
-  z-index: 1;
-}
-
-.input-tile::after {
-  content: "";
-  position: absolute;
-  left: 6px;
-  top: 25px;
-  bottom: -17px;
-  width: 2px;
-  background: var(--rail);
-}
-
-.input-tile:last-child::after {
-  display: none;
-}
-
-.input-tile.input-reading::before {
-  border-color: #2A4CDF;
-  border-right-color: transparent;
-  animation: turning 0.8s linear infinite;
-}
-
-/* later rules win: an edit still waiting shows over applied, a
-   refusal over both */
-.input-tile.input-locked::before {
-  border-color: #2e7d32;
-  background: #2e7d32;
-}
-
-.input-tile.input-ready::before {
-  border-color: #2A4CDF;
-  background: #2A4CDF;
-}
-
-.input-tile.input-refused::before {
-  border-color: #d32f2f;
-  background: #fff;
-}
-
-.input-tile.selected::before {
-  border-color: #f9a825;
-  background: #f9a825;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .input-tile.input-reading::before {
-    animation: none;
-    border-right-color: #2A4CDF;
-    border-style: dotted;
-  }
-}
-
-.input-body {
-  padding: 8px 10px 10px;
-  border-radius: 8px;
-}
-
-.input-tile:hover .input-body {
-  background: #f4f5f8;
+.input-tile:hover {
+  border-color: #aab2c0;
 }
 
 .input-tile:focus-visible {
   outline: none;
-}
-
-.input-tile:focus-visible .input-body {
-  box-shadow: 0 0 0 2px rgba(42,76,223,0.45);
+  border-color: #2A4CDF;
+  box-shadow: 0 0 0 2px rgba(42,76,223,0.3);
 }
 
 .input-tile.input-locked {
   cursor: default;
 }
 
-.input-tile.input-locked:hover .input-body {
-  background: transparent;
+.input-tile.input-locked:hover {
+  border-color: #d5d9e0;
 }
 
 .input-tile.selected {
   cursor: default;
+  border-color: #f9a825;
 }
 
-.input-tile.selected .input-body {
+.input-tile.selected .input-meta {
   background: #fff8e6;
+  border-bottom-color: #f6e3a8;
 }
 
-/* meta: kind, label and state on the left, the time on the right, the
-   hover actions after it (they keep their place so nothing shifts) */
+/* the header strip: kind and time, the label, then the state at the
+   right with the hover actions after it (they keep their place so
+   nothing shifts) */
 .input-meta {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 22px;
+  min-height: 34px;
+  padding: 4px 8px 4px 12px;
+  background: #f6f8fa;
+  border-bottom: 1px solid #e3e6eb;
   font-size: 0.78rem;
   color: #6b7079;
 }
 
 .input-meta .material-icons {
   font-size: 15px;
-  color: #a0a5ae;
+  color: #8a8f98;
   margin-right: -4px;
 }
 
 .input-meta .input-kind {
   font-weight: 600;
-  color: #444;
+  color: #333;
 }
 
 .input-meta .input-when {
-  margin-left: auto;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   cursor: default;
@@ -633,12 +565,12 @@ body {
   font: inherit;
   font-weight: 600;
   color: #2A4CDF;
-  background: #eaedfc;
+  background: #e6eafb;
   border: none;
   border-radius: 999px;
   padding: 1px 9px;
   cursor: pointer;
-  max-width: 14em;
+  max-width: 12em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -658,7 +590,7 @@ body {
 }
 
 .input-meta .input-label:hover {
-  background: #dde2f9;
+  background: #d8def8;
 }
 
 .input-meta .input-label.empty:hover {
@@ -671,16 +603,82 @@ body {
   border: 1px solid #f9a825;
   border-radius: 4px;
   padding: 1px 6px;
-  width: 14em;
+  width: 12em;
 }
 
 .input-meta .input-badge {
   white-space: nowrap;
 }
 
-.input-meta .input-applied {
-  color: #2e7d32;
+.input-meta .input-right {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* the state chip, one per card */
+.input-meta .input-state {
+  white-space: nowrap;
   font-weight: 600;
+  line-height: 20px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #e9ecf1;
+  color: #555;
+}
+
+.input-meta .input-state.is-ready {
+  background: #2A4CDF;
+  color: #fff;
+}
+
+.input-meta .input-state.is-applied {
+  background: #dcefdc;
+  color: #1e5e24;
+}
+
+.input-meta .input-state.is-writing {
+  background: #dcefdc;
+  color: #1e5e24;
+  font-weight: 400;
+}
+
+.input-meta .input-state.is-refused {
+  background: #fde7e7;
+  color: #b3261e;
+}
+
+.input-meta .input-state.is-waiting,
+.input-meta .input-state.is-none {
+  font-weight: 400;
+}
+
+.input-meta .input-state.is-reading {
+  font-weight: 400;
+  color: #2A4CDF;
+  background: #e6eafb;
+}
+
+.input-meta .input-state.is-reading::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 2px solid #2A4CDF;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: turning 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .input-meta .input-state.is-reading::before {
+    animation: none;
+    border-right-color: #2A4CDF;
+    border-style: dotted;
+  }
 }
 
 .input-meta .input-nomad-link {
@@ -698,7 +696,6 @@ body {
 .input-meta .input-delete {
   color: #8a8f98;
   padding: 0;
-  margin-left: -4px;
   visibility: hidden;
 }
 
@@ -721,7 +718,7 @@ body {
 }
 
 .input-text {
-  margin-top: 2px;
+  padding: 8px 12px 10px;
   font-size: 0.92rem;
   line-height: 1.5;
   color: #222;
@@ -736,9 +733,9 @@ body {
   font-style: italic;
 }
 
-/* In-place revision editor inside a tile */
+/* In-place revision editor inside a card */
 .input-revise {
-  margin-top: 4px;
+  padding: 8px 12px 10px;
 }
 
 .input-revise-text {
@@ -773,10 +770,11 @@ body {
   color: #757575;
 }
 
-/* The edits an update makes: a ledger, one row each. "Time 1 [s]
-   900 → 1000" over where, the action at the right. */
+/* The edits an update makes: rows inside the card, under a rule.
+   "Time 1 [s]  900 → 1000" over where, the action at the right. */
 .input-report {
-  margin-top: 8px;
+  border-top: 1px solid #e3e6eb;
+  padding: 2px 12px 6px;
   font-size: 0.86rem;
   cursor: default;
 }
@@ -785,7 +783,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 6px 0;
+  padding: 7px 0;
 }
 
 .report-edit + .report-edit {
@@ -852,14 +850,13 @@ body {
 }
 
 .report-note {
-  margin: 4px 0 0;
+  margin: 4px 0;
   font-size: 0.82rem;
   color: #6b7079;
 }
 
-.report-pending {
-  color: #6b7079;
-  font-style: italic;
+.report-note.problem-text {
+  color: #b3261e;
 }
 
 .btn-small {
