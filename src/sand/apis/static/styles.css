@@ -534,8 +534,9 @@ body {
    nothing shifts) */
 .input-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
   min-height: 34px;
   padding: 4px 8px 4px 12px;
   background: #f6f8fa;
@@ -578,7 +579,7 @@ body {
 
 .input-meta .input-label.empty {
   font-weight: 400;
-  color: #8a8f98;
+  color: #6b7079;
   background: none;
   padding: 0;
   visibility: hidden;
@@ -707,6 +708,7 @@ body {
 }
 
 .input-meta .input-delete:hover:not(:disabled) {
+  background: none;
   color: #c62828;
 }
 
@@ -718,7 +720,10 @@ body {
 }
 
 .input-text {
-  padding: 8px 12px 10px;
+  /* a margin, not padding, below: the clamp clips inside the padding
+     and a fourth line would show through it */
+  padding: 8px 12px 0;
+  margin-bottom: 10px;
   font-size: 0.92rem;
   line-height: 1.5;
   color: #222;

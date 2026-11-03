@@ -116,7 +116,7 @@ function beginLabelEdit(labelBtn, item, experiment) {
 
 // --- revision in place -----------------------------------------------------
 
-async function beginRevision(item, experiment, li, textEl) {
+async function beginRevision(item, experiment, tile, textNode) {
   if (revising && revising.item.entry_id === item.entry_id) return;
   // a revision already being saved is not lost by switching: no prompt
   if (revising && !revising.saveBtn.disabled
@@ -125,6 +125,15 @@ async function beginRevision(item, experiment, li, textEl) {
     return;
   }
   endRevision();
+  // closing the other editor may have rendered the list anew: the
+  // tile clicked is then replaced (or gone, or locked meanwhile)
+  let li = tile;
+  let textEl = textNode;
+  if (!li.isConnected) {
+    li = inputsList.querySelector(`[data-entry-id="${CSS.escape(item.entry_id)}"]`);
+    textEl = li?.querySelector(".input-text");
+    if (!li || !textEl || li.classList.contains("input-locked")) return;
+  }
 
   const box = document.createElement("div");
   box.className = "input-revise";
@@ -179,7 +188,11 @@ function endRevision(refocus = false) {
   revising = null;
   editor.parentElement.replaceWith(textEl);
   li.classList.remove("selected");
-  for (const btn of li.querySelectorAll(".input-report button")) btn.disabled = false;
+  // back to the state the buttons had: none while a job runs, and a
+  // confirmation in flight stays disabled
+  for (const btn of li.querySelectorAll(".input-report button")) {
+    btn.disabled = jobRunning || !onConfirm || btn.dataset.busy === "1";
+  }
   if (renderPending) {
     renderIfIdle(); // replaces the tiles
     if (refocus) inputsList.querySelector(`[data-entry-id="${CSS.escape(li.dataset.entryId)}"]`)?.focus();
@@ -303,7 +316,10 @@ function renderReport(report) {
       btn.title = jobRunning ? "Wait: the updates are being read" : "Confirm this edit";
       btn.addEventListener("click", async () => {
         btn.disabled = true;
-        if (!(await onConfirm(edit.key))) btn.disabled = false;
+        btn.dataset.busy = "1";
+        const done = await onConfirm(edit.key);
+        delete btn.dataset.busy;
+        if (!done) btn.disabled = jobRunning || !onConfirm;
       });
       row.append(btn);
     }
