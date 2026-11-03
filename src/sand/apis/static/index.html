@@ -152,7 +152,12 @@
           <div class="apply-result" id="apply-result" hidden>
             <hr class="divider">
             <p class="status-text" id="apply-summary"></p>
-            <ul class="changed-list" id="changed-list"></ul>
+            <table class="written-table" id="written-table" hidden>
+              <thead>
+                <tr><th>Step</th><th>Column</th><th>Value</th><th>Samples</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
             <details class="changelog-details">
               <summary>Full changelog, for the record</summary>
               <pre class="changelog-text" id="changelog-text"></pre>

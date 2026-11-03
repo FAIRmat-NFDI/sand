@@ -112,22 +112,34 @@ export function previewNotes(report) {
       && !line.startsWith("⚠ no update in:"));
 }
 
-// the edits the last run wrote, one line each in the researcher's words:
-// "Time 1 [s] → 100, all 42 samples (1: Cleaning UV-Ozone)"
-export function writtenLines(status) {
-  const lines = [];
+// The edits the last run wrote, as rows of a table grouped by step in
+// the sheet's order (steps are numbered "1: Cleaning UV-Ozone"); within
+// a step in the order written. A report of an older job has only the
+// line. `first` marks the first row of a step.
+export function writtenEdits(status) {
+  const rows = [];
   for (const report of status.inputs || []) {
     if (report.refused) continue;
     const confirmed = new Set(report.confirmed || []);
     const since = new Set(report.confirmed_since || []);
     for (const edit of report.ready || []) {
       if (!confirmed.has(edit.key) || since.has(edit.key)) continue;
-      lines.push(edit.column === undefined
-        ? edit.line
-        : edit.column + " → " + edit.new + ", " + edit.samples + " (" + edit.step + ")");
+      rows.push(edit.column === undefined
+        ? { line: edit.line }
+        : { step: edit.step, column: edit.column, value: edit.new, samples: edit.samples });
     }
   }
-  return lines;
+  const order = (row) => {
+    const number = parseInt(row.step, 10);
+    return Number.isNaN(number) ? Infinity : number;
+  };
+  rows.sort((a, b) => order(a) - order(b)); // stable: ties keep the written order
+  let step = {}; // equal to no step, not even an undefined one
+  for (const row of rows) {
+    row.first = row.step !== step;
+    step = row.step;
+  }
+  return rows;
 }
 
 // confirmed edits the last run did not write: the final sheet lacks them
@@ -149,7 +161,7 @@ function count(n, one, many) {
 export function editSummary(status) {
   const reports = status.inputs || [];
   const parts = [];
-  const written = writtenLines(status).length;
+  const written = writtenEdits(status).length;
   if (written) parts.push(count(written, "edit written", "edits written"));
   const pending = pendingKeys(reports).length;
   if (pending) parts.push(count(pending, "edit waits", "edits wait") + " for your confirmation");
