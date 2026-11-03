@@ -179,6 +179,16 @@ test("the edits written, as rows grouped by step", () => {
     ["2: Spin Coating", "Speed", true],
     ["2: Spin Coating", "Volume", false],
   ]);
+  // "10:" after "2:"; unnumbered steps after the numbered, one group per name
+  const mixed = writtenEdits({ inputs: [{ ...REPORT, confirmed: ["a", "b", "c", "d"], ready: [
+    edit("a", "Notes", "Remark"), edit("b", "10: Anneal", "Time"), edit("c", "2: Spin", "Speed"), edit("d", "Notes", "Operator"),
+  ] }] });
+  assert.deepEqual(mixed.map((r) => [r.step, r.column, r.first]), [
+    ["2: Spin", "Speed", true],
+    ["10: Anneal", "Time", true],
+    ["Notes", "Remark", true],
+    ["Notes", "Operator", false],
+  ]);
 });
 
 test("the download name comes from the server when it says one", () => {

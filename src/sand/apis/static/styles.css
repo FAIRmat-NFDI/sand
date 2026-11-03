@@ -1101,9 +1101,9 @@ body {
   border-top: 1px solid #d5d9e0;
 }
 
+/* no fixed widths and no nowrap: a long step name or sample list
+   wraps instead of pushing the table out of a narrow card */
 .written-table .written-step {
-  width: 1%;
-  white-space: nowrap;
   font-weight: 600;
   color: #333;
 }
@@ -1113,7 +1113,6 @@ body {
 }
 
 .written-table .written-value {
-  white-space: nowrap;
   font-weight: 600;
   color: #2A4CDF;
   font-variant-numeric: tabular-nums;
@@ -1121,7 +1120,6 @@ body {
 
 .written-table .written-samples {
   color: #6b7079;
-  white-space: nowrap;
 }
 
 .changelog-details {

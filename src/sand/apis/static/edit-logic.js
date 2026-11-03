@@ -129,11 +129,15 @@ export function writtenEdits(status) {
         : { step: edit.step, column: edit.column, value: edit.new, samples: edit.samples });
     }
   }
-  const order = (row) => {
-    const number = parseInt(row.step, 10);
-    return Number.isNaN(number) ? Infinity : number;
-  };
-  rows.sort((a, b) => order(a) - order(b)); // stable: ties keep the written order
+  // numbered steps by number; the rest after them, by name, so the same
+  // name makes one group; ties keep the written order (sort is stable)
+  const number = (row) => parseInt(row.step, 10);
+  rows.sort((a, b) => {
+    const [x, y] = [number(a), number(b)];
+    if (Number.isNaN(x) !== Number.isNaN(y)) return Number.isNaN(x) ? 1 : -1;
+    if (!Number.isNaN(x)) return x - y;
+    return (a.step || "").localeCompare(b.step || "");
+  });
   let step = {}; // equal to no step, not even an undefined one
   for (const row of rows) {
     row.first = row.step !== step;
