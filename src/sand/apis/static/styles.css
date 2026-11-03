@@ -450,10 +450,13 @@ body {
   color: #444;
 }
 
-/* Inputs card: one tile per recording/note, in the order they were
-   made. A tile = a small meta header + a few lines of text; click it
-   to revise it in place. The list scrolls internally so it never
-   pushes anything below it. */
+/* Inputs card: the updates as a timeline. A thin rail runs down the
+   left with one dot per update; the dot tells its state (hollow while
+   it waits, turning while it is read, blue once it has edits to
+   confirm, green once applied, red when refused). Beside the rail: a
+   meta line, the words, then one ledger row per edit. Clicking the
+   words opens a revision editor in place. The list scrolls internally
+   so it never pushes anything below it. */
 .inputs-header {
   display: flex;
   align-items: center;
@@ -465,82 +468,173 @@ body {
 }
 
 .inputs-list {
+  --rail: #d9dce2;
+  --dot: #b5bac4;
   list-style: none;
-  margin: 8px 0 0;
-  padding: 2px;
+  margin: 14px 0 0;
+  padding: 2px 2px 2px 0;
   max-height: 380px;
   overflow-y: auto;
 }
 
 .inputs-list .inputs-empty {
-  color: #888;
+  color: #8a8f98;
   font-size: 0.9rem;
-  padding: 10px 4px;
+  padding: 18px 4px;
+  text-align: center;
 }
 
 .input-tile {
-  background: #fafafa;
-  border: 1px solid #e8e8e8;
-  border-left: 3px solid #e0e0e0;
-  border-radius: 6px;
-  padding: 10px 12px;
-  margin-bottom: 12px;
+  position: relative;
+  padding-left: 24px;
   cursor: pointer;
 }
 
-.input-tile:hover {
-  background: #f2f2f2;
+.input-tile + .input-tile {
+  margin-top: 4px;
+}
+
+/* the dot, and the rail from it down to the next dot */
+.input-tile::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 13px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--dot);
+  border-radius: 50%;
+  background: #fff;
+  z-index: 1;
+}
+
+.input-tile::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 25px;
+  bottom: -6px;
+  width: 2px;
+  background: var(--rail);
+}
+
+.input-tile:last-child::after {
+  bottom: 0;
+}
+
+.input-tile.input-reading::before {
+  border-color: #2A4CDF;
+  border-right-color: transparent;
+  animation: turning 0.8s linear infinite;
+}
+
+.input-tile.input-ready::before {
+  border-color: #2A4CDF;
+  background: #2A4CDF;
+}
+
+.input-tile.input-locked::before {
+  border-color: #2e7d32;
+  background: #2e7d32;
+}
+
+.input-tile.input-refused::before {
+  border-color: #d32f2f;
+}
+
+.input-tile.selected::before {
+  border-color: #f9a825;
+  background: #f9a825;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .input-tile.input-reading::before {
+    animation: none;
+    border-right-color: #2A4CDF;
+    border-style: dotted;
+  }
+}
+
+.input-body {
+  padding: 8px 10px 10px;
+  border-radius: 8px;
+}
+
+.input-tile:hover .input-body {
+  background: #f4f5f8;
+}
+
+.input-tile:focus-visible {
+  outline: none;
+}
+
+.input-tile:focus-visible .input-body {
+  box-shadow: 0 0 0 2px rgba(42,76,223,0.45);
 }
 
 .input-tile.input-locked {
   cursor: default;
-  border-left-color: #a5d6a7;
 }
 
-.input-tile.input-locked:hover {
-  background: #fafafa;
+.input-tile.input-locked:hover .input-body {
+  background: transparent;
 }
-
 
 .input-tile.selected {
-  background: #fff8e1;
-  border-left-color: #f9a825;
+  cursor: default;
 }
 
+.input-tile.selected .input-body {
+  background: #fff8e6;
+}
+
+/* meta: kind, label and state on the left, the time on the right, the
+   hover actions after it (they keep their place so nothing shifts) */
 .input-meta {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  min-height: 22px;
   font-size: 0.78rem;
-  color: #757575;
+  color: #8a8f98;
 }
 
 .input-meta .material-icons {
-  font-size: 16px;
-  color: #757575;
+  font-size: 15px;
+  color: #a0a5ae;
+  margin-right: -4px;
 }
 
 .input-meta .input-kind {
   font-weight: 600;
-  letter-spacing: 0.02em;
+  color: #444;
 }
 
 .input-meta .input-when {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   cursor: default;
 }
 
 .input-meta .input-label {
   font: inherit;
-  color: #1a237e;
-  background: #e8eaf6;
+  font-weight: 600;
+  color: #2A4CDF;
+  background: #eaedfc;
   border: none;
-  border-radius: 10px;
-  padding: 0 8px;
+  border-radius: 999px;
+  padding: 1px 9px;
   cursor: pointer;
+  max-width: 14em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .input-meta .input-label.empty {
-  color: #9e9e9e;
+  font-weight: 400;
+  color: #a0a5ae;
   background: none;
   padding: 0;
   visibility: hidden;
@@ -552,43 +646,53 @@ body {
 }
 
 .input-meta .input-label:hover {
-  text-decoration: underline dotted;
+  background: #dde2f9;
+}
+
+.input-meta .input-label.empty:hover {
+  background: none;
+  color: #2A4CDF;
 }
 
 .input-meta .input-label-edit {
-  font-size: 0.78rem;
+  font: inherit;
   border: 1px solid #f9a825;
   border-radius: 4px;
-  padding: 0 4px;
+  padding: 1px 6px;
   width: 14em;
 }
 
-.input-meta .input-badge,
-.input-meta .input-when {
-  color: #2e7d32;
+.input-meta .input-badge {
   white-space: nowrap;
 }
 
-.input-meta .input-when {
-  color: inherit;
+.input-meta .input-applied {
+  color: #2e7d32;
+  font-weight: 600;
 }
 
 .input-meta .input-nomad-link {
-  margin-left: auto;
-  color: #9e9e9e;
+  color: #a0a5ae;
   text-decoration: none;
   font-size: 16px;
+  margin: 0;
   visibility: hidden;
 }
 
+.input-meta .input-nomad-link:hover {
+  color: #2A4CDF;
+}
+
 .input-meta .input-delete {
-  color: #9e9e9e;
+  color: #a0a5ae;
   padding: 0;
+  margin-left: -4px;
   visibility: hidden;
 }
 
 .input-meta .input-delete .material-icons {
   font-size: 18px;
+  margin: 0;
   /* not the meta icons' grey: follow the button, red on hover */
   color: inherit;
 }
@@ -605,9 +709,10 @@ body {
 }
 
 .input-text {
-  margin-top: 6px;
-  font-size: 0.9rem;
-  line-height: 1.45;
+  margin-top: 2px;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: #222;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -615,17 +720,13 @@ body {
 }
 
 .input-text.input-pending {
-  color: #9e9e9e;
+  color: #8a8f98;
   font-style: italic;
 }
 
 /* In-place revision editor inside a tile */
-.input-tile.selected {
-  cursor: default;
-}
-
 .input-revise {
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 .input-revise-text {
@@ -634,10 +735,10 @@ body {
   max-height: 50vh;
   padding: 8px 10px;
   font-family: 'Titillium Web', sans-serif;
-  font-size: 0.9rem;
-  line-height: 1.45;
+  font-size: 0.92rem;
+  line-height: 1.5;
   border: 1px solid #f9a825;
-  border-radius: 4px;
+  border-radius: 6px;
   background: #fff;
   resize: vertical;
 }
@@ -658,6 +759,95 @@ body {
 .input-revise-hint {
   font-size: 0.75rem;
   color: #757575;
+}
+
+/* The edits an update makes: a ledger, one row each. "Time 1 [s]
+   900 → 1000" over where, the action at the right. */
+.input-report {
+  margin-top: 8px;
+  font-size: 0.86rem;
+  cursor: default;
+}
+
+.report-edit {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.report-edit + .report-edit {
+  border-top: 1px solid #eceef2;
+}
+
+.report-what {
+  flex: 1;
+  min-width: 0;
+}
+
+.report-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+}
+
+.report-column {
+  font-weight: 600;
+  color: #333;
+}
+
+.report-change {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-old {
+  color: #8a8f98;
+}
+
+.report-new {
+  font-weight: 600;
+  color: #2A4CDF;
+}
+
+.report-where {
+  display: block;
+  font-size: 0.78rem;
+  color: #8a8f98;
+}
+
+.report-confirm.btn {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.8rem;
+  padding: 2px 12px;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.report-confirmed {
+  color: #2e7d32;
+  white-space: nowrap;
+}
+
+.report-confirmed::before {
+  content: "✓ ";
+}
+
+.report-writing {
+  font-style: italic;
+}
+
+.report-note {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  color: #6b7079;
+}
+
+.report-pending {
+  color: #8a8f98;
+  font-style: italic;
 }
 
 .btn-small {
@@ -847,75 +1037,12 @@ body {
   padding-left: 20px;
 }
 
-.input-report {
-  margin-top: 8px;
-  padding-top: 6px;
-  border-top: 1px dashed #e0e0e0;
-  font-size: 0.88rem;
-  cursor: default;
-}
-
-.report-edit {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 6px 0;
-  padding: 6px 10px;
-  background: #fafafa;
-  border-radius: 6px;
-}
-
-.report-what {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 12px;
-}
-
-.report-column {
-  font-weight: 600;
-}
-
-.report-change {
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  white-space: nowrap;
-}
-
-.report-old {
-  color: #757575;
-}
-
-.report-new {
-  font-weight: 600;
-  color: #1565c0;
-}
-
-.report-where {
-  flex-basis: 100%;
-  font-size: 0.8rem;
-  color: #757575;
-}
-
-.report-confirmed {
-  color: #2e7d32;
-  white-space: nowrap;
-}
-
-.report-note {
-  margin: 4px 0;
-  color: #616161;
-}
-
 /* the job is at work: a turning ring before the text */
-.report-pending,
 .status-text.busy {
   color: #616161;
   font-style: italic;
 }
 
-.report-pending::before,
 .status-text.busy::before {
   content: "";
   display: inline-block;
