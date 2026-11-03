@@ -100,10 +100,14 @@ def _change(result: Grounded, target: ColumnInfo, catalog: Catalog) -> str:
 
 
 def samples_text(rows: tuple[int, ...], catalog: Catalog) -> str:
-    """'all 12 samples', else 'samples 1–3'."""
+    """'all 12 samples', 'samples 1–3', 'sample 7'; a row without a
+    label is named 'row 5' (as the catalog says it)."""
     if len(rows) == len(catalog.samples):
         return f'all {len(rows)} samples'
-    return f'samples {catalog.names(rows)}'
+    names = catalog.names(rows)
+    if names.startswith('row '):
+        return names
+    return f'{"sample" if len(rows) == 1 else "samples"} {names}'
 
 
 def _marks(result: Grounded, target: ColumnInfo, catalog: Catalog) -> list[str]:

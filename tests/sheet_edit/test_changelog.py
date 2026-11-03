@@ -188,7 +188,7 @@ def test_written_now_is_the_last_value_of_each_cell(synthetic_xlsx):
     rows = written_now(log, catalog)
     rest = tuple(s.row for s in catalog.samples[1:])
     assert [(r['value'], r['samples']) for r in rows] == [
-        ('6000', 'samples 1'),
+        ('6000', 'sample 1'),
         ('4000', f'samples {catalog.names(rest)}'),
     ]
     # in sheet order by column, the solvent column (M) before the speed (Y)
