@@ -283,6 +283,24 @@ async def test_status_is_the_file_for_this_collection(voice):
     assert response.json()['inputs_done'] == 1
 
 
+async def test_a_stale_job_is_reported_as_failed(voice):
+    # the page waits on any phase but completed/failed: a job that
+    # stopped answering must not hold it forever
+    put_status(voice, 'starting', age_s=STALE_JOB_S + 1, model='gemini/test')
+
+    response = await get(voice, 'edit-status')
+
+    assert response.status_code == HTTPStatus.OK
+    status = response.json()
+    assert (status['phase'], status['stale']) == ('failed', True)
+    assert 'stopped' in status['error']
+    assert status['model'] == 'gemini/test'  # the rest of the file comes through
+    assert status_file(voice)['phase'] == 'starting'  # the file is not touched
+
+    put_status(voice, 'starting', age_s=STALE_JOB_S - 60)
+    assert (await get(voice, 'edit-status')).json()['phase'] == 'starting'
+
+
 @pytest.mark.parametrize('path', ['edit-status', 'edits'])
 async def test_no_status_or_another_collections_is_404(voice, path):
     assert (await get(voice, path)).status_code == HTTPStatus.NOT_FOUND

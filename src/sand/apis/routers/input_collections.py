@@ -891,6 +891,19 @@ async def _edit_status(
         raise HTTPException(
             status_code=404, detail='no edit job for this experiment yet'
         )
+    if status.get('phase') not in ('completed', 'failed') and not _job_running(
+        status, collection_entry_id
+    ):
+        # a job that stopped answering (a crashed worker, a reservation
+        # whose start never reached Temporal): the page would wait on
+        # it forever, so it is reported as the failure it is
+        status = {
+            **status,
+            'phase': 'failed',
+            'stale': True,
+            'error': 'the job stopped: no progress for '
+            f'{STALE_JOB_S // 60} minutes; read the updates again',
+        }
     confirmed = await voice.writer.read_json(client, upload_id, CONFIRMATIONS_FILE)
     return _with_confirmations(status, confirmed or {})
 
