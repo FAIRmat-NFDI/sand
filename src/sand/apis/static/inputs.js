@@ -417,9 +417,10 @@ function renderInputs(experiment, items) {
       meta.append(badge);
     }
     if (locked) {
+      // "applied" once the last run wrote every confirmed edit
       const badge = document.createElement("span");
       badge.className = "input-badge input-applied";
-      badge.textContent = "applied";
+      badge.textContent = (reported && (report.confirmed_since || []).length) ? "confirmed" : "applied";
       badge.title = "A confirmed update is a record; a correction is a new update.";
       meta.append(badge);
     }

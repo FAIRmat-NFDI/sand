@@ -467,6 +467,15 @@ body {
   margin-bottom: 0;
 }
 
+.inputs-header .section-count {
+  font-size: 0.72rem;
+  line-height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #eef0f4;
+  color: #555;
+}
+
 .inputs-list {
   --rail: #d9dce2;
   --dot: #b5bac4;
@@ -478,7 +487,7 @@ body {
 }
 
 .inputs-list .inputs-empty {
-  color: #8a8f98;
+  color: #6b7079;
   font-size: 0.9rem;
   padding: 18px 4px;
   text-align: center;
@@ -513,13 +522,13 @@ body {
   position: absolute;
   left: 6px;
   top: 25px;
-  bottom: -6px;
+  bottom: -17px;
   width: 2px;
   background: var(--rail);
 }
 
 .input-tile:last-child::after {
-  bottom: 0;
+  display: none;
 }
 
 .input-tile.input-reading::before {
@@ -528,18 +537,21 @@ body {
   animation: turning 0.8s linear infinite;
 }
 
-.input-tile.input-ready::before {
-  border-color: #2A4CDF;
-  background: #2A4CDF;
-}
-
+/* later rules win: an edit still waiting shows over applied, a
+   refusal over both */
 .input-tile.input-locked::before {
   border-color: #2e7d32;
   background: #2e7d32;
 }
 
+.input-tile.input-ready::before {
+  border-color: #2A4CDF;
+  background: #2A4CDF;
+}
+
 .input-tile.input-refused::before {
   border-color: #d32f2f;
+  background: #fff;
 }
 
 .input-tile.selected::before {
@@ -596,7 +608,7 @@ body {
   gap: 8px;
   min-height: 22px;
   font-size: 0.78rem;
-  color: #8a8f98;
+  color: #6b7079;
 }
 
 .input-meta .material-icons {
@@ -634,7 +646,7 @@ body {
 
 .input-meta .input-label.empty {
   font-weight: 400;
-  color: #a0a5ae;
+  color: #8a8f98;
   background: none;
   padding: 0;
   visibility: hidden;
@@ -672,7 +684,7 @@ body {
 }
 
 .input-meta .input-nomad-link {
-  color: #a0a5ae;
+  color: #8a8f98;
   text-decoration: none;
   font-size: 16px;
   margin: 0;
@@ -684,7 +696,7 @@ body {
 }
 
 .input-meta .input-delete {
-  color: #a0a5ae;
+  color: #8a8f98;
   padding: 0;
   margin-left: -4px;
   visibility: hidden;
@@ -720,7 +732,7 @@ body {
 }
 
 .input-text.input-pending {
-  color: #8a8f98;
+  color: #6b7079;
   font-style: italic;
 }
 
@@ -803,7 +815,7 @@ body {
 }
 
 .report-old {
-  color: #8a8f98;
+  color: #6b7079;
 }
 
 .report-new {
@@ -814,7 +826,7 @@ body {
 .report-where {
   display: block;
   font-size: 0.78rem;
-  color: #8a8f98;
+  color: #6b7079;
 }
 
 .report-confirm.btn {
@@ -846,7 +858,7 @@ body {
 }
 
 .report-pending {
-  color: #8a8f98;
+  color: #6b7079;
   font-style: italic;
 }
 
