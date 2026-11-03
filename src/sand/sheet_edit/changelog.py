@@ -20,6 +20,7 @@ from dataclasses import asdict, dataclass, fields
 from sand.sheet_edit.apply import Step
 from sand.sheet_edit.catalog import Catalog, build, column_id
 from sand.sheet_edit.ground import Grounded
+from sand.sheet_edit.preview import samples_text
 from sand.sheet_edit.render import value_text
 from sand.sheet_edit.workbook import cell_changes, coord, sha256
 from sand.sheet_edit.write import VerifyFailed, Write, WriteRefused, write_cells
@@ -295,6 +296,36 @@ def _json_entry(e: Entry) -> dict:
 
 def _digest(body: dict) -> str:
     return sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode())
+
+
+def written_now(log: Changelog, catalog: Catalog) -> list[dict]:
+    """What the written cells hold now, for the GUI's table: the last
+    value of each cell, one row per column and value, the samples named
+    as ranges. A cell edited twice shows once; two edits of one column
+    that overlap come out as the samples each value is left on. Formula
+    results are left out (the full log has them). In sheet order: by
+    column, then by the first sample holding the value.
+
+        {'step': '1: Cleaning UV-Ozone', 'column': 'Time 1 [s]',
+         'value': '120', 'samples': 'samples 1–3'}
+    """
+    last: dict[tuple[int, int], Entry] = {}
+    for e in log.entries:
+        if not e.by_formula:
+            last[(e.column, e.row)] = e
+    rows: dict[tuple[int, str, str, str], list[int]] = {}
+    for (column, row), e in sorted(last.items()):
+        key = (column, e.section, e.header, value_text(e.new))
+        rows.setdefault(key, []).append(row)
+    return [
+        {
+            'step': section,
+            'column': header,
+            'value': value,
+            'samples': samples_text(tuple(held), catalog),
+        }
+        for (_, section, header, value), held in rows.items()
+    ]
 
 
 def render(log: Changelog) -> str:

@@ -4,7 +4,7 @@ import { test } from "node:test";
 import {
   confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputLocked, inputState,
   inputsToRead, pendingKeys, previewNotes, readKey, reportsByEntry, unwrittenCount, unwrittenKey,
-  writtenEdits,
+  writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
 
 const REPORT = {
@@ -157,7 +157,25 @@ test("the summary line of a completed job", () => {
     "1 edit written · 1 update could not be written");
 });
 
-test("the edits written, as rows grouped by step", () => {
+test("the table is the job's own fold of its changelog when it has one", () => {
+  const written = [
+    { step: "1: Cleaning", column: "Time 1 [s]", value: "120", samples: "samples 1–3" },
+    { step: "1: Cleaning", column: "Time 1 [s]", value: "100", samples: "samples 4–42" },
+    { step: "2: Spin Coating", column: "Speed", value: "4000", samples: "all 42 samples" },
+  ];
+  const status = { written, inputs: [{ ...REPORT, confirmed: ["k1"] }] };
+  assert.deepEqual(writtenEdits(status).map((r) => [r.column, r.value, r.first]), [
+    ["Time 1 [s]", "120", true], ["Time 1 [s]", "100", false], ["Speed", "4000", true],
+  ]);
+  assert.equal(written[0].first, undefined); // the status is not changed
+  assert.deepEqual(writtenEdits({ written: [], inputs: [{ ...REPORT, confirmed: ["k1"] }] }), []);
+  // the summary counts the confirmed edits, not the table's rows
+  assert.equal(writtenCount(status), 1);
+  assert.equal(writtenCount({ inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] }), 0);
+  assert.equal(writtenCount({ inputs: [{ ...REPORT, confirmed: ["k1"], refused: "a formula error" }] }), 0);
+});
+
+test("without the fold, the written edits of the reports grouped by step", () => {
   assert.deepEqual(writtenEdits({ inputs: [REPORT] }), []);
   assert.deepEqual(
     writtenEdits({ inputs: [{ ...REPORT, confirmed: ["k1"] }] }),

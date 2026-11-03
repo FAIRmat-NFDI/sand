@@ -171,6 +171,7 @@ async def store_final_sheet_and_changelog(data: JobInput) -> dict:
         check,
         render,
         to_json,
+        written_now,
     )
     from sand.sheet_edit.workbook import sha256
 
@@ -203,6 +204,8 @@ async def store_final_sheet_and_changelog(data: JobInput) -> dict:
         'changes': len(log.entries),
         'stale_confirmations': len(set(files.confirmations) - ready),
         'changelog': render(log),
+        # the catalog names the samples; without a step nothing was written
+        'written': written_now(log, steps[-1].interpretation.catalog) if steps else [],
     }
 
 
