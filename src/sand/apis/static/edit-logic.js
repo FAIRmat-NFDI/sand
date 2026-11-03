@@ -50,6 +50,30 @@ export function inputLocked(report) {
   return Boolean(report && (report.confirmed || []).length);
 }
 
+// The one-word state of an input, for the chip in its card header:
+// what the job made of it, or where the job is with it. Null while it
+// has no text (the body says "transcribing...") and when no job is at
+// work on this page.
+export function inputState(item, report, jobRunning, canConfirm) {
+  if (!item.text) return null;
+  const reported = report && (report.text === undefined || report.text === item.text);
+  if (!reported) {
+    if (item.locked) return { state: "applied", label: "Applied" };
+    if (!canConfirm) return null;
+    return jobRunning
+      ? { state: "reading", label: "Reading..." }
+      : { state: "waiting", label: "Waiting to be read" };
+  }
+  if (report.refused) return { state: "refused", label: "Not written" };
+  const pending = pendingKeys([report]).length;
+  if (pending) {
+    return { state: "ready", label: pending === 1 ? "1 edit to confirm" : pending + " edits to confirm" };
+  }
+  if ((report.confirmed_since || []).length) return { state: "writing", label: "Confirmed, writing..." };
+  if ((report.confirmed || []).length) return { state: "applied", label: "Applied" };
+  return { state: "none", label: "No edit found" };
+}
+
 // the label of the button that confirms every pending edit
 export function confirmAllLabel(pending) {
   if (pending === 1) return "Confirm the edit";

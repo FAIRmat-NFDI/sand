@@ -9,7 +9,7 @@
 // and starts the job that reads a new or revised input.
 
 import { errorDetail, experimentUrl } from "./api.js";
-import { inputLocked, previewNotes } from "./edit-logic.js";
+import { inputLocked, inputState, previewNotes } from "./edit-logic.js";
 import { selectedExperiment } from "./experiments.js";
 import { clearError, confirmDialog, showEntryLink, showError } from "./ui.js";
 
@@ -116,7 +116,7 @@ function beginLabelEdit(labelBtn, item, experiment) {
 
 // --- revision in place -----------------------------------------------------
 
-async function beginRevision(item, experiment, li, textEl) {
+async function beginRevision(item, experiment, tile, textNode) {
   if (revising && revising.item.entry_id === item.entry_id) return;
   // a revision already being saved is not lost by switching: no prompt
   if (revising && !revising.saveBtn.disabled
@@ -125,6 +125,15 @@ async function beginRevision(item, experiment, li, textEl) {
     return;
   }
   endRevision();
+  // closing the other editor may have rendered the list anew: the
+  // tile clicked is then replaced (or gone, or locked meanwhile)
+  let li = tile;
+  let textEl = textNode;
+  if (!li.isConnected) {
+    li = inputsList.querySelector(`[data-entry-id="${CSS.escape(item.entry_id)}"]`);
+    textEl = li?.querySelector(".input-text");
+    if (!li || !textEl || li.classList.contains("input-locked")) return;
+  }
 
   const box = document.createElement("div");
   box.className = "input-revise";
@@ -179,7 +188,11 @@ function endRevision(refocus = false) {
   revising = null;
   editor.parentElement.replaceWith(textEl);
   li.classList.remove("selected");
-  for (const btn of li.querySelectorAll(".input-report button")) btn.disabled = false;
+  // back to the state the buttons had: none while a job runs, and a
+  // confirmation in flight stays disabled
+  for (const btn of li.querySelectorAll(".input-report button")) {
+    btn.disabled = jobRunning || !onConfirm || btn.dataset.busy === "1";
+  }
   if (renderPending) {
     renderIfIdle(); // replaces the tiles
     if (refocus) inputsList.querySelector(`[data-entry-id="${CSS.escape(li.dataset.entryId)}"]`)?.focus();
@@ -248,7 +261,7 @@ async function deleteInput(item, experiment, button) {
 
 // --- edit mode: the report under an input --------------------------------------
 
-// "Time 1 [s]  900 → 1000" over "1: Cleaning UV-Ozone · all 42 samples";
+// "Time 1 [s]  900 → 1000" over "1: Cleaning UV-Ozone, all 42 samples";
 // a report of an older job has only the line
 function renderEditWhat(edit) {
   const what = document.createElement("div");
@@ -257,6 +270,8 @@ function renderEditWhat(edit) {
     what.textContent = edit.line;
     return what;
   }
+  const head = document.createElement("div");
+  head.className = "report-head";
   const column = document.createElement("span");
   column.className = "report-column";
   column.textContent = edit.column;
@@ -269,10 +284,11 @@ function renderEditWhat(edit) {
   newValue.className = "report-new";
   newValue.textContent = edit.new;
   change.append(oldValue, " → ", newValue);
+  head.append(column, change);
   const where = document.createElement("span");
   where.className = "report-where";
-  where.textContent = edit.step + " · " + edit.samples;
-  what.append(column, change, where);
+  where.textContent = edit.step + ", " + edit.samples;
+  what.append(head, where);
   return what;
 }
 
@@ -288,19 +304,22 @@ function renderReport(report) {
     row.append(renderEditWhat(edit));
     if (confirmed.has(edit.key)) {
       const mark = document.createElement("span");
-      mark.className = "report-confirmed";
-      mark.textContent = since.has(edit.key) ? "✓ confirmed, writing..." : "✓ written";
+      mark.className = "report-confirmed" + (since.has(edit.key) ? " report-writing" : "");
+      mark.textContent = since.has(edit.key) ? "writing..." : "written";
       row.append(mark);
     } else {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "btn btn-primary btn-small";
+      btn.className = "btn btn-outlined btn-small report-confirm";
       btn.textContent = "Confirm";
       btn.disabled = jobRunning || !onConfirm;
       btn.title = jobRunning ? "Wait: the updates are being read" : "Confirm this edit";
       btn.addEventListener("click", async () => {
         btn.disabled = true;
-        if (!(await onConfirm(edit.key))) btn.disabled = false;
+        btn.dataset.busy = "1";
+        const done = await onConfirm(edit.key);
+        delete btn.dataset.busy;
+        if (!done) btn.disabled = jobRunning || !onConfirm;
       });
       row.append(btn);
     }
@@ -360,7 +379,7 @@ function showInputsPlaceholder(message) {
 function renderInputs(experiment, items) {
   shown = { experiment, items };
   if (!items.length) {
-    showInputsPlaceholder("No inputs yet - record or write a note.");
+    showInputsPlaceholder("No updates yet. Record one, or write a note.");
     return;
   }
   // a re-render replaces the tiles: keep keyboard focus on the same one
@@ -368,7 +387,7 @@ function renderInputs(experiment, items) {
     ? document.activeElement.closest(".input-tile")?.dataset.entryId
     : null;
   inputsList.replaceChildren();
-  inputsCount.textContent = "(" + items.length + ")";
+  inputsCount.textContent = String(items.length);
   for (const item of items) {
     const li = document.createElement("li");
     li.className = "input-tile";
@@ -377,6 +396,9 @@ function renderInputs(experiment, items) {
     // server refuses both); a correction is a new update
     const locked = item.locked || inputLocked(reports[item.entry_id]);
     if (locked) li.classList.add("input-locked");
+    // a report of other words (revised since) is not this update's
+    const report = reports[item.entry_id];
+    const reported = report && (report.text === undefined || report.text === item.text);
 
     const meta = document.createElement("div");
     meta.className = "input-meta";
@@ -397,24 +419,30 @@ function renderInputs(experiment, items) {
       beginLabelEdit(labelBtn, item, experiment);
     });
     meta.append(labelBtn);
-    const time = inputTime(item);
     // the time is when the update was made: not editable
     const when = document.createElement("span");
     when.className = "input-when";
-    when.textContent = time ? "· " + time : "";
+    when.textContent = inputTime(item);
     meta.append(when);
     if (item.corrected) {
       const badge = document.createElement("span");
       badge.className = "input-badge";
-      badge.textContent = "· ✎ corrected";
+      badge.textContent = "corrected";
       meta.append(badge);
     }
-    if (locked) {
-      const badge = document.createElement("span");
-      badge.className = "input-badge input-locked-badge";
-      badge.textContent = "· ✓ applied";
-      badge.title = "A confirmed update is a record; a correction is a new update.";
-      meta.append(badge);
+    // the state and the hover actions, at the right
+    const right = document.createElement("span");
+    right.className = "input-right";
+    meta.append(right);
+    const state = inputState(item, report, jobRunning, Boolean(onConfirm));
+    if (state) {
+      const chip = document.createElement("span");
+      chip.className = "input-state is-" + state.state;
+      chip.textContent = state.label;
+      if (state.state === "applied") {
+        chip.title = "A confirmed update is a record; a correction is a new update.";
+      }
+      right.append(chip);
     }
     const nomadLink = document.createElement("a");
     nomadLink.href = item.entry_url;
@@ -424,7 +452,7 @@ function renderInputs(experiment, items) {
     nomadLink.textContent = "open_in_new";
     nomadLink.title = "View on NOMAD";
     nomadLink.addEventListener("click", (e) => e.stopPropagation());
-    meta.append(nomadLink);
+    right.append(nomadLink);
     if (item.deletable && !locked) {
       const deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
@@ -439,7 +467,7 @@ function renderInputs(experiment, items) {
         e.stopPropagation();
         deleteInput(item, experiment, deleteBtn);
       });
-      meta.append(deleteBtn);
+      right.append(deleteBtn);
     }
 
     const text = document.createElement("div");
@@ -453,17 +481,7 @@ function renderInputs(experiment, items) {
     }
 
     li.append(meta, text);
-    // a report of other words (revised since) is not this update's
-    const report = reports[item.entry_id];
-    if (report && (report.text === undefined || report.text === item.text)) {
-      li.append(renderReport(report));
-    } else if (item.text && onConfirm) {
-      // the job reads it (now, or as soon as the page starts it)
-      const p = document.createElement("p");
-      p.className = "report-note report-pending";
-      p.textContent = jobRunning ? "Reading the update..." : "Waiting to be read...";
-      li.append(p);
-    }
+    if (reported) li.append(renderReport(report));
     li.tabIndex = 0;
     if (locked) {
       li.setAttribute("aria-label", "Confirmed " + inputDescription(item));

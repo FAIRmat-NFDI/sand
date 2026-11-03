@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputLocked, inputsToRead,
-  pendingKeys, previewNotes, readKey, reportsByEntry, unwrittenCount, unwrittenKey, writtenLines,
+  confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputLocked, inputState,
+  inputsToRead, pendingKeys, previewNotes, readKey, reportsByEntry, unwrittenCount, unwrittenKey,
+  writtenLines,
 } from "../../src/sand/apis/static/edit-logic.js";
 
 const REPORT = {
@@ -100,6 +101,27 @@ test("an input is locked once one of its edits is confirmed", () => {
   assert.equal(inputLocked(undefined), false);
   assert.equal(inputLocked(REPORT), false);
   assert.equal(inputLocked({ ...REPORT, confirmed: ["k1"] }), true);
+});
+
+test("the state chip of an input", () => {
+  const note = { entry_id: "n1", text: REPORT.text };
+  const label = (item, report, running = false, canConfirm = true) =>
+    inputState(item, report, running, canConfirm)?.label ?? null;
+  assert.equal(label({ ...note, text: null }, undefined), null);
+  assert.equal(label(note, undefined, false, false), null);
+  assert.equal(label(note, undefined), "Waiting to be read");
+  assert.equal(label(note, undefined, true), "Reading...");
+  // a report of other words is not this update's
+  assert.equal(label({ ...note, text: "speed 4500" }, REPORT, true), "Reading...");
+  assert.equal(label({ ...note, locked: true }, undefined), "Applied");
+  assert.equal(label(note, REPORT), "1 edit to confirm");
+  assert.equal(label(note, { ...REPORT, ready: [...REPORT.ready, { ...REPORT.ready[0], key: "k2" }] }),
+    "2 edits to confirm");
+  assert.equal(label(note, { ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }), "Confirmed, writing...");
+  assert.equal(label(note, { ...REPORT, confirmed: ["k1"] }), "Applied");
+  assert.equal(label(note, { ...REPORT, confirmed: ["k1"], refused: "a formula error" }), "Not written");
+  assert.equal(label(note, { ...REPORT, ready: [] }), "No edit found");
+  assert.equal(inputState(note, REPORT, false, true).state, "ready");
 });
 
 test("the confirm-all button names the pending edits", () => {
