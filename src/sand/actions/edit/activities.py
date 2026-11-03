@@ -14,6 +14,7 @@ from sand.actions.edit.models import (
     EditInput,
     JobInput,
     PrepareInput,
+    ReplayInput,
     WriteStatusInput,
 )
 from sand.services.nomad_api import XLSX_CONTENT_TYPE
@@ -80,6 +81,31 @@ async def collect_edit_inputs(data: EditInput) -> dict:
 
 
 @activity.defn
+async def replay_cached_inputs(data: ReplayInput) -> dict:
+    """The leading inputs the model already answered on their sheet,
+    applied in one go (files read once): their reports and how many
+    there were. The first input without a cached answer stops it; the
+    workflow goes on from there, one input at a time."""
+    files = await _read_files(data)
+    steps = apply_all(
+        files.original,
+        data.texts,
+        _never_asked,
+        set(files.confirmations),
+        files.cache.proposals,
+        cached_only=True,
+    )
+    confirmed = set(files.confirmations)
+    return {
+        'replayed': len(steps),
+        'reports': [
+            _report(number, entry_id, step, confirmed, from_cache=True)
+            for number, (entry_id, step) in enumerate(zip(data.entry_ids, steps), 1)
+        ],
+    }
+
+
+@activity.defn
 async def prepare_input(data: PrepareInput) -> dict:
     """The two prompts for one input, against the sheet the earlier inputs
     left; or nothing to ask, when the model already answered these words
@@ -130,7 +156,9 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
             non_retryable=True,
         )
     step = _apply_inputs_from_cache(files, data.texts[: data.number])[-1]
-    return _report(data, step, set(files.confirmations), from_cache=not data.answers)
+    return _report(
+        data.number, data.entry_id, step, set(files.confirmations), not data.answers
+    )
 
 
 @activity.defn
@@ -299,7 +327,7 @@ def _never_asked(text: str, catalog: Catalog) -> ProposedEdits:
 
 
 def _report(
-    data: ApplyInput, step: Step, confirmed: set[str], from_cache: bool
+    number: int, entry_id: str, step: Step, confirmed: set[str], from_cache: bool
 ) -> dict:
     """One input as the GUI shows it: the preview, and each edit that may
     be confirmed with its key."""
@@ -308,8 +336,8 @@ def _report(
     catalog = step.interpretation.catalog
     written = {(c.row, c.column) for c in step.written if c.field == 'value'}
     return {
-        'input': data.number,
-        'entry_id': data.entry_id,
+        'input': number,
+        'entry_id': entry_id,
         'text': step.text,
         'from_cache': from_cache,
         'preview': step.interpretation.preview,

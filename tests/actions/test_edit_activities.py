@@ -15,6 +15,7 @@ from sand.actions.edit.models import (
     JobInput,
     LlmAnswer,
     PrepareInput,
+    ReplayInput,
     WriteStatusInput,
 )
 from sand.services.voice_eln import CollectedInput
@@ -137,6 +138,13 @@ def apply(upload, number, answers, job_id='job-1', snapshot=None) -> ApplyInput:
         number=number,
         entry_id=upload.inputs[number - 1].entry_id,
         answers=answers,
+    )
+
+
+def replay(upload, job_id='job-1') -> ReplayInput:
+    return ReplayInput(
+        **job(upload, job_id).model_dump(),
+        entry_ids=[i.entry_id for i in upload.inputs],
     )
 
 
@@ -333,6 +341,53 @@ async def test_a_lost_cache_under_a_running_job_stops_it(upload):
     del upload.writer.files[JOB_CACHE]
     with pytest.raises(ApplicationError, match='has no cached proposal'):
         await activities.prepare_input(prepare(upload, 2))
+
+
+# --- the replay ------------------------------------------------------------------
+
+
+async def test_replay_applies_the_leading_cached_inputs_in_one_go(upload):
+    assert await activities.replay_cached_inputs(replay(upload)) == {
+        'replayed': 0,
+        'reports': [],
+    }
+    first = await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2)
+    )
+    replayed = await activities.replay_cached_inputs(replay(upload))
+    assert replayed == {'replayed': 1, 'reports': [{**first, 'from_cache': True}]}
+    second = await activities.agree_cache_and_apply_input(
+        apply(upload, 2, [answer()] * 2)
+    )
+    written = list(upload.writer.written)
+    replayed = await activities.replay_cached_inputs(replay(upload))
+    assert replayed['replayed'] == 2  # noqa: PLR2004
+    assert replayed['reports'][1] == {**second, 'from_cache': True}
+    assert upload.writer.written == written  # the replay writes nothing
+
+
+async def test_replay_writes_the_confirmed_edits_and_stops_where_the_sheet_is_new(
+    upload,
+):
+    first = await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2)
+    )
+    await activities.agree_cache_and_apply_input(apply(upload, 2, [answer()] * 2))
+    await confirm(upload, first['ready'][0]['key'])
+    # input 2 was answered for the sheet without the edit: it is read again
+    replayed = await activities.replay_cached_inputs(replay(upload))
+    assert replayed['replayed'] == 1
+    (report,) = replayed['reports']
+    assert report['confirmed'] == [first['ready'][0]['key']]
+    assert report['cells_written'] == SAMPLES_1_TO_3
+
+
+async def test_replay_stops_at_a_lost_cache(upload):
+    await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2)
+    )
+    del upload.writer.files[JOB_CACHE]
+    assert (await activities.replay_cached_inputs(replay(upload)))['replayed'] == 0
 
 
 # --- the chain of inputs and the confirmations ---------------------------------

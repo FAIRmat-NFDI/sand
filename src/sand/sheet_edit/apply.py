@@ -128,22 +128,30 @@ def _without_overlaps(
     return out
 
 
-def apply_all(
+def apply_all(  # noqa: PLR0913
     original: bytes,
     inputs: list[str],
     resolve: Resolve,
     confirmed: set[str],
     cache: Cache,
+    *,
+    cached_only: bool = False,
 ) -> list[Step]:
     """Every input in order, each against the sheet the earlier ones
     left; the confirmed edits of each are written and verified. The last
     step's state is the final sheet. `cache` is filled as it goes. A
     writer refusal is recorded on the step; a failed verification is a
-    bug in the writer and raises, since the file must not be used."""
+    bug in the writer and raises, since the file must not be used.
+    `cached_only` stops before the first input the model was not asked
+    about on its sheet (the inputs after it would read a sheet it may
+    change)."""
     steps = []
     state = original
     for text in inputs:
-        cached = _cached(resolve, cache, sha256(state))
+        digest = sha256(state)
+        if cached_only and (sha256(text.encode()), digest) not in cache:
+            break
+        cached = _cached(resolve, cache, digest)
         interpretation = interpret_instruction(text, state, cached)
         writes = [
             Write(row, interpretation.catalog.index(edit.edit.target), edit.value)

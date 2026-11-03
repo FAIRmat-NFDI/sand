@@ -3,8 +3,11 @@ order, each interpreted against the sheet the earlier ones left.
 
     status "collecting"
     activity collect_edit_inputs ──▶ {texts[n], input_entry_ids, model}
-    status "interpreting 0/n"
-      per input k, IN ORDER (input k reads the sheet after k-1):
+    status "replaying"
+    activity replay_cached_inputs ──▶ the leading inputs the model already
+        answered on their sheet, applied in one go: r reports
+    status "interpreting r/n"
+      per input k > r, IN ORDER (input k reads the sheet after k-1):
         activity prepare_input(k) ──▶ cached, or the two prompts
         two child ExtractionWorkflows IN PARALLEL (the two opinions)
         activity agree_cache_and_apply_input(k, answers)
@@ -20,7 +23,8 @@ problem: that input is shown as unreadable and the job goes on. An
 activity or child that fails outright fails the job. The browser's only
 bridge to all of this is the status file in the upload; a rerun after a
 confirmation costs model calls only for inputs whose text or sheet
-changed (see session.py).
+changed (see session.py), and the inputs before the first of those are
+replayed from the cache in one activity instead of two each.
 """
 
 import asyncio
@@ -37,6 +41,7 @@ with workflow.unsafe.imports_passed_through():
         agree_cache_and_apply_input,
         collect_edit_inputs,
         prepare_input,
+        replay_cached_inputs,
         store_final_sheet_and_changelog,
         write_edit_status,
     )
@@ -46,6 +51,7 @@ with workflow.unsafe.imports_passed_through():
         JobInput,
         LlmAnswer,
         PrepareInput,
+        ReplayInput,
         WriteStatusInput,
     )
     from sand.sheet_edit.resolve import PROMPT_VERSION
@@ -102,14 +108,47 @@ class EditSheetWorkflow:
                 raise ApplicationError(
                     'inputs and entry ids differ', non_retryable=True
                 )
+            # a job started before the replay activity existed keeps its
+            # old activity sequence (Temporal replays its history on a
+            # worker restart; a new activity there is a non-determinism)
+            replay_known = workflow.patched('replay-cached')
+            replayed = 0
+            if replay_known and total:
+                await status(
+                    {
+                        'phase': 'replaying',
+                        'inputs_total': total,
+                        'model': job.llm_model_name,
+                    }
+                )
+                replay = await workflow.execute_activity(
+                    replay_cached_inputs,
+                    ReplayInput(
+                        **job.model_dump(), entry_ids=collected['input_entry_ids']
+                    ),
+                    start_to_close_timeout=timedelta(minutes=5),
+                    retry_policy=RetryPolicy(maximum_attempts=3),
+                )
+                replayed = replay['replayed']
+                if replayed > total or len(replay['reports']) != replayed:
+                    raise ApplicationError(
+                        f'replayed {replayed} of {total} inputs with '
+                        f'{len(replay["reports"])} reports',
+                        non_retryable=True,
+                    )
+                reports.extend(replay['reports'])
             progress = {
                 'phase': 'interpreting',
                 'inputs_total': total,
+                'inputs_replayed': replayed,
                 'model': job.llm_model_name,
             }
-            await status({**progress, 'inputs_done': 0})
+            if not replay_known or replayed < total:
+                await status({**progress, 'inputs_done': replayed})
 
             for number, entry_id in enumerate(collected['input_entry_ids'], 1):
+                if number <= replayed:
+                    continue
                 prepared = await workflow.execute_activity(
                     prepare_input,
                     PrepareInput(**job.model_dump(), number=number),
