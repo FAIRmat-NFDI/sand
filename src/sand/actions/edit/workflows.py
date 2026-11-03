@@ -108,8 +108,12 @@ class EditSheetWorkflow:
                 raise ApplicationError(
                     'inputs and entry ids differ', non_retryable=True
                 )
+            # a job started before the replay activity existed keeps its
+            # old activity sequence (Temporal replays its history on a
+            # worker restart; a new activity there is a non-determinism)
+            replay_known = workflow.patched('replay-cached')
             replayed = 0
-            if total:
+            if replay_known and total:
                 await status(
                     {
                         'phase': 'replaying',
@@ -139,7 +143,7 @@ class EditSheetWorkflow:
                 'inputs_replayed': replayed,
                 'model': job.llm_model_name,
             }
-            if replayed < total:
+            if not replay_known or replayed < total:
                 await status({**progress, 'inputs_done': replayed})
 
             for number, entry_id in enumerate(collected['input_entry_ids'], 1):

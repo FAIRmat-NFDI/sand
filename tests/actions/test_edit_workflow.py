@@ -3,16 +3,17 @@ that record what they got, the LLM child echoes its payload back."""
 
 import asyncio
 import json
+import pathlib
 import uuid
 from dataclasses import dataclass, field
 
 import pytest
 from temporalio import activity, workflow
-from temporalio.client import WorkflowFailureError
+from temporalio.client import WorkflowFailureError, WorkflowHistory
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import WorkflowEnvironment
-from temporalio.worker import Worker
+from temporalio.worker import Replayer, Worker
 
 from sand.actions.common import LLM_TASK_QUEUE, error_message
 from sand.actions.edit.models import (
@@ -333,3 +334,18 @@ async def test_a_failing_activity_fails_the_job_and_says_so_in_the_status():
     assert last['phase'] == 'failed'
     assert last['error'] == 'apply broke'
     assert stubs.of('store_final_sheet_and_changelog') == []
+
+
+async def test_a_job_started_before_the_replay_keeps_its_old_activity_sequence():
+    # the history of a job the version before replay_cached_inputs ran
+    # (two inputs, the first cached): the worker takes it over after a
+    # restart, so the new code must make the same decisions for it
+    history = (
+        pathlib.Path(__file__).parent / 'fixtures' / 'edit_history_before_replay.json'
+    ).read_text()
+    replayer = Replayer(
+        workflows=[EditSheetWorkflow], data_converter=pydantic_data_converter
+    )
+    await replayer.replay_workflow(
+        WorkflowHistory.from_json('job-before-replay', history)
+    )
