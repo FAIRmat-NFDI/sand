@@ -274,7 +274,10 @@ body {
 
 @media (min-width: 960px) {
   .workspace {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    /* Inputs as wide as an edit row with the sheet's longest column
+       name on one line (about 540px) and no wider; the rest is the
+       left column's */
+    grid-template-columns: minmax(0, 1fr) clamp(360px, 44%, 560px);
     /* a tall Inputs card grows the last row only, so the left cards
        stay packed */
     grid-template-rows: auto auto 1fr;
