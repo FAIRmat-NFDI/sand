@@ -165,12 +165,14 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
 async def store_final_sheet_and_changelog(data: JobInput) -> dict:
     """Write the final sheet and the changelog that explains it; the two
     are checked against the original before anything is stored."""
+    from sand.sheet_edit.catalog import build
     from sand.sheet_edit.changelog import (
         CheckFailed,
         changelog,
         check,
         render,
         to_json,
+        written_now,
     )
     from sand.sheet_edit.workbook import sha256
 
@@ -203,6 +205,9 @@ async def store_final_sheet_and_changelog(data: JobInput) -> dict:
         'changes': len(log.entries),
         'stale_confirmations': len(set(files.confirmations) - ready),
         'changelog': render(log),
+        # the final sheet's catalog names the samples: an edit of the
+        # Sample column is in it, a step's catalog is of the sheet before
+        'written': written_now(log, build(final)),
     }
 
 

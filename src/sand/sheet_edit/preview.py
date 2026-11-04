@@ -87,7 +87,7 @@ def edit_summary(result: Grounded, catalog: Catalog) -> dict[str, str]:
         'column': target.column.header,
         'old': old,
         'new': new,
-        'samples': _samples(result.rows or result.unchanged, catalog),
+        'samples': samples_text(result.rows or result.unchanged, catalog),
     }
 
 
@@ -96,13 +96,18 @@ def _change(result: Grounded, target: ColumnInfo, catalog: Catalog) -> str:
     value: check O refused the edit otherwise."""
     held = {r: g.value for g in target.groups for r in g.rows}
     old = value_text(held.get(result.rows[0]))
-    return f'{old} → {value_text(result.value)}, {_samples(result.rows, catalog)}'
+    return f'{old} → {value_text(result.value)}, {samples_text(result.rows, catalog)}'
 
 
-def _samples(rows: tuple[int, ...], catalog: Catalog) -> str:
+def samples_text(rows: tuple[int, ...], catalog: Catalog) -> str:
+    """'all 12 samples', 'samples 1–3', 'sample 7'; a row without a
+    label is named 'row 5' (as the catalog says it)."""
     if len(rows) == len(catalog.samples):
         return f'all {len(rows)} samples'
-    return f'samples {catalog.names(rows)}'
+    names = catalog.names(rows)
+    if names.startswith('row '):
+        return names
+    return f'{"sample" if len(rows) == 1 else "samples"} {names}'
 
 
 def _marks(result: Grounded, target: ColumnInfo, catalog: Catalog) -> list[str]:

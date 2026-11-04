@@ -112,11 +112,38 @@ export function previewNotes(report) {
       && !line.startsWith("⚠ no update in:"));
 }
 
-// The edits the last run wrote, as rows of a table grouped by step in
-// the sheet's order (steps are numbered "1: Cleaning UV-Ozone"); within
-// a step in the order written. A report of an older job has only the
-// line. `first` marks the first row of a step.
+// the confirmed edits the last run wrote
+export function writtenCount(status) {
+  let count = 0;
+  for (const report of status.inputs || []) {
+    if (report.refused) continue;
+    const since = new Set(report.confirmed_since || []);
+    count += (report.confirmed || []).filter((key) => !since.has(key)).length;
+  }
+  return count;
+}
+
+// What the sheet holds now, as rows of a table grouped by step: the
+// job's own fold of its changelog (status.written: the last value of
+// each cell, overlapping edits split by the samples each value is left
+// on), in sheet order. A status of an older job has none: then the
+// written edits of its reports, grouped by step in the sheet's order
+// (steps are numbered "1: Cleaning UV-Ozone"), within a step in the
+// order written; a report of an older job has only the line. `first`
+// marks the first row of a step.
 export function writtenEdits(status) {
+  const rows = Array.isArray(status.written)
+    ? status.written.map((row) => ({ ...row }))
+    : writtenFromReports(status);
+  let step = {}; // equal to no step, not even an undefined one
+  for (const row of rows) {
+    row.first = row.step !== step;
+    step = row.step;
+  }
+  return rows;
+}
+
+function writtenFromReports(status) {
   const rows = [];
   for (const report of status.inputs || []) {
     if (report.refused) continue;
@@ -138,11 +165,6 @@ export function writtenEdits(status) {
     if (!Number.isNaN(x)) return x - y;
     return (a.step || "").localeCompare(b.step || "");
   });
-  let step = {}; // equal to no step, not even an undefined one
-  for (const row of rows) {
-    row.first = row.step !== step;
-    step = row.step;
-  }
   return rows;
 }
 
@@ -165,7 +187,7 @@ function count(n, one, many) {
 export function editSummary(status) {
   const reports = status.inputs || [];
   const parts = [];
-  const written = writtenEdits(status).length;
+  const written = writtenCount(status);
   if (written) parts.push(count(written, "edit written", "edits written"));
   const pending = pendingKeys(reports).length;
   if (pending) parts.push(count(pending, "edit waits", "edits wait") + " for your confirmation");

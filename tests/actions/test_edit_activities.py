@@ -500,6 +500,16 @@ async def test_store_final_sheet_and_changelog_stores_the_final_sheet_with_its_c
     assert done['changes'] == SAMPLES_1_TO_3  # input 2 is not confirmed
     assert done['stale_confirmations'] == 0
     assert 'confirmed by tester, 2026-10-28 12:16 UTC' in done['changelog']
+    # what the sheet holds now, for the table: the confirmed edit only
+    ready = report['ready'][0]
+    assert done['written'] == [
+        {
+            'step': ready['step'],
+            'column': ready['column'],
+            'value': '4000',
+            'samples': 'samples 1–3',
+        }
+    ]
     assert f'original  sha256 {sha256(synthetic_xlsx)}' in done['changelog']
     assert final != synthetic_xlsx
 

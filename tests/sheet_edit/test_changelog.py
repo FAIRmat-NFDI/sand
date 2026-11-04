@@ -3,12 +3,14 @@ import hashlib
 import io
 import json
 import zipfile
+from dataclasses import asdict, replace
 
 import pytest
 from openpyxl.utils import column_index_from_string
 from synthetic_sheet import letter, with_formula_results, with_part
 
 from sand.sheet_edit.apply import apply_all
+from sand.sheet_edit.catalog import build
 from sand.sheet_edit.changelog import (
     Changelog,
     CheckFailed,
@@ -19,6 +21,7 @@ from sand.sheet_edit.changelog import (
     from_json,
     render,
     to_json,
+    written_now,
 )
 from sand.sheet_edit.edits import Edit, ProposedEdits, Range, Samples
 from sand.sheet_edit.write import Write, write_cells
@@ -38,6 +41,7 @@ TESTER = Confirmation(by='tester', at=WHEN)
 SOLVENT = 'solvent 2 to DMSO for samples 1 to 3'
 SPEED_4000, SPEED_5000 = 'speed 4000', 'speed 5000'
 VARIATION_SAID = 'variation 30min for sample 1'
+SPEED_6000_ONE = 'speed 6000 for sample 1'
 
 
 def edit(target, rows, old, new, said):
@@ -56,6 +60,11 @@ PROPOSALS = {
     ],
     SPEED_4000: [edit(SPEED, 'all', '3000', '4000', SPEED_4000)],
     SPEED_5000: [edit(SPEED, 'all', '4000', '5000', SPEED_5000)],
+    SPEED_6000_ONE: [
+        edit(
+            SPEED, Samples(samples=['1'], subbatch=None), '4000', '6000', SPEED_6000_ONE
+        )
+    ],
     VARIATION_SAID: [
         edit(
             VARIATION,
@@ -161,6 +170,57 @@ def test_a_recomputed_formula_result_is_logged_without_words(with_results):
         None,
     )
     assert deposition.header == 'Deposition Time [s]'
+
+
+def test_written_now_is_the_last_value_of_each_cell(synthetic_xlsx):
+    catalog = build(synthetic_xlsx)
+    # the speed column edited twice over the same cells: one row, the last value
+    log, _ = logged(synthetic_xlsx, [SPEED_4000, SPEED_5000])
+    (row,) = written_now(log, catalog)
+    assert row == {
+        'step': '2: Spin Coating',
+        'column': 'Rotation speed [rpm]',
+        'value': '5000',
+        'samples': f'all {len(catalog.samples)} samples',
+    }
+    # overlapping edits: the samples each value is left on
+    log, _ = logged(synthetic_xlsx, [SPEED_4000, SPEED_6000_ONE])
+    rows = written_now(log, catalog)
+    rest = tuple(s.row for s in catalog.samples[1:])
+    assert [(r['value'], r['samples']) for r in rows] == [
+        ('6000', 'sample 1'),
+        ('4000', f'samples {catalog.names(rest)}'),
+    ]
+    # in sheet order by column, the solvent column (M) before the speed (Y)
+    log, _ = logged(synthetic_xlsx, [SPEED_4000, SOLVENT])
+    assert [r['column'] for r in written_now(log, catalog)] == [
+        'Solvent 2',
+        'Rotation speed [rpm]',
+    ]
+
+
+def test_written_now_names_a_row_the_final_sheet_lost_from_the_log(synthetic_xlsx):
+    # clearing a row's last value drops it from the final sheet's
+    # catalog; the log still has its cleared cell, named at write time
+    log, _ = logged(synthetic_xlsx, [SOLVENT])
+    catalog = build(synthetic_xlsx)
+    without_first = replace(catalog, samples=catalog.samples[1:])
+    (row,) = written_now(log, without_first)
+    assert row['samples'] == 'samples 1, 2, 3'
+    (entry, *_) = log.entries
+    one = Changelog(**{**asdict(log), 'entries': (entry,)})
+    assert written_now(one, without_first)[0]['samples'] == 'sample 1'
+    # with every row in the catalog, ranges as before
+    assert written_now(log, catalog)[0]['samples'] == 'samples 1–3'
+
+
+def test_written_now_leaves_formula_results_out(with_results):
+    log, _ = logged(with_results, [VARIATION_SAID])
+    assert [r['column'] for r in written_now(log, build(with_results))] == ['Variation']
+    assert (
+        written_now(Changelog(**{**asdict(log), 'entries': ()}), build(with_results))
+        == []
+    )
 
 
 def test_a_written_cell_without_a_confirmed_edit_is_a_bug(synthetic_xlsx):

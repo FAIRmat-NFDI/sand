@@ -15,7 +15,7 @@ order, each interpreted against the sheet the earlier ones left.
         status "interpreting k/n"
     status "writing-sheet"
     activity store_final_sheet_and_changelog ──▶ changelog checked, sheet stored
-    status "completed" {final, changed, changes, changelog}
+    status "completed" {final, changed, changes, changelog, written}
     on ANY failure: status "failed" {error}, then re-raise
 
 A model answer the child cannot get (its error message) is one input's
