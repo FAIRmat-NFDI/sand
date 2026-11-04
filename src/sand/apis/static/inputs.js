@@ -16,6 +16,8 @@ import { clearError, confirmDialog, showEntryLink, showError } from "./ui.js";
 const inputsList = document.getElementById("inputs-list");
 const inputsCount = document.getElementById("inputs-count");
 const refreshInputsBtn = document.getElementById("refresh-inputs-btn");
+const editsOnlyBtn = document.getElementById("edits-only-btn");
+const EDITS_ONLY_KEY = "sand.inputs.editsOnly";
 
 // the job's reports by entry id, whether a job runs (no confirming
 // meanwhile), and the confirm handler of the Sheet card
@@ -571,9 +573,30 @@ export async function reportNewInput(el, response, failPrefix, message, linkText
   return true;
 }
 
+// "Edits only": the words of every update folded away, the cards down
+// to their header and their edits, for a glance at what changes in
+// the sheet. Remembered in this browser.
+function showEditsOnly(on) {
+  inputsList.classList.toggle("edits-only", on);
+  editsOnlyBtn.setAttribute("aria-pressed", String(on));
+  editsOnlyBtn.lastChild.textContent = on ? " Show words" : " Edits only";
+  editsOnlyBtn.querySelector(".material-icons").textContent = on ? "unfold_more" : "unfold_less";
+  editsOnlyBtn.title = on
+    ? "Show the words of the updates again"
+    : "Hide the words of the updates and see only their edits";
+}
+
 export function initInputs() {
   refreshInputsBtn.addEventListener("click", () => {
     const experiment = selectedExperiment();
     if (experiment) startInputsRefresh(experiment);
+  });
+  let editsOnly = false;
+  try { editsOnly = localStorage.getItem(EDITS_ONLY_KEY) === "true"; } catch { /* ignore */ }
+  showEditsOnly(editsOnly);
+  editsOnlyBtn.addEventListener("click", () => {
+    const on = editsOnlyBtn.getAttribute("aria-pressed") !== "true";
+    showEditsOnly(on);
+    try { localStorage.setItem(EDITS_ONLY_KEY, String(on)); } catch { /* ignore */ }
   });
 }

@@ -465,6 +465,34 @@ body {
   margin-bottom: 0;
 }
 
+.inputs-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.inputs-tools .btn-quiet {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.78rem;
+}
+
+.inputs-tools .btn-quiet[aria-pressed="true"] {
+  background: #e6eafb;
+  color: #2A4CDF;
+}
+
+/* edits only: the words folded away (a transcript still on its way and
+   an open editor stay), the edits right under the header */
+.inputs-list.edits-only .input-text:not(.input-pending) {
+  display: none;
+}
+
+.inputs-list.edits-only .input-report {
+  border-top: none;
+  padding-top: 0;
+}
+
 .inputs-header .section-count {
   font-size: 0.72rem;
   line-height: 18px;

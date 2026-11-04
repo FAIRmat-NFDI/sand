@@ -119,9 +119,15 @@
         <section class="card section section-inputs" id="inputs-card">
           <div class="inputs-header">
             <h2 class="section-title"><span class="material-icons">timeline</span>Inputs <span class="section-count" id="inputs-count"></span></h2>
-            <button class="btn btn-icon" id="refresh-inputs-btn" type="button" title="Refresh" aria-label="Refresh the inputs">
-              <span class="material-icons">refresh</span>
-            </button>
+            <div class="inputs-tools">
+              <button class="btn btn-quiet btn-small" id="edits-only-btn" type="button" aria-pressed="false" title="Hide the words of the updates and see only their edits">
+                <span class="material-icons">unfold_less</span>
+                Edits only
+              </button>
+              <button class="btn btn-icon" id="refresh-inputs-btn" type="button" title="Refresh" aria-label="Refresh the inputs">
+                <span class="material-icons">refresh</span>
+              </button>
+            </div>
           </div>
           <p class="section-hint">Your updates, in the order you made them. Each is read as soon as it is saved and lists the edits it makes. Click one not yet applied to revise its words.</p>
           <ul class="inputs-list" id="inputs-list">
