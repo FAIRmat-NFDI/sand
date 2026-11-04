@@ -483,14 +483,19 @@ body {
 }
 
 /* edits only: the words folded away (a transcript still on its way and
-   an open editor stay), the edits right under the header */
+   an open editor stay). The rule between header and edits is then the
+   report's own, so a card without edits ends with one line, not two. */
 .inputs-list.edits-only .input-text:not(.input-pending) {
   display: none;
 }
 
-.inputs-list.edits-only .input-report {
-  border-top: none;
-  padding-top: 0;
+.inputs-list.edits-only .input-meta {
+  border-bottom: none;
+}
+
+.inputs-list.edits-only .input-revise,
+.inputs-list.edits-only .input-pending {
+  border-top: 1px solid #e3e6eb;
 }
 
 .inputs-header .section-count {

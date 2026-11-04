@@ -578,9 +578,8 @@ export async function reportNewInput(el, response, failPrefix, message, linkText
 // the sheet. Remembered in this browser.
 function showEditsOnly(on) {
   inputsList.classList.toggle("edits-only", on);
+  // the label stays; the pressed state says the words are folded
   editsOnlyBtn.setAttribute("aria-pressed", String(on));
-  editsOnlyBtn.lastChild.textContent = on ? " Show words" : " Edits only";
-  editsOnlyBtn.querySelector(".material-icons").textContent = on ? "unfold_more" : "unfold_less";
   editsOnlyBtn.title = on
     ? "Show the words of the updates again"
     : "Hide the words of the updates and see only their edits";
