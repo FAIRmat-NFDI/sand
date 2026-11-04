@@ -482,19 +482,25 @@ body {
   color: #2A4CDF;
 }
 
-/* edits only: the words folded away (a transcript still on its way and
-   an open editor stay). The rule between header and edits is then the
-   report's own, so a card without edits ends with one line, not two. */
-.inputs-list.edits-only .input-text:not(.input-pending) {
+/* edits only: a card is its edit rows and nothing else. The words and
+   the header strip (kind, label, time, state, actions) are folded away;
+   a transcript still on its way, an open editor and the report notes
+   stay. A card with none of these is hidden, not left an empty box. */
+.inputs-list.edits-only .input-text:not(.input-pending),
+.inputs-list.edits-only .input-meta {
   display: none;
 }
 
-.inputs-list.edits-only .input-meta {
-  border-bottom: none;
+.inputs-list.edits-only .input-tile:not(:has(.report-edit, .report-note, .input-pending, .input-revise)) {
+  display: none;
 }
 
-.inputs-list.edits-only .input-revise,
-.inputs-list.edits-only .input-pending {
+.inputs-list.edits-only .input-report {
+  border-top: none;
+}
+
+.inputs-list.edits-only .input-pending ~ .input-report,
+.inputs-list.edits-only .input-revise ~ .input-report {
   border-top: 1px solid #e3e6eb;
 }
 

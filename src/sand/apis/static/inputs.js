@@ -573,16 +573,16 @@ export async function reportNewInput(el, response, failPrefix, message, linkText
   return true;
 }
 
-// "Edits only": the words of every update folded away, the cards down
-// to their header and their edits, for a glance at what changes in
-// the sheet. Remembered in this browser.
+// "Edits only": the words and the header of every update folded away,
+// the cards down to their edits, for a glance at what changes in the
+// sheet. Remembered in this browser.
 function showEditsOnly(on) {
   inputsList.classList.toggle("edits-only", on);
   // the label stays; the pressed state says the words are folded
   editsOnlyBtn.setAttribute("aria-pressed", String(on));
   editsOnlyBtn.title = on
-    ? "Show the words of the updates again"
-    : "Hide the words of the updates and see only their edits";
+    ? "Show the updates again, with their words"
+    : "See only the edits of the updates";
 }
 
 export function initInputs() {
