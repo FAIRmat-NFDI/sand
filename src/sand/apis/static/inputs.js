@@ -263,8 +263,6 @@ async function deleteInput(item, experiment, button) {
 
 // --- edit mode: the report under an input --------------------------------------
 
-// "Time 1 [s]  900 → 1000" over "1: Cleaning UV-Ozone, all 42 samples";
-// a report of an older job has only the line
 // the cells of an edit row: column, old → new, samples. A report of an
 // older job has only the line: one cell across the three.
 function renderEditCells(edit) {
