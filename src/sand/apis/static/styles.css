@@ -816,34 +816,46 @@ body {
 
 /* The edits an update makes: rows inside the card, under a rule.
    "Time 1 [s]  900 → 1000" over where, the action at the right. */
+/* The report is one grid, so the cells of its edit rows line up:
+   column, old → new, samples, state. Each row is a subgrid of it, so
+   a row keeps its own border and padding. */
 .input-report {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  column-gap: 14px;
   border-top: 1px solid #e3e6eb;
-  padding: 2px 12px 6px;
+  padding: 4px 12px 8px;
   font-size: 0.86rem;
   cursor: default;
 }
 
+.report-step {
+  grid-column: 1 / -1;
+  padding: 8px 0 2px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #4a4f57;
+}
+
+.report-edit + .report-step {
+  margin-top: 4px;
+  border-top: 1px solid #eceef2;
+}
+
 .report-edit {
-  display: flex;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
   align-items: center;
-  gap: 12px;
-  padding: 7px 0;
+  padding: 6px 0;
 }
 
 .report-edit + .report-edit {
   border-top: 1px solid #eceef2;
 }
 
-.report-what {
-  flex: 1;
-  min-width: 0;
-}
-
-.report-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 10px;
+.report-line {
+  grid-column: 1 / 4;
 }
 
 .report-column {
@@ -865,16 +877,14 @@ body {
   color: #2A4CDF;
 }
 
-.report-where {
-  display: block;
-  margin-bottom: 1px;
+.report-samples {
+  white-space: nowrap;
   font-size: 0.78rem;
   color: #6b7079;
 }
 
-.report-step {
-  font-weight: 600;
-  color: #4a4f57;
+.report-edit > :last-child {
+  justify-self: end;
 }
 
 .report-confirm.btn {
@@ -900,6 +910,7 @@ body {
 }
 
 .report-note {
+  grid-column: 1 / -1;
   margin: 4px 0;
   font-size: 0.82rem;
   color: #6b7079;
