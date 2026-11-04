@@ -3,7 +3,7 @@ import hashlib
 import io
 import json
 import zipfile
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 import pytest
 from openpyxl.utils import column_index_from_string
@@ -197,6 +197,21 @@ def test_written_now_is_the_last_value_of_each_cell(synthetic_xlsx):
         'Solvent 2',
         'Rotation speed [rpm]',
     ]
+
+
+def test_written_now_names_a_row_the_final_sheet_lost_from_the_log(synthetic_xlsx):
+    # clearing a row's last value drops it from the final sheet's
+    # catalog; the log still has its cleared cell, named at write time
+    log, _ = logged(synthetic_xlsx, [SOLVENT])
+    catalog = build(synthetic_xlsx)
+    without_first = replace(catalog, samples=catalog.samples[1:])
+    (row,) = written_now(log, without_first)
+    assert row['samples'] == 'samples 1, 2, 3'
+    (entry, *_) = log.entries
+    one = Changelog(**{**asdict(log), 'entries': (entry,)})
+    assert written_now(one, without_first)[0]['samples'] == 'sample 1'
+    # with every row in the catalog, ranges as before
+    assert written_now(log, catalog)[0]['samples'] == 'samples 1–3'
 
 
 def test_written_now_leaves_formula_results_out(with_results):

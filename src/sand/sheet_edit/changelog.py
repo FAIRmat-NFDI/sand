@@ -313,19 +313,34 @@ def written_now(log: Changelog, catalog: Catalog) -> list[dict]:
     for e in log.entries:
         if not e.by_formula:
             last[(e.column, e.row)] = e
-    rows: dict[tuple[int, str, str, str], list[int]] = {}
-    for (column, row), e in sorted(last.items()):
+    rows: dict[tuple[int, str, str, str], list[Entry]] = {}
+    for (column, _), e in sorted(last.items()):
         key = (column, e.section, e.header, value_text(e.new))
-        rows.setdefault(key, []).append(row)
+        rows.setdefault(key, []).append(e)
     return [
         {
             'step': section,
             'column': header,
             'value': value,
-            'samples': samples_text(tuple(held), catalog),
+            'samples': _held_by(held, catalog),
         }
         for (_, section, header, value), held in rows.items()
     ]
+
+
+def _held_by(entries: list[Entry], catalog: Catalog) -> str:
+    """The samples of the cells, as ranges. A row the final sheet no
+    longer counts as a sample (its Sample cell cleared) is not in the
+    catalog: then the names the log gave the rows when they were
+    written, which it keeps for the record anyway."""
+    known = {s.row for s in catalog.samples}
+    if all(e.row in known for e in entries):
+        return samples_text(tuple(e.row for e in entries), catalog)
+    if len(entries) == 1:
+        return _sample_text(entries[0])
+    if any(e.sample.startswith('row ') for e in entries):
+        return ', '.join(_sample_text(e) for e in entries)
+    return 'samples ' + ', '.join(e.sample for e in entries)
 
 
 def render(log: Changelog) -> str:
