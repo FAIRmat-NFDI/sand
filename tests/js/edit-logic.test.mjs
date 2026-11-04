@@ -4,7 +4,7 @@ import { test } from "node:test";
 import {
   confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputLocked, inputState,
   inputsToRead, pendingKeys, previewNotes, readKey, reportsByEntry, unwrittenCount, unwrittenKey,
-  writtenLines,
+  writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
 
 const REPORT = {
@@ -157,17 +157,38 @@ test("the summary line of a completed job", () => {
     "1 edit written · 1 update could not be written");
 });
 
-test("the edits written, in the researcher's words", () => {
-  assert.deepEqual(writtenLines({ inputs: [REPORT] }), []);
+test("the edits written, as rows grouped by step", () => {
+  assert.deepEqual(writtenEdits({ inputs: [REPORT] }), []);
   assert.deepEqual(
-    writtenLines({ inputs: [{ ...REPORT, confirmed: ["k1"] }] }),
-    ["Rotation speed [rpm] → 4000, samples 1–3 (2: Spin Coating)"]);
+    writtenEdits({ inputs: [{ ...REPORT, confirmed: ["k1"] }] }),
+    [{ step: "2: Spin Coating", column: "Rotation speed [rpm]", value: "4000", samples: "samples 1–3", first: true }]);
   // confirmed since the run: not written yet; refused: not written
-  assert.deepEqual(writtenLines({ inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] }), []);
-  assert.deepEqual(writtenLines({ inputs: [{ ...REPORT, confirmed: ["k1"], refused: "a formula error" }] }), []);
+  assert.deepEqual(writtenEdits({ inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] }), []);
+  assert.deepEqual(writtenEdits({ inputs: [{ ...REPORT, confirmed: ["k1"], refused: "a formula error" }] }), []);
   // a report of an older job has only the line
   const old = { ...REPORT, confirmed: ["k1"], ready: [{ key: "k1", line: "the line" }] };
-  assert.deepEqual(writtenLines({ inputs: [old] }), ["the line"]);
+  assert.deepEqual(writtenEdits({ inputs: [old] }), [{ line: "the line", first: true }]);
+  // grouped by step in the sheet's order, the written order within a step
+  const edit = (key, step, column) => ({ ...REPORT.ready[0], key, step, column });
+  const rows = writtenEdits({ inputs: [
+    { ...REPORT, confirmed: ["a", "b"], ready: [edit("a", "2: Spin Coating", "Speed"), edit("b", "1: Cleaning", "Time 1")] },
+    { ...REPORT, entry_id: "n2", confirmed: ["c"], ready: [edit("c", "2: Spin Coating", "Volume")] },
+  ] });
+  assert.deepEqual(rows.map((r) => [r.step, r.column, r.first]), [
+    ["1: Cleaning", "Time 1", true],
+    ["2: Spin Coating", "Speed", true],
+    ["2: Spin Coating", "Volume", false],
+  ]);
+  // "10:" after "2:"; unnumbered steps after the numbered, one group per name
+  const mixed = writtenEdits({ inputs: [{ ...REPORT, confirmed: ["a", "b", "c", "d"], ready: [
+    edit("a", "Notes", "Remark"), edit("b", "10: Anneal", "Time"), edit("c", "2: Spin", "Speed"), edit("d", "Notes", "Operator"),
+  ] }] });
+  assert.deepEqual(mixed.map((r) => [r.step, r.column, r.first]), [
+    ["2: Spin", "Speed", true],
+    ["10: Anneal", "Time", true],
+    ["Notes", "Remark", true],
+    ["Notes", "Operator", false],
+  ]);
 });
 
 test("the download name comes from the server when it says one", () => {

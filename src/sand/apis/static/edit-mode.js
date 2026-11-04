@@ -11,7 +11,7 @@
 import { errorDetail, experimentUrl } from "./api.js";
 import {
   confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputsToRead, pendingKeys,
-  readKey, reportsByEntry, unwrittenCount, unwrittenKey, writtenLines,
+  readKey, reportsByEntry, unwrittenCount, unwrittenKey, writtenEdits,
 } from "./edit-logic.js";
 import { requireExperiment } from "./experiments.js";
 import { setInputsListener, setReports } from "./inputs.js";
@@ -25,7 +25,8 @@ const applyResult = document.getElementById("apply-result");
 const applySummary = document.getElementById("apply-summary");
 const changelogEl = document.getElementById("changelog-text");
 const changelogFold = document.querySelector(".changelog-details");
-const changedList = document.getElementById("changed-list");
+const writtenTable = document.getElementById("written-table");
+const writtenBody = writtenTable.querySelector("tbody");
 const downloadFinalBtn = document.getElementById("download-final-btn");
 const sheetSummaryEl = document.getElementById("sheet-summary");
 
@@ -123,15 +124,37 @@ function gateDownload(unwritten) {
     : running ? "The updates are being read" : "";
 }
 
+// what is in the sheet now, a table to glance at: the step once per
+// group, then column, value and samples per edit
+function renderWritten(rows) {
+  writtenBody.replaceChildren();
+  writtenTable.hidden = rows.length === 0;
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    if (row.first) tr.className = "written-first";
+    if (row.line) {
+      const td = document.createElement("td");
+      td.colSpan = 4;
+      td.textContent = row.line;
+      tr.append(td);
+    } else {
+      for (const [field, text] of [
+        ["step", row.first ? row.step : ""], ["column", row.column], ["value", row.value], ["samples", row.samples],
+      ]) {
+        const td = document.createElement("td");
+        td.className = "written-" + field;
+        td.textContent = text;
+        tr.append(td);
+      }
+    }
+    writtenBody.append(tr);
+  }
+}
+
 function renderResult(status) {
   gateDownload(unwrittenCount(status));
   applySummary.textContent = editSummary(status);
-  changedList.replaceChildren();
-  for (const line of writtenLines(status)) {
-    const li = document.createElement("li");
-    li.textContent = line;
-    changedList.append(li);
-  }
+  renderWritten(writtenEdits(status));
   // the full log is for the record, behind a fold
   changelogEl.textContent = status.changelog || "";
   applyResult.hidden = false;
