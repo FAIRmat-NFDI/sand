@@ -287,10 +287,14 @@ function renderEditWhat(edit) {
   newValue.textContent = edit.new;
   change.append(oldValue, " → ", newValue);
   head.append(column, change);
+  // the step first: researchers think "in step 1, time 1 is now 100"
   const where = document.createElement("span");
   where.className = "report-where";
-  where.textContent = edit.step + ", " + edit.samples;
-  what.append(head, where);
+  const step = document.createElement("span");
+  step.className = "report-step";
+  step.textContent = edit.step;
+  where.append(step, ", " + edit.samples);
+  what.append(where, head);
   return what;
 }
 
