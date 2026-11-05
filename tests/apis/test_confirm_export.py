@@ -333,14 +333,38 @@ async def test_the_uploaded_sheet_downloads_before_any_job(voice, synthetic_xlsx
     )
 
 
-async def test_another_collections_job_does_not_count(voice, synthetic_xlsx):
+async def test_the_uploaded_sheet_downloads_after_a_job_that_wrote_nothing(
+    voice, synthetic_xlsx
+):
     voice.writer.files['sheet_edit/original.xlsx.orig'] = synthetic_xlsx
-    put_final(voice, synthetic_xlsx + b'x', collection='other')
+    put_status(voice, phase='failed', error='provider down')
 
     response = await get(voice, 'final-sheet')
 
     assert response.status_code == HTTPStatus.OK, response.text
     assert response.content == synthetic_xlsx
+
+
+async def test_no_download_while_a_first_job_is_reserved(voice, synthetic_xlsx):
+    voice.writer.files['sheet_edit/original.xlsx.orig'] = synthetic_xlsx
+    put_status(voice, phase='starting')
+
+    response = await get(voice, 'final-sheet')
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert response.json()['detail'] == 'an edit job is running; wait for it'
+
+
+async def test_another_collections_job_is_refused(voice, synthetic_xlsx):
+    """The sheet files are upload-level: another collection's job has
+    replaced this one's, and the uploaded sheet would hide that."""
+    voice.writer.files['sheet_edit/original.xlsx.orig'] = synthetic_xlsx
+    put_final(voice, synthetic_xlsx + b'x', collection='other')
+
+    response = await get(voice, 'final-sheet')
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert "another experiment's job" in response.json()['detail']
 
 
 async def test_no_sheet_uploaded(voice):
