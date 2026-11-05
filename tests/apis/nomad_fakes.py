@@ -40,7 +40,7 @@ class FakeWriter:
     failing: bool = False  # every write raises
     writes_allowed: int | None = None  # None: all; else writes before NOMAD is down
 
-    async def read_raw_file(self, client, upload_id, name):
+    async def read_raw_file(self, client, upload_id, name, *, wait=True):
         return self.files.get(name)
 
     async def read_json(self, client, upload_id, name):
@@ -131,7 +131,7 @@ class FakeVoice:
         return self.name
 
     async def input_collection_description(
-        self, client, upload_id, collection_entry_id
+        self, client, upload_id, collection_entry_id, *, wait=True
     ):
         assert (upload_id, collection_entry_id) == (UPLOAD, COLLECTION)
         return self.description

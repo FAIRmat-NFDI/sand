@@ -721,10 +721,17 @@ class VoiceElnService:
         return name or 'experiment'
 
     async def input_collection_description(
-        self, client: httpx.AsyncClient, upload_id: str, collection_entry_id: str
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        collection_entry_id: str,
+        *,
+        wait: bool = True,
     ) -> str:
+        """`wait=False`: read at once, without waiting out processing that
+        other writes to the upload set off (a download must not)."""
         return await self._collection_field(
-            client, upload_id, collection_entry_id, 'description'
+            client, upload_id, collection_entry_id, 'description', wait=wait
         )
 
     async def _collection_field(
@@ -733,11 +740,13 @@ class VoiceElnService:
         upload_id: str,
         collection_entry_id: str,
         field: str,
+        *,
+        wait: bool = True,
     ) -> str:
         mainfile = await self.resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
-        archive = await self.writer.read_archive(client, upload_id, mainfile)
+        archive = await self.writer.read_archive(client, upload_id, mainfile, wait=wait)
         data = archive.get('data')
         value = data.get(field) if isinstance(data, dict) else None
         return str(value).strip() if value else ''

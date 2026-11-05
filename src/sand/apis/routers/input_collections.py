@@ -1136,20 +1136,24 @@ async def download_original_sheet(
 ) -> Response:
     """The sheet as uploaded, under the uploaded file's name (kept in the
     collection's description); under the experiment's name with
-    "(original)" when that is gone or not a file name any more."""
+    "(original)" when that is gone or not a file name any more. Both
+    were written at the upload: read at once, a running job's writes
+    must not hold this up."""
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
     try:
         async with voice.build_client(token) as client:
-            sheet = await voice.writer.read_raw_file(client, upload_id, ORIGINAL_FILE)
+            sheet = await voice.writer.read_raw_file(
+                client, upload_id, ORIGINAL_FILE, wait=False
+            )
             if sheet is None:
                 raise HTTPException(
                     status_code=404,
                     detail='no sheet was uploaded for editing in this experiment',
                 )
             file_name = await voice.input_collection_description(
-                client, upload_id, collection_entry_id
+                client, upload_id, collection_entry_id, wait=False
             )
             if not file_name.lower().endswith('.xlsx'):
                 name = await voice.input_collection_name(

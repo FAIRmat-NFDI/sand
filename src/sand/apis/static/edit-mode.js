@@ -38,6 +38,7 @@ let pollTimer = null;
 let pollGeneration = 0;
 let current = null; // the experiment the card shows
 let downloading = false;
+let editedReady = false; // the shown experiment's last job completed: an edited sheet exists
 let pending = []; // keys of the last completed job's unconfirmed edits
 let confirming = null; // entry id of the experiment whose confirm-all is on its way
 
@@ -119,10 +120,11 @@ let unwrittenShown = 0; // the shown experiment's gate, kept across a download
 
 function gateDownload(unwritten) {
   unwrittenShown = unwritten;
-  downloadFinalBtn.disabled = unwritten > 0 || downloading || running;
+  downloadFinalBtn.disabled = !editedReady || unwritten > 0 || downloading || running;
   downloadFinalBtn.title = unwritten > 0
     ? unwritten + " confirmed edit" + (unwritten === 1 ? " is" : "s are") + " being written into the sheet"
-    : running ? "The updates are being read" : "";
+    : running ? "The updates are being read"
+      : editedReady ? "" : "No edited sheet yet: the updates have not been read";
   // the original is there whatever the job does
   downloadOriginalBtn.disabled = downloading;
 }
@@ -186,6 +188,7 @@ async function poll(experiment, generation) {
   }
   statusKnown = true;
   if (res.status === 404) {
+    editedReady = false;
     idle();
     lastStatus = null;
     reportsShown = {};
@@ -209,6 +212,7 @@ async function poll(experiment, generation) {
   setReports(reportsShown, running, confirmHandler(experiment));
   showPending(status.phase === "completed" ? pendingKeys(status.inputs || []) : []);
   if (status.phase === "completed") {
+    editedReady = true;
     idle();
     lastStatus = status;
     renderResult(status);
@@ -216,6 +220,8 @@ async function poll(experiment, generation) {
     return;
   }
   if (status.phase === "failed") {
+    // the download refuses after a failed job, whatever an earlier one wrote
+    editedReady = false;
     idle();
     // not started again for these inputs by itself (Read again does)
     readFor = inputsSeen && inputsSeen.entryId === experiment.entry_id
@@ -342,6 +348,7 @@ export function showEdit(experiment, summary) {
   current = experiment;
   statusKnown = false;
   lastStatus = null;
+  editedReady = false;
   reportsShown = {};
   readFor = null;
   wroteFor = null;

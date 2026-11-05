@@ -324,6 +324,31 @@ async def test_write_waits_for_processing_and_sends_body_once():
 
 
 @pytest.mark.asyncio
+async def test_a_read_without_wait_ignores_processing():
+    # a download of a file written long ago must not wait out processing
+    # that other writes set off: no status poll, the bytes at once
+    polls_left = 10
+    fake = _FakeNomad(processing_polls=polls_left)
+    fake.raw_files['sheet_edit/uploaded.xlsx.origin'] = b'xlsx'
+    fake.raw_files[EXPERIMENT_MAINFILE] = json.dumps(
+        {'data': {'name': 'batch 7', 'description': 'batch 7.xlsx'}}
+    ).encode()
+
+    async with _client(fake) as client:
+        service = _service()
+        sheet = await service.writer.read_raw_file(
+            client, UPLOAD_ID, 'sheet_edit/uploaded.xlsx.origin', wait=False
+        )
+        description = await service.input_collection_description(
+            client, UPLOAD_ID, SAND_COLLECTION_ID, wait=False
+        )
+
+    assert sheet == b'xlsx'
+    assert description == 'batch 7.xlsx'
+    assert fake.processing_polls == polls_left  # never asked
+
+
+@pytest.mark.asyncio
 async def test_write_retries_when_processing_starts_after_the_idle_check():
     # the check-then-PUT race: NOMAD rejects the PUT although the upload
     # looked idle; the service re-checks the status and retries
