@@ -40,7 +40,7 @@ class FakeWriter:
     failing: bool = False  # every write raises
     writes_allowed: int | None = None  # None: all; else writes before NOMAD is down
 
-    async def read_raw_file(self, client, upload_id, name):
+    async def read_raw_file(self, client, upload_id, name, *, wait=True):
         return self.files.get(name)
 
     async def read_json(self, client, upload_id, name):
@@ -74,8 +74,10 @@ class FakeVoice:
     writer: FakeWriter = field(default_factory=FakeWriter)
     inputs: list[CollectedInput] = field(default_factory=list)
     name: str = 'batch 7'
+    description: str = 'batch.xlsx'
     me: dict = field(default_factory=lambda: {'user_id': USER, 'username': USERNAME})
     created: list[str] = field(default_factory=list)
+    descriptions: list[str] = field(default_factory=list)
     deleted: list[str] = field(default_factory=list)
     moved: list[tuple[str, str]] = field(default_factory=list)
     revised: list[tuple[str, str]] = field(default_factory=list)
@@ -93,8 +95,9 @@ class FakeVoice:
     def entry_url(self, upload_id, entry_id):
         return f'http://nomad/{upload_id}/{entry_id}'
 
-    async def create_input_collection(self, client, name):
+    async def create_input_collection(self, client, name, description=''):
         self.created.append(name)
+        self.descriptions.append(description)
         return EntryHandle(upload_id=UPLOAD, entry_id=COLLECTION)
 
     async def delete_input_collection(self, client, upload_id):
@@ -126,6 +129,12 @@ class FakeVoice:
     async def input_collection_name(self, client, upload_id, collection_entry_id):
         assert (upload_id, collection_entry_id) == (UPLOAD, COLLECTION)
         return self.name
+
+    async def input_collection_description(
+        self, client, upload_id, collection_entry_id, *, wait=True
+    ):
+        assert (upload_id, collection_entry_id) == (UPLOAD, COLLECTION)
+        return self.description
 
 
 def note(entry_id: str, text: str | None) -> CollectedInput:

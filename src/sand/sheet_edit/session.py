@@ -1,12 +1,12 @@
 """What survives between runs of the edit job: raw files in the upload,
 beside the original sheet.
 
-    sheet_edit/original.xlsx.orig   the uploaded sheet, never modified
+    sheet_edit/uploaded.xlsx.origin the uploaded sheet, never modified
     sheet_edit/llm_cache.json       the workflow's: what the model answered,
                                     published by every finished job
     sheet_edit/llm_cache.<job>.json one running job's answers (its own)
     sheet_edit/confirmations.json   the API's: which edits the user confirmed
-    sheet_edit/final.xlsx.orig      the workflow's: original + confirmed edits
+    sheet_edit/edited.xlsx.final    the workflow's: original + confirmed edits
     sheet_edit/changelog.json       the workflow's: what the final sheet changed
     sheet_edit/status.json          the workflow's: progress, previews
 
@@ -17,8 +17,8 @@ cannot lose each other's answers while they run; a job publishes its
 answers into the shared cache only at its end, where a lost entry costs
 a model call in a later job, never the running one. All are sand's own
 working files: nothing parses them, and losing a cache costs model
-calls, not data. `.orig`, not `.xlsx`: NOMAD's hysprint batch parser
-matches any .xlsx in the upload.
+calls, not data. Not `.xlsx`: NOMAD's hysprint batch parser matches
+any .xlsx in the upload; the suffixes say which sheet is which.
 """
 
 import datetime
@@ -30,8 +30,8 @@ from sand.sheet_edit.changelog import Confirmation
 from sand.sheet_edit.edits import ProposedEdits, Unreadable
 from sand.sheet_edit.workbook import sha256
 
-ORIGINAL_FILE = 'sheet_edit/original.xlsx.orig'
-FINAL_FILE = 'sheet_edit/final.xlsx.orig'
+ORIGINAL_FILE = 'sheet_edit/uploaded.xlsx.origin'
+FINAL_FILE = 'sheet_edit/edited.xlsx.final'
 CHANGELOG_FILE = 'sheet_edit/changelog.json'
 CACHE_FILE = 'sheet_edit/llm_cache.json'
 CONFIRMATIONS_FILE = 'sheet_edit/confirmations.json'

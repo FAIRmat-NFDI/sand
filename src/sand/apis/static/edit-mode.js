@@ -28,6 +28,7 @@ const changelogFold = document.querySelector(".changelog-details");
 const writtenTable = document.getElementById("written-table");
 const writtenBody = writtenTable.querySelector("tbody");
 const downloadFinalBtn = document.getElementById("download-final-btn");
+const downloadOriginalBtn = document.getElementById("download-original-btn");
 const sheetSummaryEl = document.getElementById("sheet-summary");
 
 const POLL_MS = 3000;
@@ -37,6 +38,7 @@ let pollTimer = null;
 let pollGeneration = 0;
 let current = null; // the experiment the card shows
 let downloading = false;
+let editedReady = false; // the shown experiment's last job completed: an edited sheet exists
 let pending = []; // keys of the last completed job's unconfirmed edits
 let confirming = null; // entry id of the experiment whose confirm-all is on its way
 
@@ -118,10 +120,13 @@ let unwrittenShown = 0; // the shown experiment's gate, kept across a download
 
 function gateDownload(unwritten) {
   unwrittenShown = unwritten;
-  downloadFinalBtn.disabled = unwritten > 0 || downloading || running;
+  downloadFinalBtn.disabled = !editedReady || unwritten > 0 || downloading || running;
   downloadFinalBtn.title = unwritten > 0
     ? unwritten + " confirmed edit" + (unwritten === 1 ? " is" : "s are") + " being written into the sheet"
-    : running ? "The updates are being read" : "";
+    : running ? "The updates are being read"
+      : editedReady ? "" : "No edited sheet yet: the updates have not been read";
+  // the original is there whatever the job does
+  downloadOriginalBtn.disabled = downloading;
 }
 
 // what is in the sheet now, a table to glance at: the step once per
@@ -183,6 +188,7 @@ async function poll(experiment, generation) {
   }
   statusKnown = true;
   if (res.status === 404) {
+    editedReady = false;
     idle();
     lastStatus = null;
     reportsShown = {};
@@ -206,6 +212,7 @@ async function poll(experiment, generation) {
   setReports(reportsShown, running, confirmHandler(experiment));
   showPending(status.phase === "completed" ? pendingKeys(status.inputs || []) : []);
   if (status.phase === "completed") {
+    editedReady = true;
     idle();
     lastStatus = status;
     renderResult(status);
@@ -213,6 +220,8 @@ async function poll(experiment, generation) {
     return;
   }
   if (status.phase === "failed") {
+    // the download refuses after a failed job, whatever an earlier one wrote
+    editedReady = false;
     idle();
     // not started again for these inputs by itself (Read again does)
     readFor = inputsSeen && inputsSeen.entryId === experiment.entry_id
@@ -339,6 +348,7 @@ export function showEdit(experiment, summary) {
   current = experiment;
   statusKnown = false;
   lastStatus = null;
+  editedReady = false;
   reportsShown = {};
   readFor = null;
   wroteFor = null;
@@ -422,14 +432,16 @@ async function startJob(experiment) {
   }
 }
 
-async function downloadFinal() {
+// `path` is the sheet's endpoint; the server names the file, `suffix`
+// completes the experiment's name when it does not
+async function downloadSheet(path, suffix) {
   clearError();
   const experiment = requireExperiment();
   if (!experiment) return;
   downloading = true;
-  downloadFinalBtn.disabled = true;
+  gateDownload(unwrittenShown);
   try {
-    const res = await fetch(experimentUrl(experiment, "final-sheet"));
+    const res = await fetch(experimentUrl(experiment, path));
     if (!res.ok) {
       showError("Download failed: " + await errorDetail(res));
       return;
@@ -438,7 +450,7 @@ async function downloadFinal() {
     const link = document.createElement("a");
     link.href = url;
     link.download = downloadFilename(
-      res.headers.get("Content-Disposition"), experiment.name + ".xlsx");
+      res.headers.get("Content-Disposition"), experiment.name + suffix);
     link.click();
     URL.revokeObjectURL(url);
   } catch (err) {
@@ -467,5 +479,6 @@ export function initEdit() {
   confirmAllBtn.addEventListener("click", () => {
     if (current) confirmAll(current);
   });
-  downloadFinalBtn.addEventListener("click", downloadFinal);
+  downloadFinalBtn.addEventListener("click", () => downloadSheet("final-sheet", ".xlsx"));
+  downloadOriginalBtn.addEventListener("click", () => downloadSheet("original-sheet", " (original).xlsx"));
 }

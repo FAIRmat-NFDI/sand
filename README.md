@@ -18,8 +18,8 @@ plus a changelog.
   edits. Every edit is shown and must be confirmed before it is written.
   An update the sheet cannot take (unknown sample, unknown column, a
   value of the wrong kind) is refused with the reason; sand never guesses.
-- **Download** the final sheet and read the changelog of what changed and
-  why.
+- **Download** the edited sheet, or the original as it was uploaded, and
+  read the changelog of what changed and why.
 - **Voice mode**: start and stop recordings by voice, for work where the
   hands are not free (e.g. in a glove box).
 
@@ -189,7 +189,8 @@ same browser; sand warns when the login is about to end.
    are written into the sheet a moment later; a confirmed update is a
    record and cannot be revised or deleted. A wrong reading is not
    confirmed: correct the update's text or add a new update.
-5. **Download** the final sheet. The list under the summary names every
+5. **Download** the edited sheet (the original is a download too, under
+   the file name it was uploaded with). The list under the summary names every
    edit written; the changelog, folded below it, holds every cell
    changed, the update it came from and who confirmed it.
 

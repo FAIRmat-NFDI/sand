@@ -61,7 +61,7 @@ class FakeWriter:
     files: dict[str, bytes]
     written: list[str] = field(default_factory=list)
 
-    async def read_raw_file(self, client, upload_id, name):
+    async def read_raw_file(self, client, upload_id, name, *, wait=True):
         return self.files.get(name)
 
     async def read_json(self, client, upload_id, name):

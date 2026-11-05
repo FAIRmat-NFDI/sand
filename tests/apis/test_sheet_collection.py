@@ -40,6 +40,8 @@ async def test_good_sheet_becomes_a_collection(voice, synthetic_xlsx):
     assert body['entry_url'] == f'http://nomad/{UPLOAD}/{COLLECTION}'
     assert body['name'] == 'batch 7'
     assert voice.created == ['batch 7']
+    # the file's name: the original's download name
+    assert voice.descriptions == ['batch.xlsx']
     # the bytes are stored as they came: the job verifies against them
     assert voice.writer.files == {ORIGINAL_FILE: synthetic_xlsx}
     assert voice.writer.types == {ORIGINAL_FILE: XLSX_CONTENT_TYPE}
@@ -124,6 +126,7 @@ async def test_name_defaults_to_the_file_name(voice, synthetic_xlsx):
     assert response.status_code == HTTPStatus.CREATED, response.text
     assert response.json()['name'] == 'Batch 7'
     assert voice.created == ['Batch 7']
+    assert voice.descriptions == ['Batch 7.xlsx']
 
 
 async def test_sheet_with_problems_is_refused_before_creating(voice, synthetic_xlsx):

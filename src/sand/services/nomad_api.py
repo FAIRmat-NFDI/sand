@@ -311,12 +311,20 @@ class RawFileWriter:
             await asyncio.sleep(self.retry_interval_s)
 
     async def read_raw_file(
-        self, client: httpx.AsyncClient, upload_id: str, file_name: str
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        file_name: str,
+        *,
+        wait: bool = True,
     ) -> bytes | None:
-        """The raw file's bytes once the upload is idle; None if absent."""
-        await self.wait_until_writable(
-            client, upload_id, time.monotonic() + self.write_timeout_s, file_name
-        )
+        """The raw file's bytes once the upload is idle; None if absent.
+        `wait=False` reads at once: for a file written long ago, which
+        processing by other writes must not hold up."""
+        if wait:
+            await self.wait_until_writable(
+                client, upload_id, time.monotonic() + self.write_timeout_s, file_name
+            )
         response = await client.get(f'/uploads/{upload_id}/raw/{file_name}')
         if response.status_code == HTTPStatus.NOT_FOUND:
             return None
@@ -380,17 +388,24 @@ class RawFileWriter:
         )
 
     async def read_archive(
-        self, client: httpx.AsyncClient, upload_id: str, mainfile: str
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        mainfile: str,
+        *,
+        wait: bool = True,
     ) -> dict:
         """The raw mainfile's JSON, once the upload is idle.
 
         Raw files land in staging asynchronously after a PUT, so wait for
         processing to finish before reading - a plain GET right after a
-        write can 404 even though the write succeeded.
+        write can 404 even though the write succeeded. `wait=False` for a
+        mainfile written long ago.
         """
-        await self.wait_until_writable(
-            client, upload_id, time.monotonic() + self.write_timeout_s, mainfile
-        )
+        if wait:
+            await self.wait_until_writable(
+                client, upload_id, time.monotonic() + self.write_timeout_s, mainfile
+            )
         response = await client.get(f'/uploads/{upload_id}/raw/{mainfile}')
         if response.status_code == HTTPStatus.NOT_FOUND:
             raise NomadAPIError(

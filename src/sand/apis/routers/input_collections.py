@@ -286,11 +286,15 @@ async def create_sheet_input_collection(
     if problems:
         raise HTTPException(status_code=422, detail={'problems': problems})
     sheet = await asyncio.to_thread(catalog.build, xlsx)
-    name = name.strip() or PurePath(file.filename or '').stem or 'sheet'
+    file_name = PurePath(file.filename or '').name
+    name = name.strip() or PurePath(file_name).stem or 'sheet'
 
     try:
         async with voice.build_client(token) as client:
-            result = await voice.create_input_collection(client, name)
+            # the file's name is the original's download name later
+            result = await voice.create_input_collection(
+                client, name, description=file_name
+            )
             try:
                 await voice.writer.upload_raw_file(
                     client, result.upload_id, ORIGINAL_FILE, xlsx, XLSX_CONTENT_TYPE
@@ -1124,6 +1128,48 @@ async def confirm_edits(
     return ConfirmEditsResponse(confirmed=sorted(confirmed))
 
 
+@router.get('/input-collections/{upload_id}/original-sheet')
+async def download_original_sheet(
+    upload_id: str,
+    request: Request,
+    collection_entry_id: str,
+) -> Response:
+    """The sheet as uploaded, under the uploaded file's name (kept in the
+    collection's description); under the experiment's name with
+    "(original)" when that is gone or not a file name any more. Both
+    were written at the upload: read at once, a running job's writes
+    must not hold this up."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    try:
+        async with voice.build_client(token) as client:
+            sheet = await voice.writer.read_raw_file(
+                client, upload_id, ORIGINAL_FILE, wait=False
+            )
+            if sheet is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail='no sheet was uploaded for editing in this experiment',
+                )
+            file_name = await voice.input_collection_description(
+                client, upload_id, collection_entry_id, wait=False
+            )
+            if not file_name.lower().endswith('.xlsx'):
+                name = await voice.input_collection_name(
+                    client, upload_id, collection_entry_id
+                )
+                file_name = f'{name} (original).xlsx'
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return Response(
+        content=sheet,
+        media_type=XLSX_CONTENT_TYPE,
+        headers={'Content-Disposition': _attachment(file_name)},
+    )
+
+
 @router.get('/input-collections/{upload_id}/final-sheet')
 async def download_final_sheet(
     upload_id: str,
@@ -1206,7 +1252,7 @@ def _attachment(filename: str) -> str:
         c if c.isascii() and c.isprintable() and c not in '"\\' else '_'
         for c in filename
     )
-    return f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(filename)}'
+    return f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(filename, safe="")}'
 
 
 @router.get('/input-collections/{upload_id}/changelog')
