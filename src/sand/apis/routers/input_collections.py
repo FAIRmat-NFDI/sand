@@ -1212,7 +1212,7 @@ def _attachment(filename: str) -> str:
         c if c.isascii() and c.isprintable() and c not in '"\\' else '_'
         for c in filename
     )
-    return f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(filename)}'
+    return f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(filename, safe="")}'
 
 
 @router.get('/input-collections/{upload_id}/changelog')
