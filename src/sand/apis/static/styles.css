@@ -817,14 +817,16 @@ body {
   color: #757575;
 }
 
-/* The edits an update makes: rows inside the card, under a rule.
-   "Time 1 [s]  900 → 1000" over where, the action at the right. */
-/* The report is one grid, so the cells of its edit rows line up:
-   column, old → new, samples, state. Each row is a subgrid of it, so
-   a row keeps its own border and padding. */
+/* The edits an update makes: rows inside the card, under a rule. The
+   report is one grid, so the cells of its edit rows line up: column,
+   old → new, samples, state. Each row is a subgrid of it, so a row
+   keeps its own border and padding. The spare width goes to an empty
+   second track, so the three at the right stay packed; short of width
+   that track is 0 and the text cells wrap, so the state at the right
+   is never pushed out of the card. */
 .input-report {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: auto 1fr auto auto auto;
   column-gap: 14px;
   border-top: 1px solid #e3e6eb;
   padding: 4px 12px 8px;
@@ -858,15 +860,17 @@ body {
 }
 
 .report-line {
-  grid-column: 1 / 4;
+  grid-column: 1 / 5;
 }
 
 .report-column {
+  grid-column: 1;
   font-weight: 600;
   color: #333;
 }
 
 .report-change {
+  grid-column: 3;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -881,13 +885,46 @@ body {
 }
 
 .report-samples {
-  white-space: nowrap;
+  grid-column: 4;
   font-size: 0.78rem;
   color: #6b7079;
 }
 
 .report-edit > :last-child {
+  grid-column: 5;
   justify-self: end;
+}
+
+/* Below its design width (512px inside the card: pages narrower than
+   about 1250px, phones) the Inputs card is too narrow for four
+   columns: a row stacks, the column and the change over the samples,
+   the state beside both. */
+.section-inputs {
+  container-type: inline-size;
+}
+
+@container (max-width: 500px) {
+  .input-report {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .report-line {
+    grid-column: 1 / 3;
+  }
+
+  .report-change {
+    grid-column: 2;
+  }
+
+  .report-samples {
+    grid-column: 1 / 3;
+    grid-row: 2;
+  }
+
+  .report-edit > :last-child {
+    grid-column: 3;
+    grid-row: 1 / 3;
+  }
 }
 
 .report-confirm.btn {
