@@ -321,6 +321,35 @@ async def test_no_final_sheet_stored(voice, synthetic_xlsx):
     assert (await get(voice, 'final-sheet')).status_code == HTTPStatus.NOT_FOUND
 
 
+async def test_the_uploaded_sheet_downloads_before_any_job(voice, synthetic_xlsx):
+    voice.writer.files['sheet_edit/original.xlsx.orig'] = synthetic_xlsx
+
+    response = await get(voice, 'final-sheet')
+
+    assert response.status_code == HTTPStatus.OK, response.text
+    assert response.content == synthetic_xlsx
+    assert response.headers['content-disposition'].startswith(
+        'attachment; filename="batch 7.xlsx"'
+    )
+
+
+async def test_another_collections_job_does_not_count(voice, synthetic_xlsx):
+    voice.writer.files['sheet_edit/original.xlsx.orig'] = synthetic_xlsx
+    put_final(voice, synthetic_xlsx + b'x', collection='other')
+
+    response = await get(voice, 'final-sheet')
+
+    assert response.status_code == HTTPStatus.OK, response.text
+    assert response.content == synthetic_xlsx
+
+
+async def test_no_sheet_uploaded(voice):
+    response = await get(voice, 'final-sheet')
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    assert 'no sheet was uploaded' in response.json()['detail']
+
+
 # --- changelog --------------------------------------------------------------------
 
 

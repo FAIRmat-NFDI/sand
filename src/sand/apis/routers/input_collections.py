@@ -881,13 +881,23 @@ async def start_edit_async(
     return JobResponse(job_id=job_id)
 
 
+async def _own_status(
+    client, voice: VoiceElnService, upload_id: str, collection_entry_id: str
+) -> dict | None:
+    """The status file, if it is this collection's; None before its first
+    job. The file is upload-level and an upload can hold several
+    collections: another's status is not this one's."""
+    status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
+    if status is None or status.get('collection_entry_id') != collection_entry_id:
+        return None
+    return status
+
+
 async def _edit_status(
     client, voice: VoiceElnService, upload_id: str, collection_entry_id: str
 ) -> dict:
-    status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
-    # the status file is upload-level and an upload can hold several
-    # collections: only report a status belonging to the requested one
-    if status is None or status.get('collection_entry_id') != collection_entry_id:
+    status = await _own_status(client, voice, upload_id, collection_entry_id)
+    if status is None:
         raise HTTPException(
             status_code=404, detail='no edit job for this experiment yet'
         )
@@ -1130,26 +1140,37 @@ async def download_final_sheet(
     request: Request,
     collection_entry_id: str,
 ) -> Response:
-    """The sheet the last completed job left: the original plus the
-    confirmed edits, as an xlsx download named after the experiment."""
+    """The sheet as it stands, as an xlsx download named after the
+    experiment: the one the last completed job left (the original plus
+    the confirmed edits), or the uploaded one before any job."""
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
     try:
         async with voice.build_client(token) as client:
-            status = await _completed_status(
-                client, voice, upload_id, collection_entry_id
-            )
-            final = await voice.writer.read_raw_file(client, upload_id, FINAL_FILE)
-            if final is None:
-                raise HTTPException(status_code=404, detail='no final sheet stored')
-            if sha256(final) != status.get('final'):
-                # another collection's job, or a file touched by hand
-                raise HTTPException(
-                    status_code=409,
-                    detail='the stored sheet is not the one the last job '
-                    'recorded; run the job again',
+            if await _own_status(client, voice, upload_id, collection_entry_id) is None:
+                sheet = await voice.writer.read_raw_file(
+                    client, upload_id, ORIGINAL_FILE
                 )
+                if sheet is None:
+                    raise HTTPException(
+                        status_code=404,
+                        detail='no sheet was uploaded for editing in this experiment',
+                    )
+            else:
+                status = await _completed_status(
+                    client, voice, upload_id, collection_entry_id
+                )
+                sheet = await voice.writer.read_raw_file(client, upload_id, FINAL_FILE)
+                if sheet is None:
+                    raise HTTPException(status_code=404, detail='no final sheet stored')
+                if sha256(sheet) != status.get('final'):
+                    # another collection's job, or a file touched by hand
+                    raise HTTPException(
+                        status_code=409,
+                        detail='the stored sheet is not the one the last job '
+                        'recorded; run the job again',
+                    )
             name = await voice.input_collection_name(
                 client, upload_id, collection_entry_id
             )
@@ -1157,7 +1178,7 @@ async def download_final_sheet(
         raise _http_error(exc) from exc
 
     return Response(
-        content=final,
+        content=sheet,
         media_type=XLSX_CONTENT_TYPE,
         headers={'Content-Disposition': _attachment(f'{name}.xlsx')},
     )
