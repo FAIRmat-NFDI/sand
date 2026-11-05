@@ -11,7 +11,13 @@ from nomad_fakes import COLLECTION, UPLOAD, USER, USERNAME, FakeVoice, api, note
 
 from sand.services.nomad_api import XLSX_CONTENT_TYPE
 from sand.sheet_edit import changelog
-from sand.sheet_edit.session import CHANGELOG_FILE, CONFIRMATIONS_FILE, STATUS_FILE
+from sand.sheet_edit.session import (
+    CHANGELOG_FILE,
+    CONFIRMATIONS_FILE,
+    FINAL_FILE,
+    ORIGINAL_FILE,
+    STATUS_FILE,
+)
 from sand.sheet_edit.workbook import sha256
 
 pytestmark = pytest.mark.asyncio
@@ -41,7 +47,7 @@ def put_final(voice, xlsx: bytes, **status):
     """A completed job whose final sheet is the original: an empty log."""
     log = changelog.changelog(xlsx, [], {}, 'gemini/test v1')
     voice.writer.files[CHANGELOG_FILE] = changelog.to_json(log).encode()
-    voice.writer.files['sheet_edit/final.xlsx.orig'] = xlsx
+    voice.writer.files[FINAL_FILE] = xlsx
     put_status(voice, final=sha256(xlsx), **status)
 
 
@@ -306,7 +312,7 @@ async def test_no_download_after_a_failed_job(voice, synthetic_xlsx):
 
 async def test_a_sheet_that_is_not_the_jobs_is_refused(voice, synthetic_xlsx):
     put_final(voice, synthetic_xlsx)
-    voice.writer.files['sheet_edit/final.xlsx.orig'] = synthetic_xlsx + b'x'
+    voice.writer.files[FINAL_FILE] = synthetic_xlsx + b'x'
 
     response = await get(voice, 'final-sheet')
 
@@ -316,9 +322,60 @@ async def test_a_sheet_that_is_not_the_jobs_is_refused(voice, synthetic_xlsx):
 
 async def test_no_final_sheet_stored(voice, synthetic_xlsx):
     put_final(voice, synthetic_xlsx)
-    del voice.writer.files['sheet_edit/final.xlsx.orig']
+    del voice.writer.files[FINAL_FILE]
 
     assert (await get(voice, 'final-sheet')).status_code == HTTPStatus.NOT_FOUND
+
+
+# --- original sheet ---------------------------------------------------------------
+
+
+async def test_the_original_downloads_under_the_uploaded_files_name(
+    voice, synthetic_xlsx
+):
+    voice.writer.files[ORIGINAL_FILE] = synthetic_xlsx
+    voice.description = 'KIT batch 7.xlsx'
+
+    response = await get(voice, 'original-sheet')
+
+    assert response.status_code == HTTPStatus.OK, response.text
+    assert response.content == synthetic_xlsx
+    assert response.headers['content-type'] == XLSX_CONTENT_TYPE
+    assert response.headers['content-disposition'].startswith(
+        'attachment; filename="KIT batch 7.xlsx"'
+    )
+
+
+@pytest.mark.parametrize('description', ['', 'a note someone typed in NOMAD'])
+async def test_the_original_is_named_after_the_experiment_without_a_file_name(
+    voice, synthetic_xlsx, description
+):
+    voice.writer.files[ORIGINAL_FILE] = synthetic_xlsx
+    voice.description = description
+
+    response = await get(voice, 'original-sheet')
+
+    assert response.status_code == HTTPStatus.OK, response.text
+    assert response.headers['content-disposition'].startswith(
+        'attachment; filename="batch 7 (original).xlsx"'
+    )
+
+
+async def test_the_original_downloads_whatever_the_job_did(voice, synthetic_xlsx):
+    voice.writer.files[ORIGINAL_FILE] = synthetic_xlsx
+    put_final(voice, synthetic_xlsx + b'x', phase='interpreting')
+
+    response = await get(voice, 'original-sheet')
+
+    assert response.status_code == HTTPStatus.OK, response.text
+    assert response.content == synthetic_xlsx
+
+
+async def test_no_original_without_a_sheet(voice):
+    response = await get(voice, 'original-sheet')
+
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    assert 'no sheet was uploaded' in response.json()['detail']
 
 
 # --- changelog --------------------------------------------------------------------

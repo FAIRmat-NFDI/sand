@@ -196,20 +196,20 @@ class VoiceElnService:
         await delete_upload(client, upload_id)
 
     async def create_input_collection(
-        self, client: httpx.AsyncClient, name: str
+        self, client: httpx.AsyncClient, name: str, description: str = ''
     ) -> EntryHandle:
+        """`description` is the schema's one free field: a sheet collection
+        keeps the uploaded file's name there."""
         upload_id = await create_upload(client, upload_name=name)
+        data = {
+            'm_def': INPUT_COLLECTION_M_DEF,
+            'name': name,
+            'datetime': _utc_now_iso(),
+        }
+        if description:
+            data['description'] = description
         await self.writer.write_archive(
-            client,
-            upload_id,
-            EXPERIMENT_MAINFILE,
-            {
-                'data': {
-                    'm_def': INPUT_COLLECTION_M_DEF,
-                    'name': name,
-                    'datetime': _utc_now_iso(),
-                }
-            },
+            client, upload_id, EXPERIMENT_MAINFILE, {'data': data}
         )
         return EntryHandle(
             upload_id=upload_id,
@@ -715,13 +715,32 @@ class VoiceElnService:
     async def input_collection_name(
         self, client: httpx.AsyncClient, upload_id: str, collection_entry_id: str
     ) -> str:
+        name = await self._collection_field(
+            client, upload_id, collection_entry_id, 'name'
+        )
+        return name or 'experiment'
+
+    async def input_collection_description(
+        self, client: httpx.AsyncClient, upload_id: str, collection_entry_id: str
+    ) -> str:
+        return await self._collection_field(
+            client, upload_id, collection_entry_id, 'description'
+        )
+
+    async def _collection_field(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        collection_entry_id: str,
+        field: str,
+    ) -> str:
         mainfile = await self.resolve_collection_mainfile(
             client, upload_id, collection_entry_id
         )
         archive = await self.writer.read_archive(client, upload_id, mainfile)
         data = archive.get('data')
-        name = data.get('name') if isinstance(data, dict) else None
-        return str(name).strip() if name else 'experiment'
+        value = data.get(field) if isinstance(data, dict) else None
+        return str(value).strip() if value else ''
 
     async def resolve_collection_mainfile(
         self,

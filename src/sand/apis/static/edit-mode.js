@@ -28,6 +28,7 @@ const changelogFold = document.querySelector(".changelog-details");
 const writtenTable = document.getElementById("written-table");
 const writtenBody = writtenTable.querySelector("tbody");
 const downloadFinalBtn = document.getElementById("download-final-btn");
+const downloadOriginalBtn = document.getElementById("download-original-btn");
 const sheetSummaryEl = document.getElementById("sheet-summary");
 
 const POLL_MS = 3000;
@@ -122,6 +123,8 @@ function gateDownload(unwritten) {
   downloadFinalBtn.title = unwritten > 0
     ? unwritten + " confirmed edit" + (unwritten === 1 ? " is" : "s are") + " being written into the sheet"
     : running ? "The updates are being read" : "";
+  // the original is there whatever the job does
+  downloadOriginalBtn.disabled = downloading;
 }
 
 // what is in the sheet now, a table to glance at: the step once per
@@ -422,14 +425,16 @@ async function startJob(experiment) {
   }
 }
 
-async function downloadFinal() {
+// `path` is the sheet's endpoint; the server names the file, `suffix`
+// completes the experiment's name when it does not
+async function downloadSheet(path, suffix) {
   clearError();
   const experiment = requireExperiment();
   if (!experiment) return;
   downloading = true;
-  downloadFinalBtn.disabled = true;
+  gateDownload(unwrittenShown);
   try {
-    const res = await fetch(experimentUrl(experiment, "final-sheet"));
+    const res = await fetch(experimentUrl(experiment, path));
     if (!res.ok) {
       showError("Download failed: " + await errorDetail(res));
       return;
@@ -438,7 +443,7 @@ async function downloadFinal() {
     const link = document.createElement("a");
     link.href = url;
     link.download = downloadFilename(
-      res.headers.get("Content-Disposition"), experiment.name + ".xlsx");
+      res.headers.get("Content-Disposition"), experiment.name + suffix);
     link.click();
     URL.revokeObjectURL(url);
   } catch (err) {
@@ -467,5 +472,6 @@ export function initEdit() {
   confirmAllBtn.addEventListener("click", () => {
     if (current) confirmAll(current);
   });
-  downloadFinalBtn.addEventListener("click", downloadFinal);
+  downloadFinalBtn.addEventListener("click", () => downloadSheet("final-sheet", ".xlsx"));
+  downloadOriginalBtn.addEventListener("click", () => downloadSheet("original-sheet", " (original).xlsx"));
 }
