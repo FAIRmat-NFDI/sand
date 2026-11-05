@@ -63,6 +63,11 @@ class ColumnInfo:
     inputs: tuple[str, ...] | None  # ids the formulas read; None: unknown
     groups: tuple[ValueGroup, ...]  # in order of first appearance
 
+    @property
+    def name(self) -> str:
+        """The header without its unit: 'Rotation speed'."""
+        return _UNIT_RE.sub('', self.column.header).strip()
+
 
 @dataclass(frozen=True)
 class SampleInfo:

@@ -1,13 +1,21 @@
 """GET /input-collections/{upload}/sheet-view against a fake NOMAD."""
 
+import json
+from datetime import datetime, timezone
 from http import HTTPStatus
 
 import pytest
 from nomad_fakes import COLLECTION, UPLOAD, FakeVoice, api
+from openpyxl.utils import column_index_from_string
 from synthetic_sheet import edited, letter
 
 from sand.sheet_edit import changelog
-from sand.sheet_edit.session import CHANGELOG_FILE, FINAL_FILE, ORIGINAL_FILE
+from sand.sheet_edit.session import (
+    CHANGELOG_FILE,
+    FINAL_FILE,
+    ORIGINAL_FILE,
+    STATUS_FILE,
+)
 from sand.sheet_edit.workbook import sha256
 
 pytestmark = pytest.mark.asyncio
@@ -35,7 +43,7 @@ def speed_entries(rows=ROWS) -> tuple[changelog.Entry, ...]:
             input=1,
             cell=f'{SPEED}{r}',
             row=r,
-            column=25,
+            column=column_index_from_string(SPEED),
             section='2: Spin Coating',
             header='Rotation speed [rpm]',
             sample=str(r - 2),
@@ -47,6 +55,22 @@ def speed_entries(rows=ROWS) -> tuple[changelog.Entry, ...]:
         )
         for r in rows
     )
+
+
+def put_status(voice, phase='completed', collection=COLLECTION):
+    voice.writer.files[STATUS_FILE] = json.dumps(
+        {
+            'job_id': 'job-0',
+            'phase': phase,
+            'collection_entry_id': collection,
+            'updated_at': datetime.now(timezone.utc).isoformat(),
+        }
+    ).encode()
+
+
+def speed_param(body: dict) -> dict:
+    spin = next(s for s in body['steps'] if s['label'] == '2: Spin Coating')
+    return next(p for p in spin['params'] if p['header'] == 'Rotation speed [rpm]')
 
 
 def put_edited(voice, original: bytes, *, log_final: str | None = None) -> bytes:
@@ -84,7 +108,9 @@ async def test_the_uploaded_sheet_before_any_edit(voice, synthetic_xlsx):
     assert body['changed'] == []
     assert body['warnings'] == ['Sample 6 is missing', 'Step 7 (Spin Coating) is empty']
     # the page polls this: never held up by NOMAD processing the upload
-    assert voice.writer.reads == [(ORIGINAL_FILE, False), (FINAL_FILE, False)]
+    assert not any(waited for _, waited in voice.writer.reads)
+    # no final sheet: the changelog is not looked for
+    assert {name for name, _ in voice.writer.reads} == {ORIGINAL_FILE, FINAL_FILE}
 
 
 async def test_the_edited_sheet_when_the_files_hold_together(voice, synthetic_xlsx):
@@ -94,18 +120,16 @@ async def test_the_edited_sheet_when_the_files_hold_together(voice, synthetic_xl
     body = (await get_view(voice)).json()
 
     assert (body['source'], body['sha256']) == ('edited', sha256(final))
-    spin = next(s for s in body['steps'] if s['position'] == 2)  # noqa: PLR2004
-    speed = next(p for p in spin['params'] if p['header'] == 'Rotation speed [rpm]')
-    assert speed['values'][0]['value'] == '4000'
+    assert speed_param(body)['values'][0]['value'] == '4000'
     assert [(c['row'], c['old'], c['new']) for c in body['changed']] == [
         (r, '3000', '4000') for r in ROWS
     ]
     assert body['warnings'] == ['Sample 6 is missing', 'Step 7 (Spin Coating) is empty']
-    assert [name for name, _ in voice.writer.reads] == [
+    assert {name for name, _ in voice.writer.reads} == {
         ORIGINAL_FILE,
         FINAL_FILE,
         CHANGELOG_FILE,
-    ]
+    }
     assert not any(waited for _, waited in voice.writer.reads)
 
 
@@ -161,6 +185,48 @@ async def test_an_edited_sheet_of_another_original_is_not_shown(voice, synthetic
     body = (await get_view(voice)).json()
 
     assert (body['source'], body['sha256']) == ('uploaded', sha256(other))
+    assert body['warnings'][-1].startswith('the edited sheet stored')
+
+
+async def test_a_job_mid_write_is_said_so(voice, synthetic_xlsx):
+    # the job stores the sheet, then the changelog: for a moment the new
+    # sheet stands beside the old log
+    voice.writer.files[ORIGINAL_FILE] = synthetic_xlsx
+    put_edited(voice, synthetic_xlsx, log_final='0' * 64)
+    put_status(voice, phase='writing-sheet')
+
+    body = (await get_view(voice)).json()
+
+    assert body['source'] == 'uploaded'
+    assert body['warnings'][-1] == (
+        'an edit job is writing the sheet; this is the uploaded sheet'
+    )
+
+
+async def test_another_collections_edits_are_not_this_sheets(voice, synthetic_xlsx):
+    voice.writer.files[ORIGINAL_FILE] = synthetic_xlsx
+    put_edited(voice, synthetic_xlsx)
+    put_status(voice, collection='other-collection')
+
+    body = (await get_view(voice)).json()
+
+    assert (body['source'], body['changed']) == ('uploaded', [])
+    assert speed_param(body)['values'][0]['value'] == '3000'
+    assert body['warnings'][-1] == (
+        "another experiment's job wrote this upload's edited sheet; "
+        'this is the uploaded sheet'
+    )
+
+
+async def test_this_collections_completed_job_is_shown(voice, synthetic_xlsx):
+    voice.writer.files[ORIGINAL_FILE] = synthetic_xlsx
+    put_edited(voice, synthetic_xlsx)
+    put_status(voice)
+
+    body = (await get_view(voice)).json()
+
+    assert body['source'] == 'edited'
+    assert body['warnings'] == ['Sample 6 is missing', 'Step 7 (Spin Coating) is empty']
 
 
 async def test_no_sheet(voice):

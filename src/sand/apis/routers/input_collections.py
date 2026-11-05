@@ -374,9 +374,9 @@ async def sheet_view(
     """The sheet as the page shows it (`sheet_edit.view.sheet_view`, plus
     `source` and `sha256` of the file it was built from). Built from the
     edited sheet when the stored sheet and changelog hold together with
-    the original by their hashes, whatever the job status says; from the
-    uploaded sheet otherwise, with a warning if an edited sheet is there
-    but cannot be vouched for. Reads do not wait for processing."""
+    the original by their hashes and the job that wrote them was this
+    collection's; from the uploaded sheet otherwise, with a warning
+    saying why. Reads do not wait for processing: the page polls this."""
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
@@ -392,23 +392,38 @@ async def sheet_view(
             final = await voice.writer.read_raw_file(
                 client, upload_id, FINAL_FILE, wait=False
             )
-            raw_log = (
-                await voice.writer.read_raw_file(
+            raw_log = status = None
+            if final is not None:
+                raw_log = await voice.writer.read_raw_file(
                     client, upload_id, CHANGELOG_FILE, wait=False
                 )
-                if final is not None
-                else None
-            )
+                status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
     sheet, log = _current_sheet(original, final, raw_log)
-    built = await asyncio.to_thread(view.sheet_view, catalog.build(sheet), log)
+    warning = None
     if final is not None and log is None:
-        built['warnings'].append(
-            'the edited sheet stored with this experiment does not match its '
-            'changelog; this is the uploaded sheet'
+        warning = (
+            'an edit job is writing the sheet; this is the uploaded sheet'
+            if _job_running(status, None)
+            else 'the edited sheet stored with this experiment does not match '
+            'its changelog; this is the uploaded sheet'
         )
+    elif log is not None and (
+        status is not None
+        and status.get('collection_entry_id') != collection_entry_id
+    ):
+        # the sheet files are the upload's; the edits came from another
+        # collection's updates, so they are not this sheet's
+        sheet, log = original, None
+        warning = (
+            "another experiment's job wrote this upload's edited sheet; "
+            'this is the uploaded sheet'
+        )
+    built = await asyncio.to_thread(lambda: view.sheet_view(catalog.build(sheet), log))
+    if warning:
+        built['warnings'].append(warning)
     return {
         'source': 'uploaded' if log is None else 'edited',
         'sha256': sha256(sheet),

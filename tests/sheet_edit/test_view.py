@@ -3,7 +3,7 @@ read from the synthetic sheet (and the real one when it is there)."""
 
 import pytest
 from synthetic_sheet import SAMPLE_LABELS, edited, letter
-from test_changelog import SOLVENT, SPEED_4000, VARIATION_SAID, logged, with_results
+from test_changelog import SOLVENT, SPEED_4000, VARIATION_SAID, logged
 
 from sand.sheet_edit.catalog import build
 from sand.sheet_edit.view import sheet_view
@@ -11,8 +11,6 @@ from sand.sheet_edit.view import sheet_view
 STEPS = 8
 TEMPERATURE = 'Substrate temperature [°C]'
 CSS = '5: Close Space Sublimation'
-
-__all__ = ['with_results']  # the fixture, imported for pytest
 
 
 def step(view: dict, position: int) -> dict:
@@ -175,6 +173,51 @@ def test_values_that_differ_only_by_spaces_are_one(synthetic_xlsx):
     assert [v['header'] for v in view['variations']] == ['Variation', TEMPERATURE]
 
 
+def test_a_number_typed_as_text_is_one_value_but_warned(synthetic_xlsx):
+    speed = letter('2: Spin Coating', 'Rotation speed [rpm]')
+    view = sheet_view(
+        build(edited(synthetic_xlsx, lambda ws: ws.__setitem__(f'{speed}3', '3000')))
+    )
+    rpm = param(step(view, 2), 'Rotation speed [rpm]')
+    assert (rpm['type'], [v['value'] for v in rpm['values']]) == ('mixed', ['3000'])
+    assert (
+        'Rotation speed [rpm] in 2: Spin Coating mixes numbers and text'
+        in view['warnings']
+    )
+
+
+def test_a_varying_material_is_no_headline(synthetic_xlsx):
+    material = letter('2: Spin Coating', 'Material name')
+    view = sheet_view(
+        build(edited(synthetic_xlsx, lambda ws: ws.__setitem__(f'{material}3', 'PTAA')))
+    )
+    spin = step(view, 2)
+    assert (spin['material'], spin['layer'], spin['varies']) == (None, 'HTL', True)
+
+
+def test_prefixed_sample_labels(synthetic_xlsx):
+    sample = letter('Experiment Info', 'Sample')
+
+    def prefixed(ws):
+        for r in range(3, 15):
+            ws[f'{sample}{r}'] = f's_{ws[f"{sample}{r}"].value}'
+
+    view = sheet_view(build(edited(synthetic_xlsx, prefixed)))
+    assert view['warnings'][0] == 'Sample s_6 is missing'
+    assert view['variations'][0]['values'][0]['samples'] == 'samples s_1–s_3'
+
+
+def test_labels_that_are_not_numbers_have_no_gaps(synthetic_xlsx):
+    sample = letter('Experiment Info', 'Sample')
+
+    def lettered(ws):
+        for r in range(3, 15):
+            ws[f'{sample}{r}'] = 'ABCDEFGHIJKL'[r - 3]
+
+    view = sheet_view(build(edited(synthetic_xlsx, lettered)))
+    assert view['warnings'] == ['Step 7 (Spin Coating) is empty']
+
+
 def test_a_parameter_empty_on_some_samples_varies(synthetic_xlsx):
     speed = letter('2: Spin Coating', 'Rotation speed [rpm]')
     view = sheet_view(
@@ -229,6 +272,30 @@ def test_a_recomputed_formula_result_is_a_change_by_formula(with_results):
         '1800',
     )
     assert deposition['by_formula']
+
+
+def test_a_changed_cell_is_named_as_the_sheet_names_its_row_now(synthetic_xlsx):
+    sample = letter('Experiment Info', 'Sample')
+    subbatch = letter('Experiment Info', 'Subbatch')
+    log, final = logged(synthetic_xlsx, [SOLVENT])
+    # the row lost its Sample value since: the log said '1', the sheet says 'row 3'
+    view = sheet_view(
+        build(edited(final, lambda ws: ws.__setitem__(f'{sample}3', None))), log
+    )
+    assert [c['sample'] for c in view['changed']] == ['row 3', '2', '3']
+
+    # labels repeat since (row 4 became sample 1 of subbatch 1): the
+    # subbatch is part of every name
+    def repeat(ws):
+        ws[f'{sample}4'] = 1
+        ws[f'{subbatch}4'] = 1
+
+    view = sheet_view(build(edited(final, repeat)), log)
+    assert [c['sample'] for c in view['changed']] == [
+        '1 of subbatch 0',
+        '1 of subbatch 1',
+        '3 of subbatch 0',
+    ]
 
 
 def test_without_a_log_nothing_is_changed(view):

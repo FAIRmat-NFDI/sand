@@ -9,7 +9,6 @@ by that text: 3000 and 3000.0 are one value, '8 times' and '8 times '
 are one value too.
 """
 
-import re
 from collections import Counter
 
 from sand.sheet_edit.catalog import (
@@ -19,7 +18,7 @@ from sand.sheet_edit.catalog import (
     numbered,
     sample_ranges,
 )
-from sand.sheet_edit.changelog import Changelog
+from sand.sheet_edit.changelog import Changelog, Entry
 from sand.sheet_edit.preview import samples_text
 from sand.sheet_edit.render import value_text
 from sand.sheet_edit.workbook import (
@@ -35,30 +34,22 @@ from sand.sheet_headers import norm_key
 _IDENTITY = {SAMPLE_HEADER, SUBBATCH_HEADER, NOMAD_ID_HEADER}
 # a step's headline, when the sheet has these columns
 _MATERIAL, _LAYER = 'material_name', 'layer_type'
-_UNIT_RE = re.compile(r'\s*\[[^\]]*\]')
 
 
 def sheet_view(catalog: Catalog, log: Changelog | None = None) -> dict:
     """
     {'sheet': 'Experiment Data',
      'info': {'samples': 42, 'subbatches': ['0'],
-              'fields': [{'column_id': 'C003', 'header': 'Batch', 'name': 'Batch',
-                          'unit': None, 'type': 'text', 'value': '275nmPbI2'}]},
-     'steps': [{'position': 5, 'step_type': 'Close Space Sublimation',
-                'label': '5: Close Space Sublimation', 'material': 'MAI+MABr',
-                'layer': 'Organic', 'empty': False, 'varies': True,
-                'params': [{'column_id': 'C088', 'header': 'Substrate temperature [°C]',
-                            'name': 'Substrate temperature', 'unit': '°C',
-                            'type': 'int', 'family': None, 'formula': False,
-                            'values': [{'value': '120', 'rows': [3, ...],
-                                        'samples': 'samples 1–21'}, ...]}]}],
-     'variations': [{'column_id': 'C007', 'step': 'Experiment Info',
-                     'header': 'Variation', 'name': 'Variation', 'unit': None,
+              'fields': [{'column_id', 'header', 'name', 'unit', 'type', 'value'}]},
+     'steps': [{'position', 'step_type', 'label', 'material', 'layer', 'empty',
+                'varies', 'params': [{'column_id', 'header', 'name', 'unit',
+                'type', 'family', 'formula', 'values': [{'value', 'rows',
+                'samples'}]}]}],
+     'variations': [{'column_id', 'step', 'header', 'name', 'unit', 'type',
                      'values': [...]}],
      'warnings': ['Sample 22 is missing', 'Step 7 (Spin Coating) is empty'],
-     'changed': [{'column_id': 'C033', 'step': '2: Spin Coating',
-                  'header': 'Rotation speed [rpm]', 'row': 3, 'sample': '1',
-                  'old': '3000', 'new': '4000', 'by_formula': False}]}
+     'changed': [{'column_id', 'step', 'header', 'row', 'sample', 'old', 'new',
+                  'by_formula'}]}
 
     A field is an Experiment Info column with one value on every sample;
     a param is a step column with a value on some sample; a variation is
@@ -92,6 +83,12 @@ def sheet_view(catalog: Catalog, log: Changelog | None = None) -> dict:
             for c in columns
             if c.column.header not in _IDENTITY and len(values[c.id]) > 1
         ]
+        # grouping by text hides a number typed as text; the type says so
+        warnings += [
+            f'{c.column.header} in {section.label} mixes numbers and text'
+            for c in columns
+            if c.type == 'mixed'
+        ]
     return {
         'sheet': catalog.structure.sheet_name,
         'info': {
@@ -110,7 +107,7 @@ def _column(c: ColumnInfo) -> dict:
     return {
         'column_id': c.id,
         'header': c.column.header,
-        'name': _UNIT_RE.sub('', c.column.header).strip(),
+        'name': c.name,
         'unit': c.unit,
         'type': c.type,
     }
@@ -166,8 +163,6 @@ def _one_value(params: list[dict], key: str) -> str | None:
 
 
 def _empty_step(section: Section) -> str:
-    if section.position is None:
-        return f'{section.label} is empty'
     return f'Step {section.position} ({section.step_type}) is empty'
 
 
@@ -192,10 +187,11 @@ def _sample_warnings(catalog: Catalog) -> list[str]:
         if parts is not None:
             numbers.setdefault((s.subbatch, parts[0]), []).append(parts[1])
     for (subbatch, prefix), found in numbers.items():
+        present = set(found)
         missing = [
             f'{prefix}{n}'
             for n in range(min(found), max(found) + 1)
-            if n not in set(found)
+            if n not in present
         ]
         if len(missing) == 1:
             warnings.append(f'Sample {missing[0]}{where(subbatch)} is missing')
@@ -212,15 +208,13 @@ def _sample_warnings(catalog: Catalog) -> list[str]:
 
 
 def _changed(log: Changelog, catalog: Catalog) -> list[dict]:
-    first: dict[tuple[int, int], object] = {}
-    last: dict[tuple[int, int], object] = {}
-    said: dict[tuple[int, int], bool] = {}
+    first: dict[tuple[int, int], Entry] = {}
+    last: dict[tuple[int, int], Entry] = {}
     for e in log.entries:
         cell = (e.column, e.row)
         first.setdefault(cell, e)
         last[cell] = e
-        said[cell] = said.get(cell, False) or not e.by_formula
-    known = {s.row: s for s in catalog.samples}
+    known = {s.row for s in catalog.samples}
     changed = []
     for cell in sorted(first):
         old = value_text(first[cell].old).strip()
@@ -237,7 +231,8 @@ def _changed(log: Changelog, catalog: Catalog) -> list[dict]:
                 'sample': catalog.names((e.row,)) if e.row in known else e.sample,
                 'old': old,
                 'new': new,
-                'by_formula': not said[cell],
+                # a formula cell is only ever recomputed, never written by words
+                'by_formula': e.by_formula,
             }
         )
     return changed
