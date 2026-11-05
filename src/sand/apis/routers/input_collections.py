@@ -1130,26 +1130,62 @@ async def download_final_sheet(
     request: Request,
     collection_entry_id: str,
 ) -> Response:
-    """The sheet the last completed job left: the original plus the
-    confirmed edits, as an xlsx download named after the experiment."""
+    """The sheet as it stands, as an xlsx download named after the
+    experiment: the one the last completed job left (the original plus
+    the confirmed edits), or the uploaded one while no job has written
+    a sheet."""
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
     try:
         async with voice.build_client(token) as client:
-            status = await _completed_status(
-                client, voice, upload_id, collection_entry_id
-            )
-            final = await voice.writer.read_raw_file(client, upload_id, FINAL_FILE)
-            if final is None:
-                raise HTTPException(status_code=404, detail='no final sheet stored')
-            if sha256(final) != status.get('final'):
-                # another collection's job, or a file touched by hand
+            status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
+            if status is not None and (
+                status.get('collection_entry_id') != collection_entry_id
+            ):
+                # the upload's sheet files are another collection's now
                 raise HTTPException(
                     status_code=409,
-                    detail='the stored sheet is not the one the last job '
-                    'recorded; run the job again',
+                    detail="another experiment's job wrote this upload's sheet; "
+                    'run the job again',
                 )
+            if status is not None and _job_running(status, None):
+                raise HTTPException(
+                    status_code=409, detail='an edit job is running; wait for it'
+                )
+            final = (
+                await voice.writer.read_raw_file(client, upload_id, FINAL_FILE)
+                if status is not None
+                else None
+            )
+            if status is not None and status.get('phase') == 'completed':
+                if final is None:
+                    raise HTTPException(status_code=404, detail='no final sheet stored')
+                if sha256(final) != status.get('final'):
+                    # a file touched by hand
+                    raise HTTPException(
+                        status_code=409,
+                        detail='the stored sheet is not the one the last job '
+                        'recorded; run the job again',
+                    )
+                sheet = final
+            elif final is not None:
+                # a failed job after one that wrote: the stored sheet is the
+                # earlier job's, and this status cannot vouch for it
+                raise HTTPException(
+                    status_code=409,
+                    detail='the last edit job did not complete; run it again',
+                )
+            else:
+                # no job yet, or none that wrote a sheet
+                sheet = await voice.writer.read_raw_file(
+                    client, upload_id, ORIGINAL_FILE
+                )
+                if sheet is None:
+                    raise HTTPException(
+                        status_code=404,
+                        detail='no sheet was uploaded for editing in this experiment',
+                    )
             name = await voice.input_collection_name(
                 client, upload_id, collection_entry_id
             )
@@ -1157,7 +1193,7 @@ async def download_final_sheet(
         raise _http_error(exc) from exc
 
     return Response(
-        content=final,
+        content=sheet,
         media_type=XLSX_CONTENT_TYPE,
         headers={'Content-Disposition': _attachment(f'{name}.xlsx')},
     )
