@@ -115,7 +115,7 @@ body {
 
 /* Container */
 .container {
-  max-width: 1180px;
+  max-width: 1320px;
   margin: 0 auto;
   padding: 24px 16px;
 }
@@ -274,7 +274,10 @@ body {
 
 @media (min-width: 960px) {
   .workspace {
-    grid-template-columns: minmax(0, 8fr) minmax(0, 5fr);
+    /* Inputs as wide as an edit row with the sheet's longest column
+       name on one line (about 540px) and no wider; the rest is the
+       left column's */
+    grid-template-columns: minmax(0, 1fr) clamp(360px, 44%, 560px);
     /* a tall Inputs card grows the last row only, so the left cards
        stay packed */
     grid-template-rows: auto auto 1fr;
@@ -463,6 +466,45 @@ body {
 
 .inputs-header .section-title {
   margin-bottom: 0;
+}
+
+.inputs-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.inputs-tools .btn-quiet {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.78rem;
+}
+
+.inputs-tools .btn-quiet[aria-pressed="true"] {
+  background: #e6eafb;
+  color: #2A4CDF;
+}
+
+/* edits only: a card is its edit rows and nothing else. The words and
+   the header strip (kind, label, time, state, actions) are folded away;
+   a transcript still on its way, an open editor and the report notes
+   stay. A card with none of these is hidden, not left an empty box. */
+.inputs-list.edits-only .input-text:not(.input-pending),
+.inputs-list.edits-only .input-meta {
+  display: none;
+}
+
+.inputs-list.edits-only .input-tile:not(:has(.report-edit, .report-note, .input-pending, .input-revise)) {
+  display: none;
+}
+
+.inputs-list.edits-only .input-report {
+  border-top: none;
+}
+
+.inputs-list.edits-only .input-pending ~ .input-report,
+.inputs-list.edits-only .input-revise ~ .input-report {
+  border-top: 1px solid #e3e6eb;
 }
 
 .inputs-header .section-count {
@@ -775,44 +817,60 @@ body {
   color: #757575;
 }
 
-/* The edits an update makes: rows inside the card, under a rule.
-   "Time 1 [s]  900 → 1000" over where, the action at the right. */
+/* The edits an update makes: rows inside the card, under a rule. The
+   report is one grid, so the cells of its edit rows line up: column,
+   old → new, samples, state. Each row is a subgrid of it, so a row
+   keeps its own border and padding. The spare width goes to an empty
+   second track, so the three at the right stay packed; short of width
+   that track is 0 and the text cells wrap, so the state at the right
+   is never pushed out of the card. */
 .input-report {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  column-gap: 14px;
   border-top: 1px solid #e3e6eb;
-  padding: 2px 12px 6px;
+  padding: 4px 12px 8px;
   font-size: 0.86rem;
   cursor: default;
 }
 
+.report-step {
+  grid-column: 1 / -1;
+  padding: 8px 0 2px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #4a4f57;
+}
+
+.report-edit + .report-step {
+  margin-top: 4px;
+  border-top: 1px solid #eceef2;
+}
+
 .report-edit {
-  display: flex;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
   align-items: center;
-  gap: 12px;
-  padding: 7px 0;
+  padding: 6px 0;
 }
 
 .report-edit + .report-edit {
   border-top: 1px solid #eceef2;
 }
 
-.report-what {
-  flex: 1;
-  min-width: 0;
-}
-
-.report-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 10px;
+.report-line {
+  grid-column: 1 / 5;
 }
 
 .report-column {
+  grid-column: 1;
   font-weight: 600;
   color: #333;
 }
 
 .report-change {
+  grid-column: 3;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -826,10 +884,47 @@ body {
   color: #2A4CDF;
 }
 
-.report-where {
-  display: block;
+.report-samples {
+  grid-column: 4;
   font-size: 0.78rem;
   color: #6b7079;
+}
+
+.report-edit > :last-child {
+  grid-column: 5;
+  justify-self: end;
+}
+
+/* Below its design width (512px inside the card: pages narrower than
+   about 1250px, phones) the Inputs card is too narrow for four
+   columns: a row stacks, the column and the change over the samples,
+   the state beside both. */
+.section-inputs {
+  container-type: inline-size;
+}
+
+@container (max-width: 500px) {
+  .input-report {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .report-line {
+    grid-column: 1 / 3;
+  }
+
+  .report-change {
+    grid-column: 2;
+  }
+
+  .report-samples {
+    grid-column: 1 / 3;
+    grid-row: 2;
+  }
+
+  .report-edit > :last-child {
+    grid-column: 3;
+    grid-row: 1 / 3;
+  }
 }
 
 .report-confirm.btn {
@@ -855,6 +950,7 @@ body {
 }
 
 .report-note {
+  grid-column: 1 / -1;
   margin: 4px 0;
   font-size: 0.82rem;
   color: #6b7079;

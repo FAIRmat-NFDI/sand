@@ -16,6 +16,8 @@ import { clearError, confirmDialog, showEntryLink, showError } from "./ui.js";
 const inputsList = document.getElementById("inputs-list");
 const inputsCount = document.getElementById("inputs-count");
 const refreshInputsBtn = document.getElementById("refresh-inputs-btn");
+const editsOnlyBtn = document.getElementById("edits-only-btn");
+const EDITS_ONLY_KEY = "sand.inputs.editsOnly";
 
 // the job's reports by entry id, whether a job runs (no confirming
 // meanwhile), and the confirm handler of the Sheet card
@@ -261,17 +263,15 @@ async function deleteInput(item, experiment, button) {
 
 // --- edit mode: the report under an input --------------------------------------
 
-// "Time 1 [s]  900 → 1000" over "1: Cleaning UV-Ozone, all 42 samples";
-// a report of an older job has only the line
-function renderEditWhat(edit) {
-  const what = document.createElement("div");
-  what.className = "report-what";
+// the cells of an edit row: column, old → new, samples. A report of an
+// older job has only the line: one cell across the three.
+function renderEditCells(edit) {
   if (edit.column === undefined) {
-    what.textContent = edit.line;
-    return what;
+    const line = document.createElement("span");
+    line.className = "report-line";
+    line.textContent = edit.line;
+    return [line];
   }
-  const head = document.createElement("div");
-  head.className = "report-head";
   const column = document.createElement("span");
   column.className = "report-column";
   column.textContent = edit.column;
@@ -284,24 +284,33 @@ function renderEditWhat(edit) {
   newValue.className = "report-new";
   newValue.textContent = edit.new;
   change.append(oldValue, " → ", newValue);
-  head.append(column, change);
-  const where = document.createElement("span");
-  where.className = "report-where";
-  where.textContent = edit.step + ", " + edit.samples;
-  what.append(head, where);
-  return what;
+  const samples = document.createElement("span");
+  samples.className = "report-samples";
+  samples.textContent = edit.samples;
+  return [column, change, samples];
 }
 
+// The edits of a report, grouped under their step as the Sheet table
+// groups them: a step heading, then one aligned row per edit with its
+// state (written, or the button that confirms it) at the right.
 function renderReport(report) {
   const box = document.createElement("div");
   box.className = "input-report";
   box.addEventListener("click", (e) => e.stopPropagation());
   const confirmed = new Set(report.confirmed || []);
   const since = new Set(report.confirmed_since || []);
+  let step;
   for (const edit of report.ready || []) {
+    if (edit.column !== undefined && edit.step !== step) {
+      step = edit.step;
+      const heading = document.createElement("div");
+      heading.className = "report-step";
+      heading.textContent = step;
+      box.append(heading);
+    }
     const row = document.createElement("div");
     row.className = "report-edit";
-    row.append(renderEditWhat(edit));
+    row.append(...renderEditCells(edit));
     if (confirmed.has(edit.key)) {
       const mark = document.createElement("span");
       mark.className = "report-confirmed" + (since.has(edit.key) ? " report-writing" : "");
@@ -571,9 +580,29 @@ export async function reportNewInput(el, response, failPrefix, message, linkText
   return true;
 }
 
+// "Edits only": the words and the header of every update folded away,
+// the cards down to their edits, for a glance at what changes in the
+// sheet. Remembered in this browser.
+function showEditsOnly(on) {
+  inputsList.classList.toggle("edits-only", on);
+  // the label stays; the pressed state says the words are folded
+  editsOnlyBtn.setAttribute("aria-pressed", String(on));
+  editsOnlyBtn.title = on
+    ? "Show the updates again, with their words"
+    : "See only the edits of the updates";
+}
+
 export function initInputs() {
   refreshInputsBtn.addEventListener("click", () => {
     const experiment = selectedExperiment();
     if (experiment) startInputsRefresh(experiment);
+  });
+  let editsOnly = false;
+  try { editsOnly = localStorage.getItem(EDITS_ONLY_KEY) === "true"; } catch { /* ignore */ }
+  showEditsOnly(editsOnly);
+  editsOnlyBtn.addEventListener("click", () => {
+    const on = editsOnlyBtn.getAttribute("aria-pressed") !== "true";
+    showEditsOnly(on);
+    try { localStorage.setItem(EDITS_ONLY_KEY, String(on)); } catch { /* ignore */ }
   });
 }
