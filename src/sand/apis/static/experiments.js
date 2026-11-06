@@ -97,6 +97,9 @@ export function showSheet(experiment, view) {
   if (!view) {
     renderParts(sheetMeta, view === null ? ["Made without a sheet: nothing to update here."] : []);
     renderParts(sheetMetaMore, []);
+    // the progress shown is the last sheet's; the Sheet card sets this
+    // sheet's once its view is read
+    setSheetProgress("");
     return;
   }
   const { main, more } = metaLines(view.info || {});

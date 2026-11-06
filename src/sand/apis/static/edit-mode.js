@@ -51,7 +51,8 @@ let statusKnown = false; // the shown experiment's status was fetched once
 let running = false; // a job of the shown experiment runs, or is being started
 let lastStatus = null; // the last completed status of the shown experiment
 // the sheet the header was last read for (the view's sha at selection,
-// then each completed job's final); null when a re-read failed
+// then each completed job's final); null while a failed re-read waits
+// for its retry
 let headerFor = null;
 let reportsShown = {}; // the last status's reports, by entry id
 let readFor = null; // readKey of the inputs the last job was started for
@@ -407,14 +408,19 @@ function describeSheet(view) {
 }
 
 // the header follows the sheet the last job left (`final`: its sha);
-// a failed read is tried again at the next completed poll
+// a failed read is tried again a poll's interval later, while this
+// experiment is shown and nothing has read the header since
 async function refreshSheet(experiment, final) {
   headerFor = final;
   let view;
   try {
     view = await fetchSheetView(experiment);
   } catch {
-    if (headerFor === final) headerFor = null;
+    if (headerFor !== final) return;
+    headerFor = null;
+    setTimeout(() => {
+      if (stillShown(experiment) && headerFor === null) refreshSheet(experiment, final);
+    }, POLL_MS);
     return;
   }
   if (!view || !stillShown(experiment)) return;
