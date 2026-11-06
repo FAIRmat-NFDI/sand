@@ -110,10 +110,34 @@ function isCategory(param) {
   return wordsOf(param).some((w) => CATEGORY_WORDS.has(w.toLowerCase()));
 }
 
+// the samples of a value, short: "1–3, 24–26" from their labels when
+// those are numbers, else the labels as they are
+export function sampleRanges(labels) {
+  if (!labels.length) return "";
+  if (!labels.every((l) => /^\d+$/.test(l))) return labels.join(", ");
+  const numbers = [...new Set(labels.map(Number))].sort((a, b) => a - b);
+  const runs = [];
+  for (const n of numbers) {
+    const run = runs[runs.length - 1];
+    if (run && n === run[1] + 1) run[1] = n;
+    else runs.push([n, n]);
+  }
+  return runs.map(([a, b]) => (a === b ? String(a) : a + "–" + b)).join(", ");
+}
+
 // a parameter as one value of a line; `drop` are the words the line's
-// label already says, `alone` is a value with no label before it
-function valueOf(p, changed, { drop = new Set(), alone = false, unitCount = new Map() } = {}) {
+// label already says, `alone` is a value with no label before it. A
+// varying value is each of its values with its samples: "120 °C (1–21)
+// · 115 °C (23–43)", so the card says which sample got what.
+function valueOf(p, changed, { drop = new Set(), alone = false, unitCount = new Map(), byRow = new Map() } = {}) {
   const value = { text: valueCell(p), varies: p.values.length > 1, changed: changeNote(p.column_id, changed) };
+  if (value.varies) {
+    value.groups = p.values.map((g) => ({
+      text: g.value === null ? EMPTY : withUnit(g.value, p.unit),
+      samples: sampleRanges(labelsOf(g.rows, byRow)),
+    }));
+    value.text = value.groups.map((g) => g.text + " (" + g.samples + ")").join(" · ");
+  }
   const one = p.values.length === 1 ? String(p.values[0].value ?? "").trim().toLowerCase() : null;
   if (p.type === "text" && one !== null && one in FLAGS) {
     const words = wordsOf(p).map(lower).join(" ");
@@ -126,7 +150,10 @@ function valueOf(p, changed, { drop = new Set(), alone = false, unitCount = new 
   else if (!p.unit) needed = true; // a bare number says nothing by itself
   else needed = (alone && isTimeLike(p)) || (unitCount.get(p.unit) || 0) > 1;
   const words = needed ? qualifier(p, drop) : "";
-  if (words) value.text = words + " " + value.text;
+  if (words) {
+    value.word = words;
+    value.text = words + " " + value.text;
+  }
   return value;
 }
 
@@ -149,7 +176,8 @@ function ratioOf(name, rest) {
 // ("3 mbar · source 120 °C · milled"); a note stands alone at the end.
 // Each value keeps its column: a varying one is a chip, a changed one
 // carries its old value.
-export function stepCard(step, changed = []) {
+export function stepCard(step, changed = [], rows = []) {
+  const byRow = new Map(rows.map((r) => [r.row, r.label]));
   const head = {};
   const families = new Map(); // "group:index" or column id -> params, in sheet order
   const order = new Map(step.params.map((p, i) => [p, i]));
@@ -184,14 +212,14 @@ export function stepCard(step, changed = []) {
       ratios.push({ at, ...ratio });
     } else if (name && rest.length) {
       const drop = new Set(wordsOf(name).map((w) => w.toLowerCase()));
-      const values = rest.map((p) => valueOf(p, changed, { drop, unitCount })).filter((v) => v.text);
+      const values = rest.map((p) => valueOf(p, changed, { drop, unitCount, byRow })).filter((v) => v.text);
       // the material's own line needs no label: the card names it already
       items.push({ at, line: { label: text(name) === head.material ? "" : text(name), values } });
     } else if (name) {
-      items.push({ at, single: name, value: valueOf(name, changed) }); // "Ethanol"
+      items.push({ at, single: name, value: valueOf(name, changed, { byRow }) }); // "Ethanol"
     } else if (label && rest.length > 1) {
       const siblings = [...families.keys()].filter((k) => k.startsWith(family.group + ":")).length;
-      const values = rest.map((p) => valueOf(p, changed, { unitCount }));
+      const values = rest.map((p) => valueOf(p, changed, { unitCount, byRow }));
       items.push({ at, line: { label: siblings > 1 ? familyLabel(family, families) : "", values } });
     } else {
       for (const p of params) items.push({ at: order.get(p), single: p });
@@ -232,7 +260,7 @@ export function stepCard(step, changed = []) {
     }
     const group = groups.get(firstWord(p.name).toLowerCase());
     if (group.items.length === 1) {
-      item.value = valueOf(p, changed, { alone: true, unitCount });
+      item.value = valueOf(p, changed, { alone: true, unitCount, byRow });
       continue;
     }
     if (group.items[0] !== item) {
@@ -242,18 +270,22 @@ export function stepCard(step, changed = []) {
     const drop = new Set([group.word.toLowerCase()]);
     const line = {
       label: group.word.toLowerCase() === stepWord ? "" : lower(group.word),
-      values: group.items.map((g) => valueOf(g.single, changed, { drop, unitCount })),
+      values: group.items.map((g) => valueOf(g.single, changed, { drop, unitCount, byRow })),
     };
     delete item.single;
     item.line = line;
   }
   items.sort((x, y) => x.at - y.at);
-  // what is left runs together, in the sheet's order
+  // what is left runs together, in the sheet's order; a varying value,
+  // long with its samples, stands on a line of its own
   const lines = [];
   let run = null;
   for (const item of items) {
     if (item.line) {
       lines.push(item.line);
+      run = null;
+    } else if (item.value.varies) {
+      lines.push({ label: "", values: [item.value] });
       run = null;
     } else if (run) {
       run.values.push(item.value);

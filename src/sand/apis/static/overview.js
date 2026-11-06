@@ -79,9 +79,22 @@ function renderStep(card) {
     if (line.label) p.append(el("span", "line-label", line.label));
     line.values.forEach((value, i) => {
       if (i) p.append(el("span", "line-sep", "·"));
+      if (value.groups) {
+        // a varying value: its word, then a chip per value with its samples
+        if (value.word) p.append(el("span", "line-word", value.word));
+        for (const group of value.groups) {
+          const chip = el("span", "line-value value-varies", group.text);
+          chip.append(el("span", "value-samples", "(" + group.samples + ")"));
+          if (value.changed) {
+            chip.classList.add("value-changed");
+            chip.title = value.changed;
+          }
+          p.append(chip);
+        }
+        return;
+      }
       const span = el("span", "line-value", value.text);
       if (value.text.length > LONG_VALUE) span.classList.add("long");
-      if (value.varies) span.classList.add("value-varies");
       if (value.changed) {
         span.classList.add("value-changed");
         span.title = value.changed;
@@ -163,7 +176,7 @@ export function showOverview(view) {
   }
   const steps = view.steps || [];
   stepsTitle.textContent = "Fabrication sequence · " + steps.length + (steps.length === 1 ? " step" : " steps");
-  stepGrid.replaceChildren(...steps.map((step) => renderStep(stepCard(step, view.changed || []))));
+  stepGrid.replaceChildren(...steps.map((step) => renderStep(stepCard(step, view.changed || [], view.info?.rows || []))));
   renderSamples(sampleGroups(view));
   applyFold();
 }
