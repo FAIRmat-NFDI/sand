@@ -158,6 +158,28 @@ test("the step's own word and the material's own line need no label; the lab's s
   ]);
 });
 
+test("inside a family line the name or the label says what the measures are", () => {
+  const spin1 = { group: "rotation_steps", index: 1 };
+  const spin2 = { group: "rotation_steps", index: 2 };
+  const solute = { group: "solutes", index: 4 };
+  const card = stepCard(step(5, "Spin Coating", [
+    param("Solute 1 name", one("PbI2"), { family: { group: "solutes", index: 1 } }),
+    num("Solute 1 Concentration", "572", "mg/ml", { group: "solutes", index: 1 }),
+    param("Solute 4 name", [["PbBr2", FIRST], ["PbBr3", LAST]], { family: solute }),
+    num("Solute 4 Concentration", "22", "mg/ml", solute),
+    num("Rotation speed 1", "400", "rpm", spin1),
+    num("Rotation time 1", "15", "s", spin1),
+    num("Rotation speed 2", "4000", "rpm", spin2),
+    num("Rotation time 2", "32", "s", spin2),
+  ]));
+  assert.deepEqual(texts(card), [
+    "PbI2  572 mg/ml",
+    "Solute 4  PbBr2 / PbBr3 · 22 mg/ml",
+    "Spin 1  400 rpm · 15 s",
+    "Spin 2  4000 rpm · 32 s",
+  ]);
+});
+
 test("a type column is not the family's name; a varying name stays a chip in its line", () => {
   const solute = { group: "solutes", index: 1 };
   const solvent = { group: "solvents", index: 1 };

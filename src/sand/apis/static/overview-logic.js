@@ -192,15 +192,18 @@ export function stepCard(step, changed = []) {
     if (ratio) {
       ratios.push({ at, ...ratio });
     } else if (name && rest.length) {
+      // the name says what the measures are: "PbI2  572 mg/ml"
       const drop = new Set(wordsOf(name).map((w) => w.toLowerCase()));
-      const values = rest.map((p) => valueOf(p, changed, { drop, unitCount })).filter((v) => v.text);
+      const values = rest.map((p) => valueOf(p, changed, { drop })).filter((v) => v.text);
       // the material's own line needs no label: the card names it already
       items.push({ at, line: { label: text(name) === head.material ? "" : text(name), values } });
     } else if (name) {
       items.push({ at, single: name, value: valueOf(name, changed) }); // "Ethanol"
     } else if (label && rest.length > 1) {
       const siblings = [...families.keys()].filter((k) => k.startsWith(family.group + ":")).length;
-      const values = rest.map((p) => valueOf(p, changed, { unitCount }));
+      // the family's label says it: "Spin 1  400 rpm · 15 s"
+      const drop = new Set(rest.flatMap((p) => wordsOf(p).map((w) => w.toLowerCase())).filter((w) => w === label.toLowerCase() || rest.every((p) => wordsOf(p).map((x) => x.toLowerCase()).includes(w))));
+      const values = rest.map((p) => valueOf(p, changed, { drop }));
       items.push({ at, line: { label: siblings > 1 ? familyLabel(family, families) : "", values } });
     } else {
       for (const p of params) items.push({ at: order.get(p), single: p });
