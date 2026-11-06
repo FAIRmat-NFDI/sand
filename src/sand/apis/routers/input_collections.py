@@ -212,7 +212,9 @@ async def list_input_collections(request: Request) -> InputCollectionListRespons
     return InputCollectionListResponse(
         input_collections=[
             InputCollectionSummaryModel(
-                name=e.name, **_entry_response(voice, e.upload_id, e.entry_id)
+                name=e.name,
+                created=e.created,
+                **_entry_response(voice, e.upload_id, e.entry_id),
             )
             for e in input_collections
         ]
@@ -316,6 +318,8 @@ async def create_sheet_input_collection(
 
     return SheetCollectionResponse(
         name=name,
+        # NOMAD stamps the entry a moment later; the list shows this one
+        created=datetime.now(timezone.utc).isoformat(),
         sheet=_sheet_summary(sheet, xlsx),
         **_entry_response(voice, result.upload_id, result.entry_id),
     )

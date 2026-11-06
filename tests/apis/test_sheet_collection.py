@@ -7,6 +7,7 @@ from nomad_fakes import COLLECTION, FakeVoice, api
 from synthetic_sheet import edited
 
 from sand.services.nomad_api import XLSX_CONTENT_TYPE
+from sand.services.voice_eln import InputCollectionSummary
 from sand.sheet_edit import catalog
 from sand.sheet_edit.session import ORIGINAL_FILE
 from sand.sheet_edit.workbook import sha256
@@ -39,6 +40,7 @@ async def test_good_sheet_becomes_a_collection(voice, synthetic_xlsx):
     assert body['entry_id'] == COLLECTION
     assert body['entry_url'] == f'http://nomad/{UPLOAD}/{COLLECTION}'
     assert body['name'] == 'batch 7'
+    assert body['created'] is not None  # the list's "uploaded 2 Nov"
     assert voice.created == ['batch 7']
     # the file's name: the original's download name
     assert voice.descriptions == ['batch.xlsx']
@@ -62,6 +64,24 @@ async def test_good_sheet_becomes_a_collection(voice, synthetic_xlsx):
     assert ('2: Spin Coating', 'Rotation speed [rpm]') in {
         (c['section'], c['header']) for c in sheet['columns']
     }
+
+
+async def test_the_list_says_when_each_sheet_was_uploaded(voice):
+    voice.collections = [
+        InputCollectionSummary(UPLOAD, 'e-1', 'Batch 7', '2026-11-02T09:30:00+00:00'),
+        InputCollectionSummary('upload-0', 'e-0', 'older', None),  # made before
+    ]
+
+    async with api(voice) as client:
+        response = await client.get('/api/input-collections')
+
+    assert response.status_code == HTTPStatus.OK, response.text
+    assert [
+        (c['name'], c['created']) for c in response.json()['input_collections']
+    ] == [
+        ('Batch 7', '2026-11-02T09:30:00+00:00'),
+        ('older', None),
+    ]
 
 
 async def test_sheet_summary_is_the_uploaded_sheets(voice, synthetic_xlsx):

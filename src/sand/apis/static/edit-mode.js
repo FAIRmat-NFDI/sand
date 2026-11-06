@@ -11,9 +11,9 @@
 import { errorDetail, experimentUrl } from "./api.js";
 import {
   confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputsToRead, pendingKeys,
-  readKey, reportsByEntry, unwrittenCount, unwrittenKey, writtenEdits,
+  progressLine, readKey, reportsByEntry, unwrittenCount, unwrittenKey, writtenEdits,
 } from "./edit-logic.js";
-import { requireExperiment } from "./experiments.js";
+import { requireExperiment, setSheetProgress, showSheet } from "./experiments.js";
 import { setInputsListener, setReports } from "./inputs.js";
 import { clearError, showError } from "./ui.js";
 
@@ -50,6 +50,10 @@ let inputsSeen = null; // {entryId, items}
 let statusKnown = false; // the shown experiment's status was fetched once
 let running = false; // a job of the shown experiment runs, or is being started
 let lastStatus = null; // the last completed status of the shown experiment
+// the sheet the header was last read for (the view's sha at selection,
+// then each completed job's final); null while a failed re-read waits
+// for its retry
+let headerFor = null;
 let reportsShown = {}; // the last status's reports, by entry id
 let readFor = null; // readKey of the inputs the last job was started for
 let wroteFor = null; // unwrittenKey the last write was started for
@@ -103,6 +107,18 @@ function note(text) {
 function busy(text) {
   applyStatus.textContent = text;
   applyStatus.classList.add("busy");
+}
+
+// the header's line: the updates of the shown sheet and what became of them
+function updateProgress() {
+  if (!current) {
+    setSheetProgress("");
+    return;
+  }
+  const updates = inputsSeen && inputsSeen.entryId === current.entry_id
+    ? inputsSeen.items.length
+    : null;
+  setSheetProgress(progressLine(updates, lastStatus));
 }
 
 function showPending(keys) {
@@ -193,6 +209,7 @@ async function poll(experiment, generation) {
     lastStatus = null;
     reportsShown = {};
     showPending([]);
+    updateProgress();
     setReports({}, false, confirmHandler(experiment));
     settle(experiment, null);
     return;
@@ -216,6 +233,9 @@ async function poll(experiment, generation) {
     idle();
     lastStatus = status;
     renderResult(status);
+    updateProgress();
+    // the job wrote a sheet the header has not been read for yet
+    if (status.final && status.final !== headerFor) refreshSheet(experiment, status.final);
     settle(experiment, status);
     return;
   }
@@ -265,6 +285,7 @@ function settle(experiment, status) {
 function inputsLoaded(experiment, items) {
   inputsSeen = { entryId: experiment.entry_id, items };
   if (!stillShown(experiment)) return;
+  updateProgress();
   if (readFor === FAILED_BEFORE_INPUTS) readFor = readKey(items);
   if (statusKnown) settle(experiment, lastStatus);
 }
@@ -341,25 +362,27 @@ async function confirmAll(experiment) {
 }
 
 // The card for a newly selected experiment with an uploaded sheet
-// (summary from GET .../sheet-summary), or none.
-export function showEdit(experiment, summary) {
+// (`view` from GET .../sheet-view), or none.
+export function showEdit(experiment, view) {
   stopPolling();
   flushWrite();
   current = experiment;
   statusKnown = false;
   lastStatus = null;
+  headerFor = view ? view.sha256 : null;
   editedReady = false;
   reportsShown = {};
   readFor = null;
   wroteFor = null;
   idle();
   showPending([]);
+  updateProgress();
   gateDownload(0);
   readAgainBtn.hidden = true;
   applyResult.hidden = true;
   changelogEl.textContent = "";
   changelogFold.open = false; // the fold is per result, not per page
-  if (!experiment || !summary) {
+  if (!experiment || !view) {
     // nothing to poll: the tiles forget the last job's reports here
     setReports({}, false, null);
   }
@@ -367,14 +390,42 @@ export function showEdit(experiment, summary) {
     sheetSummaryEl.textContent = "";
     return;
   }
-  if (!summary) {
-    // made before sheets, or by the other tool of this page's past
-    sheetSummaryEl.textContent = "This experiment has no sheet to update.";
+  if (!view) {
+    // made before sheets, or by the other tool of this page's past:
+    // the header says so
+    sheetSummaryEl.textContent = "";
     return;
   }
-  sheetSummaryEl.textContent = "Sheet “" + summary.name + "”: "
-    + summary.samples.length + " samples, " + summary.columns.length + " columns.";
+  describeSheet(view);
   startPolling(experiment);
+}
+
+// the header names the sheet; this line says which version the card is about
+function describeSheet(view) {
+  sheetSummaryEl.textContent = view.source === "edited"
+    ? "The sheet with the confirmed edits."
+    : "The sheet as uploaded.";
+}
+
+// the header follows the sheet the last job left (`final`: its sha);
+// a failed read is tried again a poll's interval later, while this
+// experiment is shown and nothing has read the header since
+async function refreshSheet(experiment, final) {
+  headerFor = final;
+  let view;
+  try {
+    view = await fetchSheetView(experiment);
+  } catch {
+    if (headerFor !== final) return;
+    headerFor = null;
+    setTimeout(() => {
+      if (stillShown(experiment) && headerFor === null) refreshSheet(experiment, final);
+    }, POLL_MS);
+    return;
+  }
+  if (!view || !stillShown(experiment)) return;
+  showSheet(experiment, view);
+  describeSheet(view);
 }
 
 // the fallback after a failed job: the same inputs, read once more
@@ -464,8 +515,8 @@ async function downloadSheet(path, suffix) {
 
 // null when the experiment did not start from a sheet; throws when
 // SAND or NOMAD failed to answer
-export async function fetchSheetSummary(experiment) {
-  const res = await fetch(experimentUrl(experiment, "sheet-summary"));
+export async function fetchSheetView(experiment) {
+  const res = await fetch(experimentUrl(experiment, "sheet-view"));
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(await errorDetail(res));
   return res.json();

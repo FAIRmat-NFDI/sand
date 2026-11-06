@@ -10,7 +10,7 @@ from fastapi import FastAPI
 
 from sand.apis.routers.input_collections import router
 from sand.services.nomad_api import NomadAPIError
-from sand.services.voice_eln import CollectedInput, EntryHandle
+from sand.services.voice_eln import CollectedInput, EntryHandle, InputCollectionSummary
 
 UPLOAD = 'upload-1'
 COLLECTION = 'collection-1'
@@ -79,6 +79,7 @@ class FakeVoice:
     inputs: list[CollectedInput] = field(default_factory=list)
     name: str = 'batch 7'
     description: str = 'batch.xlsx'
+    collections: list[InputCollectionSummary] = field(default_factory=list)
     me: dict = field(default_factory=lambda: {'user_id': USER, 'username': USERNAME})
     created: list[str] = field(default_factory=list)
     descriptions: list[str] = field(default_factory=list)
@@ -98,6 +99,9 @@ class FakeVoice:
 
     def entry_url(self, upload_id, entry_id):
         return f'http://nomad/{upload_id}/{entry_id}'
+
+    async def list_input_collections(self, client):
+        return self.collections
 
     async def create_input_collection(self, client, name, description=''):
         self.created.append(name)

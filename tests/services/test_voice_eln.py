@@ -284,17 +284,22 @@ async def test_list_input_collections_returns_summaries():
                 'upload_id': UPLOAD_ID,
                 'entry_id': 'e-1',
                 'entry_name': 'perov_B1_a',
-            }
+                'entry_create_time': '2026-11-02T09:30:00+00:00',
+            },
+            {'upload_id': UPLOAD_ID, 'entry_id': 'e-0'},
         ]
     )
 
     async with _client(fake) as client:
         experiments = await _service().list_input_collections(client)
 
-    assert len(experiments) == 1
+    assert [e.entry_id for e in experiments] == ['e-1', 'e-0']
     assert experiments[0].upload_id == UPLOAD_ID
     assert experiments[0].entry_id == 'e-1'
     assert experiments[0].name == 'perov_B1_a'
+    assert experiments[0].created == '2026-11-02T09:30:00+00:00'
+    # an entry without a name or time (an old one) still lists
+    assert (experiments[1].name, experiments[1].created) == ('', None)
 
 
 @pytest.mark.asyncio

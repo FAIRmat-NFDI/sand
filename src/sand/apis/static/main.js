@@ -2,8 +2,10 @@
 // selection to the cards that depend on it.
 
 import { initAuth, login } from "./api.js";
-import { fetchSheetSummary, initEdit, showEdit } from "./edit-mode.js";
-import { initExperiments, loadExperiments, onExperimentSelected } from "./experiments.js";
+import { fetchSheetView, initEdit, showEdit } from "./edit-mode.js";
+import {
+  initExperiments, loadExperiments, onExperimentSelected, showSheet,
+} from "./experiments.js";
 import { initInputs, showInputs } from "./inputs.js";
 import { clearLiveTranscript, initLiveToggle } from "./live-transcript.js";
 import { initNotes } from "./notes.js";
@@ -30,7 +32,7 @@ function showApp(userName) {
   document.getElementById("auth-area").replaceChildren(nameEl);
 
   loadExperiments().catch((err) => {
-    showError("Could not load experiments: " + err.message);
+    showError("Could not load your sheets: " + err.message);
   });
 }
 
@@ -67,29 +69,35 @@ initEdit();
 initLiveToggle();
 initVoiceMode();
 
-// The Sheet card needs the experiment's sheet summary; a stale answer
+// The header and the Sheet card need the sheet view; a stale answer
 // (the selection changed meanwhile) is dropped.
 let selectionGeneration = 0;
+const workspace = document.getElementById("workspace");
 
 onExperimentSelected(async (experiment) => {
   const generation = ++selectionGeneration;
+  workspace.hidden = !experiment;
   showInputs(experiment);
   clearLiveTranscript();
   if (!experiment) {
+    showSheet(null, null);
     showEdit(null, null);
     return;
   }
-  let summary;
+  showSheet(experiment); // the name now, the rest when the view is read
+  let view;
   try {
-    summary = await fetchSheetSummary(experiment);
+    view = await fetchSheetView(experiment);
   } catch (err) {
     if (generation !== selectionGeneration) return;
-    showError("Could not read the experiment's sheet: " + err.message);
-    showEdit(null, null); // unknown whether there is a sheet: no claim
+    showError("Could not read the sheet: " + err.message);
+    showSheet(experiment); // unknown whether there is a sheet: no claim
+    showEdit(null, null);
     return;
   }
   if (generation !== selectionGeneration) return;
-  showEdit(experiment, summary);
+  showSheet(experiment, view);
+  showEdit(experiment, view);
 });
 
 document.getElementById("login-btn").addEventListener("click", login);
