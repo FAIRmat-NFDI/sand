@@ -73,13 +73,13 @@ test("a step card: headline from the material, layer and tool as subtitle, lines
     param("Notes", one("standard recipe")),
   ]);
   const card = stepCard(spin);
-  assert.equal(card.headline, "Me-4PACz");
-  assert.equal(card.kicker, "Spin Coating");
+  assert.equal(card.headline, "Spin Coating");
+  assert.equal(card.material, "Me-4PACz");
   assert.equal(card.sub, "HTL · box1");
   assert.deepEqual(texts(card), [
     "Ethanol  50 uL",
-    "Spin  3000 rpm · 30 s",
-    "Annealing  10 min · 100 °C · N2",
+    "3000 rpm · 30 s",
+    "annealing  10 min · 100 °C · N2",
     "“standard recipe”",
   ]);
   assert.equal(card.lines[3].note, true);
@@ -87,50 +87,78 @@ test("a step card: headline from the material, layer and tool as subtitle, lines
   assert.equal(card.empty, false);
 });
 
-test("the lines keep the sheet's order; a note goes last", () => {
+test("the unit says what a number is; a time or temperature alone keeps its word; loose values run together", () => {
   const rotation = { group: "rotation_steps", index: 1 };
   const card = stepCard(step(2, "Spin Coating", [
     param("Notes", one("x")),
     num("Solution volume", "80", "uL"),
+    num("Process pressure", "3", "mbar"),
     num("Rotation speed", "3000", "rpm", rotation),
     num("Rotation time", "30", "s", rotation),
     num("Annealing time", "10", "min"),
   ]));
-  assert.deepEqual(texts(card), ["Solution volume  80 uL", "Spin  3000 rpm · 30 s", "Annealing time  10 min", "“x”"]);
+  assert.deepEqual(texts(card), ["80 uL · 3 mbar", "3000 rpm · 30 s", "annealing 10 min", "“x”"]);
+  // a unit the card has twice keeps each value's word
+  const twice = stepCard(step(3, "Spin Coating", [
+    param("Solvent 1 name", one("Ethanol"), { family: { group: "solvents", index: 1 } }),
+    num("Solvent 1 volume", "80", "uL", { group: "solvents", index: 1 }),
+    num("Solution volume", "80", "uL"),
+  ]));
+  assert.deepEqual(texts(twice), ["Ethanol  80 uL", "solution 80 uL"]);
 });
 
-test("without a material the step type is the headline; a lone name makes a labelled line", () => {
+test("without a material the step type is the headline; a lone name is just the name", () => {
   const cleaning = { group: "cleaning_steps", index: 1 };
   const card = stepCard(step(1, "Cleaning UV-Ozone", [
     param("Solvent 1", one("Acetone"), { family: cleaning }),
     num("Time 1", "600", "s", cleaning),
     param("Solvent 2", one("IPA"), { family: { group: "cleaning_steps", index: 2 } }),
     param("Solvent 1 name", one("Ethanol"), { family: { group: "solvents", index: 1 } }),
+    num("UV-Ozone Time", "1200", "s"),
   ]));
   assert.equal(card.headline, "Cleaning UV-Ozone");
-  assert.equal(card.kicker, "");
-  assert.deepEqual(texts(card), ["Acetone  600 s", "Cleaning 2  IPA", "Solvent  Ethanol"]);
+  assert.equal(card.material, "");
+  assert.deepEqual(texts(card), ["Acetone  600 s", "IPA · Ethanol · UV-Ozone 1200 s"]);
 });
 
-test("the step's own word and the material's own line need no label", () => {
+test("the step's own word and the material's own line need no label; the lab's short words", () => {
   const two = { group: null, index: 2 };
   const anneal = stepCard(step(6, "Annealing", [
     num("Annealing time", "10", "min"),
     num("Annealing temperature", "130", "°C"),
     num("Relative humidity", "30", "%"),
   ]));
-  assert.deepEqual(texts(anneal), ["10 min · 130 °C", "Relative humidity  30 %"]);
+  assert.deepEqual(texts(anneal), ["10 min · 130 °C", "RH 30 %"]);
   const evaporation = stepCard(step(4, "Seq-Evaporation", [
     param("Material name", one("PbI2")),
     param("Material name 2", one("PbI2"), { family: two }),
     num("Thickness 2", "250", "nm", two),
     num("Rate 2", "1", "angstrom/s", two),
   ]));
-  assert.equal(evaporation.headline, "PbI2");
+  assert.equal(evaporation.headline, "Seq-Evaporation");
+  assert.equal(evaporation.material, "PbI2");
   assert.deepEqual(texts(evaporation), ["250 nm · 1 angstrom/s"]);
+  // a yes/no column is its words; a category's value speaks for itself
+  const css = stepCard(step(5, "Close Space Sublimation", [
+    param("Organic", one("yes")),
+    param("Material state", one("milled")),
+    num("Source temperature", "120", "°C"),
+    num("Substrate temperature", "115", "°C"),
+    num("Substrate source distance", "3", "mm"),
+    param("Carrier gas", one("no")),
+    num("Milling rotation speed", "450", "rpm"),
+    num("Milling rotation time", "1", "min"),
+    num("Milling rest time", "10", "min"),
+  ]));
+  assert.deepEqual(texts(css), [
+    "organic · milled · source 120 °C",
+    "substrate  115 °C · 3 mm",
+    "no carrier gas",
+    "milling  450 rpm · rotation 1 min · rest 10 min",
+  ]);
 });
 
-test("a type column is not the family's name; a lone measure keeps its own label", () => {
+test("a type column is not the family's name; a varying name stays a chip in its line", () => {
   const solute = { group: "solutes", index: 1 };
   const solvent = { group: "solvents", index: 1 };
   const withName = stepCard(step(2, "Spin Coating", [
@@ -139,10 +167,9 @@ test("a type column is not the family's name; a lone measure keeps its own label
     param("Solute 1 type", one("SAM"), { family: solute }),
     num("Solvent 1 volume", "50", "uL", solvent),
   ]));
-  assert.deepEqual(texts(withName), ["PbI2  1.5 mM · SAM", "Solvent 1 volume  50 uL"]);
+  assert.deepEqual(texts(withName), ["PbI2  1.5 mM · SAM", "50 uL"]);
   const typeOnly = stepCard(step(2, "Spin Coating", [param("Solute 1 type", one("SAM"), { family: solute })]));
-  assert.deepEqual(texts(typeOnly), ["Solute 1 type  SAM"]);
-  // a varying name stays in the family's line as a chip, behind the family's label
+  assert.deepEqual(texts(typeOnly), ["SAM"]);
   const rotation = { group: "rotation_steps", index: 1 };
   const varying = stepCard(step(2, "Spin Coating", [
     param("Solvent 1 name", [["Ethanol", FIRST], ["IPA", LAST]], { family: solvent }),
@@ -151,12 +178,12 @@ test("a type column is not the family's name; a lone measure keeps its own label
     num("Rotation time", "30", "s", rotation),
     param("Material name", [["A", FIRST], ["B", LAST]]),
   ]));
-  assert.equal(varying.headline, "Spin Coating");
-  assert.deepEqual(texts(varying), ["Solvent  Ethanol / IPA · 50 uL", "Spin  3000 rpm · 30 s", "Material name  A / B"]);
+  assert.equal(varying.material, "");
+  assert.deepEqual(texts(varying), ["Ethanol / IPA · 50 uL", "3000 rpm · 30 s", "A / B"]);
   assert.deepEqual(varying.lines.map((l) => l.values.map((v) => v.varies)), [[true, false], [false, false], [true]]);
 });
 
-test("numbered columns merge behind their name; two names behind one number stay apart", () => {
+test("numbered columns merge behind their name; ratios read MAI:MABr 3:1", () => {
   const two = { group: null, index: 2 };
   const one1 = { group: null, index: 1 };
   const card = stepCard(step(5, "Close Space Sublimation", [
@@ -167,13 +194,22 @@ test("numbered columns merge behind their name; two names behind one number stay
     num("Source material ratio 1", "3", null, one1),
   ]));
   assert.deepEqual(texts(card), ["PbI2  200 nm · 1 angstrom/s", "MAI  3"]);
+  const ratios = stepCard(step(5, "Close Space Sublimation", [
+    num("Process pressure", "3", "mbar"),
+    param("Source material name 1", one("MAI"), { family: one1 }),
+    param("Source material name 2", one("MABr"), { family: two }),
+    num("Source material ratio 1", "3", null, one1),
+    num("Source material ratio 2", "1", null, two),
+    num("Source temperature", "120", "°C"),
+  ]));
+  assert.deepEqual(texts(ratios), ["3 mbar", "MAI:MABr  3:1", "source 120 °C"]);
+  // two names behind one number without a group are two things: nothing merges
   const twoNames = stepCard(step(5, "Close Space Sublimation", [
     param("Material name 1", one("C60"), { family: one1 }),
     num("Thickness 1", "20", "nm", one1),
     param("Source material name 1", one("MAI"), { family: one1 }),
   ]));
-  // the first words group what is left: "Material name 1" and "Thickness 1" are not one thing
-  assert.deepEqual(texts(twoNames), ["Material name 1  C60", "Thickness 1  20 nm", "Source material name 1  MAI"]);
+  assert.deepEqual(texts(twoNames), ["C60 · 20 nm · MAI"]);
 });
 
 test("a varying value is marked, a changed one carries its old value", () => {
@@ -186,10 +222,13 @@ test("a varying value is marked, a changed one carries its old value", () => {
     { column_id: temperature.column_id, row: 4, old: "110", new: "120", by_formula: false },
   ];
   const card = stepCard(step(5, "Close Space Sublimation", [temperature, time]), changed);
-  assert.deepEqual(card.lines, [
-    { label: "Substrate temperature", values: [{ text: "120 / 115 °C", varies: true, changed: "edited on 2 samples" }] },
-    { label: "Deposition Time", values: [{ text: "900 s", varies: false, changed: "was 600" }] },
-  ]);
+  assert.deepEqual(card.lines, [{
+    label: "",
+    values: [
+      { text: "substrate 120 / 115 °C", varies: true, changed: "edited on 2 samples" },
+      { text: "deposition 900 s", varies: false, changed: "was 600" },
+    ],
+  }]);
   assert.equal(card.varies, true);
   // in a merged line each value keeps its own mark
   const rotation = { group: "rotation_steps", index: 1 };

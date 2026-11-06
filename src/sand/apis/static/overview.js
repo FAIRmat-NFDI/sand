@@ -19,6 +19,7 @@ const samplesBlock = document.getElementById("samples-block");
 const samplesNote = document.getElementById("samples-note");
 const samplesBox = document.getElementById("samples-box");
 const OPEN_KEY = "sand.overview.open";
+const LONG_VALUE = 24; // characters; a longer value may wrap inside
 
 let chosen = null; // true/false once the user folded or unfolded, else null
 let updates = null; // the shown sheet's update count, null while not known
@@ -57,11 +58,16 @@ function renderStep(card) {
   if (card.empty) article.classList.add("step-empty");
   const top = el("div", "step-top");
   top.append(el("span", "step-number", String(card.position ?? "")));
-  if (card.kicker) top.append(el("span", "step-kicker", card.kicker));
   article.append(top);
   const title = el("div", "step-title");
   title.append(el("span", "step-headline", card.headline));
-  if (card.sub) title.append(el("span", "step-sub", card.sub));
+  if (card.material || card.sub) {
+    const sub = el("span", "step-sub");
+    if (card.material) sub.append(el("span", "step-material", card.material));
+    if (card.material && card.sub) sub.append(el("span", "line-sep", "·"));
+    if (card.sub) sub.append(document.createTextNode(card.sub));
+    title.append(sub);
+  }
   article.append(title);
   if (card.empty) {
     article.append(el("p", "step-sub", "No data"));
@@ -74,6 +80,7 @@ function renderStep(card) {
     line.values.forEach((value, i) => {
       if (i) p.append(el("span", "line-sep", "·"));
       const span = el("span", "line-value", value.text);
+      if (value.text.length > LONG_VALUE) span.classList.add("long");
       if (value.varies) span.classList.add("value-varies");
       if (value.changed) {
         span.classList.add("value-changed");

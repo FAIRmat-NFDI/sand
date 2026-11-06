@@ -69,40 +69,106 @@ function isNote(param) {
   return /(^|_)(notes?|comments?|remarks?)($|_)/.test(fieldKey(param.name));
 }
 
-// a parameter as one value of a line
-function valueOf(p, changed) {
-  return { text: valueCell(p), varies: p.values.length > 1, changed: changeNote(p.column_id, changed) };
+// How the lab writes a value. The unit says what a number is ("3 mbar",
+// "250 nm"), so the column's measure word goes; the other words stay as
+// a short qualifier only where needed: for a time or a temperature
+// standing alone ("source 120 °C"), or when the card has the unit twice
+// ("rotation 1 min · rest 10 min"). A category column's value speaks for
+// itself ("milled", "N2"); a yes/no column is its words, or "no" and them.
+// A few columns have the short name the lab uses ("RH").
+const MEASURE_WORDS = new Set(["time", "temperature", "duration", "speed", "rate", "distance", "pressure",
+  "volume", "thickness", "ratio", "concentration", "area", "power", "voltage", "current", "flow",
+  "frequency", "acceleration", "amount", "mass", "weight", "length", "width", "height", "size"]);
+const CATEGORY_WORDS = new Set(["state", "type", "mode", "atmosphere", "athmosphere", "method", "gas"]);
+const TIME_LIKE = new Set(["time", "temperature", "duration"]);
+const SHORT = { relative_humidity: "RH" };
+const FLAGS = { yes: true, no: false, true: true, false: false };
+
+// "Source" -> "source", but "UV-Ozone", "PbI2" and "RH" as they are
+function lower(word) {
+  return /^[A-Z][a-z]+$/.test(word) ? word.toLowerCase() : word;
+}
+
+// a column's words without trailing numbers: "Substrate temperature 2"
+function wordsOf(param) {
+  return String(param.name).trim().split(/\s+/).filter((w) => !/^\d+$/.test(w));
+}
+
+function qualifier(param, drop) {
+  const short = SHORT[fieldKey(param.name)];
+  if (short) return short;
+  return wordsOf(param)
+    .filter((w) => !drop.has(w.toLowerCase()) && !MEASURE_WORDS.has(w.toLowerCase()) && !CATEGORY_WORDS.has(w.toLowerCase()))
+    .map(lower).join(" ");
+}
+
+function isTimeLike(param) {
+  return wordsOf(param).some((w) => TIME_LIKE.has(w.toLowerCase()));
+}
+
+function isCategory(param) {
+  return wordsOf(param).some((w) => CATEGORY_WORDS.has(w.toLowerCase()));
+}
+
+// a parameter as one value of a line; `drop` are the words the line's
+// label already says, `alone` is a value with no label before it
+function valueOf(p, changed, { drop = new Set(), alone = false, unitCount = new Map() } = {}) {
+  const value = { text: valueCell(p), varies: p.values.length > 1, changed: changeNote(p.column_id, changed) };
+  const one = p.values.length === 1 ? String(p.values[0].value ?? "").trim().toLowerCase() : null;
+  if (p.type === "text" && one !== null && one in FLAGS) {
+    const words = wordsOf(p).map(lower).join(" ");
+    value.text = FLAGS[one] ? words : "no " + words;
+    return value;
+  }
+  let needed;
+  if (SHORT[fieldKey(p.name)]) needed = true; // "RH 30 %"
+  else if (p.type === "text") needed = !isCategory(p) && !isNameColumn(p) && !isNote(p);
+  else if (!p.unit) needed = true; // a bare number says nothing by itself
+  else needed = (alone && isTimeLike(p)) || (unitCount.get(p.unit) || 0) > 1;
+  const words = needed ? qualifier(p, drop) : "";
+  if (words) value.text = words + " " + value.text;
+  return value;
 }
 
 function firstWord(name) {
   return String(name).trim().split(/\s+/)[0];
 }
 
-// One step card: the headline (material, or the step type), its
-// subtitle (layer · tool), and lines written the way the lab notes a
-// step: a label and the values after it. The measures of one column
-// family make one line behind the family's name ("Ethanol  80 uL",
-// "PbI2  25 °C · 250 nm · 1 angstrom/s"), or behind the family's label
-// without one ("Spin  3000 rpm · 30 s"); columns that share their first
-// word make one line ("Annealing  10 min · 100 °C · N2"); a note stands
-// alone at the end. Each value keeps its column: a varying one is a
-// chip, a changed one carries its old value.
+// a numbered family of a name and one bare ratio: "MAI" and 3
+function ratioOf(name, rest) {
+  return name && rest.length === 1 && !rest[0].unit && rest[0].values.length === 1
+    && /ratio/.test(fieldKey(rest[0].name)) ? { name, ratio: rest[0] } : null;
+}
+
+// One step card: the step type as headline, the material with its
+// layer and tool under it, and lines written the way the lab notes a
+// step, in the sheet's order. A column family is one line behind its
+// name ("Ethanol  80 uL", "PbI2  250 nm · 1 angstrom/s"); columns that
+// share their first word are one line behind it ("annealing  10 min ·
+// 100 °C · N2"); ratios read "MAI:MABr 3:1"; what is left runs together
+// ("3 mbar · source 120 °C · milled"); a note stands alone at the end.
+// Each value keeps its column: a varying one is a chip, a changed one
+// carries its old value.
 export function stepCard(step, changed = []) {
   const head = {};
   const families = new Map(); // "group:index" or column id -> params, in sheet order
   const order = new Map(step.params.map((p, i) => [p, i]));
+  const unitCount = new Map();
   for (const p of step.params) {
     const role = HEADLINE[fieldKey(p.name)];
     if (role && p.values.length === 1 && !head[role]) {
       head[role] = p.values[0].value;
       continue;
     }
+    if (p.unit) unitCount.set(p.unit, (unitCount.get(p.unit) || 0) + 1);
     const key = p.family ? (p.family.group || "") + ":" + p.family.index : p.column_id;
     if (!families.has(key)) families.set(key, []);
     families.get(key).push(p);
   }
-  const lines = []; // with `at`, the first column's place, to keep the sheet's order
-  const singles = [];
+  const stepWord = firstWord(step.step_type).toLowerCase();
+  const items = []; // {at, line} or {at, single: param}; singles run together
+  const ratios = [];
+  const text = (p) => String(p.values[0].value);
   for (const params of families.values()) {
     const family = params[0].family;
     const label = family && FAMILY_LABELS[family.group];
@@ -112,54 +178,99 @@ export function stepCard(step, changed = []) {
     // two things: nothing merges
     const name = names.length === 1 || (names.length && label) ? names[0] : null;
     const rest = params.filter((p) => p !== name);
-    if (!family || !(name || (label && rest.length > 1))) {
-      singles.push(...params);
+    const at = order.get(params[0]);
+    const ratio = !label && ratioOf(name, rest);
+    if (ratio) {
+      ratios.push({ at, ...ratio });
+    } else if (name && rest.length) {
+      const drop = new Set(wordsOf(name).map((w) => w.toLowerCase()));
+      const values = rest.map((p) => valueOf(p, changed, { drop, unitCount })).filter((v) => v.text);
+      // the material's own line needs no label: the card names it already
+      items.push({ at, line: { label: text(name) === head.material ? "" : text(name), values } });
+    } else if (name) {
+      items.push({ at, single: name, value: valueOf(name, changed) }); // "Ethanol"
+    } else if (label && rest.length > 1) {
+      const siblings = [...families.keys()].filter((k) => k.startsWith(family.group + ":")).length;
+      const values = rest.map((p) => valueOf(p, changed, { unitCount }));
+      items.push({ at, line: { label: siblings > 1 ? familyLabel(family, families) : "", values } });
+    } else {
+      for (const p of params) items.push({ at: order.get(p), single: p });
+    }
+  }
+  if (ratios.length) {
+    ratios.sort((x, y) => x.at - y.at);
+    items.push({
+      at: ratios[0].at,
+      line: {
+        label: ratios.map((r) => text(r.name)).join(":"),
+        values: [{
+          text: ratios.map((r) => text(r.ratio)).join(":"),
+          varies: false,
+          changed: ratios.map((r) => changeNote(r.ratio.column_id, changed)).filter(Boolean).join("; "),
+        }],
+      },
+    });
+  }
+  // singles that share their first word: one line behind the word, or
+  // behind nothing when it is the step's own ("Annealing" in an annealing)
+  const groups = new Map();
+  const singles = items.filter((i) => i.single && !i.value);
+  for (const item of singles) {
+    if (isNote(item.single) && item.single.values.length === 1) continue;
+    const word = firstWord(item.single.name);
+    const key = word.toLowerCase();
+    if (!groups.has(key)) groups.set(key, { word, items: [] });
+    groups.get(key).items.push(item);
+  }
+  const notes = [];
+  for (const item of singles) {
+    const p = item.single;
+    if (isNote(p) && p.values.length === 1) {
+      notes.push({ label: "", note: true, values: [valueOf(p, changed)] });
+      items.splice(items.indexOf(item), 1);
       continue;
     }
-    const values = rest.map((p) => valueOf(p, changed)).filter((v) => v.text);
-    const at = order.get(params[0]);
-    if (name && !values.length) {
-      // only the name is filled: "Solvent  Ethanol"
-      lines.push({ at, label: label ? familyLabel(family, families) : name.name, values: [valueOf(name, changed)] });
+    const group = groups.get(firstWord(p.name).toLowerCase());
+    if (group.items.length === 1) {
+      item.value = valueOf(p, changed, { alone: true, unitCount });
+      continue;
+    }
+    if (group.items[0] !== item) {
+      items.splice(items.indexOf(item), 1);
+      continue;
+    }
+    const drop = new Set([group.word.toLowerCase()]);
+    const line = {
+      label: group.word.toLowerCase() === stepWord ? "" : lower(group.word),
+      values: group.items.map((g) => valueOf(g.single, changed, { drop, unitCount })),
+    };
+    delete item.single;
+    item.line = line;
+  }
+  items.sort((x, y) => x.at - y.at);
+  // what is left runs together, in the sheet's order
+  const lines = [];
+  let run = null;
+  for (const item of items) {
+    if (item.line) {
+      lines.push(item.line);
+      run = null;
+    } else if (run) {
+      run.values.push(item.value);
     } else {
-      // the material's own line needs no label under its headline
-      const text = name ? name.values[0].value : familyLabel(family, families);
-      lines.push({ at, label: text === head.material ? "" : text, values });
+      run = { label: "", values: [item.value] };
+      lines.push(run);
     }
   }
-  // columns that share their first word: one line, the word as label,
-  // or none when it is the step's own word ("Annealing" in an annealing)
-  const groups = new Map();
-  for (const p of singles) {
-    if (isNote(p) && p.values.length === 1) continue;
-    const word = firstWord(p.name);
-    const key = word.toLowerCase();
-    if (!groups.has(key)) groups.set(key, { word, params: [] });
-    groups.get(key).params.push(p);
-  }
-  const stepWord = firstWord(step.step_type).toLowerCase();
-  for (const [key, group] of groups) {
-    const at = order.get(group.params[0]);
-    if (group.params.length === 1) {
-      const p = group.params[0];
-      lines.push({ at, label: p.name, values: [valueOf(p, changed)] });
-    } else {
-      lines.push({ at, label: key === stepWord ? "" : group.word, values: group.params.map((p) => valueOf(p, changed)) });
-    }
-  }
-  lines.sort((x, y) => x.at - y.at);
-  for (const p of singles) {
-    if (isNote(p) && p.values.length === 1) lines.push({ label: "", note: true, values: [valueOf(p, changed)] });
-  }
+  lines.push(...notes);
   return {
     position: step.position,
-    type: step.step_type,
-    headline: head.material || step.step_type,
-    kicker: head.material ? step.step_type : "",
+    headline: step.step_type,
+    material: head.material || "",
     sub: [head.layer, head.tool].filter(Boolean).join(" · "),
     empty: step.empty,
     varies: step.varies,
-    lines: lines.map(({ at, ...line }) => line),
+    lines,
   };
 }
 
