@@ -182,9 +182,8 @@ function count(n, one, many) {
   return n === 1 ? "1 " + one : n + " " + many;
 }
 
-// one line for a completed job, in the researcher's terms, e.g.
-// "2 edits written · 1 edit waits for your confirmation"
-export function editSummary(status) {
+// the parts of a completed job's summary, in the researcher's terms
+function summaryParts(status) {
   const reports = status.inputs || [];
   const parts = [];
   const written = writtenCount(status);
@@ -197,7 +196,22 @@ export function editSummary(status) {
   if (refused) parts.push(count(refused, "update could not", "updates could not") + " be written");
   // stale confirmations (status.stale_confirmations) are not a line: an
   // edit that lost its confirmation shows as waiting again
-  return parts.join(" · ") || "Nothing written yet.";
+  return parts;
+}
+
+// one line for a completed job, e.g.
+// "2 edits written · 1 edit waits for your confirmation"
+export function editSummary(status) {
+  return summaryParts(status).join(" · ") || "Nothing written yet.";
+}
+
+// the header's line: the updates given, then the job's summary; `updates`
+// null while the list is not loaded, `status` null before a job completed
+export function progressLine(updates, status) {
+  const parts = [];
+  if (updates !== null) parts.push(updates ? count(updates, "update", "updates") : "No updates yet");
+  if (status) parts.push(...summaryParts(status));
+  return parts.join(" · ");
 }
 
 // the name the server gave the download (RFC 6266), else the fallback

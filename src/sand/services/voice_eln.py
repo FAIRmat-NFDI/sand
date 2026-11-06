@@ -91,6 +91,7 @@ class InputCollectionSummary:
     upload_id: str
     entry_id: str
     name: str
+    created: str | None = None  # entry_create_time, ISO 8601
 
 
 @dataclass
@@ -169,7 +170,14 @@ class VoiceElnService:
                         ),
                         'published': False,
                     },
-                    'required': {'include': ['entry_id', 'upload_id', 'entry_name']},
+                    'required': {
+                        'include': [
+                            'entry_id',
+                            'upload_id',
+                            'entry_name',
+                            'entry_create_time',
+                        ]
+                    },
                     'pagination': pagination,
                 },
             )
@@ -185,6 +193,7 @@ class VoiceElnService:
                 upload_id=entry['upload_id'],
                 entry_id=entry['entry_id'],
                 name=entry.get('entry_name') or '',
+                created=entry.get('entry_create_time'),
             )
             for entry in entries
         ]

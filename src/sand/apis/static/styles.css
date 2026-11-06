@@ -172,23 +172,6 @@ body {
   color: #666;
 }
 
-/* Experiment selector + new-experiment form */
-.select-field {
-  font-family: 'Titillium Web', sans-serif;
-  font-size: 0.9rem;
-  padding: 8px 12px;
-  border: 1px solid #bbb;
-  border-radius: 4px;
-  background: #fff;
-  min-width: 220px;
-  max-width: 100%;
-}
-
-.select-field:focus {
-  outline: none;
-  border-color: #2A4CDF;
-}
-
 .form-input {
   font-family: 'Titillium Web', sans-serif;
   font-size: 0.9rem;
@@ -202,14 +185,206 @@ body {
   border-color: #2A4CDF;
 }
 
-#experiment-link {
+/* Sheet header */
+.sheet-header {
+  padding: 20px 24px;
+}
+
+.sheet-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px 24px;
+  flex-wrap: wrap;
+}
+
+.sheet-kicker {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.sheet-name {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #1f2430;
+  overflow-wrap: anywhere;
+}
+
+.sheet-title a {
   font-size: 0.875rem;
   color: #2A4CDF;
   text-decoration: none;
 }
 
-#experiment-link:hover {
+.sheet-title a:hover {
   text-decoration: underline;
+}
+
+.sheet-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sheet-meta {
+  margin-top: 10px;
+  font-size: 1rem;
+  color: #3a3f48;
+}
+
+.sheet-meta-more {
+  margin-top: 2px;
+  font-size: 0.8rem;
+  color: #777;
+}
+
+.sheet-progress {
+  margin-top: 8px;
+  font-size: 0.875rem;
+  color: #555;
+}
+
+/* no sheet open: the drop zone stands where the header will be */
+.sheet-header.no-sheet .sheet-title,
+.sheet-header.no-sheet .sheet-only {
+  display: none;
+}
+
+.sheet-switch {
+  position: relative;
+}
+
+.sheet-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 300px;
+  max-width: min(420px, 90vw);
+  max-height: 340px;
+  overflow-y: auto;
+  list-style: none;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.18), 0 1px 3px rgba(0,0,0,0.12);
+  padding: 4px 0;
+}
+
+.sheet-menu-item {
+  font-family: 'Titillium Web', sans-serif;
+  font-size: 0.9rem;
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  color: #333;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sheet-menu-item:hover,
+.sheet-menu-item:focus-visible {
+  background: #eef1fb;
+  outline: none;
+}
+
+.sheet-menu-item[aria-selected="true"] {
+  color: #2A4CDF;
+  font-weight: 600;
+}
+
+.sheet-menu-name {
+  overflow-wrap: anywhere;
+}
+
+.sheet-menu-when {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  color: #888;
+}
+
+/* always in reach, however long the list */
+.sheet-menu-new {
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  border-top: 1px solid #e3e6eb;
+  margin-top: 4px;
+  padding: 4px 0;
+}
+
+.sheet-menu-new .sheet-menu-item {
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  color: #2A4CDF;
+}
+
+.sheet-menu-new .material-icons {
+  font-size: 18px;
+}
+
+/* the upload: a drop zone, the name, the button */
+.sheet-header:not(.no-sheet) .sheet-upload {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e3e6eb;
+}
+
+.drop-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 28px 16px;
+  border: 2px dashed #b9c0cc;
+  border-radius: 4px;
+  background: #fafbfd;
+  color: #555;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.drop-zone .material-icons {
+  color: #2A4CDF;
+}
+
+.drop-zone.drag-over {
+  border-color: #2A4CDF;
+  background: #eef1fb;
+}
+
+.drop-zone.has-file {
+  border-style: solid;
+  border-color: #2A4CDF;
+}
+
+.drop-zone.has-file .drop-text {
+  font-weight: 600;
+  color: #1f2430;
+}
+
+.sheet-upload-row.controls {
+  margin: 12px 0 0;
+}
+
+.sheet-upload-row .form-input {
+  flex: 1 1 260px;
+}
+
+.sheet-problems {
+  margin: 8px 0 0;
+  padding-left: 20px;
 }
 
 /* Link to the created AudioInput entry in NOMAD */
@@ -1133,19 +1308,6 @@ body {
 }
 
 /* --- edit mode ------------------------------------------------------------- */
-
-.sheet-form input[type="file"] {
-  max-width: 100%;
-}
-
-.sheet-form .form-input {
-  flex: 1 1 260px;
-}
-
-.sheet-problems {
-  margin: 8px 0 0;
-  padding-left: 20px;
-}
 
 /* the job is at work: a turning ring before the text */
 .status-text.busy {

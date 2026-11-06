@@ -26,40 +26,59 @@
     </div>
 
     <div id="app-content">
-      <div class="card">
-        <label class="text-field-label" for="experiment-select">Experiment</label>
-        <div class="controls" style="margin: 0;">
-          <select class="select-field" id="experiment-select">
-            <option value="">— select an experiment —</option>
-          </select>
-          <button class="btn btn-outlined" id="new-experiment-btn" type="button">
-            <span class="material-icons">add</span>
-            New experiment
-          </button>
-          <a id="experiment-link" target="_blank" rel="noopener noreferrer" hidden>View in NOMAD</a>
-        </div>
-
-        <div id="new-experiment-form" hidden>
-          <hr class="divider">
-          <p class="section-hint">Start from a sheet: upload the Excel file, then speak or type the updates to make to it.</p>
-          <div class="controls sheet-form">
-            <input type="file" id="sheet-file" accept=".xlsx" aria-label="The Excel sheet to update">
-            <input class="form-input" id="sheet-name" placeholder="Experiment name (defaults to the file name)" aria-label="Experiment name, as shown in the list">
-            <button class="btn btn-primary" id="create-from-sheet-btn" type="button">
-              <span class="material-icons">upload_file</span>
-              Create from sheet
-            </button>
-            <button class="btn btn-outlined" id="cancel-experiment-btn" type="button">Cancel</button>
+      <header class="card sheet-header" id="sheet-header">
+        <div class="sheet-header-top">
+          <div class="sheet-title">
+            <p class="sheet-kicker">Sheet</p>
+            <h2 class="sheet-name" id="sheet-name"></h2>
+            <a id="experiment-link" target="_blank" rel="noopener noreferrer" hidden>View in NOMAD</a>
           </div>
+          <div class="sheet-actions">
+            <div class="sheet-switch">
+              <button class="btn btn-outlined" id="sheets-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="sheets-menu" hidden>
+                <span class="material-icons">expand_more</span>
+                <span id="sheets-btn-label">Other sheets</span>
+              </button>
+              <ul class="sheet-menu" id="sheets-menu" role="listbox" aria-label="Your sheets" hidden></ul>
+            </div>
+            <button class="btn btn-primary sheet-only" id="download-final-btn" type="button">
+              <span class="material-icons">download</span>
+              Download edited
+            </button>
+            <button class="btn btn-quiet sheet-only" id="download-original-btn" type="button" title="The sheet as you uploaded it">
+              <span class="material-icons">download</span>
+              Download original
+            </button>
+          </div>
+        </div>
+        <p class="sheet-meta" id="sheet-meta" hidden></p>
+        <p class="sheet-meta-more" id="sheet-meta-more" hidden></p>
+        <p class="sheet-progress" id="sheet-progress" role="status" hidden></p>
+
+        <div class="sheet-upload" id="sheet-upload" hidden>
+          <div class="drop-zone" id="drop-zone">
+            <span class="material-icons">upload_file</span>
+            <span class="drop-text" id="drop-text">Drop the Excel sheet here, or</span>
+            <button class="btn btn-outlined btn-small" id="choose-sheet-btn" type="button">Choose a file</button>
+            <input type="file" id="sheet-file" accept=".xlsx" aria-label="The Excel sheet to update" hidden>
+          </div>
+          <div class="controls sheet-upload-row">
+            <input class="form-input" id="sheet-name-input" placeholder="Name of the sheet (defaults to the file's)" aria-label="Name of the sheet, as shown in the list">
+            <button class="btn btn-primary" id="upload-sheet-btn" type="button">
+              <span class="material-icons">upload</span>
+              Upload the sheet
+            </button>
+            <button class="btn btn-quiet" id="cancel-upload-btn" type="button" hidden>Cancel</button>
+          </div>
+          <p class="section-hint">Then speak or type the updates to make to it; the edits you confirm are written into a copy, the sheet you uploaded stays as it is.</p>
           <ul class="problem-text sheet-problems" id="sheet-problems" role="alert" hidden></ul>
         </div>
-
-      </div>
+      </header>
 
       <p class="error-banner error-text" id="session-warning" role="alert"></p>
       <p class="error-banner error-text" id="error" role="alert"></p>
 
-      <div class="workspace">
+      <div class="workspace" id="workspace" hidden>
         <section class="card section section-record">
           <div class="record-header">
             <h2 class="section-title"><span class="material-icons">mic</span>Record</h2>
@@ -131,7 +150,7 @@
           </div>
           <p class="section-hint">Your updates, in the order you made them. Each is read as soon as it is saved and lists the edits it makes. Click one not yet applied to revise its words.</p>
           <ul class="inputs-list" id="inputs-list">
-            <li class="inputs-empty">Select an experiment to see its inputs.</li>
+            <li class="inputs-empty">Open a sheet to see its updates.</li>
           </ul>
         </section>
 
@@ -147,17 +166,9 @@
               <span class="material-icons">replay</span>
               Read again
             </button>
-            <button class="btn btn-outlined" id="download-final-btn" type="button">
-              <span class="material-icons">download</span>
-              Download edited
-            </button>
-            <button class="btn btn-quiet" id="download-original-btn" type="button" title="The sheet as you uploaded it">
-              <span class="material-icons">download</span>
-              Download original
-            </button>
             <span class="status-text" id="apply-status" role="status"></span>
           </div>
-          <p class="section-hint">Confirm the edits that are right, one by one or all at once: they are written into the sheet by themselves. The edited sheet is the original plus the confirmed edits; the original stays as you uploaded it.</p>
+          <p class="section-hint">Confirm the edits that are right, one by one or all at once: they are written into the sheet by themselves. Download the edited sheet from the top of the page.</p>
 
           <div class="apply-result" id="apply-result" hidden>
             <hr class="divider">

@@ -36,6 +36,7 @@ class InputCollectionResponse(BaseModel):
 
 class InputCollectionSummaryModel(InputCollectionResponse):
     name: str
+    created: str | None = None  # when the experiment was made, ISO 8601
 
 
 class InputCollectionListResponse(BaseModel):

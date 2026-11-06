@@ -558,7 +558,7 @@ function startInputsRefresh(experiment, delayMs) {
 // The list for a newly selected experiment (or none).
 export function showInputs(experiment) {
   endRevision();
-  showInputsPlaceholder(experiment ? "Loading..." : "Select an experiment to see its inputs.");
+  showInputsPlaceholder(experiment ? "Loading..." : "Open a sheet to see its updates.");
   if (experiment) startInputsRefresh(experiment);
   else stopInputsRefresh();
 }
