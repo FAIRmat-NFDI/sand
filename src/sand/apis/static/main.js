@@ -9,6 +9,7 @@ import {
 import { initInputs, showInputs } from "./inputs.js";
 import { clearLiveTranscript, initLiveToggle } from "./live-transcript.js";
 import { initNotes } from "./notes.js";
+import { initOverview, showOverview } from "./overview.js";
 import { initRecord } from "./record.js";
 import { showError } from "./ui.js";
 import { initVoiceMode } from "./voice/voice-mode.js";
@@ -66,6 +67,7 @@ initRecord();
 initNotes();
 initInputs();
 initEdit();
+initOverview();
 initLiveToggle();
 initVoiceMode();
 
@@ -81,10 +83,12 @@ onExperimentSelected(async (experiment) => {
   clearLiveTranscript();
   if (!experiment) {
     showSheet(null, null);
+    showOverview(null);
     showEdit(null, null);
     return;
   }
   showSheet(experiment); // the name now, the rest when the view is read
+  showOverview(null);
   let view;
   try {
     view = await fetchSheetView(experiment);
@@ -97,6 +101,7 @@ onExperimentSelected(async (experiment) => {
   }
   if (generation !== selectionGeneration) return;
   showSheet(experiment, view);
+  showOverview(view);
   showEdit(experiment, view);
 });
 

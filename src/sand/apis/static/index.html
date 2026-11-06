@@ -76,6 +76,33 @@
         </div>
       </header>
 
+      <section class="card sheet-overview" id="sheet-overview" hidden>
+        <div class="overview-head">
+          <h2 class="section-title"><span class="material-icons">view_agenda</span>Overview <span class="section-count" id="overview-summary"></span></h2>
+          <button class="btn btn-quiet btn-small" id="overview-toggle" type="button" aria-expanded="true" aria-controls="overview-body">
+            <span class="material-icons">unfold_less</span>
+            <span id="overview-toggle-label">Fold</span>
+          </button>
+        </div>
+        <div id="overview-body">
+          <p class="overview-warnings" id="overview-warnings" role="status" hidden></p>
+          <div class="overview-block">
+            <div class="overview-block-head">
+              <h3 id="steps-title">Fabrication sequence</h3>
+              <span>Only filled parameters are shown</span>
+            </div>
+            <div class="step-grid" id="step-grid"></div>
+          </div>
+          <div class="overview-block" id="samples-block" hidden>
+            <div class="overview-block-head">
+              <h3>Samples · grouped by what varies</h3>
+              <span id="samples-note"></span>
+            </div>
+            <div class="samples-box" id="samples-box"></div>
+          </div>
+        </div>
+      </section>
+
       <p class="error-banner error-text" id="session-warning" role="alert"></p>
       <p class="error-banner error-text" id="error" role="alert"></p>
 

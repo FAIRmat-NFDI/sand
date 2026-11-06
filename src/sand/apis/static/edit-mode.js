@@ -14,6 +14,7 @@ import {
   progressLine, readKey, reportsByEntry, unwrittenCount, unwrittenKey, writtenEdits,
 } from "./edit-logic.js";
 import { requireExperiment, setSheetProgress, showSheet } from "./experiments.js";
+import { setOverviewUpdates, showOverview } from "./overview.js";
 import { setInputsListener, setReports } from "./inputs.js";
 import { clearError, showError } from "./ui.js";
 
@@ -113,12 +114,14 @@ function busy(text) {
 function updateProgress() {
   if (!current) {
     setSheetProgress("");
+    setOverviewUpdates(null);
     return;
   }
   const updates = inputsSeen && inputsSeen.entryId === current.entry_id
     ? inputsSeen.items.length
     : null;
   setSheetProgress(progressLine(updates, lastStatus));
+  setOverviewUpdates(updates);
 }
 
 function showPending(keys) {
@@ -425,6 +428,7 @@ async function refreshSheet(experiment, final) {
   }
   if (!view || !stillShown(experiment)) return;
   showSheet(experiment, view);
+  showOverview(view);
   describeSheet(view);
 }
 

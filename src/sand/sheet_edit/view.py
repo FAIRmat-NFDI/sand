@@ -40,6 +40,7 @@ def sheet_view(catalog: Catalog, log: Changelog | None = None) -> dict:
     """
     {'sheet': 'Experiment Data',
      'info': {'samples': 42, 'subbatches': ['0'],
+              'rows': [{'row', 'label', 'subbatch'}],
               'fields': [{'column_id', 'header', 'name', 'unit', 'type', 'value'}]},
      'steps': [{'position', 'step_type', 'label', 'material', 'layer', 'empty',
                 'varies', 'params': [{'column_id', 'header', 'name', 'unit',
@@ -94,6 +95,11 @@ def sheet_view(catalog: Catalog, log: Changelog | None = None) -> dict:
         'info': {
             'samples': len(catalog.samples),
             'subbatches': sorted({s.subbatch for s in catalog.samples} - {None}),
+            # the rows the values name, with their labels: for sample chips
+            'rows': [
+                {'row': s.row, 'label': s.label, 'subbatch': s.subbatch}
+                for s in catalog.samples
+            ],
             'fields': info,
         },
         'steps': steps,

@@ -30,6 +30,11 @@ def test_info_is_what_holds_for_every_sample(view):
     assert view['sheet'] == 'Experiment Data'
     assert view['info']['samples'] == len(SAMPLE_LABELS)
     assert view['info']['subbatches'] == ['0']
+    assert view['info']['rows'][:2] == [
+        {'row': 3, 'label': '1', 'subbatch': '0'},
+        {'row': 4, 'label': '2', 'subbatch': '0'},
+    ]
+    assert [r['label'] for r in view['info']['rows']] == [str(n) for n in SAMPLE_LABELS]
     fields = {f['header']: f for f in view['info']['fields']}
     # the identity columns, the per-sample Variation and the empty Notes are not fields
     assert list(fields) == ['Date', 'Project_Name', 'Batch', 'Sample area [cm^2]']
