@@ -240,6 +240,17 @@ test("a varying value is marked, a changed one carries its old value", () => {
   assert.deepEqual(spin.lines[0].values.map((v) => v.changed), ["was 2000", ""]);
 });
 
+test("a note on some samples does not vary", () => {
+  const note = param("Notes", [["filter the solution", FIRST], [null, LAST]]);
+  const card = stepCard(step(2, "Spin Coating", [num("Solution volume", "80", "uL"), note]));
+  assert.deepEqual(texts(card), ["80 uL", "“filter the solution · some empty”"]);
+  assert.equal(card.lines[1].values[0].varies, false);
+  assert.equal(card.varies, false);
+  const view = { info: { rows: ROWS }, variations: [variation("Notes", [["x", FIRST], [null, LAST]])] };
+  assert.deepEqual(sampleGroups(view), { kind: "none" });
+  assert.equal(overviewSummary({ steps: [{ position: 2, varies: true, params: [note] }] }), "1 step");
+});
+
 test("an empty step", () => {
   const card = stepCard(step(7, "Spin Coating", [], { empty: true }));
   assert.equal(card.empty, true);
@@ -298,13 +309,13 @@ test("two crossing columns: the one with fewer values as rows, the other across"
 test("the cross is found behind a stray column with fewer values", () => {
   const temperature = variation("Substrate temperature", [["120", FIRST], ["115", LAST]], { unit: "°C" });
   const time = variation("Deposition Time", [["900", [3, 6]], ["1200", [4, 7]], ["1500", [5, 8]]], { unit: "s" });
-  // a note on one sample crosses nothing: the next candidate makes the rows
-  const stray = variation("Notes", [["x", [3]], [null, [4, 5, 6, 7, 8]]], { step: "Experiment Info" });
+  // a treatment of one sample crosses nothing: the next candidate makes the rows
+  const stray = variation("Treatment", [["x", [3]], [null, [4, 5, 6, 7, 8]]], { step: "Experiment Info" });
   let groups = sampleGroups({ info: { rows: ROWS }, variations: [stray, temperature, time] });
   assert.equal(groups.kind, "cross");
-  assert.deepEqual([groups.a.name, groups.b.name, groups.also], ["Substrate temperature", "Deposition Time", ["Notes"]]);
-  // a note split like the temperature: the filled column makes the rows
-  const twin = variation("Notes", [["x", FIRST], [null, LAST]], { step: "Experiment Info" });
+  assert.deepEqual([groups.a.name, groups.b.name, groups.also], ["Substrate temperature", "Deposition Time", ["Treatment"]]);
+  // a half-empty column split like the temperature: the filled column makes the rows
+  const twin = variation("Treatment", [["x", FIRST], [null, LAST]], { step: "Experiment Info" });
   groups = sampleGroups({ info: { rows: ROWS }, variations: [twin, temperature, time] });
   assert.deepEqual([groups.a.name, groups.b.name], ["Substrate temperature", "Deposition Time"]);
   // a tie between two filled columns: the sheet's first makes the rows
@@ -317,14 +328,14 @@ test("varying columns that do not cross are blocks of their own; an empty value 
   const view = {
     info: { rows: ROWS },
     variations: [
-      variation("Notes", [["x", FIRST], [null, LAST]]),
+      variation("Treatment", [["x", FIRST], [null, LAST]]),
       variation("Thickness", [["100", [3, 4]], ["120", [5, 6, 7, 8]]], { unit: "nm" }),
     ],
   };
   const groups = sampleGroups(view);
   assert.equal(groups.kind, "flat");
   assert.deepEqual(groups.blocks.map((b) => [b.name, b.groups.map((g) => g.value)]), [
-    ["Notes", ["x", EMPTY]],
+    ["Treatment", ["x", EMPTY]],
     ["Thickness", ["100 nm", "120 nm"]],
   ]);
   assert.deepEqual(sampleGroups({ info: { rows: ROWS }, variations: [] }), { kind: "none" });
@@ -332,7 +343,7 @@ test("varying columns that do not cross are blocks of their own; an empty value 
 
 test("a row the sheet lost its label for is named by its row", () => {
   const rows = [{ row: 3, label: null, subbatch: "0" }, { row: 4, label: "2", subbatch: "0" }];
-  const view = { info: { rows }, variations: [variation("Notes", [["x", [3]], ["y", [4]]])] };
+  const view = { info: { rows }, variations: [variation("Treatment", [["x", [3]], ["y", [4]]])] };
   assert.deepEqual(sampleGroups(view).blocks[0].groups.map((g) => g.labels), [["row 3"], ["2"]]);
   // a view without rows (an older server): every sample by its row
   const bare = { info: { samples: 2 }, variations: view.variations };

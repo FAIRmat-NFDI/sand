@@ -117,6 +117,7 @@ function renderSamples(groups) {
       head.append(el("span", "sample-axis-name", block.step));
       row.append(head);
       const cells = el("div", "sample-cells");
+      cells.style.setProperty("--cells", String(block.groups.length));
       for (const group of block.groups) {
         const cell = el("div", "sample-cell");
         cell.append(el("span", "sample-cell-value", group.value));

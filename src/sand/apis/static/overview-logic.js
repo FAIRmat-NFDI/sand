@@ -69,6 +69,15 @@ function isNote(param) {
   return /(^|_)(notes?|comments?|remarks?)($|_)/.test(fieldKey(param.name));
 }
 
+// a note on some samples is not a process parameter that varies
+function variesOf(param) {
+  return param.values.length > 1 && !isNote(param);
+}
+
+function stepVaries(step) {
+  return step.params ? step.params.some(variesOf) : Boolean(step.varies);
+}
+
 // How the lab writes a value. The unit says what a number is ("3 mbar",
 // "250 nm"), so the column's measure word goes; the other words stay as
 // a short qualifier only where needed: for a time or a temperature
@@ -113,7 +122,7 @@ function isCategory(param) {
 // a parameter as one value of a line; `drop` are the words the line's
 // label already says, `alone` is a value with no label before it
 function valueOf(p, changed, { drop = new Set(), alone = false, unitCount = new Map() } = {}) {
-  const value = { text: valueCell(p), varies: p.values.length > 1, changed: changeNote(p.column_id, changed) };
+  const value = { text: valueCell(p), varies: variesOf(p), changed: changeNote(p.column_id, changed) };
   const one = p.values.length === 1 ? String(p.values[0].value ?? "").trim().toLowerCase() : null;
   if (p.type === "text" && one !== null && one in FLAGS) {
     const words = wordsOf(p).map(lower).join(" ");
@@ -216,7 +225,7 @@ export function stepCard(step, changed = []) {
   const groups = new Map();
   const singles = items.filter((i) => i.single && !i.value);
   for (const item of singles) {
-    if (isNote(item.single) && item.single.values.length === 1) continue;
+    if (isNote(item.single)) continue;
     const word = firstWord(item.single.name);
     const key = word.toLowerCase();
     if (!groups.has(key)) groups.set(key, { word, items: [] });
@@ -225,7 +234,7 @@ export function stepCard(step, changed = []) {
   const notes = [];
   for (const item of singles) {
     const p = item.single;
-    if (isNote(p) && p.values.length === 1) {
+    if (isNote(p)) {
       notes.push({ label: "", note: true, values: [valueOf(p, changed)] });
       items.splice(items.indexOf(item), 1);
       continue;
@@ -269,7 +278,7 @@ export function stepCard(step, changed = []) {
     material: head.material || "",
     sub: [head.layer, head.tool].filter(Boolean).join(" · "),
     empty: step.empty,
-    varies: step.varies,
+    varies: stepVaries(step),
     lines,
   };
 }
@@ -299,7 +308,7 @@ function valueLabel(value, unit) {
 // Without a crossing pair, each varying column is its own block.
 export function sampleGroups(view) {
   const byRow = new Map((view.info?.rows || []).map((r) => [r.row, r.label]));
-  const vars = (view.variations || []).filter((v) => v.values.length > 1);
+  const vars = (view.variations || []).filter((v) => v.values.length > 1 && !isNote(v));
   if (!vars.length) return { kind: "none" };
   const block = (v) => ({
     ...axis(v),
@@ -334,7 +343,7 @@ export function sampleGroups(view) {
 export function overviewSummary(view) {
   const steps = view.steps || [];
   const parts = [steps.length + (steps.length === 1 ? " step" : " steps")];
-  const varying = steps.filter((s) => s.varies).map((s) => s.position);
+  const varying = steps.filter(stepVaries).map((s) => s.position);
   if (varying.length === 1) parts.push("step " + varying[0] + " varies");
   else if (varying.length) parts.push("steps " + varying.join(", ") + " vary");
   const warnings = (view.warnings || []).length;

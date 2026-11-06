@@ -75,6 +75,18 @@ initVoiceMode();
 // (the selection changed meanwhile) is dropped.
 let selectionGeneration = 0;
 const workspace = document.getElementById("workspace");
+// A sheet uploaded this recently may still be in NOMAD's processing, so
+// "no sheet" (404) is read again until the sheet shows up or the sheet
+// is no longer fresh.
+const FRESH_MS = 2 * 60 * 1000;
+const RETRY_MS = 2000;
+
+function isFresh(experiment) {
+  const created = new Date(experiment.created || 0).getTime();
+  return Date.now() - created < FRESH_MS;
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 onExperimentSelected(async (experiment) => {
   const generation = ++selectionGeneration;
@@ -92,6 +104,10 @@ onExperimentSelected(async (experiment) => {
   let view;
   try {
     view = await fetchSheetView(experiment);
+    while (view === null && isFresh(experiment) && generation === selectionGeneration) {
+      await sleep(RETRY_MS);
+      view = await fetchSheetView(experiment);
+    }
   } catch (err) {
     if (generation !== selectionGeneration) return;
     showError("Could not read the sheet: " + err.message);
