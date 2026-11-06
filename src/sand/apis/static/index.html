@@ -35,11 +35,11 @@
           </div>
           <div class="sheet-actions">
             <div class="sheet-switch">
-              <button class="btn btn-outlined" id="sheets-btn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="sheets-menu" hidden>
+              <button class="btn btn-outlined" id="sheets-btn" type="button" aria-expanded="false" aria-controls="sheets-menu" hidden>
                 <span class="material-icons">expand_more</span>
                 <span id="sheets-btn-label">Other sheets</span>
               </button>
-              <ul class="sheet-menu" id="sheets-menu" role="listbox" aria-label="Your sheets" hidden></ul>
+              <ul class="sheet-menu" id="sheets-menu" aria-label="Your sheets" hidden></ul>
             </div>
             <button class="btn btn-primary sheet-only" id="download-final-btn" type="button">
               <span class="material-icons">download</span>
@@ -57,7 +57,7 @@
 
         <div class="sheet-upload" id="sheet-upload" hidden>
           <h2 class="sheet-name sheet-upload-intro">Upload the Excel sheet to update</h2>
-          <div class="drop-zone" id="drop-zone">
+          <div class="drop-zone" id="drop-zone" tabindex="-1">
             <span class="material-icons">upload_file</span>
             <span class="drop-text" id="drop-text">Drop the Excel sheet here, or</span>
             <button class="btn btn-outlined btn-small" id="choose-sheet-btn" type="button">Choose a file</button>

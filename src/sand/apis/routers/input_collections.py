@@ -318,6 +318,8 @@ async def create_sheet_input_collection(
 
     return SheetCollectionResponse(
         name=name,
+        # NOMAD stamps the entry a moment later; the list shows this one
+        created=datetime.now(timezone.utc).isoformat(),
         sheet=_sheet_summary(sheet, xlsx),
         **_entry_response(voice, result.upload_id, result.entry_id),
     )

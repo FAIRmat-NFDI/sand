@@ -61,7 +61,7 @@ function render() {
 // Each resolves to "" or to what the user has to do.
 
 async function checkExperiment() {
-  return selectedExperiment() ? "" : "Select an experiment.";
+  return selectedExperiment() ? "" : "Open a sheet first.";
 }
 
 async function checkLogin() {

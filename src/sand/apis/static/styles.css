@@ -148,15 +148,6 @@ body {
   box-shadow: 0 0 0 1px #2A4CDF;
 }
 
-.text-field-label {
-  font-size: 0.75rem;
-  color: #666;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 8px;
-  display: block;
-}
-
 /* Controls row */
 .controls {
   display: flex;
@@ -249,9 +240,11 @@ body {
   color: #555;
 }
 
-/* no sheet open: the drop zone stands where the header will be */
+/* no sheet open: the drop zone stands where the header will be; an
+   experiment made without a sheet has nothing to download */
 .sheet-header.no-sheet .sheet-title,
-.sheet-header.no-sheet .sheet-only {
+.sheet-header.no-sheet .sheet-only,
+.sheet-header.sheet-missing .sheet-only {
   display: none;
 }
 
@@ -297,7 +290,7 @@ body {
   outline: none;
 }
 
-.sheet-menu-item[aria-selected="true"] {
+.sheet-menu-item[aria-current] {
   color: #2A4CDF;
   font-weight: 600;
 }
@@ -368,9 +361,11 @@ body {
   color: #2A4CDF;
 }
 
-.drop-zone.drag-over {
+.drop-zone.drag-over,
+.drop-zone:focus-visible {
   border-color: #2A4CDF;
   background: #eef1fb;
+  outline: none;
 }
 
 .drop-zone.has-file {

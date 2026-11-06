@@ -30,10 +30,12 @@ function withUnit(field) {
 // then every other field as "name value" on a second, quieter line.
 // Nothing is invented: a field the sheet lacks is left out.
 export function metaLines(info) {
-  const fields = new Map((info.fields || []).map((f) => [fieldKey(f.name || f.header), f]));
+  // a blank cell is no value; two columns with the same words both show
+  const all = (info.fields || []).filter((f) => f.value !== "");
+  const used = new Set();
   const take = (key) => {
-    const f = fields.get(key);
-    fields.delete(key);
+    const f = all.find((g) => !used.has(g) && fieldKey(g.name || g.header) === key);
+    if (f) used.add(f);
     return f;
   };
   const main = [];
@@ -54,7 +56,7 @@ export function metaLines(info) {
   if (dimension) main.push(withUnit(dimension));
   const pixels = take("number_of_pixels");
   if (pixels) main.push(pixels.value + (pixels.value === "1" ? " pixel" : " pixels"));
-  const more = [...fields.values()].map((f) => (f.name || f.header) + " " + withUnit(f));
+  const more = all.filter((f) => !used.has(f)).map((f) => (f.name || f.header) + " " + withUnit(f));
   return { main, more };
 }
 

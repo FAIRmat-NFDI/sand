@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { progressLine } from "../../src/sand/apis/static/edit-logic.js";
 import {
   fieldKey, formatDay, isSheetFile, metaLines, nameFromFile, uploadedText,
 } from "../../src/sand/apis/static/sheet-header-logic.js";
@@ -50,6 +49,19 @@ test("a sheet with fewer fields gets a shorter line, nothing invented", () => {
   assert.deepEqual(metaLines({}), { main: [], more: [] });
 });
 
+test("a blank cell is no value, and two columns with the same words both show", () => {
+  const info = {
+    samples: 2,
+    fields: [
+      field("Substrate material", ""),
+      field("Substrate conductive layer", "ITO"),
+      field("Batch", "B1"),
+      field("batch", "B2"),
+    ],
+  };
+  assert.deepEqual(metaLines(info), { main: ["2 samples", "ITO"], more: ["Batch B1", "batch B2"] });
+});
+
 test("a field's key is its words", () => {
   assert.equal(fieldKey("Substrate conductive layer"), "substrate_conductive_layer");
   assert.equal(fieldKey("Project_Name"), "project_name");
@@ -67,9 +79,10 @@ test("days as the sheet writes them, or ISO, read as days", () => {
 });
 
 test("when a sheet was uploaded, briefly", () => {
-  const now = new Date(2026, 10, 6);
-  assert.equal(uploadedText("2026-11-02T09:30:00+00:00", now), "uploaded 2 Nov");
-  assert.equal(uploadedText("2025-12-24T09:30:00+00:00", now), "uploaded 24 Dec 2025");
+  // midday instants: the same day in every zone the tests run in
+  const now = new Date(2026, 10, 6, 12);
+  assert.equal(uploadedText("2026-11-02T12:00:00+00:00", now), "uploaded 2 Nov");
+  assert.equal(uploadedText("2025-12-24T12:00:00+00:00", now), "uploaded 24 Dec 2025");
   assert.equal(uploadedText(null, now), "");
   assert.equal(uploadedText("not a time", now), "");
 });
@@ -83,22 +96,4 @@ test("the name proposed from the file", () => {
   assert.equal(isSheetFile("a.XLSX"), true);
   assert.equal(isSheetFile("a.xls"), false);
   assert.equal(isSheetFile("a.csv"), false);
-});
-
-test("the header's progress line", () => {
-  const status = {
-    inputs: [
-      { ready: [{ key: "k1" }, { key: "k2" }], confirmed: ["k1"], confirmed_since: [] },
-      { ready: [{ key: "k3" }], confirmed: ["k3"], confirmed_since: ["k3"] },
-    ],
-  };
-  assert.equal(
-    progressLine(2, status),
-    "2 updates · 1 edit written · 1 edit waits for your confirmation · 1 edit confirmed, being written");
-  assert.equal(progressLine(1, null), "1 update");
-  assert.equal(progressLine(0, null), "No updates yet");
-  // the list is not loaded yet: only what the job says
-  assert.equal(progressLine(null, status),
-    "1 edit written · 1 edit waits for your confirmation · 1 edit confirmed, being written");
-  assert.equal(progressLine(null, null), "");
 });

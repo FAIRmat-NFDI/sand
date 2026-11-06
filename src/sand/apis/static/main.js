@@ -84,14 +84,15 @@ onExperimentSelected(async (experiment) => {
     showEdit(null, null);
     return;
   }
-  showSheet(experiment, null);
+  showSheet(experiment); // the name now, the rest when the view is read
   let view;
   try {
     view = await fetchSheetView(experiment);
   } catch (err) {
     if (generation !== selectionGeneration) return;
     showError("Could not read the sheet: " + err.message);
-    showEdit(null, null); // unknown whether there is a sheet: no claim
+    showSheet(experiment); // unknown whether there is a sheet: no claim
+    showEdit(null, null);
     return;
   }
   if (generation !== selectionGeneration) return;

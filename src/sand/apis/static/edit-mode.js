@@ -50,9 +50,8 @@ let inputsSeen = null; // {entryId, items}
 let statusKnown = false; // the shown experiment's status was fetched once
 let running = false; // a job of the shown experiment runs, or is being started
 let lastStatus = null; // the last completed status of the shown experiment
-// the sheet the header was last read for: the view's sha256 at selection,
-// then the final sha of each completed job it was re-read after (once
-// per job, whatever the view then shows)
+// the sheet the header was last read for (the view's sha at selection,
+// then each completed job's final); null when a re-read failed
 let headerFor = null;
 let reportsShown = {}; // the last status's reports, by entry id
 let readFor = null; // readKey of the inputs the last job was started for
@@ -235,10 +234,7 @@ async function poll(experiment, generation) {
     renderResult(status);
     updateProgress();
     // the job wrote a sheet the header has not been read for yet
-    if (status.final && status.final !== headerFor) {
-      headerFor = status.final;
-      refreshSheet(experiment);
-    }
+    if (status.final && status.final !== headerFor) refreshSheet(experiment, status.final);
     settle(experiment, status);
     return;
   }
@@ -394,27 +390,32 @@ export function showEdit(experiment, view) {
     return;
   }
   if (!view) {
-    // made before sheets, or by the other tool of this page's past
-    sheetSummaryEl.textContent = "This experiment has no sheet to update.";
+    // made before sheets, or by the other tool of this page's past:
+    // the header says so
+    sheetSummaryEl.textContent = "";
     return;
   }
   describeSheet(view);
   startPolling(experiment);
 }
 
+// the header names the sheet; this line says which version the card is about
 function describeSheet(view) {
-  sheetSummaryEl.textContent = "Sheet “" + view.sheet + "”: " + view.info.samples
-    + (view.info.samples === 1 ? " sample" : " samples")
-    + (view.source === "edited" ? ", with the confirmed edits." : ", as uploaded.");
+  sheetSummaryEl.textContent = view.source === "edited"
+    ? "The sheet with the confirmed edits."
+    : "The sheet as uploaded.";
 }
 
-// the header follows the sheet the last job left
-async function refreshSheet(experiment) {
+// the header follows the sheet the last job left (`final`: its sha);
+// a failed read is tried again at the next completed poll
+async function refreshSheet(experiment, final) {
+  headerFor = final;
   let view;
   try {
     view = await fetchSheetView(experiment);
   } catch {
-    return; // the next completed poll tries again
+    if (headerFor === final) headerFor = null;
+    return;
   }
   if (!view || !stillShown(experiment)) return;
   showSheet(experiment, view);

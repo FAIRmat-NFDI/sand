@@ -34,6 +34,7 @@ let experimentsById = {};
 let selectedId = "";
 let selectionHandler = () => {};
 let locked = false; // a recording runs: no switching, no new sheet
+let uploading = false;
 let chosenFile = null; // the file dropped or chosen, not uploaded yet
 
 export function selectedExperiment() {
@@ -76,9 +77,12 @@ function renderParts(el, parts) {
 }
 
 // The header for the selected sheet: `view` is the sheet view (GET
-// .../sheet-view), null for an experiment made without a sheet.
+// .../sheet-view), null for an experiment made without a sheet,
+// undefined while it is not known (loading, or the read failed): then
+// the header claims nothing about the sheet.
 export function showSheet(experiment, view) {
   header.classList.toggle("no-sheet", !experiment);
+  header.classList.toggle("sheet-missing", view === null);
   if (!experiment) {
     sheetNameEl.textContent = "";
     experimentLink.hidden = true;
@@ -91,7 +95,7 @@ export function showSheet(experiment, view) {
   experimentLink.href = experiment.entry_url;
   experimentLink.hidden = false;
   if (!view) {
-    renderParts(sheetMeta, ["This experiment has no sheet to update."]);
+    renderParts(sheetMeta, view === null ? ["Made without a sheet: nothing to update here."] : []);
     renderParts(sheetMetaMore, []);
     return;
   }
@@ -150,8 +154,7 @@ function menuItem(experiment) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "sheet-menu-item";
-  btn.setAttribute("role", "option");
-  btn.setAttribute("aria-selected", String(experiment.entry_id === selectedId));
+  if (experiment.entry_id === selectedId) btn.setAttribute("aria-current", "true");
   const name = document.createElement("span");
   name.className = "sheet-menu-name";
   name.textContent = experiment.name || experiment.upload_id;
@@ -159,7 +162,10 @@ function menuItem(experiment) {
   when.className = "sheet-menu-when";
   when.textContent = uploadedText(experiment.created);
   btn.append(name, when);
-  btn.addEventListener("click", () => select(experiment.entry_id));
+  btn.addEventListener("click", () => {
+    select(experiment.entry_id);
+    sheetsBtn.focus();
+  });
   li.append(btn);
   return li;
 }
@@ -171,7 +177,6 @@ function openMenu() {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "sheet-menu-item";
-  btn.setAttribute("role", "option");
   const icon = document.createElement("span");
   icon.className = "material-icons";
   icon.textContent = "upload_file";
@@ -179,13 +184,13 @@ function openMenu() {
   btn.addEventListener("click", () => {
     closeMenu();
     showUpload(true);
-    sheetNameInput.focus();
+    dropZone.focus();
   });
   li.append(btn);
   sheetsMenu.append(li);
   sheetsMenu.hidden = false;
   sheetsBtn.setAttribute("aria-expanded", "true");
-  sheetsMenu.querySelector("[aria-selected='true']")?.focus();
+  (sheetsMenu.querySelector("[aria-current]") || sheetsMenu.querySelector("button"))?.focus();
 }
 
 function closeMenu() {
@@ -216,6 +221,8 @@ function resetUpload() {
 
 function takeFile(file) {
   clearError();
+  sheetProblems.replaceChildren();
+  sheetProblems.hidden = true;
   if (!file) return;
   if (!isSheetFile(file.name)) {
     showError("Only an Excel sheet (.xlsx) can be updated here.");
@@ -230,6 +237,8 @@ function takeFile(file) {
 // A sheet becomes an experiment whose updates edit it. A refused sheet
 // shows the problems verbatim, under the drop zone.
 async function uploadSheet() {
+  // Enter in the name field comes here too: the same guards as the button
+  if (locked || uploading) return;
   clearError();
   sheetProblems.replaceChildren();
   sheetProblems.hidden = true;
@@ -240,6 +249,7 @@ async function uploadSheet() {
   const form = new FormData();
   form.append("file", chosenFile);
   form.append("name", sheetNameInput.value.trim());
+  uploading = true;
   uploadBtn.disabled = true;
   try {
     const res = await fetch("api/input-collections/from-sheet", { method: "POST", body: form });
@@ -262,12 +272,12 @@ async function uploadSheet() {
       return;
     }
     const created = await res.json();
-    created.created = new Date().toISOString();
     setExperiments([created, ...experiments]);
     select(created.entry_id);
   } catch (err) {
     showError("Network error: " + err.message);
   } finally {
+    uploading = false;
     uploadBtn.disabled = locked;
   }
 }
