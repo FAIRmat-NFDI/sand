@@ -77,13 +77,10 @@
       </header>
 
       <section class="card sheet-overview" id="sheet-overview" hidden>
-        <div class="overview-head">
+        <button class="overview-head" id="overview-toggle" type="button" aria-expanded="true" aria-controls="overview-body">
           <h2 class="section-title"><span class="material-icons">view_agenda</span>Overview <span class="section-count" id="overview-summary"></span></h2>
-          <button class="btn btn-quiet btn-small" id="overview-toggle" type="button" aria-expanded="true" aria-controls="overview-body">
-            <span class="material-icons">unfold_less</span>
-            <span id="overview-toggle-label">Fold</span>
-          </button>
-        </div>
+          <span class="overview-toggle-hint"><span id="overview-toggle-label">Hide</span><span class="material-icons" id="overview-toggle-icon">expand_less</span></span>
+        </button>
         <div id="overview-body">
           <p class="overview-warnings" id="overview-warnings" role="status" hidden></p>
           <div class="overview-block">

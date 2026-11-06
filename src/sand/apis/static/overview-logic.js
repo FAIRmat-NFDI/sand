@@ -41,14 +41,13 @@ export function valueCell(param) {
   return text;
 }
 
-// what the confirmed edits did to a row's columns, for the hover: "was
-// 3000" for one column from one old value, else "edited on N samples"
-function changeNote(columnIds, changed) {
-  const cells = changed.filter((c) => columnIds.has(c.column_id));
+// what the confirmed edits did to a column, for the hover: "was 3000"
+// from one old value, else "edited on N samples"
+function changeNote(columnId, changed) {
+  const cells = changed.filter((c) => c.column_id === columnId);
   if (!cells.length) return "";
-  const columns = new Set(cells.map((c) => c.column_id));
   const olds = new Set(cells.map((c) => c.old));
-  if (columns.size === 1 && olds.size === 1) return "was " + [...olds][0];
+  if (olds.size === 1) return "was " + [...olds][0];
   const rows = new Set(cells.map((c) => c.row)).size;
   return "edited on " + rows + (rows === 1 ? " sample" : " samples");
 }
@@ -66,25 +65,32 @@ function isNameColumn(param) {
   return param.type === "text" && (/_name(_\d+)?$/.test(key) || /^solvent_\d+$/.test(key));
 }
 
-function columnRow(p, changed) {
-  return {
-    varies: p.values.length > 1,
-    changed: changeNote(new Set([p.column_id]), changed),
-    label: p.name,
-    value: valueCell(p),
-  };
+function isNote(param) {
+  return /(^|_)(notes?|comments?|remarks?)($|_)/.test(fieldKey(param.name));
+}
+
+// a parameter as one value of a line
+function valueOf(p, changed) {
+  return { text: valueCell(p), varies: p.values.length > 1, changed: changeNote(p.column_id, changed) };
+}
+
+function firstWord(name) {
+  return String(name).trim().split(/\s+/)[0];
 }
 
 // One step card: the headline (material, or the step type), its
-// subtitle (layer · tool), and rows. The measures of one family fold
-// into one row behind the family's name column ("Ethanol  80 uL",
-// "PbI2  250 nm · 1 angstrom/s") or behind the family's label when the
-// name is missing ("Spin  3000 rpm · 30 s"); every other column (a
-// type, a unitless number, a varying name) is a labelled row of its own.
+// subtitle (layer · tool), and lines written the way the lab notes a
+// step: a label and the values after it. The measures of one column
+// family make one line behind the family's name ("Ethanol  80 uL",
+// "PbI2  25 °C · 250 nm · 1 angstrom/s"), or behind the family's label
+// without one ("Spin  3000 rpm · 30 s"); columns that share their first
+// word make one line ("Annealing  10 min · 100 °C · N2"); a note stands
+// alone at the end. Each value keeps its column: a varying one is a
+// chip, a changed one carries its old value.
 export function stepCard(step, changed = []) {
   const head = {};
-  const rows = [];
   const families = new Map(); // "group:index" or column id -> params, in sheet order
+  const order = new Map(step.params.map((p, i) => [p, i]));
   for (const p of step.params) {
     const role = HEADLINE[fieldKey(p.name)];
     if (role && p.values.length === 1 && !head[role]) {
@@ -95,30 +101,55 @@ export function stepCard(step, changed = []) {
     if (!families.has(key)) families.set(key, []);
     families.get(key).push(p);
   }
+  const lines = []; // with `at`, the first column's place, to keep the sheet's order
+  const singles = [];
   for (const params of families.values()) {
     const family = params[0].family;
     const label = family && FAMILY_LABELS[family.group];
     const names = params.filter((p) => isNameColumn(p) && p.values.length === 1);
     // numbered columns without a group share a key by number alone, so
     // two names there ("Material name 1", "Source material name 1") are
-    // two things: no merging
+    // two things: nothing merges
     const name = names.length === 1 || (names.length && label) ? names[0] : null;
-    const measures = params.filter((p) => p !== name && p.unit);
-    const merge = family && ((label && (name || measures.length > 1)) || (name && measures.length));
-    if (!merge) {
-      for (const p of params) rows.push(columnRow(p, changed));
+    const rest = params.filter((p) => p !== name);
+    if (!family || !(name || (label && rest.length > 1))) {
+      singles.push(...params);
       continue;
     }
-    const merged = name ? [name, ...measures] : measures;
-    const value = measures.map(valueCell).filter(Boolean).join(" · ");
-    rows.push({
-      varies: merged.some((p) => p.values.length > 1),
-      changed: changeNote(new Set(merged.map((p) => p.column_id)), changed),
+    const values = rest.map((p) => valueOf(p, changed)).filter((v) => v.text);
+    const at = order.get(params[0]);
+    if (name && !values.length) {
       // only the name is filled: "Solvent  Ethanol"
-      label: value ? (name ? name.values[0].value : familyLabel(family, families)) : familyLabel(family, families),
-      value: value || valueCell(name),
-    });
-    for (const p of params) if (!merged.includes(p)) rows.push(columnRow(p, changed));
+      lines.push({ at, label: label ? familyLabel(family, families) : name.name, values: [valueOf(name, changed)] });
+    } else {
+      // the material's own line needs no label under its headline
+      const text = name ? name.values[0].value : familyLabel(family, families);
+      lines.push({ at, label: text === head.material ? "" : text, values });
+    }
+  }
+  // columns that share their first word: one line, the word as label,
+  // or none when it is the step's own word ("Annealing" in an annealing)
+  const groups = new Map();
+  for (const p of singles) {
+    if (isNote(p) && p.values.length === 1) continue;
+    const word = firstWord(p.name);
+    const key = word.toLowerCase();
+    if (!groups.has(key)) groups.set(key, { word, params: [] });
+    groups.get(key).params.push(p);
+  }
+  const stepWord = firstWord(step.step_type).toLowerCase();
+  for (const [key, group] of groups) {
+    const at = order.get(group.params[0]);
+    if (group.params.length === 1) {
+      const p = group.params[0];
+      lines.push({ at, label: p.name, values: [valueOf(p, changed)] });
+    } else {
+      lines.push({ at, label: key === stepWord ? "" : group.word, values: group.params.map((p) => valueOf(p, changed)) });
+    }
+  }
+  lines.sort((x, y) => x.at - y.at);
+  for (const p of singles) {
+    if (isNote(p) && p.values.length === 1) lines.push({ label: "", note: true, values: [valueOf(p, changed)] });
   }
   return {
     position: step.position,
@@ -128,7 +159,7 @@ export function stepCard(step, changed = []) {
     sub: [head.layer, head.tool].filter(Boolean).join(" · "),
     empty: step.empty,
     varies: step.varies,
-    rows,
+    lines: lines.map(({ at, ...line }) => line),
   };
 }
 

@@ -9,7 +9,7 @@ import { overviewSummary, sampleGroups, stepCard } from "./overview-logic.js";
 const section = document.getElementById("sheet-overview");
 const summaryEl = document.getElementById("overview-summary");
 const toggleBtn = document.getElementById("overview-toggle");
-const toggleIcon = toggleBtn.querySelector(".material-icons");
+const toggleIcon = document.getElementById("overview-toggle-icon");
 const toggleLabel = document.getElementById("overview-toggle-label");
 const body = document.getElementById("overview-body");
 const warningsEl = document.getElementById("overview-warnings");
@@ -33,8 +33,8 @@ function el(tag, className, text) {
 function setOpen(open) {
   body.hidden = !open;
   toggleBtn.setAttribute("aria-expanded", String(open));
-  toggleIcon.textContent = open ? "unfold_less" : "unfold_more";
-  toggleLabel.textContent = open ? "Fold" : "Unfold";
+  toggleIcon.textContent = open ? "expand_less" : "expand_more";
+  toggleLabel.textContent = open ? "Hide" : "Show";
 }
 
 // the user's choice; else open without updates, folded with some. While
@@ -67,20 +67,23 @@ function renderStep(card) {
     article.append(el("p", "step-sub", "No data"));
     return article;
   }
-  const dl = el("dl", "step-params");
-  for (const row of card.rows) {
-    const line = el("div", "step-param");
-    line.append(el("dt", "", row.label));
-    const dd = el("dd", "", row.value);
-    if (row.varies) dd.classList.add("param-varies");
-    if (row.changed) {
-      dd.classList.add("param-changed");
-      dd.title = row.changed;
-    }
-    line.append(dd);
-    dl.append(line);
+  const lines = el("div", "step-lines");
+  for (const line of card.lines) {
+    const p = el("p", line.note ? "step-line step-note" : "step-line");
+    if (line.label) p.append(el("span", "line-label", line.label));
+    line.values.forEach((value, i) => {
+      if (i) p.append(el("span", "line-sep", "·"));
+      const span = el("span", "line-value", value.text);
+      if (value.varies) span.classList.add("value-varies");
+      if (value.changed) {
+        span.classList.add("value-changed");
+        span.title = value.changed;
+      }
+      p.append(span);
+    });
+    lines.append(p);
   }
-  article.append(dl);
+  article.append(lines);
   return article;
 }
 

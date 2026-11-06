@@ -396,11 +396,42 @@ body {
   padding: 16px 24px 20px;
 }
 
+/* the whole head row folds and unfolds the overview */
 .overview-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.overview-head:focus-visible {
+  outline: 2px solid #2A4CDF;
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+.overview-toggle-hint {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #2A4CDF;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  white-space: nowrap;
+}
+
+.overview-toggle-hint .material-icons {
+  font-size: 20px;
 }
 
 .overview-head .section-title {
@@ -457,11 +488,19 @@ body {
 }
 
 /* the steps: one card each, the one that varies in blue */
+/* one row of cards that slides sideways; the row's height is the tallest card's */
 .step-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
+  display: flex;
   gap: 12px;
-  align-items: start;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding-bottom: 8px; /* room for the scrollbar */
+  scrollbar-width: thin;
+}
+
+.step-grid > .step-card {
+  flex: 0 0 248px;
+  scroll-snap-align: start;
 }
 
 .step-card {
@@ -544,55 +583,62 @@ body {
   color: #6b7079;
 }
 
-.step-params {
+/* the step's lines, written like notes: a quiet label, the values after it */
+.step-lines {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
   border-top: 1px solid #eef0f3;
   padding-top: 10px;
-  font-size: 0.82rem;
-}
-
-.step-param {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.step-param dt {
-  color: #6b7079;
-  overflow-wrap: anywhere;
-}
-
-.step-param dd {
+  font-size: 0.84rem;
+  line-height: 1.5;
   color: #1f2430;
-  text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.step-line {
   overflow-wrap: anywhere;
 }
 
-.step-param dd.param-varies {
+.line-label {
+  color: #6b7079;
+  margin-right: 7px;
+}
+
+.line-sep {
+  color: #9aa0aa;
+  margin: 0 5px;
+}
+
+.step-note {
+  color: #6b7079;
+  font-style: italic;
+}
+
+.step-note .line-value::before { content: "\201C"; }
+.step-note .line-value::after { content: "\201D"; }
+
+.line-value.value-varies {
   background: #2A4CDF;
   color: #fff;
   border-radius: 3px;
   padding: 0 6px;
-  flex-shrink: 0; /* the label wraps before the chip does */
-  max-width: 70%;
+  white-space: nowrap;
 }
 
 /* a value the confirmed edits changed: a dot, the old value on hover */
-.step-param dd.param-changed::before {
+.line-value.value-changed::before {
   content: "";
   display: inline-block;
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: #2A4CDF;
-  margin-right: 6px;
+  margin-right: 5px;
   vertical-align: middle;
 }
 
-.step-param dd.param-varies.param-changed::before {
+.line-value.value-varies.value-changed::before {
   background: #fff;
 }
 
