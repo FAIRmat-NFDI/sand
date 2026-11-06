@@ -104,7 +104,8 @@ class Catalog:
     def names(self, rows) -> str:
         """Excel rows -> the sample names, for messages: rows (3, 4, 5, 8)
         -> '1–3, 7'. With repeated labels: '1–3 of subbatch 0, 1 of
-        subbatch 1'. A sample without a label is 'row 5'."""
+        subbatch 1'. A sample without a label is 'row 5'; one without a
+        subbatch is named without one."""
         info = {s.row: s for s in self.samples}
         names = {r: info[r].label or f'row {r}' for r in rows}
         if not self.needs_subbatch:
@@ -113,7 +114,9 @@ class Catalog:
         for r in rows:
             by_subbatch.setdefault(info[r].subbatch, []).append(names[r])
         return ', '.join(
-            f'{sample_ranges(labels)} of subbatch {subbatch}'
+            sample_ranges(labels)
+            if subbatch is None
+            else f'{sample_ranges(labels)} of subbatch {subbatch}'
             for subbatch, labels in by_subbatch.items()
         )
 

@@ -297,6 +297,19 @@ def test_a_changed_cell_is_named_as_the_sheet_names_its_row_now(synthetic_xlsx):
         '3 of subbatch 0',
     ]
 
+    # row 5 lost both its Sample and its Subbatch: 'row 5', no subbatch
+    def repeat_and_clear(ws):
+        repeat(ws)
+        ws[f'{sample}5'] = None
+        ws[f'{subbatch}5'] = None
+
+    view = sheet_view(build(edited(final, repeat_and_clear)), log)
+    assert [c['sample'] for c in view['changed']] == [
+        '1 of subbatch 0',
+        '1 of subbatch 1',
+        'row 5',
+    ]
+
 
 def test_without_a_log_nothing_is_changed(view):
     assert view['changed'] == []

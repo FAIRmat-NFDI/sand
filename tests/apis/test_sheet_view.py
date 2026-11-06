@@ -129,6 +129,7 @@ async def test_the_edited_sheet_when_the_files_hold_together(voice, synthetic_xl
         ORIGINAL_FILE,
         FINAL_FILE,
         CHANGELOG_FILE,
+        STATUS_FILE,
     }
     assert not any(waited for _, waited in voice.writer.reads)
 

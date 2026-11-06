@@ -46,9 +46,10 @@ class FakeWriter:
         self.reads.append((name, wait))
         return self.files.get(name)
 
-    async def read_json(self, client, upload_id, name):
-        # like the real writer: None when absent or not a JSON object
-        raw = self.files.get(name)
+    async def read_json(self, client, upload_id, name, *, wait=True):
+        # like the real writer: through read_raw_file, so `reads` sees it;
+        # None when absent or not a JSON object
+        raw = await self.read_raw_file(client, upload_id, name, wait=wait)
         if raw is None:
             return None
         try:

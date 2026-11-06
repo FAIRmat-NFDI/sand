@@ -397,7 +397,9 @@ async def sheet_view(
                 raw_log = await voice.writer.read_raw_file(
                     client, upload_id, CHANGELOG_FILE, wait=False
                 )
-                status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
+                status = await voice.writer.read_json(
+                    client, upload_id, STATUS_FILE, wait=False
+                )
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
@@ -411,8 +413,7 @@ async def sheet_view(
             'its changelog; this is the uploaded sheet'
         )
     elif log is not None and (
-        status is not None
-        and status.get('collection_entry_id') != collection_entry_id
+        status is not None and status.get('collection_entry_id') != collection_entry_id
     ):
         # the sheet files are the upload's; the edits came from another
         # collection's updates, so they are not this sheet's

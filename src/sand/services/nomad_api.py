@@ -363,10 +363,16 @@ class RawFileWriter:
         )
 
     async def read_json(
-        self, client: httpx.AsyncClient, upload_id: str, file_name: str
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        file_name: str,
+        *,
+        wait: bool = True,
     ) -> dict | None:
-        """The raw file's JSON object; None if absent or not a JSON object."""
-        raw = await self.read_raw_file(client, upload_id, file_name)
+        """The raw file's JSON object; None if absent or not a JSON object.
+        `wait` as in `read_raw_file`."""
+        raw = await self.read_raw_file(client, upload_id, file_name, wait=wait)
         if raw is None:
             return None
         try:
