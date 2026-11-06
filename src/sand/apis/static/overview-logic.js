@@ -41,27 +41,46 @@ export function valueCell(param) {
   return text;
 }
 
-// what the confirmed edits did to a column, for the hover: "was 3000",
-// or "edited on 3 samples" when the old values differ
+// what the confirmed edits did to a row's columns, for the hover: "was
+// 3000" for one column from one old value, else "edited on N samples"
 function changeNote(columnIds, changed) {
   const cells = changed.filter((c) => columnIds.has(c.column_id));
   if (!cells.length) return "";
+  const columns = new Set(cells.map((c) => c.column_id));
   const olds = new Set(cells.map((c) => c.old));
-  if (olds.size === 1) return "was " + [...olds][0];
-  return "edited on " + cells.length + " samples";
+  if (columns.size === 1 && olds.size === 1) return "was " + [...olds][0];
+  const rows = new Set(cells.map((c) => c.row)).size;
+  return "edited on " + rows + (rows === 1 ? " sample" : " samples");
 }
 
 function familyLabel(family, families) {
-  const base = FAMILY_LABELS[family.group] || family.group.replace(/_/g, " ");
+  const base = FAMILY_LABELS[family.group];
   const siblings = [...families.keys()].filter((k) => k.startsWith(family.group + ":")).length;
   return siblings > 1 ? base + " " + family.index : base;
 }
 
+// the column that names a family's thing: "Solvent 1 name", "Material
+// name 2", "Source material name 1", or a cleaning step's bare "Solvent 1"
+function isNameColumn(param) {
+  const key = fieldKey(param.name);
+  return param.type === "text" && (/_name(_\d+)?$/.test(key) || /^solvent_\d+$/.test(key));
+}
+
+function columnRow(p, changed) {
+  return {
+    varies: p.values.length > 1,
+    changed: changeNote(new Set([p.column_id]), changed),
+    label: p.name,
+    value: valueCell(p),
+  };
+}
+
 // One step card: the headline (material, or the step type), its
-// subtitle (layer · tool), and rows. Columns of one family (Solvent 1
-// name + volume, Rotation speed + time, Material name 2 + Thickness 2)
-// make one row, named by the family's text column: "Ethanol  80 uL",
-// "Spin  3000 rpm · 30 s". Other columns are a row each.
+// subtitle (layer · tool), and rows. The measures of one family fold
+// into one row behind the family's name column ("Ethanol  80 uL",
+// "PbI2  250 nm · 1 angstrom/s") or behind the family's label when the
+// name is missing ("Spin  3000 rpm · 30 s"); every other column (a
+// type, a unitless number, a varying name) is a labelled row of its own.
 export function stepCard(step, changed = []) {
   const head = {};
   const rows = [];
@@ -77,37 +96,29 @@ export function stepCard(step, changed = []) {
     families.get(key).push(p);
   }
   for (const params of families.values()) {
-    const ids = new Set(params.map((p) => p.column_id));
-    const row = {
-      varies: params.some((p) => p.values.length > 1),
-      changed: changeNote(ids, changed),
-    };
-    const name = params.find((p) => p.type === "text" && p.values.length === 1);
-    const rest = params.filter((p) => p !== name);
     const family = params[0].family;
-    // one row for the family when its label is known, or when a name
-    // column names the thing and the rest are measures with units
-    // ("PbI2  250 nm · 1 angstrom/s"); else a row per column
-    const merge = params.length > 1 && family
-      && (FAMILY_LABELS[family.group] || (name && rest.every((p) => p.unit)));
-    if (!merge && !(params.length === 1 && family && FAMILY_LABELS[family.group])) {
-      for (const p of params) {
-        rows.push({
-          varies: p.values.length > 1,
-          changed: changeNote(new Set([p.column_id]), changed),
-          label: p.name,
-          value: valueCell(p),
-        });
-      }
+    const label = family && FAMILY_LABELS[family.group];
+    const names = params.filter((p) => isNameColumn(p) && p.values.length === 1);
+    // numbered columns without a group share a key by number alone, so
+    // two names there ("Material name 1", "Source material name 1") are
+    // two things: no merging
+    const name = names.length === 1 || (names.length && label) ? names[0] : null;
+    const measures = params.filter((p) => p !== name && p.unit);
+    const merge = family && ((label && (name || measures.length > 1)) || (name && measures.length));
+    if (!merge) {
+      for (const p of params) rows.push(columnRow(p, changed));
       continue;
     }
-    const value = rest.map(valueCell).filter(Boolean).join(" · ");
-    if (name && value) {
-      rows.push({ ...row, label: name.values[0].value, value });
-    } else {
-      // only the name is filled ("Solvent  Ethanol"), or nothing names it
-      rows.push({ ...row, label: familyLabel(family, families), value: value || valueCell(name) });
-    }
+    const merged = name ? [name, ...measures] : measures;
+    const value = measures.map(valueCell).filter(Boolean).join(" · ");
+    rows.push({
+      varies: merged.some((p) => p.values.length > 1),
+      changed: changeNote(new Set(merged.map((p) => p.column_id)), changed),
+      // only the name is filled: "Solvent  Ethanol"
+      label: value ? (name ? name.values[0].value : familyLabel(family, families)) : familyLabel(family, families),
+      value: value || valueCell(name),
+    });
+    for (const p of params) if (!merged.includes(p)) rows.push(columnRow(p, changed));
   }
   return {
     position: step.position,
@@ -145,7 +156,7 @@ function valueLabel(value, unit) {
 // substrate temperature; the other varying columns are only named.
 // Without a crossing pair, each varying column is its own block.
 export function sampleGroups(view) {
-  const byRow = new Map((view.info.rows || []).map((r) => [r.row, r.label]));
+  const byRow = new Map((view.info?.rows || []).map((r) => [r.row, r.label]));
   const vars = (view.variations || []).filter((v) => v.values.length > 1);
   if (!vars.length) return { kind: "none" };
   const block = (v) => ({
@@ -153,23 +164,28 @@ export function sampleGroups(view) {
     groups: v.values.map((g) => ({ value: valueLabel(g.value, v.unit), labels: labelsOf(g.rows, byRow) })),
   });
   if (vars.length === 1) return { kind: "flat", blocks: [block(vars[0])], also: [] };
-  const sorted = [...vars].sort((x, y) => x.values.length - y.values.length);
-  const a = sorted[0];
-  const crossing = sorted.slice(1).filter((b) =>
-    a.values.every((ag) => b.values.every((bg) => intersect(ag.rows, bg.rows).length > 0)));
-  if (!crossing.length) {
-    return { kind: "flat", blocks: sorted.map(block), also: [] };
+  // fewest values first; among equals, a column with empty cells (a
+  // note on some samples) after the fully filled ones
+  const hasEmpty = (v) => v.values.some((g) => g.value === null);
+  const sorted = [...vars].sort((x, y) =>
+    x.values.length - y.values.length || Number(hasEmpty(x)) - Number(hasEmpty(y)));
+  const crosses = (a, b) =>
+    a.values.every((ag) => b.values.every((bg) => intersect(ag.rows, bg.rows).length > 0));
+  for (const a of sorted) {
+    const crossing = sorted.filter((b) => b !== a && b.values.length >= a.values.length && crosses(a, b));
+    if (!crossing.length) continue;
+    const b = crossing[crossing.length - 1]; // the most values among them
+    const rows = a.values.map((ag) => ({
+      value: valueLabel(ag.value, a.unit),
+      cells: b.values.map((bg) => ({
+        value: valueLabel(bg.value, b.unit),
+        labels: labelsOf(intersect(bg.rows, ag.rows), byRow),
+      })),
+    }));
+    const also = vars.filter((v) => v !== a && v !== b).map((v) => v.name);
+    return { kind: "cross", a: axis(a), b: axis(b), columns: b.values.map((g) => valueLabel(g.value, b.unit)), rows, also };
   }
-  const b = crossing[crossing.length - 1]; // the most values among them
-  const rows = a.values.map((ag) => ({
-    value: valueLabel(ag.value, a.unit),
-    cells: b.values.map((bg) => ({
-      value: valueLabel(bg.value, b.unit),
-      labels: labelsOf(intersect(bg.rows, ag.rows), byRow),
-    })),
-  }));
-  const also = vars.filter((v) => v !== a && v !== b).map((v) => v.name);
-  return { kind: "cross", a: axis(a), b: axis(b), columns: b.values.map((g) => valueLabel(g.value, b.unit)), rows, also };
+  return { kind: "flat", blocks: vars.map(block), also: [] };
 }
 
 // the one line the folded overview keeps: "9 steps · step 5 varies · 2 to check"

@@ -577,7 +577,7 @@ body {
   border-radius: 3px;
   padding: 0 6px;
   flex-shrink: 0; /* the label wraps before the chip does */
-  max-width: 100%;
+  max-width: 70%;
 }
 
 /* a value the confirmed edits changed: a dot, the old value on hover */

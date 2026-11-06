@@ -21,7 +21,7 @@ const samplesBox = document.getElementById("samples-box");
 const OPEN_KEY = "sand.overview.open";
 
 let chosen = null; // true/false once the user folded or unfolded, else null
-let updates = null; // the shown sheet's update count, when known
+let updates = null; // the shown sheet's update count, null while not known
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -37,9 +37,12 @@ function setOpen(open) {
   toggleLabel.textContent = open ? "Fold" : "Unfold";
 }
 
+// the user's choice; else open without updates, folded with some. While
+// the count is not known yet (the updates are loading) the fold stays as
+// it is, so the overview does not open and then fold on every selection.
 function applyFold() {
   if (chosen !== null) setOpen(chosen);
-  else setOpen(!updates); // unknown or none: open
+  else if (updates !== null) setOpen(!updates);
 }
 
 // the Sheet card tells how many updates the sheet has (null: not known)

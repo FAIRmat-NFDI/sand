@@ -95,6 +95,40 @@ test("without a material the step type is the headline; a lone name makes a labe
   ]);
 });
 
+test("a type column is not the family's name; a lone measure keeps its own label", () => {
+  const solute = { group: "solutes", index: 1 };
+  const solvent = { group: "solvents", index: 1 };
+  const withName = stepCard(step(2, "Spin Coating", [
+    param("Solute 1 name", one("PbI2"), { family: solute }),
+    num("Solute 1 Concentration", "1.5", "mM", solute),
+    param("Solute 1 type", one("SAM"), { family: solute }),
+    num("Solvent 1 volume", "50", "uL", solvent),
+  ]));
+  assert.deepEqual(withName.rows.map((r) => [r.label, r.value]), [
+    ["PbI2", "1.5 mM"],
+    ["Solute 1 type", "SAM"],
+    ["Solvent 1 volume", "50 uL"],
+  ]);
+  const typeOnly = stepCard(step(2, "Spin Coating", [param("Solute 1 type", one("SAM"), { family: solute })]));
+  assert.deepEqual(typeOnly.rows.map((r) => [r.label, r.value]), [["Solute 1 type", "SAM"]]);
+  // a varying name is a chip row of its own; the measures keep the family's label
+  const rotation = { group: "rotation_steps", index: 1 };
+  const varying = stepCard(step(2, "Spin Coating", [
+    param("Solvent 1 name", [["Ethanol", FIRST], ["IPA", LAST]], { family: solvent }),
+    num("Solvent 1 volume", "50", "uL", solvent),
+    num("Rotation speed", "3000", "rpm", rotation),
+    num("Rotation time", "30", "s", rotation),
+    param("Material name", [["A", FIRST], ["B", LAST]]),
+  ]));
+  assert.equal(varying.headline, "Spin Coating");
+  assert.deepEqual(varying.rows.map((r) => [r.label, r.value, r.varies]), [
+    ["Solvent 1 name", "Ethanol / IPA", true],
+    ["Solvent 1 volume", "50 uL", false],
+    ["Spin", "3000 rpm · 30 s", false],
+    ["Material name", "A / B", true],
+  ]);
+});
+
 test("numbered columns merge behind their name only when the rest carry units", () => {
   const two = { group: null, index: 2 };
   const one1 = { group: null, index: 1 };
@@ -110,6 +144,13 @@ test("numbered columns merge behind their name only when the rest carry units", 
     ["Source material name 1", "MAI"],
     ["Source material ratio 1", "3"],
   ]);
+  // two names share a number without a group: two things, nothing merges
+  const twoNames = stepCard(step(5, "Close Space Sublimation", [
+    param("Material name 1", one("C60"), { family: one1 }),
+    num("Thickness 1", "20", "nm", one1),
+    param("Source material name 1", one("MAI"), { family: one1 }),
+  ]));
+  assert.deepEqual(twoNames.rows.map((r) => r.label), ["Material name 1", "Thickness 1", "Source material name 1"]);
 });
 
 test("a varying row is marked, a changed one carries its old value", () => {
@@ -127,6 +168,15 @@ test("a varying row is marked, a changed one carries its old value", () => {
     { label: "Deposition Time", value: "900 s", varies: false, changed: "was 600" },
   ]);
   assert.equal(card.varies, true);
+  // a merged row counts samples, not cells, and never says "was" for two columns
+  const rotation = { group: "rotation_steps", index: 1 };
+  const speed = num("Rotation speed", "3000", "rpm", rotation);
+  const spinTime = num("Rotation time", "30", "s", rotation);
+  const spin = stepCard(step(2, "Spin Coating", [speed, spinTime]), [
+    { column_id: speed.column_id, row: 3, old: "2000", new: "3000", by_formula: false },
+    { column_id: spinTime.column_id, row: 3, old: "2000", new: "30", by_formula: false },
+  ]);
+  assert.equal(spin.rows[0].changed, "edited on 1 sample");
 });
 
 test("an empty step", () => {
@@ -184,6 +234,24 @@ test("two crossing columns: the one with fewer values as rows, the other across"
   assert.deepEqual(groups.also, ["Variation"]);
 });
 
+test("the cross is found behind a stray column with fewer values", () => {
+  const temperature = variation("Substrate temperature", [["120", FIRST], ["115", LAST]], { unit: "°C" });
+  const time = variation("Deposition Time", [["900", [3, 6]], ["1200", [4, 7]], ["1500", [5, 8]]], { unit: "s" });
+  // a note on one sample crosses nothing: the next candidate makes the rows
+  const stray = variation("Notes", [["x", [3]], [null, [4, 5, 6, 7, 8]]], { step: "Experiment Info" });
+  let groups = sampleGroups({ info: { rows: ROWS }, variations: [stray, temperature, time] });
+  assert.equal(groups.kind, "cross");
+  assert.deepEqual([groups.a.name, groups.b.name, groups.also], ["Substrate temperature", "Deposition Time", ["Notes"]]);
+  // a note split like the temperature: the filled column makes the rows
+  const twin = variation("Notes", [["x", FIRST], [null, LAST]], { step: "Experiment Info" });
+  groups = sampleGroups({ info: { rows: ROWS }, variations: [twin, temperature, time] });
+  assert.deepEqual([groups.a.name, groups.b.name], ["Substrate temperature", "Deposition Time"]);
+  // a tie between two filled columns: the sheet's first makes the rows
+  const atmosphere = variation("Atmosphere", [["N2", FIRST], ["air", LAST]]);
+  groups = sampleGroups({ info: { rows: ROWS }, variations: [atmosphere, temperature, time] });
+  assert.deepEqual([groups.a.name, groups.b.name, groups.also], ["Atmosphere", "Deposition Time", ["Substrate temperature"]]);
+});
+
 test("varying columns that do not cross are blocks of their own; an empty value is said", () => {
   const view = {
     info: { rows: ROWS },
@@ -205,6 +273,9 @@ test("a row the sheet lost its label for is named by its row", () => {
   const rows = [{ row: 3, label: null, subbatch: "0" }, { row: 4, label: "2", subbatch: "0" }];
   const view = { info: { rows }, variations: [variation("Notes", [["x", [3]], ["y", [4]]])] };
   assert.deepEqual(sampleGroups(view).blocks[0].groups.map((g) => g.labels), [["row 3"], ["2"]]);
+  // a view without rows (an older server): every sample by its row
+  const bare = { info: { samples: 2 }, variations: view.variations };
+  assert.deepEqual(sampleGroups(bare).blocks[0].groups.map((g) => g.labels), [["row 3"], ["row 4"]]);
 });
 
 test("the summary line", () => {
@@ -217,4 +288,6 @@ test("the summary line", () => {
   assert.equal(overviewSummary({ steps: [{ position: 1, varies: true }, { position: 2, varies: true }] }),
     "2 steps · steps 1, 2 vary");
   assert.equal(overviewSummary({ steps: [] }), "0 steps");
+  assert.equal(overviewSummary({ steps: [{ position: 1, varies: false }], changed: [{ column_id: "C1", row: 3 }] }),
+    "1 step · 1 cell edited");
 });
