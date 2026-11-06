@@ -151,8 +151,8 @@ test("the step's own word and the material's own line need no label; the lab's s
     num("Milling rest time", "10", "min"),
   ]));
   assert.deepEqual(texts(css), [
-    "organic · milled · source 120 °C",
-    "substrate  115 °C · 3 mm",
+    "organic · milled · source T 120 °C",
+    "substrate  T 115 °C · 3 mm",
     "no carrier gas",
     "milling  450 rpm · rotation 1 min · rest 10 min",
   ]);
@@ -224,7 +224,7 @@ test("numbered columns merge behind their name; ratios read MAI:MABr 3:1", () =>
     num("Source material ratio 2", "1", null, two),
     num("Source temperature", "120", "°C"),
   ]));
-  assert.deepEqual(texts(ratios), ["3 mbar", "MAI:MABr  3:1", "source 120 °C"]);
+  assert.deepEqual(texts(ratios), ["3 mbar", "MAI:MABr  3:1", "source T 120 °C"]);
   // two names behind one number without a group are two things: nothing merges
   const twoNames = stepCard(step(5, "Close Space Sublimation", [
     param("Material name 1", one("C60"), { family: one1 }),
@@ -247,7 +247,7 @@ test("a varying value is marked, a changed one carries its old value", () => {
   assert.deepEqual(card.lines, [{
     label: "",
     values: [
-      { text: "substrate 120 / 115 °C", varies: true, changed: "edited on 2 samples" },
+      { text: "substrate T 120 / 115 °C", varies: true, changed: "edited on 2 samples" },
       { text: "deposition 900 s", varies: false, changed: "was 600" },
     ],
   }]);
@@ -317,7 +317,7 @@ test("two crossing columns: the one with fewer values as rows, the other across"
   };
   const groups = sampleGroups(view);
   assert.equal(groups.kind, "cross");
-  assert.equal(groups.a.name, "Substrate temperature");
+  assert.equal(groups.a.name, "Substrate T");
   assert.equal(groups.b.name, "Deposition Time");
   assert.deepEqual(groups.columns, ["900 s", "1200 s", "1500 s"]);
   assert.deepEqual(groups.rows.map((r) => [r.value, r.cells.map((c) => c.labels.join(","))]), [
@@ -335,15 +335,15 @@ test("the cross is found behind a stray column with fewer values", () => {
   const stray = variation("Treatment", [["x", [3]], [null, [4, 5, 6, 7, 8]]], { step: "Experiment Info" });
   let groups = sampleGroups({ info: { rows: ROWS }, variations: [stray, temperature, time] });
   assert.equal(groups.kind, "cross");
-  assert.deepEqual([groups.a.name, groups.b.name, groups.also], ["Substrate temperature", "Deposition Time", ["Treatment"]]);
+  assert.deepEqual([groups.a.name, groups.b.name, groups.also], ["Substrate T", "Deposition Time", ["Treatment"]]);
   // a half-empty column split like the temperature: the filled column makes the rows
   const twin = variation("Treatment", [["x", FIRST], [null, LAST]], { step: "Experiment Info" });
   groups = sampleGroups({ info: { rows: ROWS }, variations: [twin, temperature, time] });
-  assert.deepEqual([groups.a.name, groups.b.name], ["Substrate temperature", "Deposition Time"]);
+  assert.deepEqual([groups.a.name, groups.b.name], ["Substrate T", "Deposition Time"]);
   // a tie between two filled columns: the sheet's first makes the rows
   const atmosphere = variation("Atmosphere", [["N2", FIRST], ["air", LAST]]);
   groups = sampleGroups({ info: { rows: ROWS }, variations: [atmosphere, temperature, time] });
-  assert.deepEqual([groups.a.name, groups.b.name, groups.also], ["Atmosphere", "Deposition Time", ["Substrate temperature"]]);
+  assert.deepEqual([groups.a.name, groups.b.name, groups.also], ["Atmosphere", "Deposition Time", ["Substrate T"]]);
 });
 
 test("varying columns that do not cross are blocks of their own; an empty value is said", () => {

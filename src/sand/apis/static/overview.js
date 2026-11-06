@@ -129,13 +129,14 @@ function renderSamples(groups) {
     });
     return;
   }
-  samplesNote.textContent = axisText(groups.a) + " × " + axisText(groups.b)
+  samplesNote.textContent = axisText(groups.a) + " (" + groups.a.step + ") × " + axisText(groups.b) + " (" + groups.b.step + ")"
     + (groups.also.length ? " · also varies: " + groups.also.join(", ") : "");
   groups.rows.forEach((row, i) => {
     const line = el("div", "sample-row");
     const head = el("div", "sample-axis");
     head.append(el("span", "sample-axis-value", row.value));
     head.append(el("span", "sample-axis-name", groups.a.name));
+    head.append(el("span", "sample-axis-step", groups.a.step));
     line.append(head);
     const cells = el("div", "sample-cells");
     cells.style.setProperty("--cells", String(row.cells.length));

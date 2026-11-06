@@ -685,6 +685,12 @@ body {
   color: #6b7079;
 }
 
+.sample-axis-step {
+  display: block;
+  font-size: 0.74rem;
+  color: #9aa0aa;
+}
+
 .sample-cells {
   flex: 1;
   display: grid;

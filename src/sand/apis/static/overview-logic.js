@@ -84,7 +84,8 @@ function stepVaries(step) {
 // standing alone ("source 120 °C"), or when the card has the unit twice
 // ("rotation 1 min · rest 10 min"). A category column's value speaks for
 // itself ("milled", "N2"); a yes/no column is its words, or "no" and them.
-// A few columns have the short name the lab uses ("RH").
+// A temperature is "T" ("substrate T"); a few columns have the short
+// name the lab uses ("RH").
 const MEASURE_WORDS = new Set(["time", "temperature", "duration", "speed", "rate", "distance", "pressure",
   "volume", "thickness", "ratio", "concentration", "area", "power", "voltage", "current", "flow",
   "frequency", "acceleration", "amount", "mass", "weight", "length", "width", "height", "size"]);
@@ -103,12 +104,18 @@ function wordsOf(param) {
   return String(param.name).trim().split(/\s+/).filter((w) => !/^\d+$/.test(w));
 }
 
+// the lab's word for a temperature, wherever one is named
+export function shortName(name) {
+  return String(name).replace(/\btemperature\b/gi, "T");
+}
+
 function qualifier(param, drop) {
   const short = SHORT[fieldKey(param.name)];
   if (short) return short;
   return wordsOf(param)
-    .filter((w) => !drop.has(w.toLowerCase()) && !MEASURE_WORDS.has(w.toLowerCase()) && !CATEGORY_WORDS.has(w.toLowerCase()))
-    .map(lower).join(" ");
+    .filter((w) => !drop.has(w.toLowerCase()) && !CATEGORY_WORDS.has(w.toLowerCase()))
+    .filter((w) => w.toLowerCase() === "temperature" || !MEASURE_WORDS.has(w.toLowerCase()))
+    .map((w) => shortName(lower(w))).join(" ");
 }
 
 function isTimeLike(param) {
@@ -296,7 +303,7 @@ function intersect(a, b) {
 }
 
 function axis(variation) {
-  return { name: variation.name, unit: variation.unit, step: variation.step };
+  return { name: shortName(variation.name), unit: variation.unit, step: variation.step };
 }
 
 function valueLabel(value, unit) {
@@ -336,7 +343,7 @@ export function sampleGroups(view) {
         labels: labelsOf(intersect(bg.rows, ag.rows), byRow),
       })),
     }));
-    const also = vars.filter((v) => v !== a && v !== b).map((v) => v.name);
+    const also = vars.filter((v) => v !== a && v !== b).map((v) => shortName(v.name));
     return { kind: "cross", a: axis(a), b: axis(b), columns: b.values.map((g) => valueLabel(g.value, b.unit)), rows, also };
   }
   return { kind: "flat", blocks: vars.map(block), also: [] };
