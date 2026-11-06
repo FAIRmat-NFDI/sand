@@ -625,13 +625,11 @@ body {
 .step-note .line-value::before { content: "\201C"; }
 .step-note .line-value::after { content: "\201D"; }
 
+/* a value that varies between samples: blue, no box; the samples
+   section below says which sample got what */
 .line-value.value-varies {
-  background: #2A4CDF;
-  color: #fff;
-  border-radius: 3px;
-  padding: 0 6px;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
+  color: #2A4CDF;
+  font-weight: 600;
 }
 
 /* a value the confirmed edits changed: a dot, the old value on hover */
@@ -644,10 +642,6 @@ body {
   background: #2A4CDF;
   margin-right: 5px;
   vertical-align: middle;
-}
-
-.line-value.value-varies.value-changed::before {
-  background: #fff;
 }
 
 /* the samples: a row per value of the first varying column, the cells
