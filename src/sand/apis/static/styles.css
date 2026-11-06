@@ -625,19 +625,7 @@ body {
 .step-note .line-value::before { content: "\201C"; }
 .step-note .line-value::after { content: "\201D"; }
 
-.line-word {
-  margin-right: 5px;
-}
-
-.value-samples {
-  margin-left: 5px;
-  font-size: 0.78rem;
-  opacity: 0.85;
-}
-
 .line-value.value-varies {
-  display: inline-block;
-  margin: 1px 6px 1px 0;
   background: #2A4CDF;
   color: #fff;
   border-radius: 3px;

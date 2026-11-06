@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  EMPTY, overviewSummary, sampleGroups, sampleRanges, stepCard, valueCell,
+  EMPTY, overviewSummary, sampleGroups, stepCard, valueCell,
 } from "../../src/sand/apis/static/overview-logic.js";
 
 let nextColumn = 0;
@@ -177,9 +177,9 @@ test("a type column is not the family's name; a varying name stays a chip in its
     num("Rotation speed", "3000", "rpm", rotation),
     num("Rotation time", "30", "s", rotation),
     param("Material name", [["A", FIRST], ["B", LAST]]),
-  ]), [], ROWS);
+  ]));
   assert.equal(varying.material, "");
-  assert.deepEqual(texts(varying), ["Ethanol (1–3) · IPA (4–6) · 50 uL", "3000 rpm · 30 s", "A (1–3) · B (4–6)"]);
+  assert.deepEqual(texts(varying), ["Ethanol / IPA · 50 uL", "3000 rpm · 30 s", "A / B"]);
   assert.deepEqual(varying.lines.map((l) => l.values.map((v) => v.varies)), [[true, false], [false, false], [true]]);
 });
 
@@ -221,27 +221,14 @@ test("a varying value is marked, a changed one carries its old value", () => {
     { column_id: temperature.column_id, row: 3, old: "100", new: "120", by_formula: false },
     { column_id: temperature.column_id, row: 4, old: "110", new: "120", by_formula: false },
   ];
-  const card = stepCard(step(5, "Close Space Sublimation", [temperature, time, num("Process pressure", "3", "mbar")]), changed, ROWS);
-  // a varying value says which samples got what, on a line of its own
-  assert.deepEqual(card.lines, [
-    {
-      label: "",
-      values: [{
-        text: "substrate 120 °C (1–3) · 115 °C (4–6)",
-        word: "substrate",
-        groups: [{ text: "120 °C", samples: "1–3" }, { text: "115 °C", samples: "4–6" }],
-        varies: true,
-        changed: "edited on 2 samples",
-      }],
-    },
-    {
-      label: "",
-      values: [
-        { text: "deposition 900 s", word: "deposition", varies: false, changed: "was 600" },
-        { text: "3 mbar", varies: false, changed: "" },
-      ],
-    },
-  ]);
+  const card = stepCard(step(5, "Close Space Sublimation", [temperature, time]), changed);
+  assert.deepEqual(card.lines, [{
+    label: "",
+    values: [
+      { text: "substrate 120 / 115 °C", varies: true, changed: "edited on 2 samples" },
+      { text: "deposition 900 s", varies: false, changed: "was 600" },
+    ],
+  }]);
   assert.equal(card.varies, true);
   // in a merged line each value keeps its own mark
   const rotation = { group: "rotation_steps", index: 1 };
@@ -251,18 +238,6 @@ test("a varying value is marked, a changed one carries its old value", () => {
     { column_id: speed.column_id, row: 3, old: "2000", new: "3000", by_formula: false },
   ]);
   assert.deepEqual(spin.lines[0].values.map((v) => v.changed), ["was 2000", ""]);
-});
-
-test("the samples of a value, short", () => {
-  assert.equal(sampleRanges(["1", "2", "3", "24", "25", "26"]), "1–3, 24–26");
-  assert.equal(sampleRanges(["7"]), "7");
-  assert.equal(sampleRanges(["A1", "A2", "B1"]), "A1, A2, B1");
-  assert.equal(sampleRanges(["row 3", "4"]), "row 3, 4");
-  assert.equal(sampleRanges([]), "");
-  // a varying value without a row list names the rows
-  const t = num("Substrate temperature", "120", "°C");
-  t.values = [{ value: "120", rows: [3] }, { value: null, rows: [4] }];
-  assert.deepEqual(texts(stepCard(step(5, "CSS", [t]))), ["substrate 120 °C (row 3) · " + EMPTY + " (row 4)"]);
 });
 
 test("an empty step", () => {
