@@ -50,7 +50,10 @@ let inputsSeen = null; // {entryId, items}
 let statusKnown = false; // the shown experiment's status was fetched once
 let running = false; // a job of the shown experiment runs, or is being started
 let lastStatus = null; // the last completed status of the shown experiment
-let viewSha = null; // sha256 of the sheet the header shows (the sheet view's)
+// the sheet the header was last read for: the view's sha256 at selection,
+// then the final sha of each completed job it was re-read after (once
+// per job, whatever the view then shows)
+let headerFor = null;
 let reportsShown = {}; // the last status's reports, by entry id
 let readFor = null; // readKey of the inputs the last job was started for
 let wroteFor = null; // unwrittenKey the last write was started for
@@ -231,8 +234,11 @@ async function poll(experiment, generation) {
     lastStatus = status;
     renderResult(status);
     updateProgress();
-    // the job wrote a sheet the header does not show yet
-    if (status.final && status.final !== viewSha) refreshSheet(experiment);
+    // the job wrote a sheet the header has not been read for yet
+    if (status.final && status.final !== headerFor) {
+      headerFor = status.final;
+      refreshSheet(experiment);
+    }
     settle(experiment, status);
     return;
   }
@@ -366,7 +372,7 @@ export function showEdit(experiment, view) {
   current = experiment;
   statusKnown = false;
   lastStatus = null;
-  viewSha = view ? view.sha256 : null;
+  headerFor = view ? view.sha256 : null;
   editedReady = false;
   reportsShown = {};
   readFor = null;
@@ -411,7 +417,6 @@ async function refreshSheet(experiment) {
     return; // the next completed poll tries again
   }
   if (!view || !stillShown(experiment)) return;
-  viewSha = view.sha256;
   showSheet(experiment, view);
   describeSheet(view);
 }
