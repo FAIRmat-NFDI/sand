@@ -498,8 +498,12 @@ body {
   scrollbar-width: thin;
 }
 
+/* a card is as wide as its longest line, within bounds */
 .step-grid > .step-card {
-  flex: 0 0 264px;
+  flex: 0 0 auto;
+  width: max-content;
+  min-width: 220px;
+  max-width: 400px;
   scroll-snap-align: start;
 }
 
