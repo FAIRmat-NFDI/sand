@@ -7,7 +7,7 @@ from dataclasses import asdict, replace
 
 import pytest
 from openpyxl.utils import column_index_from_string
-from synthetic_sheet import letter, with_formula_results, with_part
+from synthetic_sheet import letter, with_part
 
 from sand.sheet_edit.apply import apply_all
 from sand.sheet_edit.catalog import build
@@ -95,19 +95,6 @@ def applied(original, inputs, who=TESTER):
 def logged(original, inputs, who=TESTER):
     steps, confirmations = applied(original, inputs, who)
     return changelog(original, steps, confirmations, MODEL), steps[-1].state
-
-
-@pytest.fixture
-def with_results(synthetic_xlsx) -> bytes:
-    """Row 3 with Excel-stored formula results, so the writer may
-    recompute them."""
-    return with_formula_results(
-        synthetic_xlsx,
-        {
-            f'{letter("Experiment Info", "Nomad ID")}3': 'KIT_Synth_20250101_B1_0_1',
-            f'{letter("5: Close Space Sublimation", "Deposition Time [s]")}3': '600',
-        },
-    )
 
 
 # --- changelog ---------------------------------------------------------------

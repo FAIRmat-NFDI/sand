@@ -44,7 +44,7 @@ from sand.services.voice_eln import (
     VoiceElnService,
     normalize_audio_filename,
 )
-from sand.sheet_edit import catalog, changelog
+from sand.sheet_edit import catalog, changelog, view
 from sand.sheet_edit.session import (
     CHANGELOG_FILE,
     CONFIRMATIONS_FILE,
@@ -363,6 +363,89 @@ async def sheet_summary(
             status_code=404, detail='this experiment did not start from a sheet'
         )
     return _sheet_summary(await asyncio.to_thread(catalog.build, xlsx), xlsx)
+
+
+@router.get('/input-collections/{upload_id}/sheet-view')
+async def sheet_view(
+    upload_id: str,
+    request: Request,
+    collection_entry_id: str,
+) -> dict:
+    """The sheet as the page shows it (`sheet_edit.view.sheet_view`, plus
+    `source` and `sha256` of the file it was built from). Built from the
+    edited sheet when the stored sheet and changelog hold together with
+    the original by their hashes and the job that wrote them was this
+    collection's; from the uploaded sheet otherwise, with a warning
+    saying why. Reads do not wait for processing: the page polls this."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    try:
+        async with voice.build_client(token) as client:
+            original = await voice.writer.read_raw_file(
+                client, upload_id, ORIGINAL_FILE, wait=False
+            )
+            if original is None:
+                raise HTTPException(
+                    status_code=404, detail='this experiment did not start from a sheet'
+                )
+            final = await voice.writer.read_raw_file(
+                client, upload_id, FINAL_FILE, wait=False
+            )
+            raw_log = status = None
+            if final is not None:
+                raw_log = await voice.writer.read_raw_file(
+                    client, upload_id, CHANGELOG_FILE, wait=False
+                )
+                status = await voice.writer.read_json(
+                    client, upload_id, STATUS_FILE, wait=False
+                )
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    sheet, log = _current_sheet(original, final, raw_log)
+    warning = None
+    if final is not None and log is None:
+        warning = (
+            'an edit job is writing the sheet; this is the uploaded sheet'
+            if _job_running(status, None)
+            else 'the edited sheet stored with this experiment does not match '
+            'its changelog; this is the uploaded sheet'
+        )
+    elif log is not None and (
+        status is not None and status.get('collection_entry_id') != collection_entry_id
+    ):
+        # the sheet files are the upload's; the edits came from another
+        # collection's updates, so they are not this sheet's
+        sheet, log = original, None
+        warning = (
+            "another experiment's job wrote this upload's edited sheet; "
+            'this is the uploaded sheet'
+        )
+    built = await asyncio.to_thread(lambda: view.sheet_view(catalog.build(sheet), log))
+    if warning:
+        built['warnings'].append(warning)
+    return {
+        'source': 'uploaded' if log is None else 'edited',
+        'sha256': sha256(sheet),
+        **built,
+    }
+
+
+def _current_sheet(
+    original: bytes, final: bytes | None, raw_log: bytes | None
+) -> tuple[bytes, changelog.Changelog | None]:
+    """The edited sheet with its log when the three files are one
+    another's (the log names both by hash), else the original alone."""
+    if final is None or raw_log is None:
+        return original, None
+    try:
+        log = changelog.from_json(raw_log.decode())
+    except (UnicodeDecodeError, changelog.CheckFailed):
+        return original, None
+    if (log.original, log.final) != (sha256(original), sha256(final)):
+        return original, None
+    return final, log
 
 
 @router.post(

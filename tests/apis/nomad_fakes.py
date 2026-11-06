@@ -40,12 +40,16 @@ class FakeWriter:
     failing: bool = False  # every write raises
     writes_allowed: int | None = None  # None: all; else writes before NOMAD is down
 
+    reads: list[tuple[str, bool]] = field(default_factory=list)  # (name, waited)
+
     async def read_raw_file(self, client, upload_id, name, *, wait=True):
+        self.reads.append((name, wait))
         return self.files.get(name)
 
-    async def read_json(self, client, upload_id, name):
-        # like the real writer: None when absent or not a JSON object
-        raw = self.files.get(name)
+    async def read_json(self, client, upload_id, name, *, wait=True):
+        # like the real writer: through read_raw_file, so `reads` sees it;
+        # None when absent or not a JSON object
+        raw = await self.read_raw_file(client, upload_id, name, wait=wait)
         if raw is None:
             return None
         try:
