@@ -333,11 +333,20 @@ body {
   font-size: 18px;
 }
 
-/* the upload: a drop zone, the name, the button */
+/* the upload: a drop zone, the name, the button; its own heading only
+   while it stands in for the header */
 .sheet-header:not(.no-sheet) .sheet-upload {
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid #e3e6eb;
+}
+
+.sheet-upload-intro {
+  margin-bottom: 12px;
+}
+
+.sheet-header:not(.no-sheet) .sheet-upload-intro {
+  display: none;
 }
 
 .drop-zone {
