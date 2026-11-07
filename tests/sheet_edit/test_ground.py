@@ -640,6 +640,66 @@ def test_old_describes_the_rows_still_to_change(catalog):
     )
 
 
+@pytest.fixture(scope='module')
+def counting(synthetic_xlsx):
+    solvent = letter('1: Cleaning UV-Ozone', 'Solvent 2')
+
+    def change(ws):  # Solvent 2 counts up: PbBr2 on sample 1 .. PbBr13 on sample 13
+        for r in range(3, 15):
+            ws[f'{solvent}{r}'] = f'PbBr{r - 1}'
+
+    return build(edited(synthetic_xlsx, change))
+
+
+def test_rows_holding_different_values_pass_with_a_note(catalog):
+    # substrate T: 120 on samples 1-5, 7 and 115 on 8-13; one `old` cannot
+    # describe both, so an empty or a held `old` passes with the note
+    for old in (None, '115', '120'):
+        result = ground(
+            edit(
+                target=SUBSTRATE, old=old, new='130', said='substrate temperature 130'
+            ),
+            catalog,
+        )
+        assert isinstance(result, Grounded), old
+        assert result.rows == ALL_ROWS
+        assert result.confidence == 'medium'
+        assert result.notes == (
+            'Substrate temperature [°C] (5: Close Space Sublimation): holds '
+            "'120' on samples 1–5, 7 and '115' on samples 8–13, all become 130",
+        )
+    # a value none of them holds: the model read another line
+    why = refused(
+        ground(
+            edit(
+                target=SUBSTRATE, old='99', new='130', said='substrate temperature 130'
+            ),
+            catalog,
+        )
+    )
+    assert why.endswith("not '99'")
+
+
+def test_a_column_that_counts_up_is_set_for_all_samples(counting):
+    result = ground(
+        edit(
+            target=CLEAN_SOLVENT_2,
+            old=None,
+            new='PbBr2',
+            said='solvent 2 PbBr2 for all samples',
+        ),
+        counting,
+    )
+    assert isinstance(result, Grounded)
+    assert result.unchanged == (3,)  # sample 1 holds PbBr2 already
+    assert result.rows == ALL_ROWS[1:]
+    assert result.notes == (
+        "Solvent 2 (1: Cleaning UV-Ozone): holds 11 different values, 'PbBr3' to 'PbBr13', "
+        'on samples 2–5, 7–13, all become PbBr2',
+        'Solvent 2 (1: Cleaning UV-Ozone): already PbBr2 on samples 1, nothing to change',
+    )
+
+
 # --- A anchor ---------------------------------------------------------------------
 
 

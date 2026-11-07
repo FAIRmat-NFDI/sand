@@ -116,7 +116,8 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
         anchor = catalog.column(edit.anchor.column)
         found = anchor_problems(edit, target, anchor, catalog, rows)
         problems, doubts = problems + found[0], doubts + found[1]
-    problems += old_problems(edit, target, catalog, rows)  # O
+    found = old_problems(edit, target, catalog, rows)  # O
+    problems, notes = problems + found[0], (*notes, *found[1])
     found = value_problems(edit, target, anchor, catalog)  # V
     problems, doubts = problems + found[0], doubts + found[2]
     notes = (*notes, *found[1])
@@ -627,18 +628,29 @@ def anchor_problems(
 
 def old_problems(
     edit: Edit, target: ColumnInfo, catalog: Catalog, rows: tuple[int, ...]
-) -> list[str]:
+) -> tuple[list[str], list[str]]:
     """`old` must be what the target holds in every targeted row that
     does not already hold `new`; otherwise the LLM read another line of
-    the table."""
-    wrong = _rows_not_holding(target, edit.old or '', rows)
-    wrong = [r for r in wrong if r in _rows_not_holding(target, edit.new, rows)]
+    the table. Rows that hold different values cannot share one `old`
+    ("PbBr2 for all samples" over a column that counts up): there the
+    edit passes with a note saying what they hold, as long as `old` is
+    empty or one of those values. Returns (problems, notes)."""
+    to_change = _rows_not_holding(target, edit.new, rows)
+    wrong = [
+        r for r in _rows_not_holding(target, edit.old or '', rows) if r in to_change
+    ]
     if not wrong:
-        return []
+        return [], []
+    held = _values(target, to_change)
+    if len(held) > 1 and (not edit.old or any(same_value(edit.old, v) for v in held)):
+        return [], [
+            f'{column_name(target)}: holds {_held(target, catalog, to_change)}, '
+            f'all become {edit.new or "empty"}'
+        ]
     claimed = 'empty' if not edit.old else repr(edit.old)
     return [
         f'{column_name(target)} holds {_held(target, catalog, wrong)}, not {claimed}'
-    ]
+    ], []
 
 
 def _rows_not_holding(column: ColumnInfo, text: str, rows) -> list[int]:
@@ -646,13 +658,29 @@ def _rows_not_holding(column: ColumnInfo, text: str, rows) -> list[int]:
     return [r for r in rows if not same_value(text, held.get(r))]
 
 
+def _values(column: ColumnInfo, rows: list[int]) -> list[object]:
+    """The distinct values the rows hold, in sheet order."""
+    held = {r: g.value for g in column.groups for r in g.rows}
+    return list(dict.fromkeys(held.get(r) for r in rows))
+
+
+_LISTED_VALUES = 3  # more distinct values are counted, not listed
+
+
 def _held(column: ColumnInfo, catalog: Catalog, rows: list[int]) -> str:
-    """ "'3000' on samples 1–3 and '3500' on samples 4–5"."""
+    """ "'3000' on samples 1–3 and '3500' on samples 4–5"; many values:
+    "11 different values, 'PbBr3' to 'PbBr13', on samples 2–13"."""
     by_value: dict[str, list[int]] = {}
     for g in column.groups:
         for r in g.rows:
             if r in rows:
                 by_value.setdefault(_text(g.value), []).append(r)
+    if len(by_value) > _LISTED_VALUES:
+        values = list(by_value)
+        return (
+            f'{len(values)} different values, {values[0]!r} to {values[-1]!r}, '
+            f'on samples {catalog.names(sorted(rows))}'
+        )
     return ' and '.join(
         f'{v!r} on samples {catalog.names(sorted(rs))}' for v, rs in by_value.items()
     )
