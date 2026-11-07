@@ -40,7 +40,7 @@ from sand.sheet_edit.render import table
 
 # recorded with every proposal (changelog, status); bump on any change to
 # the prompts below or to the table in render.py, which the model reads
-PROMPT_VERSION = 'v1'
+PROMPT_VERSION = 'v2'
 
 # (system prompt, user text, JSON schema) -> the model's answer, as text.
 # The schema is for the provider's structured output; the answer is still
@@ -66,7 +66,7 @@ verbatim, nothing else.
 To clear a cell, "new" is "" (the user said to clear, empty or remove it); \
 (empty) is never a value.
 - "old": the current value the table shows for the cell, without the quotes; \
-null when the cell is empty.
+null when the cell is empty or when the samples hold different values.
 - "rows": "all" when the user names no samples; the samples named; a range \
 ("samples 1 to 3"); or "where" another column holds a value, to pick the \
 rows by it ("the samples with variation 20min": where = that column, \
@@ -91,7 +91,7 @@ a value, a sample or a column the user did not say.
 rounding, no rescaling. Clearing a cell (the user says clear, empty, \
 remove) is "new": ""; the marker (empty) is not a value.
 - "old" is the current value shown in the table for that cell, quotes \
-left out, or null for an empty cell.
+left out, or null for an empty cell or samples that hold different values.
 - Choose "rows" as "all" if no sample is named, else the named samples, a \
 "first"/"last" range for "samples 1 to 3", or "where" when the user picks \
 rows by what another column holds ("the samples with variation 20min").

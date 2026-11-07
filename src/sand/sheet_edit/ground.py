@@ -4,7 +4,8 @@ written.
 Structure: W the target is writable, R the rows exist and are found by
 exact match, S the samples the user named are the ones used. Value: A
 the anchor ("the volume of the DMSO") holds and points at the target, O
-`old` is what the cell holds, V `new` is in the user's words, T it fits
+`old` is what the cell holds (or one of the values, when the rows
+differ), V `new` is in the user's words, T it fits
 the column's type, U its unit is the column's. N rows that already hold
 the value are reported, not written.
 
@@ -52,6 +53,7 @@ _ALL_RE = re.compile(
 _LIST_WORDS = {'and', 'or', 'to', 'through', 'thru', 'till', 'until', '&', 'plus'}
 _LIST_WORDS |= {'no', 'number', 'nr', '#'}  # "sample no. 3"
 _SHOWN_VALUES = 8
+_LISTED_VALUES = 3  # more distinct values are counted, not listed
 _STEP_WORDS = {'step', 'section'}  # words a step number follows
 
 RowsAndNotes = tuple[tuple[int, ...], tuple[str, ...]]
@@ -116,7 +118,8 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
         anchor = catalog.column(edit.anchor.column)
         found = anchor_problems(edit, target, anchor, catalog, rows)
         problems, doubts = problems + found[0], doubts + found[1]
-    problems += old_problems(edit, target, catalog, rows)  # O
+    found = old_problems(edit, target, catalog, rows)  # O
+    problems, notes = problems + found[0], (*notes, *found[1])
     found = value_problems(edit, target, anchor, catalog)  # V
     problems, doubts = problems + found[0], doubts + found[2]
     notes = (*notes, *found[1])
@@ -129,13 +132,13 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
     unchanged = tuple(r for r in rows if same_value(edit.new, held.get(r)))
     if unchanged:
         which = (
-            f'all {len(rows)} samples'
-            if len(unchanged) == len(rows)
-            else f'samples {catalog.names(unchanged)}'
+            samples_text(unchanged, catalog)
+            if len(unchanged) < len(rows)
+            else f'all {len(rows)} samples'
         )
         notes = (
             *notes,
-            f'{column_name(target)}: already {edit.new or "empty"} on {which}, nothing to change',
+            f'{column_name(target)}: {which} already {edit.new or "empty"}, nothing to change',
         )
     return Grounded(
         edit,
@@ -145,6 +148,17 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
         notes,
         tuple(doubts),
     )
+
+
+def samples_text(rows: tuple[int, ...], catalog: Catalog) -> str:
+    """'all 12 samples', 'samples 1–3', 'sample 7'; a row without a
+    label is named 'row 5' (as the catalog says it)."""
+    if len(rows) == len(catalog.samples):
+        return f'all {len(rows)} samples'
+    names = catalog.names(rows)
+    if names.startswith('row '):
+        return names
+    return f'{"sample" if len(rows) == 1 else "samples"} {names}'
 
 
 # --- R rows ------------------------------------------------------------------
@@ -627,18 +641,29 @@ def anchor_problems(
 
 def old_problems(
     edit: Edit, target: ColumnInfo, catalog: Catalog, rows: tuple[int, ...]
-) -> list[str]:
+) -> tuple[list[str], list[str]]:
     """`old` must be what the target holds in every targeted row that
     does not already hold `new`; otherwise the LLM read another line of
-    the table."""
-    wrong = _rows_not_holding(target, edit.old or '', rows)
-    wrong = [r for r in wrong if r in _rows_not_holding(target, edit.new, rows)]
+    the table. Rows that hold different values cannot share one `old`
+    ("PbBr2 for all samples" over a column that counts up): there the
+    edit passes with a note saying what they hold, as long as `old` is
+    empty or one of those values. Returns (problems, notes)."""
+    to_change = _rows_not_holding(target, edit.new, rows)
+    wrong = [
+        r for r in _rows_not_holding(target, edit.old or '', rows) if r in to_change
+    ]
     if not wrong:
-        return []
+        return [], []
+    held = _values(target, to_change)
+    if len(held) > 1 and (not edit.old or any(same_value(edit.old, v) for v in held)):
+        return [], [
+            f'{column_name(target)}: holds {_held(target, catalog, to_change)}, '
+            f'all become {edit.new or "empty"}'
+        ]
     claimed = 'empty' if not edit.old else repr(edit.old)
     return [
         f'{column_name(target)} holds {_held(target, catalog, wrong)}, not {claimed}'
-    ]
+    ], []
 
 
 def _rows_not_holding(column: ColumnInfo, text: str, rows) -> list[int]:
@@ -646,15 +671,36 @@ def _rows_not_holding(column: ColumnInfo, text: str, rows) -> list[int]:
     return [r for r in rows if not same_value(text, held.get(r))]
 
 
+def _values(column: ColumnInfo, rows: list[int]) -> list[object]:
+    """The distinct values the rows hold, in sheet order, as the user
+    reads them: 3000 stored as text is the number 3000."""
+    seen: dict[str, object] = {}
+    for g in column.groups:
+        if any(r in rows for r in g.rows):
+            seen.setdefault(_text(g.value), g.value)
+    return list(seen.values())
+
+
 def _held(column: ColumnInfo, catalog: Catalog, rows: list[int]) -> str:
-    """ "'3000' on samples 1–3 and '3500' on samples 4–5"."""
+    """ "'3000' on samples 1–3 and empty on samples 4–5"; many values:
+    "11 different values on samples 2–13, from 'PbBr3' on sample 2 to
+    'PbBr13' on sample 13"."""
     by_value: dict[str, list[int]] = {}
     for g in column.groups:
         for r in g.rows:
             if r in rows:
                 by_value.setdefault(_text(g.value), []).append(r)
+    shown = {v: ('empty' if v == '' else repr(v)) for v in by_value}
+    if len(by_value) > _LISTED_VALUES:
+        first, last = next(iter(by_value)), next(reversed(by_value))
+        return (
+            f'{len(by_value)} different values on samples {catalog.names(sorted(rows))}, '
+            f'from {shown[first]} on sample {catalog.names(by_value[first][:1])} '
+            f'to {shown[last]} on sample {catalog.names(by_value[last][-1:])}'
+        )
     return ' and '.join(
-        f'{v!r} on samples {catalog.names(sorted(rs))}' for v, rs in by_value.items()
+        f'{shown[v]} on samples {catalog.names(sorted(rs))}'
+        for v, rs in by_value.items()
     )
 
 

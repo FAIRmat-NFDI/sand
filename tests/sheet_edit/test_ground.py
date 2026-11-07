@@ -640,6 +640,157 @@ def test_old_describes_the_rows_still_to_change(catalog):
     )
 
 
+@pytest.fixture(scope='module')
+def counting(synthetic_xlsx):
+    solvent = letter('1: Cleaning UV-Ozone', 'Solvent 2')
+
+    def change(ws):  # Solvent 2 counts up: PbBr2 on sample 1 .. PbBr13 on sample 13
+        for r in range(3, 15):
+            ws[f'{solvent}{r}'] = f'PbBr{r - 1}'
+
+    return build(edited(synthetic_xlsx, change))
+
+
+def test_rows_holding_different_values_pass_with_a_note(catalog):
+    # substrate T: 120 on samples 1-5, 7 and 115 on 8-13; one `old` cannot
+    # describe both, so an empty or a held `old` passes with the note
+    for old in (None, '115', '120'):
+        result = ground(
+            edit(
+                target=SUBSTRATE, old=old, new='130', said='substrate temperature 130'
+            ),
+            catalog,
+        )
+        assert isinstance(result, Grounded), old
+        assert result.rows == ALL_ROWS
+        assert result.confidence == 'medium'
+        assert result.notes == (
+            'Substrate temperature [°C] (5: Close Space Sublimation): holds '
+            "'120' on samples 1–5, 7 and '115' on samples 8–13, all become 130",
+        )
+    # a value none of them holds: the model read another line
+    why = refused(
+        ground(
+            edit(
+                target=SUBSTRATE, old='99', new='130', said='substrate temperature 130'
+            ),
+            catalog,
+        )
+    )
+    assert why.endswith("not '99'")
+
+
+def substrate_values(synthetic_xlsx, values):
+    """A catalog whose substrate temperature cycles through `values`, one
+    per row block of three."""
+    cell = letter('5: Close Space Sublimation', 'Substrate temperature [°C]')
+
+    def change(ws):
+        for i, r in enumerate(range(3, 15)):
+            ws[f'{cell}{r}'] = values[(i // 3) % len(values)]
+
+    return build(edited(synthetic_xlsx, change))
+
+
+def test_three_values_are_listed_and_four_counted(synthetic_xlsx):
+    three = ground(
+        edit(target=SUBSTRATE, old=None, new='130', said='substrate temperature 130'),
+        substrate_values(synthetic_xlsx, [100, 105, 110]),
+    )
+    assert three.notes[0].endswith(
+        "holds '100' on samples 1–3, 11–13 and '105' on samples 4–5, 7 "
+        "and '110' on samples 8–10, all become 130"
+    )
+    four = ground(
+        edit(target=SUBSTRATE, old=None, new='130', said='substrate temperature 130'),
+        substrate_values(synthetic_xlsx, [100, 105, 110, 115]),
+    )
+    assert four.notes[0].endswith(
+        "holds 4 different values on samples 1–5, 7–13, from '100' on sample 1 "
+        "to '115' on sample 13, all become 130"
+    )
+
+
+def test_a_clear_over_different_values_passes_with_the_note(catalog):
+    result = ground(
+        edit(target=SUBSTRATE, old=None, new='', said='clear substrate temperature'),
+        catalog,
+    )
+    assert isinstance(result, Grounded)
+    assert result.value is None
+    assert result.notes[0].endswith('all become empty')
+
+
+def test_empty_cells_among_the_values_are_called_empty(synthetic_xlsx):
+    solvent = letter('1: Cleaning UV-Ozone', 'Solvent 2')
+    half_empty = build(
+        edited(
+            synthetic_xlsx,
+            lambda ws: [ws.__setitem__(f'{solvent}{r}', None) for r in range(3, 9)],
+        )
+    )
+    result = ground(
+        edit(target=CLEAN_SOLVENT_2, old=None, new='DMSO', said='solvent 2 DMSO'),
+        half_empty,
+    )
+    assert result.notes == (
+        "Solvent 2 (1: Cleaning UV-Ozone): holds empty on samples 1–5, 7 and 'IPA' "
+        'on samples 8–13, all become DMSO',
+    )
+
+
+def test_a_number_stored_as_text_is_the_same_value(synthetic_xlsx):
+    speed = letter('2: Spin Coating', 'Rotation speed [rpm]')
+    mixed = build(
+        edited(
+            synthetic_xlsx,
+            lambda ws: [ws.__setitem__(f'{speed}{r}', '3000') for r in range(3, 9)],
+        )
+    )
+    # one value to the user: the strict rule, an empty `old` is refused
+    why = refused(ground(edit(old=None), mixed))
+    assert why.endswith("holds '3000' on samples 1–5, 7–13, not empty")
+
+
+def test_a_column_that_counts_up_is_set_for_all_samples(counting):
+    result = ground(
+        edit(
+            target=CLEAN_SOLVENT_2,
+            old=None,
+            new='PbBr2',
+            said='solvent 2 PbBr2 for all samples',
+        ),
+        counting,
+    )
+    assert isinstance(result, Grounded)
+    assert result.unchanged == (3,)  # sample 1 holds PbBr2 already
+    assert result.rows == ALL_ROWS[1:]
+    assert result.notes == (
+        'Solvent 2 (1: Cleaning UV-Ozone): holds 11 different values on samples '
+        "2–5, 7–13, from 'PbBr3' on sample 2 to 'PbBr13' on sample 13, all become PbBr2",
+        'Solvent 2 (1: Cleaning UV-Ozone): sample 1 already PbBr2, nothing to change',
+    )
+    # one of the many values is a fine `old` too
+    held = ground(
+        edit(target=CLEAN_SOLVENT_2, old='PbBr7', new='PbBr2', said='solvent 2 PbBr2'),
+        counting,
+    )
+    assert isinstance(held, Grounded) and held.rows == ALL_ROWS[1:]
+    # a value none of them holds: refused, the values counted the same way
+    why = refused(
+        ground(
+            edit(
+                target=CLEAN_SOLVENT_2, old='XYZ', new='PbBr2', said='solvent 2 PbBr2'
+            ),
+            counting,
+        )
+    )
+    assert why == (
+        'Solvent 2 (1: Cleaning UV-Ozone) holds 11 different values on samples '
+        "2–5, 7–13, from 'PbBr3' on sample 2 to 'PbBr13' on sample 13, not 'XYZ'"
+    )
+
+
 # --- A anchor ---------------------------------------------------------------------
 
 
@@ -942,7 +1093,7 @@ def test_a_value_already_everywhere_is_a_warning_not_an_error(catalog):
     assert isinstance(result, Grounded)
     assert (result.status, result.rows, result.unchanged) == ('noop', (), ALL_ROWS)
     assert result.notes == (
-        'Rotation speed [rpm] (2: Spin Coating): already 3000 on all 12 samples, '
+        'Rotation speed [rpm] (2: Spin Coating): all 12 samples already 3000, '
         'nothing to change',
     )
 
@@ -956,8 +1107,8 @@ def test_rows_already_holding_the_value_are_left_out(catalog):
     assert result.rows == (9, 10, 11, 12, 13, 14)  # samples 8-13 hold 115
     assert result.unchanged == (3, 4, 5, 6, 7, 8)
     assert result.notes == (
-        'Substrate temperature [°C] (5: Close Space Sublimation): already 120 on '
-        'samples 1–5, 7, nothing to change',
+        'Substrate temperature [°C] (5: Close Space Sublimation): samples 1–5, 7 '
+        'already 120, nothing to change',
     )
 
 
