@@ -174,7 +174,8 @@ same browser; sand warns when the login is about to end.
 
 1. **New experiment** → choose the sheet (`.xlsx`), give the experiment a
    name, **Create from sheet**. A refused sheet lists its problems; fix
-   the file and upload again.
+   the file and upload again. The name can be changed later with the
+   pencil next to it in the header; the downloads follow it.
 2. **Record** or **write** updates. Say or type one change at a time, with
    the step, the value and the samples it applies to. The updates appear
    on the right in the order they were made; a transcript can be

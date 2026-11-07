@@ -78,3 +78,20 @@ export function nameFromFile(fileName) {
 export function isSheetFile(fileName) {
   return /\.xlsx$/i.test(String(fileName || ""));
 }
+
+// What the rename field's text means against the sheet's current name:
+// nothing to do, a blank to refuse, or the name to send (one line,
+// single-spaced, as the server keeps it).
+export function renameChoice(current, typed) {
+  const name = String(typed ?? "").split(/\s+/).filter(Boolean).join(" ");
+  if (!name) return { action: "refuse", name: "" };
+  if (name === String(current ?? "")) return { action: "keep", name };
+  return { action: "rename", name };
+}
+
+// the list with one sheet replaced by its renamed self, in place; a
+// field the response leaves empty keeps the value the list had
+export function withRenamed(list, renamed) {
+  const given = Object.fromEntries(Object.entries(renamed).filter(([, v]) => v != null));
+  return list.map((e) => (e.entry_id === renamed.entry_id ? { ...e, ...given } : e));
+}

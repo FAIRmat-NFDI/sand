@@ -87,7 +87,9 @@ class FakeVoice:
     moved: list[tuple[str, str]] = field(default_factory=list)
     revised: list[tuple[str, str]] = field(default_factory=list)
     removed: list[str] = field(default_factory=list)
+    renamed: list[str] = field(default_factory=list)
     undeletable: bool = False
+    unrenamable: bool = False
 
     def build_client(self, token):
         assert token == TOKEN
@@ -133,6 +135,21 @@ class FakeVoice:
         self, client, upload_id, entry_id, collection_entry_id, undeletable
     ):
         self.removed.append(entry_id)
+
+    async def rename_input_collection(
+        self, client, upload_id, collection_entry_id, name
+    ):
+        assert (upload_id, collection_entry_id) == (UPLOAD, COLLECTION)
+        if self.unrenamable:
+            raise nomad_down('edit_upload_name')
+        self.renamed.append(name)
+        self.name = name
+        return InputCollectionSummary(
+            upload_id=UPLOAD,
+            entry_id=COLLECTION,
+            name=name,
+            created='2026-11-01T09:00:00+00:00',
+        )
 
     async def input_collection_name(self, client, upload_id, collection_entry_id):
         assert (upload_id, collection_entry_id) == (UPLOAD, COLLECTION)

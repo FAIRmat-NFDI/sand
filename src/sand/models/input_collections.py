@@ -43,6 +43,10 @@ class InputCollectionListResponse(BaseModel):
     input_collections: list[InputCollectionSummaryModel]
 
 
+class RenameRequest(BaseModel):
+    name: str  # the sheet's name on the page and in NOMAD
+
+
 class CreateNoteRequest(BaseModel):
     text: str
     label: str = ''  # optional free text for the user
