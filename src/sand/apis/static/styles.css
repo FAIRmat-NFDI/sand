@@ -1412,6 +1412,12 @@ body {
   color: #6b7079;
 }
 
+.report-unchanged {
+  display: block;
+  font-size: 0.74rem;
+  color: #9aa0aa;
+}
+
 .report-edit > :last-child {
   grid-column: 5;
   justify-self: end;

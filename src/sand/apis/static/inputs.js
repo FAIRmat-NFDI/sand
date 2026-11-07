@@ -287,6 +287,12 @@ function renderEditCells(edit) {
   const samples = document.createElement("span");
   samples.className = "report-samples";
   samples.textContent = edit.samples;
+  if (edit.unchanged) {
+    const kept = document.createElement("span");
+    kept.className = "report-unchanged";
+    kept.textContent = edit.unchanged;
+    samples.append(kept);
+  }
   return [column, change, samples];
 }
 

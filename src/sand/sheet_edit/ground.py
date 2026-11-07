@@ -132,13 +132,13 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
     unchanged = tuple(r for r in rows if same_value(edit.new, held.get(r)))
     if unchanged:
         which = (
-            f'all {len(rows)} samples'
-            if len(unchanged) == len(rows)
-            else f'samples {catalog.names(unchanged)}'
+            samples_text(unchanged, catalog)
+            if len(unchanged) < len(rows)
+            else f'all {len(rows)} samples'
         )
         notes = (
             *notes,
-            f'{column_name(target)}: already {edit.new or "empty"} on {which}, nothing to change',
+            f'{column_name(target)}: {which} already {edit.new or "empty"}, nothing to change',
         )
     return Grounded(
         edit,
@@ -148,6 +148,17 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
         notes,
         tuple(doubts),
     )
+
+
+def samples_text(rows: tuple[int, ...], catalog: Catalog) -> str:
+    """'all 12 samples', 'samples 1–3', 'sample 7'; a row without a
+    label is named 'row 5' (as the catalog says it)."""
+    if len(rows) == len(catalog.samples):
+        return f'all {len(rows)} samples'
+    names = catalog.names(rows)
+    if names.startswith('row '):
+        return names
+    return f'{"sample" if len(rows) == 1 else "samples"} {names}'
 
 
 # --- R rows ------------------------------------------------------------------

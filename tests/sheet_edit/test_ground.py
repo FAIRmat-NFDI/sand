@@ -768,7 +768,7 @@ def test_a_column_that_counts_up_is_set_for_all_samples(counting):
     assert result.notes == (
         'Solvent 2 (1: Cleaning UV-Ozone): holds 11 different values on samples '
         "2–5, 7–13, from 'PbBr3' on sample 2 to 'PbBr13' on sample 13, all become PbBr2",
-        'Solvent 2 (1: Cleaning UV-Ozone): already PbBr2 on samples 1, nothing to change',
+        'Solvent 2 (1: Cleaning UV-Ozone): sample 1 already PbBr2, nothing to change',
     )
     # one of the many values is a fine `old` too
     held = ground(
@@ -1093,7 +1093,7 @@ def test_a_value_already_everywhere_is_a_warning_not_an_error(catalog):
     assert isinstance(result, Grounded)
     assert (result.status, result.rows, result.unchanged) == ('noop', (), ALL_ROWS)
     assert result.notes == (
-        'Rotation speed [rpm] (2: Spin Coating): already 3000 on all 12 samples, '
+        'Rotation speed [rpm] (2: Spin Coating): all 12 samples already 3000, '
         'nothing to change',
     )
 
@@ -1107,8 +1107,8 @@ def test_rows_already_holding_the_value_are_left_out(catalog):
     assert result.rows == (9, 10, 11, 12, 13, 14)  # samples 8-13 hold 115
     assert result.unchanged == (3, 4, 5, 6, 7, 8)
     assert result.notes == (
-        'Substrate temperature [°C] (5: Close Space Sublimation): already 120 on '
-        'samples 1–5, 7, nothing to change',
+        'Substrate temperature [°C] (5: Close Space Sublimation): samples 1–5, 7 '
+        'already 120, nothing to change',
     )
 
 
