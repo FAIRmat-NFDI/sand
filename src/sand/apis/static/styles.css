@@ -1414,8 +1414,6 @@ body {
 
 .report-unchanged {
   display: block;
-  font-size: 0.74rem;
-  color: #9aa0aa;
 }
 
 .report-edit > :last-child {
