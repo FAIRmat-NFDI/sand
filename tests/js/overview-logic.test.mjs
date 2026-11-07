@@ -45,10 +45,11 @@ test("a value cell: one value, a few, a range of many, the unit once", () => {
   assert.equal(valueCell(param("Time", one("900"), { unit: "s" })), "900 s");
   assert.equal(valueCell(param("T", [["120", FIRST], ["115", LAST]], { unit: "°C" })), "120 / 115 °C");
   assert.equal(
-    valueCell(param("Time", [["900", [3]], ["1200", [4]], ["1500", [5]], ["1800", [6]]], { unit: "s" })),
+    valueCell(param("Time", [["900", [3]], ["1200", [4]], ["1500", [5]], ["1800", [6]]], { unit: "s", type: "int" })),
     "900–1800 s");
-  // texts never make a range
+  // texts never make a range, not even codes that look like numbers
   assert.equal(valueCell(param("V", [["a", [3]], ["b", [4]], ["c", [5]], ["d", [6]]])), "a / b / c / d");
+  assert.equal(valueCell(param("Code", [["001", [3]], ["002", [4]], ["003", [5]], ["004", [6]]])), "001 / 002 / 003 / 004");
   assert.equal(valueCell(param("Notes", [["x", FIRST], [null, LAST]])), "x · some empty");
 });
 
@@ -74,8 +75,8 @@ test("a step card: headline from the material, layer and tool as subtitle, lines
   ]);
   const card = stepCard(spin);
   assert.equal(card.headline, "Spin Coating");
-  assert.equal(card.material, "Me-4PACz");
-  assert.equal(card.sub, "HTL · box1");
+  assert.equal(card.material.text, "Me-4PACz");
+  assert.deepEqual(card.sub.map((s) => s.text), ["HTL", "box1"]);
   assert.deepEqual(texts(card), [
     "Ethanol  50 uL",
     "3000 rpm · 30 s",
@@ -117,7 +118,7 @@ test("without a material the step type is the headline; a lone name is just the 
     num("UV-Ozone Time", "1200", "s"),
   ]));
   assert.equal(card.headline, "Cleaning UV-Ozone");
-  assert.equal(card.material, "");
+  assert.equal(card.material, null);
   assert.deepEqual(texts(card), ["Acetone  600 s", "IPA · Ethanol · UV-Ozone 1200 s"]);
 });
 
@@ -136,7 +137,7 @@ test("the step's own word and the material's own line need no label; the lab's s
     num("Rate 2", "1", "angstrom/s", two),
   ]));
   assert.equal(evaporation.headline, "Seq-Evaporation");
-  assert.equal(evaporation.material, "PbI2");
+  assert.equal(evaporation.material.text, "PbI2");
   assert.deepEqual(texts(evaporation), ["250 nm · 1 angstrom/s"]);
   // a yes/no column is its words; a category's value speaks for itself
   const css = stepCard(step(5, "Close Space Sublimation", [
@@ -200,7 +201,7 @@ test("a type column is not the family's name; a varying name stays a chip in its
     num("Rotation time", "30", "s", rotation),
     param("Material name", [["A", FIRST], ["B", LAST]]),
   ]));
-  assert.equal(varying.material, "");
+  assert.equal(varying.material, null);
   assert.deepEqual(texts(varying), ["Ethanol / IPA · 50 uL", "3000 rpm · 30 s", "A / B"]);
   assert.deepEqual(varying.lines.map((l) => l.values.map((v) => v.varies)), [[true, false], [false, false], [true]]);
 });
@@ -260,6 +261,16 @@ test("a varying value is marked, a changed one carries its old value", () => {
     { column_id: speed.column_id, row: 3, old: "2000", new: "3000", by_formula: false },
   ]);
   assert.deepEqual(spin.lines[0].values.map((v) => v.changed), ["was 2000", ""]);
+  // the headline's material, layer and tool keep their marks too
+  const material = param("Material name", one("Me-4PACz"));
+  const layer = param("Layer type", one("HTL"));
+  const tool = param("Tool/GB name", one("box1"));
+  const head = stepCard(step(2, "Spin Coating", [material, layer, tool]), [
+    ...ALL.map((row) => ({ column_id: material.column_id, row, old: "2PACz", new: "Me-4PACz", by_formula: false })),
+    { column_id: tool.column_id, row: 3, old: "box2", new: "box1", by_formula: false },
+  ]);
+  assert.deepEqual(head.material, { text: "Me-4PACz", changed: "was 2PACz" });
+  assert.deepEqual(head.sub, [{ text: "HTL", changed: "" }, { text: "box1", changed: "was box2" }]);
 });
 
 test("a note on some samples does not vary", () => {
@@ -361,6 +372,21 @@ test("varying columns that do not cross are blocks of their own; an empty value 
     ["Thickness", ["100 nm", "120 nm"]],
   ]);
   assert.deepEqual(sampleGroups({ info: { rows: ROWS }, variations: [] }), { kind: "none" });
+});
+
+test("labels that restart in each subbatch are told apart by it", () => {
+  const rows = [
+    { row: 3, label: "1", subbatch: "0" }, { row: 4, label: "2", subbatch: "0" },
+    { row: 5, label: "1", subbatch: "1" }, { row: 6, label: "2", subbatch: "1" },
+  ];
+  const view = { info: { rows }, variations: [variation("Treatment", [["x", [3, 5]], ["y", [4, 6]]])] };
+  assert.deepEqual(sampleGroups(view).blocks[0].groups.map((g) => g.labels), [
+    ["1 of subbatch 0", "1 of subbatch 1"],
+    ["2 of subbatch 0", "2 of subbatch 1"],
+  ]);
+  // one subbatch, or none: the labels alone tell the samples apart
+  assert.deepEqual(sampleGroups({ info: { rows: ROWS }, variations: view.variations }).blocks[0].groups.map((g) => g.labels),
+    [["1", "3"], ["2", "4"]]);
 });
 
 test("a row the sheet lost its label for is named by its row", () => {

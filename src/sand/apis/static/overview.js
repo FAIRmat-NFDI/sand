@@ -31,6 +31,15 @@ function el(tag, className, text) {
   return node;
 }
 
+// a value the confirmed edits changed: the dot, the old value on hover
+function mark(span, changed) {
+  if (changed) {
+    span.classList.add("value-changed");
+    span.title = changed;
+  }
+  return span;
+}
+
 function setOpen(open) {
   body.hidden = !open;
   toggleBtn.setAttribute("aria-expanded", String(open));
@@ -61,11 +70,13 @@ function renderStep(card) {
   article.append(top);
   const title = el("div", "step-title");
   title.append(el("span", "step-headline", card.headline));
-  if (card.material || card.sub) {
+  if (card.material || card.sub.length) {
     const sub = el("span", "step-sub");
-    if (card.material) sub.append(el("span", "step-material", card.material));
-    if (card.material && card.sub) sub.append(el("span", "line-sep", "·"));
-    if (card.sub) sub.append(document.createTextNode(card.sub));
+    if (card.material) sub.append(mark(el("span", "step-material", card.material.text), card.material.changed));
+    card.sub.forEach((part, i) => {
+      if (i || card.material) sub.append(el("span", "line-sep", "·"));
+      sub.append(mark(el("span", "", part.text), part.changed));
+    });
     title.append(sub);
   }
   article.append(title);
@@ -82,11 +93,7 @@ function renderStep(card) {
       const span = el("span", "line-value", value.text);
       if (value.text.length > LONG_VALUE) span.classList.add("long");
       if (value.varies) span.classList.add("value-varies");
-      if (value.changed) {
-        span.classList.add("value-changed");
-        span.title = value.changed;
-      }
-      p.append(span);
+      p.append(mark(span, value.changed));
     });
     lines.append(p);
   }

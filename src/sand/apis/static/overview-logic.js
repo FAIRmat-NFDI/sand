@@ -12,6 +12,7 @@ const HEADLINE = { material_name: "material", layer_type: "layer", tool_gb_name:
 // a family's label when no text column of it names the thing
 const FAMILY_LABELS = { rotation_steps: "Spin", cleaning_steps: "Cleaning", solvents: "Solvent", solutes: "Solute" };
 const RANGE_FROM = 4; // this many distinct numbers read better as "900–2700"
+const NUMERIC = new Set(["int", "float"]); // a text column's "001" is a code, not a number
 export const EMPTY = "(empty)";
 
 function isNumber(text) {
@@ -23,14 +24,15 @@ function withUnit(text, unit) {
 }
 
 // a parameter's value cell: one value, "120 / 115", "900–2700" for many
-// numbers, with the unit once; "· some empty" when cells are empty
+// numbers of a numeric column, with the unit once; "· some empty" when
+// cells are empty
 export function valueCell(param) {
   const texts = param.values.filter((v) => v.value !== null).map((v) => v.value);
   const empties = param.values.some((v) => v.value === null);
   let text = "";
   if (texts.length === 1) {
     text = texts[0];
-  } else if (texts.length >= RANGE_FROM && texts.every(isNumber)) {
+  } else if (texts.length >= RANGE_FROM && NUMERIC.has(param.type) && texts.every(isNumber)) {
     const numbers = texts.map(Number);
     text = Math.min(...numbers) + "–" + Math.max(...numbers);
   } else if (texts.length) {
@@ -164,7 +166,8 @@ function ratioOf(name, rest) {
 // 100 °C · N2"); ratios read "MAI:MABr 3:1"; what is left runs together
 // ("3 mbar · source 120 °C · milled"); a note stands alone at the end.
 // Each value keeps its column: a varying one is a chip, a changed one
-// carries its old value.
+// carries its old value; the material, layer and tool of the headline
+// too (`material` and `sub` are {text, changed}).
 export function stepCard(step, changed = []) {
   const head = {};
   const families = new Map(); // "group:index" or column id -> params, in sheet order
@@ -173,7 +176,7 @@ export function stepCard(step, changed = []) {
   for (const p of step.params) {
     const role = HEADLINE[fieldKey(p.name)];
     if (role && p.values.length === 1 && !head[role]) {
-      head[role] = p.values[0].value;
+      head[role] = { text: p.values[0].value, changed: changeNote(p.column_id, changed) };
       continue;
     }
     if (p.unit) unitCount.set(p.unit, (unitCount.get(p.unit) || 0) + 1);
@@ -203,7 +206,7 @@ export function stepCard(step, changed = []) {
       const drop = new Set(wordsOf(name).map((w) => w.toLowerCase()));
       const values = rest.map((p) => valueOf(p, changed, { drop })).filter((v) => v.text);
       // the material's own line needs no label: the card names it already
-      items.push({ at, line: { label: text(name) === head.material ? "" : text(name), values } });
+      items.push({ at, line: { label: text(name) === head.material?.text ? "" : text(name), values } });
     } else if (name) {
       items.push({ at, single: name, value: valueOf(name, changed) }); // "Ethanol"
     } else if (label && rest.length > 1) {
@@ -285,12 +288,24 @@ export function stepCard(step, changed = []) {
   return {
     position: step.position,
     headline: step.step_type,
-    material: head.material || "",
-    sub: [head.layer, head.tool].filter(Boolean).join(" · "),
+    material: head.material || null,
+    sub: [head.layer, head.tool].filter(Boolean),
     empty: step.empty,
     varies: stepVaries(step),
     lines,
   };
+}
+
+// the chips' names by row: the label; with labels repeated across
+// subbatches (each restarts at 1), "1 of subbatch 0" as Catalog.names
+// says it; a row without a label is named by its row (labelsOf)
+function rowNames(rows) {
+  const labels = rows.map((r) => r.label).filter((l) => l !== null);
+  const repeated = new Set(labels).size !== labels.length;
+  const name = (r) => (repeated && r.label !== null && r.subbatch !== null
+    ? r.label + " of subbatch " + r.subbatch
+    : r.label);
+  return new Map(rows.map((r) => [r.row, name(r)]));
 }
 
 function labelsOf(rows, byRow) {
@@ -317,7 +332,7 @@ function valueLabel(value, unit) {
 // substrate temperature; the other varying columns are only named.
 // Without a crossing pair, each varying column is its own block.
 export function sampleGroups(view) {
-  const byRow = new Map((view.info?.rows || []).map((r) => [r.row, r.label]));
+  const byRow = rowNames(view.info?.rows || []);
   const vars = (view.variations || []).filter((v) => v.values.length > 1 && !isNote(v));
   if (!vars.length) return { kind: "none" };
   const block = (v) => ({

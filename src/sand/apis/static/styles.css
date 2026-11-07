@@ -636,8 +636,9 @@ body {
   font-weight: 600;
 }
 
-/* a value the confirmed edits changed: a dot, the old value on hover */
-.line-value.value-changed::before {
+/* a value the confirmed edits changed, in a line or the headline: a dot,
+   the old value on hover */
+.value-changed::before {
   content: "";
   display: inline-block;
   width: 7px;
