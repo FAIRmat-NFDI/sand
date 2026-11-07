@@ -155,6 +155,7 @@ async function saveRename(leaving = false) {
   const choice = renameChoice(experiment.name, renameInput.value);
   if (choice.action === "keep" || (choice.action === "refuse" && leaving)) {
     endRename();
+    if (!leaving) renameBtn.focus();
     return;
   }
   if (choice.action === "refuse") {
