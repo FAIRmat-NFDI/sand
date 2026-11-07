@@ -16,6 +16,7 @@ from sand.services.nomad_api import (
     check_response,
     create_upload,
     delete_upload,
+    edit_upload_name,
     entry_id_from_ref,
     entry_mainfile,
     entry_ref,
@@ -224,6 +225,70 @@ class VoiceElnService:
             upload_id=upload_id,
             entry_id=generate_entry_id(upload_id, EXPERIMENT_MAINFILE),
         )
+
+    async def rename_input_collection(
+        self,
+        client: httpx.AsyncClient,
+        upload_id: str,
+        collection_entry_id: str,
+        name: str,
+    ) -> InputCollectionSummary:
+        """The collection's `name` (what the list shows) and the upload's.
+
+        The upload's name goes first: should the entry's write fail, the
+        page still shows the name it has. The entry write waits out the
+        reprocessing, so a list read right after sees the new name.
+        """
+        name = ' '.join(name.split())
+        if not name:
+            raise NomadAPIError(
+                HTTPStatus.BAD_REQUEST, 'a name is needed', step='rename'
+            )
+        mainfile = await self.resolve_collection_mainfile(
+            client, upload_id, collection_entry_id
+        )
+        async with self._collection_lock(upload_id, mainfile):
+            await self.writer.wait_until_writable(
+                client,
+                upload_id,
+                time.monotonic() + self.writer.write_timeout_s,
+                mainfile,
+            )
+            await edit_upload_name(client, upload_id, name)
+            archive = await self.writer.read_archive(
+                client, upload_id, mainfile, wait=False
+            )
+            data = archive.get('data')
+            if not isinstance(data, dict):
+                raise NomadAPIError(
+                    HTTPStatus.NOT_FOUND,
+                    f'entry {collection_entry_id} has no data to name',
+                    step='rename',
+                )
+            data['name'] = name
+            archive['data'] = data
+            await self._write_input(client, upload_id, mainfile, archive)
+        return InputCollectionSummary(
+            upload_id=upload_id,
+            entry_id=collection_entry_id,
+            name=name,
+            created=await self._entry_create_time(client, collection_entry_id),
+        )
+
+    async def _entry_create_time(
+        self, client: httpx.AsyncClient, entry_id: str
+    ) -> str | None:
+        response = await client.post(
+            '/entries/query',
+            json={
+                'owner': 'visible',
+                'query': {'entry_id': entry_id},
+                'required': {'include': ['entry_create_time']},
+            },
+        )
+        check_response(response, step='entry_create_time')
+        data = response.json().get('data') or []
+        return data[0].get('entry_create_time') if data else None
 
     async def add_written_note(  # noqa: PLR0913
         self,

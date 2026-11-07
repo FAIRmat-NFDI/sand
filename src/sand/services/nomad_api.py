@@ -100,6 +100,16 @@ async def create_upload(
         )
 
 
+async def edit_upload_name(
+    client: httpx.AsyncClient, upload_id: str, name: str
+) -> None:
+    """NOMAD refuses (400) while the upload processes: wait it out first."""
+    response = await client.post(
+        f'/uploads/{upload_id}/edit', json={'metadata': {'upload_name': name}}
+    )
+    check_response(response, step='edit_upload_name')
+
+
 async def delete_upload(client: httpx.AsyncClient, upload_id: str) -> None:
     """Already gone is fine. NOMAD refuses while the upload processes."""
     response = await client.delete(f'/uploads/{upload_id}')

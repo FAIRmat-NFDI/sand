@@ -51,6 +51,8 @@ class _FakeNomad:
         upload_exists=True,
     ):
         self.raw_files: dict[str, bytes] = {}
+        self.edit_refused = False  # the upload edit answers 400
+        self.upload_name: str | None = None
         self.entries: dict[str, str] = {}
         self.query_results = query_results or []
         self.processing_polls = processing_polls
@@ -115,10 +117,21 @@ class _FakeNomad:
         archive = json.loads(self.raw_files[mainfile])
         return httpx.Response(200, json={'data': {'archive': archive}})
 
+    def _upload_post(self, request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith('/uploads'):
+            return httpx.Response(200, json={'upload_id': UPLOAD_ID})
+        if path.endswith(f'/uploads/{UPLOAD_ID}/edit'):
+            if self.edit_refused:
+                return httpx.Response(400, json={'detail': 'The upload is processing'})
+            self.upload_name = json.loads(request.content)['metadata']['upload_name']
+            return httpx.Response(200, json={})
+        return httpx.Response(404, json={'detail': f'unexpected {path}'})
+
     def __call__(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
-        if request.method == 'POST' and path.endswith('/uploads'):
-            return httpx.Response(200, json={'upload_id': UPLOAD_ID})
+        if request.method == 'POST' and '/uploads' in path and '/raw/' not in path:
+            return self._upload_post(request)
         if f'/uploads/{UPLOAD_ID}/raw/' in path:
             return self._raw(request)
         if request.method == 'GET' and '/uploads/' in path:
@@ -823,3 +836,64 @@ async def test_delete_input_collection_reports_a_refusal():
             await _service().delete_input_collection(client, 'up1')
 
     assert info.value.step == 'delete_upload'
+
+
+def _fake_with_collection(name: str) -> _FakeNomad:
+    fake = _FakeNomad()
+    fake.raw_files[EXPERIMENT_MAINFILE] = json.dumps(
+        {'data': {'name': name, 'description': 'batch.xlsx', 'notes': []}}
+    ).encode()
+    return fake
+
+
+@pytest.mark.asyncio
+async def test_rename_writes_the_entry_and_the_upload_name():
+    fake = _fake_with_collection('batch 7')
+
+    async with _client(fake) as client:
+        renamed = await _service().rename_input_collection(
+            client, UPLOAD_ID, SAND_COLLECTION_ID, '  batch   8 '
+        )
+
+    assert (renamed.upload_id, renamed.entry_id, renamed.name) == (
+        UPLOAD_ID,
+        SAND_COLLECTION_ID,
+        'batch 8',
+    )
+    assert fake.upload_name == 'batch 8'
+    data = fake.archive(EXPERIMENT_MAINFILE)['data']
+    assert data['name'] == 'batch 8'
+    # the rest of the collection is left as it was
+    assert data['description'] == 'batch.xlsx'
+    assert data['notes'] == []
+
+
+@pytest.mark.asyncio
+async def test_rename_leaves_the_entry_when_the_upload_refuses():
+    fake = _fake_with_collection('batch 7')
+    fake.edit_refused = True
+
+    async with _client(fake) as client:
+        with pytest.raises(NomadAPIError) as excinfo:
+            await _service().rename_input_collection(
+                client, UPLOAD_ID, SAND_COLLECTION_ID, 'batch 8'
+            )
+
+    assert excinfo.value.status_code == HTTPStatus.BAD_REQUEST
+    assert fake.put_attempts == 0
+    assert fake.archive(EXPERIMENT_MAINFILE)['data']['name'] == 'batch 7'
+
+
+@pytest.mark.asyncio
+async def test_rename_refuses_a_blank_name_without_asking_nomad():
+    fake = _fake_with_collection('batch 7')
+
+    async with _client(fake) as client:
+        with pytest.raises(NomadAPIError) as excinfo:
+            await _service().rename_input_collection(
+                client, UPLOAD_ID, SAND_COLLECTION_ID, '  \n '
+            )
+
+    assert excinfo.value.status_code == HTTPStatus.BAD_REQUEST
+    assert fake.upload_name is None
+    assert fake.put_attempts == 0

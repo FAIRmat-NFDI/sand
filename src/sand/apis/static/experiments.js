@@ -4,14 +4,16 @@
 // set with onExperimentSelected. In code a sheet is still an experiment
 // (an InputCollection entry in NOMAD); on the page it is a sheet.
 
-import { errorDetail } from "./api.js";
+import { errorDetail, experimentUrl } from "./api.js";
 import {
-  isSheetFile, metaLines, nameFromFile, uploadedText,
+  isSheetFile, metaLines, nameFromFile, renameChoice, uploadedText, withRenamed,
 } from "./sheet-header-logic.js";
 import { clearError, showError } from "./ui.js";
 
 const header = document.getElementById("sheet-header");
 const sheetNameEl = document.getElementById("sheet-name");
+const renameBtn = document.getElementById("rename-btn");
+const renameInput = document.getElementById("sheet-name-edit");
 const experimentLink = document.getElementById("experiment-link");
 const sheetMeta = document.getElementById("sheet-meta");
 const sheetMetaMore = document.getElementById("sheet-meta-more");
@@ -35,6 +37,7 @@ let selectedId = "";
 let selectionHandler = () => {};
 let locked = false; // a recording runs: no switching, no new sheet
 let uploading = false;
+let renaming = false; // a rename request is on its way
 let chosenFile = null; // the file dropped or chosen, not uploaded yet
 
 export function selectedExperiment() {
@@ -81,6 +84,7 @@ function renderParts(el, parts) {
 // undefined while it is not known (loading, or the read failed): then
 // the header claims nothing about the sheet.
 export function showSheet(experiment, view) {
+  endRename();
   header.classList.toggle("no-sheet", !experiment);
   header.classList.toggle("sheet-missing", view === null);
   if (!experiment) {
@@ -111,6 +115,72 @@ export function showSheet(experiment, view) {
 export function setSheetProgress(text) {
   sheetProgress.textContent = text;
   sheetProgress.hidden = !text;
+}
+
+// --- rename ------------------------------------------------------------------
+
+// The name edited in place of the heading: Enter or leaving the field
+// saves, Escape cancels. A failed rename shows the old name and says why.
+function startRename() {
+  const experiment = selectedExperiment();
+  if (!experiment || renaming) return;
+  renameInput.value = experiment.name || "";
+  fitRename();
+  sheetNameEl.hidden = true;
+  renameBtn.hidden = true;
+  renameInput.hidden = false;
+  renameInput.focus();
+  renameInput.select();
+}
+
+// the field is as wide as its text, like the heading it stands in for
+function fitRename() {
+  renameInput.style.width = Math.max(12, renameInput.value.length + 2) + "ch";
+}
+
+function endRename() {
+  renameInput.hidden = true;
+  sheetNameEl.hidden = false;
+  renameBtn.hidden = false;
+}
+
+async function saveRename() {
+  const experiment = selectedExperiment();
+  if (!experiment || renaming) return;
+  const choice = renameChoice(experiment.name, renameInput.value);
+  if (choice.action === "keep") {
+    endRename();
+    return;
+  }
+  if (choice.action === "refuse") {
+    showError("Give the sheet a name.");
+    renameInput.focus();
+    return;
+  }
+  clearError();
+  renaming = true;
+  renameInput.disabled = true;
+  try {
+    const res = await fetch(experimentUrl(experiment, "name"), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: choice.name }),
+    });
+    if (!res.ok) {
+      showError("Could not rename the sheet: " + await errorDetail(res));
+      return;
+    }
+    const renamed = await res.json();
+    // the menu, the downloads and the header all read the list
+    setExperiments(withRenamed(experiments, renamed));
+    sheetNameEl.textContent = selectedExperiment().name;
+  } catch (err) {
+    showError("Network error: " + err.message);
+  } finally {
+    renaming = false;
+    renameInput.disabled = false;
+    endRename();
+  }
 }
 
 // --- selection ---------------------------------------------------------------
@@ -298,6 +368,22 @@ export function initExperiments() {
       closeMenu();
       sheetsBtn.focus();
     }
+  });
+  renameBtn.addEventListener("click", startRename);
+  renameInput.addEventListener("input", fitRename);
+  renameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      saveRename();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      endRename();
+      renameBtn.focus();
+    }
+  });
+  // hiding the field blurs it too: only a field still shown saves
+  renameInput.addEventListener("blur", () => {
+    if (!renameInput.hidden && !renameInput.disabled) saveRename();
   });
   cancelUploadBtn.addEventListener("click", () => showUpload(false));
   uploadBtn.addEventListener("click", uploadSheet);
