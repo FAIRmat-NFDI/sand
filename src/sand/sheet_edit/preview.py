@@ -77,11 +77,7 @@ def edit_summary(result: Grounded, catalog: Catalog) -> dict[str, str]:
     target = catalog.column(result.edit.target)
     assert target is not None  # ground refused it otherwise
     new = value_text(result.value)
-    if result.rows:
-        held = {r: g.value for g in target.groups for r in g.rows}
-        old = value_text(held.get(result.rows[0]))
-    else:
-        old = new
+    old = _old_text(result, target) if result.rows else new
     return {
         'step': target.column.section.label,
         'column': target.column.header,
@@ -92,11 +88,16 @@ def edit_summary(result: Grounded, catalog: Catalog) -> dict[str, str]:
 
 
 def _change(result: Grounded, target: ColumnInfo, catalog: Catalog) -> str:
-    """'3000 → 4000, all 12 samples'. The rows written all hold the same
-    value: check O refused the edit otherwise."""
-    held = {r: g.value for g in target.groups for r in g.rows}
-    old = value_text(held.get(result.rows[0]))
+    """'3000 → 4000, all 12 samples'; 'various → 4000, …' when the rows
+    written hold different values (the note under it says which)."""
+    old = _old_text(result, target)
     return f'{old} → {value_text(result.value)}, {samples_text(result.rows, catalog)}'
+
+
+def _old_text(result: Grounded, target: ColumnInfo) -> str:
+    held = {r: g.value for g in target.groups for r in g.rows}
+    olds = list(dict.fromkeys(value_text(held.get(r)) for r in result.rows))
+    return olds[0] if len(olds) == 1 else 'various'
 
 
 def samples_text(rows: tuple[int, ...], catalog: Catalog) -> str:

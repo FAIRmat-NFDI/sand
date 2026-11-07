@@ -4,7 +4,8 @@ written.
 Structure: W the target is writable, R the rows exist and are found by
 exact match, S the samples the user named are the ones used. Value: A
 the anchor ("the volume of the DMSO") holds and points at the target, O
-`old` is what the cell holds, V `new` is in the user's words, T it fits
+`old` is what the cell holds (or one of the values, when the rows
+differ), V `new` is in the user's words, T it fits
 the column's type, U its unit is the column's. N rows that already hold
 the value are reported, not written.
 
@@ -52,6 +53,7 @@ _ALL_RE = re.compile(
 _LIST_WORDS = {'and', 'or', 'to', 'through', 'thru', 'till', 'until', '&', 'plus'}
 _LIST_WORDS |= {'no', 'number', 'nr', '#'}  # "sample no. 3"
 _SHOWN_VALUES = 8
+_LISTED_VALUES = 3  # more distinct values are counted, not listed
 _STEP_WORDS = {'step', 'section'}  # words a step number follows
 
 RowsAndNotes = tuple[tuple[int, ...], tuple[str, ...]]
@@ -659,30 +661,35 @@ def _rows_not_holding(column: ColumnInfo, text: str, rows) -> list[int]:
 
 
 def _values(column: ColumnInfo, rows: list[int]) -> list[object]:
-    """The distinct values the rows hold, in sheet order."""
-    held = {r: g.value for g in column.groups for r in g.rows}
-    return list(dict.fromkeys(held.get(r) for r in rows))
-
-
-_LISTED_VALUES = 3  # more distinct values are counted, not listed
+    """The distinct values the rows hold, in sheet order, as the user
+    reads them: 3000 stored as text is the number 3000."""
+    seen: dict[str, object] = {}
+    for g in column.groups:
+        if any(r in rows for r in g.rows):
+            seen.setdefault(_text(g.value), g.value)
+    return list(seen.values())
 
 
 def _held(column: ColumnInfo, catalog: Catalog, rows: list[int]) -> str:
-    """ "'3000' on samples 1–3 and '3500' on samples 4–5"; many values:
-    "11 different values, 'PbBr3' to 'PbBr13', on samples 2–13"."""
+    """ "'3000' on samples 1–3 and empty on samples 4–5"; many values:
+    "11 different values on samples 2–13, from 'PbBr3' on sample 2 to
+    'PbBr13' on sample 13"."""
     by_value: dict[str, list[int]] = {}
     for g in column.groups:
         for r in g.rows:
             if r in rows:
                 by_value.setdefault(_text(g.value), []).append(r)
+    shown = {v: ('empty' if v == '' else repr(v)) for v in by_value}
     if len(by_value) > _LISTED_VALUES:
-        values = list(by_value)
+        first, last = next(iter(by_value)), next(reversed(by_value))
         return (
-            f'{len(values)} different values, {values[0]!r} to {values[-1]!r}, '
-            f'on samples {catalog.names(sorted(rows))}'
+            f'{len(by_value)} different values on samples {catalog.names(sorted(rows))}, '
+            f'from {shown[first]} on sample {catalog.names(by_value[first][:1])} '
+            f'to {shown[last]} on sample {catalog.names(by_value[last][-1:])}'
         )
     return ' and '.join(
-        f'{v!r} on samples {catalog.names(sorted(rs))}' for v, rs in by_value.items()
+        f'{shown[v]} on samples {catalog.names(sorted(rs))}'
+        for v, rs in by_value.items()
     )
 
 

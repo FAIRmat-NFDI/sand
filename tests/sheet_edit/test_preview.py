@@ -85,6 +85,19 @@ def test_an_edit_reads_as_step_header_change_samples_and_words(catalog):
     ]
 
 
+def test_rows_holding_different_values_say_various(catalog):
+    varying = edit(
+        target=SUBSTRATE, old=None, new='130', said='substrate temperature 130'
+    )
+    assert lines(catalog, varying)[:3] == [
+        '5: Close Space Sublimation · Substrate temperature [°C]: various → 130, '
+        'all 12 samples',
+        '   from "substrate temperature 130"',
+        "   · holds '120' on samples 1–5, 7 and '115' on samples 8–13, all become 130",
+    ]
+    assert edit_summary(ground(varying, catalog), catalog)['old'] == 'various'
+
+
 def test_an_edit_in_parts_for_the_gui(catalog):
     assert edit_summary(ground(edit(), catalog), catalog) == {
         'step': '2: Spin Coating',
