@@ -16,7 +16,6 @@ from sand.services.nomad_api import (
     check_response,
     create_upload,
     delete_upload,
-    edit_upload_name,
     entry_id_from_ref,
     entry_mainfile,
     entry_ref,
@@ -248,13 +247,7 @@ class VoiceElnService:
             client, upload_id, collection_entry_id
         )
         async with self._collection_lock(upload_id, mainfile):
-            await self.writer.wait_until_writable(
-                client,
-                upload_id,
-                time.monotonic() + self.writer.write_timeout_s,
-                mainfile,
-            )
-            await edit_upload_name(client, upload_id, name)
+            await self.writer.edit_upload_name(client, upload_id, name)
             archive = await self.writer.read_archive(
                 client, upload_id, mainfile, wait=False
             )
@@ -268,27 +261,11 @@ class VoiceElnService:
             data['name'] = name
             archive['data'] = data
             await self._write_input(client, upload_id, mainfile, archive)
+        # no `created`: the page keeps the list's, and a query after two
+        # successful writes would only be one more thing to fail
         return InputCollectionSummary(
-            upload_id=upload_id,
-            entry_id=collection_entry_id,
-            name=name,
-            created=await self._entry_create_time(client, collection_entry_id),
+            upload_id=upload_id, entry_id=collection_entry_id, name=name
         )
-
-    async def _entry_create_time(
-        self, client: httpx.AsyncClient, entry_id: str
-    ) -> str | None:
-        response = await client.post(
-            '/entries/query',
-            json={
-                'owner': 'visible',
-                'query': {'entry_id': entry_id},
-                'required': {'include': ['entry_create_time']},
-            },
-        )
-        check_response(response, step='entry_create_time')
-        data = response.json().get('data') or []
-        return data[0].get('entry_create_time') if data else None
 
     async def add_written_note(  # noqa: PLR0913
         self,
@@ -714,8 +691,8 @@ class VoiceElnService:
         mainfile: str,
         archive: dict,
     ) -> None:
-        """Write a revised input and wait for NOMAD to reprocess it, so a
-        list read right after the request already sees the change."""
+        """Write a revised input (or the collection) and wait for NOMAD to
+        reprocess it, so a list read right after already sees the change."""
         await self.writer.write_archive(client, upload_id, mainfile, archive)
         await self.writer.wait_until_writable(
             client,

@@ -214,12 +214,6 @@ body {
 
 .sheet-rename-btn {
   flex: 0 0 auto;
-  opacity: 0.55;
-}
-
-.sheet-name-row:hover .sheet-rename-btn,
-.sheet-rename-btn:focus-visible {
-  opacity: 1;
 }
 
 .sheet-rename-btn .material-icons {

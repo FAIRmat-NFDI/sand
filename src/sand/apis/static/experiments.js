@@ -84,7 +84,6 @@ function renderParts(el, parts) {
 // undefined while it is not known (loading, or the read failed): then
 // the header claims nothing about the sheet.
 export function showSheet(experiment, view) {
-  endRename();
   header.classList.toggle("no-sheet", !experiment);
   header.classList.toggle("sheet-missing", view === null);
   if (!experiment) {
@@ -95,7 +94,9 @@ export function showSheet(experiment, view) {
     setSheetProgress("");
     return;
   }
-  sheetNameEl.textContent = experiment.name || experiment.upload_id;
+  // callers hold the object they were given; a rename replaced it in the list
+  const listed = experimentsById[experiment.entry_id] || experiment;
+  sheetNameEl.textContent = listed.name || listed.upload_id;
   experimentLink.href = experiment.entry_url;
   experimentLink.hidden = false;
   if (!view) {
@@ -121,6 +122,8 @@ export function setSheetProgress(text) {
 
 // The name edited in place of the heading: Enter or leaving the field
 // saves, Escape cancels. A failed rename shows the old name and says why.
+// A refresh of the header leaves an open rename alone; switching sheets
+// ends it.
 function startRename() {
   const experiment = selectedExperiment();
   if (!experiment || renaming) return;
@@ -144,17 +147,18 @@ function endRename() {
   renameBtn.hidden = false;
 }
 
-async function saveRename() {
+// `leaving`: the field lost focus, so a blank cancels instead of holding
+// the focus, and the focus is not moved afterwards
+async function saveRename(leaving = false) {
   const experiment = selectedExperiment();
   if (!experiment || renaming) return;
   const choice = renameChoice(experiment.name, renameInput.value);
-  if (choice.action === "keep") {
+  if (choice.action === "keep" || (choice.action === "refuse" && leaving)) {
     endRename();
     return;
   }
   if (choice.action === "refuse") {
     showError("Give the sheet a name.");
-    renameInput.focus();
     return;
   }
   clearError();
@@ -173,19 +177,23 @@ async function saveRename() {
     const renamed = await res.json();
     // the menu, the downloads and the header all read the list
     setExperiments(withRenamed(experiments, renamed));
-    sheetNameEl.textContent = selectedExperiment().name;
+    if (selectedExperiment()?.entry_id === experiment.entry_id) {
+      sheetNameEl.textContent = renamed.name;
+    }
   } catch (err) {
     showError("Network error: " + err.message);
   } finally {
     renaming = false;
     renameInput.disabled = false;
     endRename();
+    if (!leaving) renameBtn.focus();
   }
 }
 
 // --- selection ---------------------------------------------------------------
 
 function select(entryId) {
+  endRename();
   selectedId = experimentsById[entryId] ? entryId : "";
   try {
     localStorage.setItem(SELECTED_EXPERIMENT_KEY, selectedId);
@@ -383,7 +391,7 @@ export function initExperiments() {
   });
   // hiding the field blurs it too: only a field still shown saves
   renameInput.addEventListener("blur", () => {
-    if (!renameInput.hidden && !renameInput.disabled) saveRename();
+    if (!renameInput.hidden && !renameInput.disabled) saveRename(true);
   });
   cancelUploadBtn.addEventListener("click", () => showUpload(false));
   uploadBtn.addEventListener("click", uploadSheet);

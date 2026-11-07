@@ -51,7 +51,8 @@ class _FakeNomad:
         upload_exists=True,
     ):
         self.raw_files: dict[str, bytes] = {}
-        self.edit_refused = False  # the upload edit answers 400
+        self.edit_refused = False  # every upload edit answers 400
+        self.blocked_edits = 0  # edits refused by processing, like blocked_writes
         self.upload_name: str | None = None
         self.entries: dict[str, str] = {}
         self.query_results = query_results or []
@@ -122,9 +123,13 @@ class _FakeNomad:
         if path.endswith('/uploads'):
             return httpx.Response(200, json={'upload_id': UPLOAD_ID})
         if path.endswith(f'/uploads/{UPLOAD_ID}/edit'):
-            if self.edit_refused:
+            if self.edit_refused or self.blocked_edits > 0:
+                self.blocked_edits -= 1
+                self.processing_polls = max(self.processing_polls, 1)
                 return httpx.Response(400, json={'detail': 'The upload is processing'})
             self.upload_name = json.loads(request.content)['metadata']['upload_name']
+            # the edit is itself a NOMAD process: the next write waits for it
+            self.processing_polls = max(self.processing_polls, 1)
             return httpx.Response(200, json={})
         return httpx.Response(404, json={'detail': f'unexpected {path}'})
 
@@ -866,6 +871,23 @@ async def test_rename_writes_the_entry_and_the_upload_name():
     # the rest of the collection is left as it was
     assert data['description'] == 'batch.xlsx'
     assert data['notes'] == []
+
+
+@pytest.mark.asyncio
+async def test_rename_waits_out_processing_and_a_blocked_edit():
+    fake = _fake_with_collection('batch 7')
+    fake.processing_polls = 2  # a job is writing when the rename comes
+    fake.blocked_edits = 1  # and another write slips in before the edit
+
+    async with _client(fake) as client:
+        renamed = await _service().rename_input_collection(
+            client, UPLOAD_ID, SAND_COLLECTION_ID, 'batch 8'
+        )
+
+    assert renamed.name == 'batch 8'
+    assert fake.upload_name == 'batch 8'
+    assert fake.put_attempts == 1
+    assert fake.archive(EXPERIMENT_MAINFILE)['data']['name'] == 'batch 8'
 
 
 @pytest.mark.asyncio
