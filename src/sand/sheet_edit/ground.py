@@ -118,8 +118,7 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
         anchor = catalog.column(edit.anchor.column)
         found = anchor_problems(edit, target, anchor, catalog, rows)
         problems, doubts = problems + found[0], doubts + found[1]
-    found = old_problems(edit, target, catalog, rows)  # O
-    problems, notes = problems + found[0], (*notes, *found[1])
+    problems += old_problems(edit, target, catalog, rows)  # O
     found = value_problems(edit, target, anchor, catalog)  # V
     problems, doubts = problems + found[0], doubts + found[2]
     notes = (*notes, *found[1])
@@ -641,25 +640,22 @@ def anchor_problems(
 
 def old_problems(
     edit: Edit, target: ColumnInfo, catalog: Catalog, rows: tuple[int, ...]
-) -> tuple[list[str], list[str]]:
+) -> list[str]:
     """`old` must be what the target holds in every targeted row that
     does not already hold `new`; otherwise the LLM read another line of
     the table. Rows that hold different values cannot share one `old`
-    ("PbBr2 for all samples" over a column that counts up): there the
-    edit passes with a note saying what they hold, as long as `old` is
-    empty or one of those values. Returns (problems, notes)."""
+    ("PbBr2 for all samples" over a column that counts up): there an
+    `old` that is empty or one of those values passes; the preview says
+    "various" for them."""
     to_change = _rows_not_holding(target, edit.new, rows)
     wrong = [
         r for r in _rows_not_holding(target, edit.old or '', rows) if r in to_change
     ]
     if not wrong:
-        return [], []
+        return []
     held = _values(target, to_change)
     if len(held) > 1 and (not edit.old or any(same_value(edit.old, v) for v in held)):
-        return [], [
-            f'{column_name(target)}: holds {_held(target, catalog, to_change)}, '
-            f'all become {edit.new or "empty"}'
-        ]
+        return []
     claimed = 'empty' if not edit.old else repr(edit.old)
     return [
         f'{column_name(target)} holds {_held(target, catalog, wrong)}, not {claimed}'

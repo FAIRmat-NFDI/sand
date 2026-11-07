@@ -89,11 +89,10 @@ def test_rows_holding_different_values_say_various(catalog):
     varying = edit(
         target=SUBSTRATE, old=None, new='130', said='substrate temperature 130'
     )
-    assert lines(catalog, varying)[:3] == [
+    assert lines(catalog, varying) == [
         '5: Close Space Sublimation · Substrate temperature [°C]: various → 130, '
         'all 12 samples',
         '   from "substrate temperature 130"',
-        "   · holds '120' on samples 1–5, 7 and '115' on samples 8–13, all become 130",
     ]
     assert edit_summary(ground(varying, catalog), catalog)['old'] == 'various'
 

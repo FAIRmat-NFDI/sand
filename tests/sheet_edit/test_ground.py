@@ -651,9 +651,9 @@ def counting(synthetic_xlsx):
     return build(edited(synthetic_xlsx, change))
 
 
-def test_rows_holding_different_values_pass_with_a_note(catalog):
+def test_rows_holding_different_values_take_one_edit(catalog):
     # substrate T: 120 on samples 1-5, 7 and 115 on 8-13; one `old` cannot
-    # describe both, so an empty or a held `old` passes with the note
+    # describe both, so an empty or a held `old` passes, without a note
     for old in (None, '115', '120'):
         result = ground(
             edit(
@@ -663,11 +663,7 @@ def test_rows_holding_different_values_pass_with_a_note(catalog):
         )
         assert isinstance(result, Grounded), old
         assert result.rows == ALL_ROWS
-        assert result.confidence == 'medium'
-        assert result.notes == (
-            'Substrate temperature [°C] (5: Close Space Sublimation): holds '
-            "'120' on samples 1–5, 7 and '115' on samples 8–13, all become 130",
-        )
+        assert (result.confidence, result.notes) == ('high', ())
     # a value none of them holds: the model read another line
     why = refused(
         ground(
@@ -693,32 +689,40 @@ def substrate_values(synthetic_xlsx, values):
 
 
 def test_three_values_are_listed_and_four_counted(synthetic_xlsx):
-    three = ground(
-        edit(target=SUBSTRATE, old=None, new='130', said='substrate temperature 130'),
-        substrate_values(synthetic_xlsx, [100, 105, 110]),
+    # a foreign `old` is refused, and the refusal says what the rows hold
+    three = refused(
+        ground(
+            edit(
+                target=SUBSTRATE, old='99', new='130', said='substrate temperature 130'
+            ),
+            substrate_values(synthetic_xlsx, [100, 105, 110]),
+        )
     )
-    assert three.notes[0].endswith(
+    assert three.endswith(
         "holds '100' on samples 1–3, 11–13 and '105' on samples 4–5, 7 "
-        "and '110' on samples 8–10, all become 130"
+        "and '110' on samples 8–10, not '99'"
     )
-    four = ground(
-        edit(target=SUBSTRATE, old=None, new='130', said='substrate temperature 130'),
-        substrate_values(synthetic_xlsx, [100, 105, 110, 115]),
+    four = refused(
+        ground(
+            edit(
+                target=SUBSTRATE, old='99', new='130', said='substrate temperature 130'
+            ),
+            substrate_values(synthetic_xlsx, [100, 105, 110, 115]),
+        )
     )
-    assert four.notes[0].endswith(
+    assert four.endswith(
         "holds 4 different values on samples 1–5, 7–13, from '100' on sample 1 "
-        "to '115' on sample 13, all become 130"
+        "to '115' on sample 13, not '99'"
     )
 
 
-def test_a_clear_over_different_values_passes_with_the_note(catalog):
+def test_a_clear_over_different_values_passes(catalog):
     result = ground(
         edit(target=SUBSTRATE, old=None, new='', said='clear substrate temperature'),
         catalog,
     )
     assert isinstance(result, Grounded)
-    assert result.value is None
-    assert result.notes[0].endswith('all become empty')
+    assert (result.value, result.rows, result.notes) == (None, ALL_ROWS, ())
 
 
 def test_empty_cells_among_the_values_are_called_empty(synthetic_xlsx):
@@ -729,13 +733,20 @@ def test_empty_cells_among_the_values_are_called_empty(synthetic_xlsx):
             lambda ws: [ws.__setitem__(f'{solvent}{r}', None) for r in range(3, 9)],
         )
     )
-    result = ground(
+    passed = ground(
         edit(target=CLEAN_SOLVENT_2, old=None, new='DMSO', said='solvent 2 DMSO'),
         half_empty,
     )
-    assert result.notes == (
-        "Solvent 2 (1: Cleaning UV-Ozone): holds empty on samples 1–5, 7 and 'IPA' "
-        'on samples 8–13, all become DMSO',
+    assert isinstance(passed, Grounded)
+    why = refused(
+        ground(
+            edit(target=CLEAN_SOLVENT_2, old='XYZ', new='DMSO', said='solvent 2 DMSO'),
+            half_empty,
+        )
+    )
+    assert why == (
+        "Solvent 2 (1: Cleaning UV-Ozone) holds empty on samples 1–5, 7 and 'IPA' "
+        "on samples 8–13, not 'XYZ'"
     )
 
 
@@ -766,8 +777,6 @@ def test_a_column_that_counts_up_is_set_for_all_samples(counting):
     assert result.unchanged == (3,)  # sample 1 holds PbBr2 already
     assert result.rows == ALL_ROWS[1:]
     assert result.notes == (
-        'Solvent 2 (1: Cleaning UV-Ozone): holds 11 different values on samples '
-        "2–5, 7–13, from 'PbBr3' on sample 2 to 'PbBr13' on sample 13, all become PbBr2",
         'Solvent 2 (1: Cleaning UV-Ozone): sample 1 already PbBr2, nothing to change',
     )
     # one of the many values is a fine `old` too
