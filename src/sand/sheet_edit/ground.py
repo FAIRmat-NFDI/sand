@@ -659,7 +659,7 @@ def old_problems(
     claimed = 'empty' if not edit.old else repr(edit.old)
     return [
         f'{column_name(target)} holds {_held(target, catalog, wrong)}, not {claimed}'
-    ], []
+    ]
 
 
 def _rows_not_holding(column: ColumnInfo, text: str, rows) -> list[int]:
