@@ -391,6 +391,349 @@ body {
   padding-left: 20px;
 }
 
+/* Sheet overview */
+.sheet-overview {
+  padding: 16px 24px 20px;
+}
+
+/* the whole head row folds and unfolds the overview */
+.overview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.overview-head:focus-visible {
+  outline: 2px solid #2A4CDF;
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+.overview-toggle-hint {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #2A4CDF;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  white-space: nowrap;
+}
+
+.overview-toggle-hint .material-icons {
+  font-size: 20px;
+}
+
+.overview-head .section-title {
+  margin-bottom: 0;
+}
+
+.overview-head .section-count {
+  text-transform: none;
+  letter-spacing: 0;
+  margin-left: 4px;
+}
+
+.overview-warnings {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 10px 14px;
+  font-size: 0.86rem;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 4px;
+}
+
+.overview-warnings .material-icons {
+  font-size: 18px;
+}
+
+.overview-block {
+  margin-top: 18px;
+}
+
+.overview-block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.overview-block-head h3 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #555;
+}
+
+.overview-block-head span {
+  font-size: 0.8rem;
+  color: #777;
+}
+
+/* the steps: one card each, the one that varies in blue */
+/* one row of cards that slides sideways; the row's height is the tallest card's */
+.step-grid {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding-bottom: 8px; /* room for the scrollbar */
+  scrollbar-width: thin;
+}
+
+/* a card is as wide as its longest line, within bounds */
+.step-grid > .step-card {
+  flex: 0 0 auto;
+  width: max-content;
+  min-width: 220px;
+  max-width: 400px;
+  scroll-snap-align: start;
+}
+
+.step-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid #e3e6eb;
+  border-radius: 4px;
+  background: #fff;
+  min-width: 0;
+}
+
+.step-card.step-varies {
+  border: 2px solid #2A4CDF;
+  background: #f5f8ff;
+  padding: 13px 15px;
+}
+
+.step-card.step-empty {
+  border: 1.5px dashed #c9ced6;
+  background: #fafafa;
+  color: #6b7079;
+}
+
+.step-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.step-number {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: #f0f1f4;
+  color: #1f2430;
+  flex-shrink: 0;
+}
+
+.step-varies .step-number {
+  background: #2A4CDF;
+  color: #fff;
+}
+
+
+.step-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.step-headline {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #1f2430;
+  overflow-wrap: anywhere;
+}
+
+.step-empty .step-headline {
+  color: #6b7079;
+}
+
+.step-sub {
+  font-size: 0.8rem;
+  color: #6b7079;
+}
+
+.step-material {
+  color: #1f2430;
+  font-weight: 600;
+}
+
+/* the step's lines, written like notes: a quiet label, the values after it */
+.step-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid #eef0f3;
+  padding-top: 10px;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: #1f2430;
+  font-variant-numeric: tabular-nums;
+}
+
+/* a line wraps between its values, not inside one; a long value may */
+.step-line {
+  overflow-wrap: break-word;
+}
+
+.line-value {
+  white-space: nowrap;
+}
+
+.line-value.long,
+.step-note .line-value {
+  white-space: normal;
+}
+
+.line-label {
+  color: #6b7079;
+  margin-right: 7px;
+}
+
+.line-sep {
+  color: #9aa0aa;
+  margin: 0 5px;
+}
+
+.step-note {
+  color: #6b7079;
+  font-style: italic;
+}
+
+.step-note .line-value::before { content: "\201C"; }
+.step-note .line-value::after { content: "\201D"; }
+
+/* a value that varies between samples: blue, no box; the samples
+   section below says which sample got what */
+.line-value.value-varies {
+  color: #2A4CDF;
+  font-weight: 600;
+}
+
+/* a value the confirmed edits changed, in a line or the headline: a dot,
+   the old value on hover */
+.value-changed::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2A4CDF;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+/* the samples: a row per value of the first varying column, the cells
+   of the second across, chips for the samples */
+.samples-box {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #e3e6eb;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.sample-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.sample-axis {
+  width: 128px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.sample-axis-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1f2430;
+  overflow-wrap: anywhere;
+}
+
+.sample-axis-name {
+  font-size: 0.75rem;
+  color: #6b7079;
+}
+
+.sample-axis-step {
+  display: block;
+  font-size: 0.74rem;
+  color: #9aa0aa;
+}
+
+.sample-cells {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(var(--cells, auto-fill), minmax(72px, 1fr));
+  gap: 10px;
+}
+
+.sample-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 72px;
+}
+
+.sample-cell-value {
+  font-size: 0.78rem;
+  color: #1f2430;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sample-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.sample-chip {
+  font-size: 0.75rem;
+  font-weight: 600;
+  min-width: 26px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.sample-chip.tone-0 { background: #dbe6fe; color: #1e3a8a; }
+.sample-chip.tone-1 { background: #ffe4d1; color: #7c2d12; }
+.sample-chip.tone-2 { background: #d9f2e6; color: #14532d; }
+.sample-chip.tone-3 { background: #ece4ff; color: #4c1d95; }
+
 /* Link to the created AudioInput entry in NOMAD */
 .audio-entry-text {
   font-size: 0.875rem;

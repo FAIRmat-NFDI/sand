@@ -30,6 +30,11 @@ def test_info_is_what_holds_for_every_sample(view):
     assert view['sheet'] == 'Experiment Data'
     assert view['info']['samples'] == len(SAMPLE_LABELS)
     assert view['info']['subbatches'] == ['0']
+    assert view['info']['rows'][:2] == [
+        {'row': 3, 'label': '1', 'subbatch': '0'},
+        {'row': 4, 'label': '2', 'subbatch': '0'},
+    ]
+    assert [r['label'] for r in view['info']['rows']] == [str(n) for n in SAMPLE_LABELS]
     fields = {f['header']: f for f in view['info']['fields']}
     # the identity columns, the per-sample Variation and the empty Notes are not fields
     assert list(fields) == ['Date', 'Project_Name', 'Batch', 'Sample area [cm^2]']
@@ -184,6 +189,36 @@ def test_a_number_typed_as_text_is_one_value_but_warned(synthetic_xlsx):
         'Rotation speed [rpm] in 2: Spin Coating mixes numbers and text'
         in view['warnings']
     )
+
+
+def test_a_name_that_counts_up_row_by_row_is_warned(synthetic_xlsx):
+    """PbBr2, PbBr3, ... down a name column is Excel's drag-fill, not
+    fourteen solutes."""
+    material = letter('2: Spin Coating', 'Material name')
+
+    def drag_fill(ws):
+        for i, row in enumerate(range(3, 15)):
+            ws[f'{material}{row}'] = f'PbBr{i + 2}'
+
+    view = sheet_view(build(edited(synthetic_xlsx, drag_fill)))
+    assert (
+        'Material name in 2: Spin Coating counts up from PbBr2 to PbBr13: '
+        'an Excel drag-fill?'
+    ) in view['warnings']
+    # numbers that do not grow by one, or several prefixes, are no drag-fill
+    view = sheet_view(
+        build(
+            edited(
+                synthetic_xlsx,
+                lambda ws: [
+                    ws.__setitem__(f'{material}3', 'PbBr2'),
+                    ws.__setitem__(f'{material}4', 'PbBr5'),
+                    ws.__setitem__(f'{material}5', 'PbBr6'),
+                ],
+            )
+        )
+    )
+    assert not [w for w in view['warnings'] if 'counts up' in w]
 
 
 def test_a_varying_material_is_no_headline(synthetic_xlsx):

@@ -9,6 +9,7 @@ by that text: 3000 and 3000.0 are one value, '8 times' and '8 times '
 are one value too.
 """
 
+import re
 from collections import Counter
 
 from sand.sheet_edit.catalog import (
@@ -40,6 +41,7 @@ def sheet_view(catalog: Catalog, log: Changelog | None = None) -> dict:
     """
     {'sheet': 'Experiment Data',
      'info': {'samples': 42, 'subbatches': ['0'],
+              'rows': [{'row', 'label', 'subbatch'}],
               'fields': [{'column_id', 'header', 'name', 'unit', 'type', 'value'}]},
      'steps': [{'position', 'step_type', 'label', 'material', 'layer', 'empty',
                 'varies', 'params': [{'column_id', 'header', 'name', 'unit',
@@ -89,11 +91,22 @@ def sheet_view(catalog: Catalog, log: Changelog | None = None) -> dict:
             for c in columns
             if c.type == 'mixed'
         ]
+        warnings += [
+            f'{c.column.header} in {section.label} counts up from '
+            f'{run[0]} to {run[1]}: an Excel drag-fill?'
+            for c in columns
+            if c.column.header not in _IDENTITY and (run := _counts_up(values[c.id]))
+        ]
     return {
         'sheet': catalog.structure.sheet_name,
         'info': {
             'samples': len(catalog.samples),
             'subbatches': sorted({s.subbatch for s in catalog.samples} - {None}),
+            # the rows the values name, with their labels: for sample chips
+            'rows': [
+                {'row': s.row, 'label': s.label, 'subbatch': s.subbatch}
+                for s in catalog.samples
+            ],
             'fields': info,
         },
         'steps': steps,
@@ -128,6 +141,27 @@ def _values(c: ColumnInfo, catalog: Catalog) -> list[dict]:
         }
         for text, rows in merged.items()
     ]
+
+
+_COUNTED = re.compile(r'^(.*\D)(\d+)$')
+_COUNT_FROM = 3  # distinct values before a column is said to count up
+
+
+def _counts_up(values: list[dict]) -> tuple[str, str] | None:
+    """The first and last value when a text column's values are one
+    prefix with a number that grows by one row by row (PbBr2, PbBr3,
+    ...): what Excel's drag-fill makes of a name. None otherwise."""
+    if len(values) < _COUNT_FROM or any(v['value'] is None for v in values):
+        return None
+    ordered = sorted(values, key=lambda v: v['rows'][0])
+    parsed = [_COUNTED.match(v['value']) for v in ordered]
+    if not all(parsed):
+        return None
+    prefixes = {m.group(1) for m in parsed}
+    numbers = [int(m.group(2)) for m in parsed]
+    if len(prefixes) > 1 or any(b != a + 1 for a, b in zip(numbers, numbers[1:])):
+        return None
+    return ordered[0]['value'], ordered[-1]['value']
 
 
 def _step(section: Section, columns: list[ColumnInfo], values: dict) -> dict:
