@@ -85,6 +85,18 @@ def test_an_edit_reads_as_step_header_change_samples_and_words(catalog):
     ]
 
 
+def test_rows_holding_different_values_say_various(catalog):
+    varying = edit(
+        target=SUBSTRATE, old=None, new='130', said='substrate temperature 130'
+    )
+    assert lines(catalog, varying) == [
+        '5: Close Space Sublimation · Substrate temperature [°C]: various → 130, '
+        'all 12 samples',
+        '   from "substrate temperature 130"',
+    ]
+    assert edit_summary(ground(varying, catalog), catalog)['old'] == 'various'
+
+
 def test_an_edit_in_parts_for_the_gui(catalog):
     assert edit_summary(ground(edit(), catalog), catalog) == {
         'step': '2: Spin Coating',
@@ -92,7 +104,15 @@ def test_an_edit_in_parts_for_the_gui(catalog):
         'old': '3000',
         'new': '4000',
         'samples': 'all 12 samples',
+        'unchanged': '',
     }
+    # the samples left out because they hold the value: said at the edit
+    aside = edit(SUBSTRATE, old='120', new='115', said='substrate temperature 115')
+    summary = edit_summary(ground(aside, catalog), catalog)
+    assert (summary['samples'], summary['unchanged']) == (
+        'samples 1–5, 7',
+        'samples 8–13 already 115',
+    )
     noop = edit_summary(ground(edit(new='3000', said='speed 3000'), catalog), catalog)
     assert (noop['old'], noop['new'], noop['samples']) == (
         '3000',
@@ -166,12 +186,12 @@ def test_nothing_to_change(catalog):
     assert lines(catalog, edit(new='3000', said='speed 3000')) == [
         '= 2: Spin Coating · Rotation speed [rpm]',
         '   from "speed 3000"',
-        '   · already 3000 on all 12 samples, nothing to change',
+        '   · all 12 samples already 3000, nothing to change',
     ]
     assert lines(catalog, edit(NOTES, old=None, new='', said='clear the notes')) == [
         '= 2: Spin Coating · Notes',
         '   from "clear the notes"',
-        '   · already empty on all 12 samples, nothing to change',
+        '   · all 12 samples already empty, nothing to change',
     ]
 
 
@@ -181,7 +201,7 @@ def test_rows_already_at_the_value_are_set_aside(catalog):
         '5: Close Space Sublimation · Substrate temperature [°C]: 120 → 115, '
         'samples 1–5, 7',
         '   from "substrate temperature 115"',
-        '   · already 115 on samples 8–13, nothing to change',
+        '   · samples 8–13 already 115, nothing to change',
     ]
 
 
@@ -224,7 +244,7 @@ def test_a_formula_reading_the_column_is_a_mark(catalog):
     # nothing written: no formula changes either
     same = edit(DATE, old='20250101', new='20250101', said='date 20250101')
     assert lines(catalog, same)[-1] == (
-        '   · already 20250101 on all 12 samples, nothing to change'
+        '   · all 12 samples already 20250101, nothing to change'
     )
 
 
