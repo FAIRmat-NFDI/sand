@@ -11,9 +11,9 @@
 import { errorDetail, experimentUrl } from "./api.js";
 import {
   confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputsToRead, pendingKeys,
-  progressLine, readKey, reportsByEntry, unwrittenCount, unwrittenKey, writtenEdits,
+  readKey, reportsByEntry, unwrittenCount, unwrittenKey, writtenEdits,
 } from "./edit-logic.js";
-import { requireExperiment, setSheetProgress, showSheet } from "./experiments.js";
+import { requireExperiment, showSheet } from "./experiments.js";
 import { setOverviewUpdates, showOverview } from "./overview.js";
 import { setInputsListener, setReports } from "./inputs.js";
 import { clearError, showError } from "./ui.js";
@@ -113,14 +113,12 @@ function busy(text) {
 // the header's line: the updates of the shown sheet and what became of them
 function updateProgress() {
   if (!current) {
-    setSheetProgress("");
     setOverviewUpdates(null);
     return;
   }
   const updates = inputsSeen && inputsSeen.entryId === current.entry_id
     ? inputsSeen.items.length
     : null;
-  setSheetProgress(progressLine(updates, lastStatus));
   setOverviewUpdates(updates);
 }
 

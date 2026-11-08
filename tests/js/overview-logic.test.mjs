@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  EMPTY, overviewSummary, sampleGroups, stepCard, valueCell,
+  EMPTY, layerStack, overviewSummary, sampleGroups, stepCard, valueCell,
 } from "../../src/sand/apis/static/overview-logic.js";
 
 let nextColumn = 0;
@@ -410,4 +410,21 @@ test("the summary line", () => {
   assert.equal(overviewSummary({ steps: [] }), "0 steps");
   assert.equal(overviewSummary({ steps: [{ position: 1, varies: false }], changed: [{ column_id: "C1", row: 3 }] }),
     "1 step · 1 cell edited");
+});
+
+test("the layer stack: the conductive layer, then each step's material", () => {
+  const info = { fields: [
+    { name: "Substrate material", header: "Substrate material", value: "Glass" },
+    { name: "Substrate conductive layer", header: "Substrate conductive layer", value: "ITO" },
+  ] };
+  const view = { info, steps: [
+    step(1, "Cleaning", [param("Solvent 1", one("Acetone"), { family: { group: "cleaning_steps", index: 1 } })]),
+    step(2, "Spin Coating", [param("Material name", one("NiOx")), param("Layer type", one("HTL"))]),
+    step(3, "Slot Die Coating", [], { empty: true }),
+    step(4, "Spin Coating", [param("Material name", [["2PACz", FIRST], ["Me-4PACz", LAST]])]),
+    step(5, "Evaporation", [param("Material name", one("Cu"))]),
+  ] };
+  assert.equal(layerStack(view), "ITO / NiOx / 2PACz or Me-4PACz / Cu");
+  assert.equal(layerStack({ info: { fields: [] }, steps: [] }), "");
+  assert.equal(layerStack({}), "");
 });

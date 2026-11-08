@@ -228,15 +228,10 @@ body {
   color: #3a3f48;
 }
 
-.sheet-meta-more {
-  margin-top: 2px;
-  font-size: 0.8rem;
-  color: #777;
-}
-
-.sheet-progress {
-  margin-top: 8px;
-  font-size: 0.875rem;
+/* the layer stack: "ITO / NiOx / PbI2 / C60 / Cu" */
+.sheet-stack {
+  margin-top: 4px;
+  font-size: 0.9rem;
   color: #555;
 }
 
@@ -463,6 +458,17 @@ body {
 
 .overview-block {
   margin-top: 18px;
+}
+
+/* the substrate line: what the samples are made on */
+.overview-substrate {
+  margin: 14px 0 0;
+  font-size: 0.86rem;
+  color: #555;
+}
+
+.overview-substrate .line-label {
+  margin-right: 10px;
 }
 
 .overview-block-head {

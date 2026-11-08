@@ -365,6 +365,22 @@ export function sampleGroups(view) {
 }
 
 // the one line the folded overview keeps: "9 steps · step 5 varies · 2 to check"
+// The layer stack, the way the lab names a batch: the substrate's
+// conductive layer, then each step's material in order ("ITO / NiOx /
+// PbI2 / C60 / Cu"). A varying material lists its values; a step without
+// one (cleaning, an empty step) adds nothing.
+export function layerStack(view) {
+  const layers = [];
+  const conductive = (view.info?.fields || [])
+    .find((f) => f.value !== "" && fieldKey(f.name || f.header) === "substrate_conductive_layer");
+  if (conductive) layers.push(conductive.value);
+  for (const step of view.steps || []) {
+    const material = (step.params || []).find((p) => HEADLINE[fieldKey(p.name)] === "material");
+    if (material) layers.push(material.values.map((v) => String(v.value)).join(" or "));
+  }
+  return layers.join(" / ");
+}
+
 export function overviewSummary(view) {
   const steps = view.steps || [];
   const parts = [steps.length + (steps.length === 1 ? " step" : " steps")];
