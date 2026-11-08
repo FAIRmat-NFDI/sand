@@ -210,15 +210,6 @@ export function editSummary(status) {
   return summaryParts(status).join(" · ") || "Nothing written yet.";
 }
 
-// the header's line: the updates given, then the job's summary; `updates`
-// null while the list is not loaded, `status` null before a job completed
-export function progressLine(updates, status) {
-  const parts = [];
-  if (updates !== null) parts.push(updates ? count(updates, "update", "updates") : "No updates yet");
-  if (status) parts.push(...summaryParts(status));
-  return parts.join(" · ");
-}
-
 // the name the server gave the download (RFC 6266), else the fallback
 export function downloadFilename(contentDisposition, fallback) {
   const header = contentDisposition || "";

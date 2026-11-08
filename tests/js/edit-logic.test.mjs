@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import {
   confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputLocked, inputState,
-  inputsToRead, pendingKeys, previewNotes, progressLine, readKey, reportsByEntry, unwrittenCount,
+  inputsToRead, pendingKeys, previewNotes, readKey, reportsByEntry, unwrittenCount,
   unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
 
@@ -225,20 +225,3 @@ test("the download name comes from the server when it says one", () => {
   assert.equal(downloadFilename("attachment; filename*=UTF-8''%E0%A4%A", "x.xlsx"), "x.xlsx");
 });
 
-test("the header's progress line", () => {
-  const status = {
-    inputs: [
-      { ready: [{ key: "k1" }, { key: "k2" }], confirmed: ["k1"], confirmed_since: [] },
-      { ready: [{ key: "k3" }], confirmed: ["k3"], confirmed_since: ["k3"] },
-    ],
-  };
-  assert.equal(
-    progressLine(2, status),
-    "2 updates · 1 edit written · 1 edit waits for your confirmation · 1 edit confirmed, being written");
-  assert.equal(progressLine(1, null), "1 update");
-  assert.equal(progressLine(0, null), "No updates yet");
-  // the list is not loaded yet: only what the job says
-  assert.equal(progressLine(null, status),
-    "1 edit written · 1 edit waits for your confirmation · 1 edit confirmed, being written");
-  assert.equal(progressLine(null, null), "");
-});

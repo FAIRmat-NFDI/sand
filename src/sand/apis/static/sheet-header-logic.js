@@ -3,6 +3,11 @@
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+// "Source" -> "source", but "UV-Ozone", "PbI2" and "RH" as they are
+export function lower(word) {
+  return /^[A-Z][a-z]+$/.test(word) ? word.toLowerCase() : word;
+}
+
 // a header's words as a key: "Substrate conductive layer" -> "substrate_conductive_layer"
 export function fieldKey(name) {
   return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
@@ -24,11 +29,10 @@ function withUnit(field) {
   return field.unit ? field.value + " " + field.unit : field.value;
 }
 
-// The meta line under the sheet's name, from the one-valued fields of
-// the sheet view's info: the parts the sheet is known by first, in a
-// fixed order (project, date, samples, substrate, dimension, pixels),
-// then every other field as "name value" on a second, quieter line.
-// Nothing is invented: a field the sheet lacks is left out.
+// The header's line: what tells a batch from the others, the project
+// name, the day and how many samples. The substrate bookkeeping (glass,
+// size, pixels, areas, junctions, batch) is the same for months, so it is
+// a line of the overview, not of the header.
 export function metaLines(info) {
   // a blank cell is no value; two columns with the same words both show
   const all = (info.fields || []).filter((f) => f.value !== "");
@@ -49,15 +53,18 @@ export function metaLines(info) {
     if (subbatches.length > 1) samples += " in " + subbatches.length + " subbatches";
     main.push(samples);
   }
+  const substrate = [];
   const material = take("substrate_material");
   const layer = take("substrate_conductive_layer");
-  if (material || layer) main.push([material, layer].filter(Boolean).map(withUnit).join(" / "));
+  if (material || layer) substrate.push([material, layer].filter(Boolean).map(withUnit).join(" / "));
   const dimension = take("sample_dimension");
-  if (dimension) main.push(withUnit(dimension));
+  if (dimension) substrate.push(withUnit(dimension));
   const pixels = take("number_of_pixels");
-  if (pixels) main.push(pixels.value + (pixels.value === "1" ? " pixel" : " pixels"));
-  const more = all.filter((f) => !used.has(f)).map((f) => (f.name || f.header) + " " + withUnit(f));
-  return { main, more };
+  if (pixels) substrate.push(pixels.value + (pixels.value === "1" ? " pixel" : " pixels"));
+  // the other fields as "name value", mid-line: "batch 1 · sample area 6.25 cm^2"
+  const named = (f) => String(f.name || f.header).replace(/^\S+/, lower) + " " + withUnit(f);
+  substrate.push(...all.filter((f) => !used.has(f)).map(named));
+  return { main, substrate };
 }
 
 // "uploaded 2 Nov", with the year when it is not this one; "" without a time

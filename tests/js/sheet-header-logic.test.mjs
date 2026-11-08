@@ -28,26 +28,24 @@ const INFO = {
   ],
 };
 
-test("the meta line names the sheet the way the design does, the rest on a second line", () => {
+test("the header's line tells the batch from the others; the substrate is the overview's line", () => {
   assert.deepEqual(metaLines(INFO), {
-    main: ["JoDa", "14 Sep 2026", "42 samples", "Glass / ITO", "16x16", "4 pixels"],
-    more: ["Batch 275nmPbI2", "Sample area 0.105 cm^2", "Pixel area 0.105", "Number of junctions 1"],
+    main: ["JoDa", "14 Sep 2026", "42 samples"],
+    substrate: ["Glass / ITO", "16x16", "4 pixels", "batch 275nmPbI2", "sample area 0.105 cm^2", "pixel area 0.105", "number of junctions 1"],
   });
 });
 
 test("a sheet with fewer fields gets a shorter line, nothing invented", () => {
   assert.deepEqual(metaLines({ samples: 1, subbatches: [], fields: [field("Batch", "B1")] }), {
     main: ["1 sample"],
-    more: ["Batch B1"],
+    substrate: ["batch B1"],
   });
   assert.deepEqual(metaLines({ samples: 12, subbatches: ["0", "1"], fields: [] }).main, [
     "12 samples in 2 subbatches",
   ]);
   // only one of the substrate pair
-  assert.deepEqual(metaLines({ samples: 3, fields: [field("Substrate material", "Glass")] }).main, [
-    "3 samples", "Glass",
-  ]);
-  assert.deepEqual(metaLines({}), { main: [], more: [] });
+  assert.deepEqual(metaLines({ samples: 3, fields: [field("Substrate material", "Glass")] }).substrate, ["Glass"]);
+  assert.deepEqual(metaLines({}), { main: [], substrate: [] });
 });
 
 test("a blank cell is no value, and two columns with the same words both show", () => {
@@ -60,7 +58,7 @@ test("a blank cell is no value, and two columns with the same words both show", 
       field("batch", "B2"),
     ],
   };
-  assert.deepEqual(metaLines(info), { main: ["2 samples", "ITO"], more: ["Batch B1", "batch B2"] });
+  assert.deepEqual(metaLines(info), { main: ["2 samples"], substrate: ["ITO", "batch B1", "batch B2"] });
 });
 
 test("a field's key is its words", () => {

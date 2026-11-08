@@ -1,6 +1,6 @@
-// The sheet header: the open sheet's name and what it is (from the
-// sheet view), the "Other sheets" list, and the drop zone that uploads
-// a new sheet. Other parts react to the selection through the handler
+// The sheet header: the open sheet's name, what tells it from the other
+// sheets and its layer stack (from the sheet view), the "Other sheets"
+// list, and the drop zone that uploads a new sheet. Other parts react to the selection through the handler
 // set with onExperimentSelected. In code a sheet is still an experiment
 // (an InputCollection entry in NOMAD); on the page it is a sheet.
 
@@ -8,6 +8,7 @@ import { errorDetail, experimentUrl } from "./api.js";
 import {
   isSheetFile, metaLines, nameFromFile, renameChoice, uploadedText, withRenamed,
 } from "./sheet-header-logic.js";
+import { layerStack } from "./overview-logic.js";
 import { clearError, showError } from "./ui.js";
 
 const header = document.getElementById("sheet-header");
@@ -16,8 +17,7 @@ const renameBtn = document.getElementById("rename-btn");
 const renameInput = document.getElementById("sheet-name-edit");
 const experimentLink = document.getElementById("experiment-link");
 const sheetMeta = document.getElementById("sheet-meta");
-const sheetMetaMore = document.getElementById("sheet-meta-more");
-const sheetProgress = document.getElementById("sheet-progress");
+const sheetStack = document.getElementById("sheet-stack");
 const sheetsBtn = document.getElementById("sheets-btn");
 const sheetsBtnLabel = document.getElementById("sheets-btn-label");
 const sheetsMenu = document.getElementById("sheets-menu");
@@ -90,8 +90,7 @@ export function showSheet(experiment, view) {
     sheetNameEl.textContent = "";
     experimentLink.hidden = true;
     renderParts(sheetMeta, []);
-    renderParts(sheetMetaMore, []);
-    setSheetProgress("");
+    renderParts(sheetStack, []);
     return;
   }
   // callers hold the object they were given; a rename replaced it in the list
@@ -101,21 +100,12 @@ export function showSheet(experiment, view) {
   experimentLink.hidden = false;
   if (!view) {
     renderParts(sheetMeta, view === null ? ["Made without a sheet: nothing to update here."] : []);
-    renderParts(sheetMetaMore, []);
-    // the progress shown is the last sheet's; the Sheet card sets this
-    // sheet's once its view is read
-    setSheetProgress("");
+    renderParts(sheetStack, []);
     return;
   }
-  const { main, more } = metaLines(view.info || {});
-  renderParts(sheetMeta, main);
-  renderParts(sheetMetaMore, more);
-}
-
-// the third line: the updates and the edits, kept by the Sheet card
-export function setSheetProgress(text) {
-  sheetProgress.textContent = text;
-  sheetProgress.hidden = !text;
+  renderParts(sheetMeta, metaLines(view.info || {}).main);
+  const stack = layerStack(view);
+  renderParts(sheetStack, stack ? [stack] : []);
 }
 
 // --- rename ------------------------------------------------------------------

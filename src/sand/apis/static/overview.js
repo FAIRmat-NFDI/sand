@@ -5,6 +5,7 @@
 // no updates and folded once it has.
 
 import { overviewSummary, sampleGroups, stepCard } from "./overview-logic.js";
+import { metaLines } from "./sheet-header-logic.js";
 
 const section = document.getElementById("sheet-overview");
 const summaryEl = document.getElementById("overview-summary");
@@ -13,6 +14,7 @@ const toggleIcon = document.getElementById("overview-toggle-icon");
 const toggleLabel = document.getElementById("overview-toggle-label");
 const body = document.getElementById("overview-body");
 const warningsEl = document.getElementById("overview-warnings");
+const substrateEl = document.getElementById("overview-substrate");
 const stepsTitle = document.getElementById("steps-title");
 const stepGrid = document.getElementById("step-grid");
 const samplesBlock = document.getElementById("samples-block");
@@ -184,6 +186,10 @@ export function showOverview(view) {
     warningsEl.append(el("span", "material-icons", "error_outline"));
     warningsEl.append(el("span", "", warnings.join(" · ")));
   }
+  const substrate = metaLines(view.info || {}).substrate;
+  substrateEl.replaceChildren();
+  substrateEl.hidden = substrate.length === 0;
+  if (substrate.length) substrateEl.append(el("span", "line-label", "Substrate"), substrate.join(" · "));
   const steps = view.steps || [];
   stepsTitle.textContent = "Fabrication sequence · " + steps.length + (steps.length === 1 ? " step" : " steps");
   stepGrid.replaceChildren(...steps.map((step) => renderStep(stepCard(step, view.changed || []))));
