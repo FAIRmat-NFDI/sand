@@ -53,9 +53,10 @@ test("a value cell: one value, a few, a range of many, the unit once", () => {
   assert.equal(valueCell(param("Notes", [["x", FIRST], [null, LAST]])), "x · some empty");
 });
 
-// a card's lines as "label  v1 · v2" texts
-const texts = (card) => card.lines.map((l) =>
-  (l.note ? "“" : "") + (l.label ? l.label + "  " : "") + l.values.map((v) => v.text).join(" · ") + (l.note ? "”" : ""));
+// a card's lines as "label  v1 · v2" texts; a block's lines joined by " | "
+const lineText = (l) =>
+  (l.note ? "“" : "") + (l.label ? l.label + "  " : "") + l.values.map((v) => v.text).join(" · ") + (l.note ? "”" : "");
+const texts = (card) => card.lines.map((l) => (l.lines ? l.label + "  " + l.lines.map(lineText).join(" | ") : lineText(l)));
 
 test("a step card: headline from the material, layer and tool as subtitle, lines like notes", () => {
   const rotation = { group: "rotation_steps", index: 1 };
@@ -174,8 +175,7 @@ test("inside a family line the name or the label says what the measures are", ()
     num("Rotation time 2", "32", "s", spin2),
   ]));
   assert.deepEqual(texts(card), [
-    "PbI2  572 mg/ml",
-    "Solute 4  PbBr2 / PbBr3 · 22 mg/ml",
+    "solution  PbI2  572 mg/ml | Solute 4  PbBr2 / PbBr3 · 22 mg/ml",
     "Spin 1  400 rpm · 15 s",
     "Spin 2  4000 rpm · 32 s",
   ]);
@@ -190,9 +190,9 @@ test("a type column is not the family's name; a varying name stays a chip in its
     param("Solute 1 type", one("SAM"), { family: solute }),
     num("Solvent 1 volume", "50", "uL", solvent),
   ]));
-  assert.deepEqual(texts(withName), ["PbI2  1.5 mM · SAM", "50 uL"]);
+  assert.deepEqual(texts(withName), ["solution  PbI2  1.5 mM · SAM | solvent volume 50 uL"]);
   const typeOnly = stepCard(step(2, "Spin Coating", [param("Solute 1 type", one("SAM"), { family: solute })]));
-  assert.deepEqual(texts(typeOnly), ["SAM"]);
+  assert.deepEqual(texts(typeOnly), ["solution  SAM"]);
   const rotation = { group: "rotation_steps", index: 1 };
   const varying = stepCard(step(2, "Spin Coating", [
     param("Solvent 1 name", [["Ethanol", FIRST], ["IPA", LAST]], { family: solvent }),
@@ -410,4 +410,47 @@ test("the summary line", () => {
   assert.equal(overviewSummary({ steps: [] }), "0 steps");
   assert.equal(overviewSummary({ steps: [{ position: 1, varies: false }], changed: [{ column_id: "C1", row: 3 }] }),
     "1 step · 1 cell edited");
+});
+
+test("a step that dissolves something writes its solution as one block, where its first column is", () => {
+  const solvent1 = { group: "solvents", index: 1 };
+  const solvent2 = { group: "solvents", index: 2 };
+  const solute = { group: "solutes", index: 1 };
+  const spin = { group: "rotation_steps", index: 1 };
+  const card = stepCard(step(2, "Spin Coating", [
+    param("Material name", one("NiOx")),
+    param("Layer type", one("hole transport layer")),
+    param("Tool/GB name", one("fume hood")),
+    param("Solvent 1 name", one("DI water"), { family: solvent1 }),
+    num("Solvent 1 volume", "68", "uL", solvent1),
+    num("Solvent 1 relative amount", "0.85", null, solvent1),
+    param("Solvent 2 name", one("Ethanol"), { family: solvent2 }),
+    num("Solvent 2 volume", "12", "uL", solvent2),
+    num("Solvent 2 relative amount", "0.15", null, solvent2),
+    param("Solute 1 name", one("NiOx"), { family: solute }),
+    num("Solute 1 Concentration", "7.5", "mg/ml", solute),
+    num("Solution volume", "80", "uL"),
+    num("Spin Delay", "5", "s"),
+    num("Rotation speed", "2000", "rpm", spin),
+    num("Rotation time", "30", "s", spin),
+    num("Annealing time", "10", "min"),
+    num("Annealing temperature", "100", "°C"),
+    param("Notes", one("filter")),
+  ]));
+  // the solute keeps its name although it is the card's material: the
+  // block's lines each say what they are
+  assert.deepEqual(texts(card), [
+    "solution  DI water  68 uL · relative 0.85 | Ethanol  12 uL · relative 0.15 | NiOx  7.5 mg/ml | volume 80 uL",
+    "spin delay 5 s",
+    "2000 rpm · 30 s",
+    "annealing  10 min · 100 °C",
+    "“filter”",
+  ]);
+  // a solvent without a solute is no solution: nothing is grouped
+  const rinse = stepCard(step(1, "Cleaning", [
+    param("Solvent 1 name", one("Ethanol"), { family: solvent1 }),
+    num("Solvent 1 volume", "80", "uL", solvent1),
+    num("Solution volume", "80", "uL"),
+  ]));
+  assert.deepEqual(texts(rinse), ["Ethanol  80 uL", "solution 80 uL"]);
 });

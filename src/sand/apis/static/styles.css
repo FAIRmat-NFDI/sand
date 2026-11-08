@@ -616,6 +616,19 @@ body {
   margin-right: 7px;
 }
 
+/* a block ("solution"): the label in its own column, the lines beside it */
+.step-block {
+  display: flex;
+  align-items: baseline;
+}
+
+.step-block-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .line-sep {
   color: #9aa0aa;
   margin: 0 5px;

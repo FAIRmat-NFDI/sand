@@ -60,6 +60,28 @@ function familyLabel(family, families) {
   return siblings > 1 ? base + " " + family.index : base;
 }
 
+// the solution's columns: the solvent and solute families and the loose
+// "Solution volume". A step that dissolves something (has a solute) writes
+// them as one block, the way a recipe lists them; a cleaning step's solvent
+// is no solution
+const SOLUTION_GROUPS = new Set(["solvents", "solutes"]);
+function isSolutionColumn(param) {
+  return (param.family && SOLUTION_GROUPS.has(param.family.group))
+    || /(^|_)solution(_|$)/.test(fieldKey(param.name));
+}
+function hasSolute(params) {
+  return params.some((p) => p.family?.group === "solutes");
+}
+
+// a loose solution column inside the block: its words minus "solution"
+// say what the number is ("volume 80 uL")
+function solutionValue(p, changed) {
+  const value = valueOf(p, changed, { drop: new Set(wordsOf(p).map(lower)) });
+  const words = wordsOf(p).map(lower).filter((w) => w !== "solution");
+  if (words.length && !isNameColumn(p) && p.type !== "text") value.text = words.join(" ") + " " + value.text;
+  return value;
+}
+
 // the column that names a family's thing: "Solvent 1 name", "Material
 // name 2", "Source material name 1", or a cleaning step's bare "Solvent 1"
 function isNameColumn(param) {
@@ -188,6 +210,8 @@ export function stepCard(step, changed = []) {
   const items = []; // {at, line} or {at, single: param}; singles run together
   const ratios = [];
   const text = (p) => String(p.values[0].value);
+  const dissolves = hasSolute(step.params);
+  const inSolution = (p) => dissolves && isSolutionColumn(p);
   for (const params of families.values()) {
     const family = params[0].family;
     const label = family && FAMILY_LABELS[family.group];
@@ -205,18 +229,21 @@ export function stepCard(step, changed = []) {
       // the name says what the measures are: "PbI2  572 mg/ml"
       const drop = new Set(wordsOf(name).map((w) => w.toLowerCase()));
       const values = rest.map((p) => valueOf(p, changed, { drop })).filter((v) => v.text);
-      // the material's own line needs no label: the card names it already
-      items.push({ at, line: { label: text(name) === head.material?.text ? "" : text(name), values } });
+      // the material's own line needs no label: the card names it already;
+      // inside the solution block each line says what it is
+      const solution = inSolution(name);
+      const label = !solution && text(name) === head.material?.text ? "" : text(name);
+      items.push({ at, line: { label, values }, solution });
     } else if (name) {
-      items.push({ at, single: name, value: valueOf(name, changed) }); // "Ethanol"
+      items.push({ at, single: name, value: valueOf(name, changed), solution: inSolution(name) }); // "Ethanol"
     } else if (label && rest.length > 1) {
       const siblings = [...families.keys()].filter((k) => k.startsWith(family.group + ":")).length;
       // the family's label says it: "Spin 1  400 rpm · 15 s"
       const drop = new Set(rest.flatMap((p) => wordsOf(p).map((w) => w.toLowerCase())).filter((w) => w === label.toLowerCase() || rest.every((p) => wordsOf(p).map((x) => x.toLowerCase()).includes(w))));
       const values = rest.map((p) => valueOf(p, changed, { drop }));
-      items.push({ at, line: { label: siblings > 1 ? familyLabel(family, families) : "", values } });
+      items.push({ at, line: { label: siblings > 1 ? familyLabel(family, families) : "", values }, solution: inSolution(rest[0]) });
     } else {
-      for (const p of params) items.push({ at: order.get(p), single: p });
+      for (const p of params) items.push({ at: order.get(p), single: p, solution: inSolution(p) });
     }
   }
   if (ratios.length) {
@@ -238,7 +265,7 @@ export function stepCard(step, changed = []) {
   const groups = new Map();
   const singles = items.filter((i) => i.single && !i.value);
   for (const item of singles) {
-    if (isNote(item.single)) continue;
+    if (isNote(item.single) || item.solution) continue;
     const word = firstWord(item.single.name);
     const key = word.toLowerCase();
     if (!groups.has(key)) groups.set(key, { word, items: [] });
@@ -250,6 +277,10 @@ export function stepCard(step, changed = []) {
     if (isNote(p)) {
       notes.push({ label: "", note: true, values: [valueOf(p, changed)] });
       items.splice(items.indexOf(item), 1);
+      continue;
+    }
+    if (item.solution) {
+      item.value = solutionValue(p, changed);
       continue;
     }
     const group = groups.get(firstWord(p.name).toLowerCase());
@@ -270,7 +301,30 @@ export function stepCard(step, changed = []) {
     item.line = line;
   }
   items.sort((x, y) => x.at - y.at);
-  // what is left runs together, in the sheet's order
+  // the solution's lines stand together behind one label, where its
+  // first column is
+  const solution = items.filter((i) => i.solution);
+  let rest = items;
+  if (solution.length) {
+    rest = items.filter((i) => !i.solution);
+    rest.push({ at: solution[0].at, line: { label: "solution", lines: runTogether(solution) } });
+    rest.sort((x, y) => x.at - y.at);
+  }
+  const lines = runTogether(rest);
+  lines.push(...notes);
+  return {
+    position: step.position,
+    headline: step.step_type,
+    material: head.material || null,
+    sub: [head.layer, head.tool].filter(Boolean),
+    empty: step.empty,
+    varies: stepVaries(step),
+    lines,
+  };
+}
+
+// lines as they are; loose values run together, in the sheet's order
+function runTogether(items) {
   const lines = [];
   let run = null;
   for (const item of items) {
@@ -284,16 +338,7 @@ export function stepCard(step, changed = []) {
       lines.push(run);
     }
   }
-  lines.push(...notes);
-  return {
-    position: step.position,
-    headline: step.step_type,
-    material: head.material || null,
-    sub: [head.layer, head.tool].filter(Boolean),
-    empty: step.empty,
-    varies: stepVaries(step),
-    lines,
-  };
+  return lines;
 }
 
 // the chips' names by row: the label; with labels repeated across

@@ -86,19 +86,33 @@ function renderStep(card) {
   }
   const lines = el("div", "step-lines");
   for (const line of card.lines) {
-    const p = el("p", line.note ? "step-line step-note" : "step-line");
-    if (line.label) p.append(el("span", "line-label", line.label));
-    line.values.forEach((value, i) => {
-      if (i) p.append(el("span", "line-sep", "·"));
-      const span = el("span", "line-value", value.text);
-      if (value.text.length > LONG_VALUE) span.classList.add("long");
-      if (value.varies) span.classList.add("value-varies");
-      p.append(mark(span, value.changed));
-    });
-    lines.append(p);
+    if (line.lines) {
+      // a block: the label once, its lines stacked beside it
+      const block = el("div", "step-block");
+      block.append(el("span", "line-label", line.label));
+      const inner = el("div", "step-block-lines");
+      for (const sub of line.lines) inner.append(renderLine(sub));
+      block.append(inner);
+      lines.append(block);
+    } else {
+      lines.append(renderLine(line));
+    }
   }
   article.append(lines);
   return article;
+}
+
+function renderLine(line) {
+  const p = el("p", line.note ? "step-line step-note" : "step-line");
+  if (line.label) p.append(el("span", "line-label", line.label));
+  line.values.forEach((value, i) => {
+    if (i) p.append(el("span", "line-sep", "·"));
+    const span = el("span", "line-value", value.text);
+    if (value.text.length > LONG_VALUE) span.classList.add("long");
+    if (value.varies) span.classList.add("value-varies");
+    p.append(mark(span, value.changed));
+  });
+  return p;
 }
 
 function chips(labels, tone) {
