@@ -51,7 +51,7 @@ class _FakeNomad:
         upload_exists=True,
     ):
         self.raw_files: dict[str, bytes] = {}
-        self.edit_refused = False  # every upload edit answers 400
+        self.edit_refused = False  # every upload edit answers 400, for good
         self.blocked_edits = 0  # edits refused by processing, like blocked_writes
         self.upload_name: str | None = None
         self.entries: dict[str, str] = {}
@@ -123,7 +123,9 @@ class _FakeNomad:
         if path.endswith('/uploads'):
             return httpx.Response(200, json={'upload_id': UPLOAD_ID})
         if path.endswith(f'/uploads/{UPLOAD_ID}/edit'):
-            if self.edit_refused or self.blocked_edits > 0:
+            if self.edit_refused:  # for good: nothing is processing
+                return httpx.Response(400, json={'detail': 'The upload is published'})
+            if self.blocked_edits > 0:
                 self.blocked_edits -= 1
                 self.processing_polls = max(self.processing_polls, 1)
                 return httpx.Response(400, json={'detail': 'The upload is processing'})
@@ -901,6 +903,7 @@ async def test_rename_leaves_the_entry_when_the_upload_refuses():
                 client, UPLOAD_ID, SAND_COLLECTION_ID, 'batch 8'
             )
 
+    # refused at once: no processing to wait out, no retry till the timeout
     assert excinfo.value.status_code == HTTPStatus.BAD_REQUEST
     assert fake.put_attempts == 0
     assert fake.archive(EXPERIMENT_MAINFILE)['data']['name'] == 'batch 7'
