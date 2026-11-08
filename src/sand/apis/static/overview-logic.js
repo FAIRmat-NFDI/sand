@@ -79,10 +79,11 @@ function blockOf(param, blocks) {
 
 // a loose column inside a block: the block says its word, the column's
 // other words say what the number is ("volume 80 uL", "T 70 °C", "delay 5 s")
+// or what is so ("filtered", "no filtered")
 function blockValue(p, block, changed) {
   const value = valueOf(p, changed, { drop: new Set(wordsOf(p).map((w) => w.toLowerCase())) });
   if (p.type === "text") {
-    value.text = value.text.replace(new RegExp("^" + block.label + " ", "i"), "");
+    value.text = value.text.replace(new RegExp("(^|\\s)" + block.label + "(?=\\s|$)", "i"), "").trim();
     return value;
   }
   const words = wordsOf(p).filter((w) => w.toLowerCase() !== block.label).map((w) => shortName(lower(w)));

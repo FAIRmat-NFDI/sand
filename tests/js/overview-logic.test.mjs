@@ -470,4 +470,10 @@ test("a step that dissolves something writes its solution as one block, where it
     "solution  DMF | PbI2  1.5 M | volume 80 uL · T 70 °C · filtered",
   ]);
   assert.equal(later.lines[1].lines[2].values[0].changed, "was 60");
+  // a "no" drops the block's word from inside its words too
+  const unfiltered = stepCard(step(2, "Spin Coating", [
+    param("Solute 1 name", one("PbI2"), { family: solute }),
+    param("Solution filtered", one("no")),
+  ]));
+  assert.deepEqual(texts(unfiltered), ["solution  PbI2 | no filtered"]);
 });
