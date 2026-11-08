@@ -271,6 +271,26 @@ class RawFileWriter:
             check_response(response, step='upload_raw_file')
             return
 
+    async def edit_upload_name(
+        self, client: httpx.AsyncClient, upload_id: str, name: str
+    ) -> None:
+        """Set the upload's name once the upload is idle; like a PUT, a 400
+        from processing that started in between is retried."""
+        deadline = time.monotonic() + self.write_timeout_s
+        while True:
+            await self.wait_until_writable(client, upload_id, deadline, 'upload name')
+            response = await client.post(
+                f'/uploads/{upload_id}/edit', json={'metadata': {'upload_name': name}}
+            )
+            if (
+                response.status_code == HTTPStatus.BAD_REQUEST
+                and time.monotonic() < deadline
+                and await self._upload_is_processing(client, upload_id)
+            ):
+                continue
+            check_response(response, step='edit_upload_name')
+            return
+
     async def wait_until_writable(
         self,
         client: httpx.AsyncClient,

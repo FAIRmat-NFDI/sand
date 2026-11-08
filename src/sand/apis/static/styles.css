@@ -205,6 +205,39 @@ body {
   overflow-wrap: anywhere;
 }
 
+.sheet-name-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sheet-rename-btn {
+  flex: 0 0 auto;
+}
+
+.sheet-rename-btn .material-icons {
+  font-size: 18px;
+}
+
+/* the name edited in place: the heading's type on a line */
+.sheet-name-edit {
+  flex: 0 1 auto;
+  max-width: 100%;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 2px solid #2A4CDF;
+  border-radius: 0;
+  background: transparent;
+  font-family: inherit;
+  outline: none;
+}
+
+.sheet-name-edit:disabled {
+  color: #777;
+  border-bottom-color: #bbb;
+}
+
 .sheet-title a {
   font-size: 0.875rem;
   color: #2A4CDF;
