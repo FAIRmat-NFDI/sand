@@ -268,8 +268,8 @@ body {
   color: #555;
 }
 
-/* no sheet open: the drop zone stands where the header will be; an
-   experiment made without a sheet has nothing to download */
+/* no sheet open: the drop zone stands where the header will be; a
+   collection made without a sheet has nothing to download */
 .sheet-header.no-sheet .sheet-title,
 .sheet-header.no-sheet .sheet-only,
 .sheet-header.sheet-missing .sheet-only {

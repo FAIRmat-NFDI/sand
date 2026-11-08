@@ -63,7 +63,7 @@ function stopTimer() {
   timerInterval = null;
 }
 
-// Resolves to "started", or to why not: "busy", "no-experiment", "login",
+// Resolves to "started", or to why not: "busy", "no-sheet", "login",
 // "mic" or "cancelled". Shows the error itself, except for "busy" and
 // "cancelled". stillWanted is asked once the microphone is open: the
 // caller may no longer want the recording then.
@@ -72,7 +72,7 @@ export async function startRecording(stillWanted = () => true) {
   if (isRecording() || pendingUploads > 0) return "busy";
   clearError();
   const experiment = requireExperiment();
-  if (!experiment) return "no-experiment";
+  if (!experiment) return "no-sheet";
   // a recording lives only in memory until uploaded: do not start one
   // that cannot be saved
   if (sessionState() !== "ok") {

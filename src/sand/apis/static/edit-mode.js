@@ -30,7 +30,6 @@ const writtenTable = document.getElementById("written-table");
 const writtenBody = writtenTable.querySelector("tbody");
 const downloadFinalBtn = document.getElementById("download-final-btn");
 const downloadOriginalBtn = document.getElementById("download-original-btn");
-const sheetSummaryEl = document.getElementById("sheet-summary");
 
 const POLL_MS = 3000;
 // confirmations made one after the other go into one write
@@ -387,25 +386,10 @@ export function showEdit(experiment, view) {
     // nothing to poll: the tiles forget the last job's reports here
     setReports({}, false, null);
   }
-  if (!experiment) {
-    sheetSummaryEl.textContent = "";
-    return;
-  }
-  if (!view) {
-    // made before sheets, or by the other tool of this page's past:
-    // the header says so
-    sheetSummaryEl.textContent = "";
-    return;
-  }
-  describeSheet(view);
+  // made before sheets, or by the other tool of this page's past: the
+  // header says so, nothing to poll
+  if (!experiment || !view) return;
   startPolling(experiment);
-}
-
-// the header names the sheet; this line says which version the card is about
-function describeSheet(view) {
-  sheetSummaryEl.textContent = view.source === "edited"
-    ? "The sheet with the confirmed edits."
-    : "The sheet as uploaded.";
 }
 
 // the header follows the sheet the last job left (`final`: its sha);
@@ -427,7 +411,6 @@ async function refreshSheet(experiment, final) {
   if (!view || !stillShown(experiment)) return;
   showSheet(experiment, view);
   showOverview(view);
-  describeSheet(view);
 }
 
 // the fallback after a failed job: the same inputs, read once more
