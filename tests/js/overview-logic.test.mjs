@@ -80,7 +80,7 @@ test("a step card: headline from the material, layer and tool as subtitle, lines
   assert.deepEqual(card.sub.map((s) => s.text), ["HTL", "box1"]);
   assert.deepEqual(texts(card), [
     "Ethanol  50 uL",
-    "3000 rpm · 30 s",
+    "spin  3000 rpm · 30 s",
     "annealing  10 min · 100 °C · N2",
     "“standard recipe”",
   ]);
@@ -99,7 +99,7 @@ test("the unit says what a number is; a time or temperature alone keeps its word
     num("Rotation time", "30", "s", rotation),
     num("Annealing time", "10", "min"),
   ]));
-  assert.deepEqual(texts(card), ["80 uL · 3 mbar", "3000 rpm · 30 s", "annealing 10 min", "“x”"]);
+  assert.deepEqual(texts(card), ["80 uL · 3 mbar", "spin  3000 rpm · 30 s", "annealing 10 min", "“x”"]);
   // a unit the card has twice keeps each value's word
   const twice = stepCard(step(3, "Spin Coating", [
     param("Solvent 1 name", one("Ethanol"), { family: { group: "solvents", index: 1 } }),
@@ -176,8 +176,7 @@ test("inside a family line the name or the label says what the measures are", ()
   ]));
   assert.deepEqual(texts(card), [
     "solution  PbI2  572 mg/ml | Solute 4  PbBr2 / PbBr3 · 22 mg/ml",
-    "Spin 1  400 rpm · 15 s",
-    "Spin 2  4000 rpm · 32 s",
+    "spin  step 1  400 rpm · 15 s | step 2  4000 rpm · 32 s",
   ]);
 });
 
@@ -202,8 +201,9 @@ test("a type column is not the family's name; a varying name stays a chip in its
     param("Material name", [["A", FIRST], ["B", LAST]]),
   ]));
   assert.equal(varying.material, null);
-  assert.deepEqual(texts(varying), ["Ethanol / IPA · 50 uL", "3000 rpm · 30 s", "A / B"]);
-  assert.deepEqual(varying.lines.map((l) => l.values.map((v) => v.varies)), [[true, false], [false, false], [true]]);
+  assert.deepEqual(texts(varying), ["Ethanol / IPA · 50 uL", "spin  3000 rpm · 30 s", "A / B"]);
+  const flat = (l) => (l.lines ? l.lines.flatMap((x) => x.values) : l.values).map((v) => v.varies);
+  assert.deepEqual(varying.lines.map(flat), [[true, false], [false, false], [true]]);
 });
 
 test("numbered columns merge behind their name; ratios read MAI:MABr 3:1", () => {
@@ -260,7 +260,7 @@ test("a varying value is marked, a changed one carries its old value", () => {
   const spin = stepCard(step(2, "Spin Coating", [speed, spinTime]), [
     { column_id: speed.column_id, row: 3, old: "2000", new: "3000", by_formula: false },
   ]);
-  assert.deepEqual(spin.lines[0].values.map((v) => v.changed), ["was 2000", ""]);
+  assert.deepEqual(spin.lines[0].lines[0].values.map((v) => v.changed), ["was 2000", ""]);
   // the headline's material, layer and tool keep their marks too
   const material = param("Material name", one("Me-4PACz"));
   const layer = param("Layer type", one("HTL"));
@@ -441,8 +441,7 @@ test("a step that dissolves something writes its solution as one block, where it
   // block's lines each say what they are
   assert.deepEqual(texts(card), [
     "solution  DI water  68 uL · relative 0.85 | Ethanol  12 uL · relative 0.15 | NiOx  7.5 mg/ml | volume 80 uL",
-    "spin delay 5 s",
-    "2000 rpm · 30 s",
+    "spin  delay 5 s | 2000 rpm · 30 s",
     "annealing  10 min · 100 °C",
     "“filter”",
   ]);
