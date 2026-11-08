@@ -73,12 +73,16 @@ function hasSolute(params) {
   return params.some((p) => p.family?.group === "solutes");
 }
 
-// a loose solution column inside the block: its words minus "solution"
-// say what the number is ("volume 80 uL")
+// a loose solution column inside the block: the block says "solution",
+// the column's other words say what the number is ("volume 80 uL", "T 70 °C")
 function solutionValue(p, changed) {
-  const value = valueOf(p, changed, { drop: new Set(wordsOf(p).map(lower)) });
-  const words = wordsOf(p).map(lower).filter((w) => w !== "solution");
-  if (words.length && !isNameColumn(p) && p.type !== "text") value.text = words.join(" ") + " " + value.text;
+  const value = valueOf(p, changed, { drop: new Set(wordsOf(p).map((w) => w.toLowerCase())) });
+  if (p.type === "text") {
+    value.text = value.text.replace(/^solution /i, "");
+    return value;
+  }
+  const words = wordsOf(p).filter((w) => w.toLowerCase() !== "solution").map((w) => shortName(lower(w)));
+  if (words.length) value.text = words.join(" ") + " " + value.text;
   return value;
 }
 
@@ -302,8 +306,10 @@ export function stepCard(step, changed = []) {
   }
   items.sort((x, y) => x.at - y.at);
   // the solution's lines stand together behind one label, where its
-  // first column is
-  const solution = items.filter((i) => i.solution);
+  // first column is: each solvent or solute on its own line, the loose
+  // columns run together
+  const solution = items.filter((i) => i.solution)
+    .map((i) => (i.single?.family ? { ...i, line: { label: "", values: [i.value] } } : i));
   let rest = items;
   if (solution.length) {
     rest = items.filter((i) => !i.solution);

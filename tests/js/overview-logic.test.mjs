@@ -453,4 +453,22 @@ test("a step that dissolves something writes its solution as one block, where it
     num("Solution volume", "80", "uL"),
   ]));
   assert.deepEqual(texts(rinse), ["Ethanol  80 uL", "solution 80 uL"]);
+  // the block stands where its first column is; a lone name is its own
+  // line, the loose columns run together and keep their words, a yes/no
+  // column drops "solution"; a changed value keeps its mark
+  const volume = num("Solution volume", "80", "uL");
+  const later = stepCard(step(2, "Spin Coating", [
+    num("Spin Delay", "5", "s"),
+    param("Solvent 1 name", one("DMF"), { family: solvent1 }),
+    param("Solute 1 name", one("PbI2"), { family: solute }),
+    num("Solute 1 Concentration", "1.5", "M", solute),
+    volume,
+    num("Solution temperature", "70", "°C"),
+    param("Solution filtered", one("yes")),
+  ]), ALL.map((row) => ({ column_id: volume.column_id, row, old: "60", new: "80", by_formula: false })));
+  assert.deepEqual(texts(later), [
+    "5 s",
+    "solution  DMF | PbI2  1.5 M | volume 80 uL · T 70 °C · filtered",
+  ]);
+  assert.equal(later.lines[1].lines[2].values[0].changed, "was 60");
 });
