@@ -144,12 +144,8 @@ class FakeVoice:
             raise nomad_down('edit_upload_name')
         self.renamed.append(name)
         self.name = name
-        return InputCollectionSummary(
-            upload_id=UPLOAD,
-            entry_id=COLLECTION,
-            name=name,
-            created='2026-11-01T09:00:00+00:00',
-        )
+        # like the service: no `created`
+        return InputCollectionSummary(upload_id=UPLOAD, entry_id=COLLECTION, name=name)
 
     async def input_collection_name(self, client, upload_id, collection_entry_id):
         assert (upload_id, collection_entry_id) == (UPLOAD, COLLECTION)

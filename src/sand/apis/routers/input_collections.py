@@ -263,7 +263,11 @@ async def create_hysprint_input_collection(
 
 
 @router.patch(
-    '/input-collections/{upload_id}/name', response_model=InputCollectionSummaryModel
+    '/input-collections/{upload_id}/name',
+    response_model=InputCollectionSummaryModel,
+    # the service does not read `created` back: left out, not null, so
+    # the page keeps the list's
+    response_model_exclude_none=True,
 )
 async def rename_input_collection(
     upload_id: str,
@@ -272,7 +276,8 @@ async def rename_input_collection(
     collection_entry_id: str,
 ) -> InputCollectionSummaryModel:
     """Rename an experiment: the collection's name, which the list shows,
-    and the upload's name in NOMAD. Blank is refused."""
+    and the upload's name in NOMAD. Blank is refused. The answer has no
+    `created`: the page keeps the list's."""
     voice = _voice_service(request)
     token = get_bearer_token(request)
 

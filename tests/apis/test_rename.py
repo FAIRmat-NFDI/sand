@@ -26,12 +26,12 @@ async def test_rename_gives_the_list_entry_under_its_new_name(voice):
     response = await rename(voice, '  batch   8 ')
 
     assert response.status_code == HTTPStatus.OK, response.text
+    # no `created`, not even null: the page keeps the one the list gave
     assert response.json() == {
         'upload_id': UPLOAD,
         'entry_id': COLLECTION,
         'entry_url': f'http://nomad/{UPLOAD}/{COLLECTION}',
         'name': 'batch 8',
-        'created': '2026-11-01T09:00:00+00:00',
     }
     # one line, single-spaced: the name as the page and NOMAD show it
     assert voice.renamed == ['batch 8']
