@@ -84,27 +84,27 @@ function renderStep(card) {
     article.append(el("p", "step-sub", "No data"));
     return article;
   }
+  // two columns: the labels ("solution", "spin", "annealing") and what
+  // they say; a block's lines stack in the second
   const lines = el("div", "step-lines");
   for (const line of card.lines) {
+    lines.append(el("span", "line-label", line.label));
     if (line.lines) {
-      // a block: the label once, its lines stacked beside it
-      const block = el("div", "step-block");
-      block.append(el("span", "line-label", line.label));
       const inner = el("div", "step-block-lines");
-      for (const sub of line.lines) inner.append(renderLine(sub));
-      block.append(inner);
-      lines.append(block);
+      for (const sub of line.lines) inner.append(renderLine(sub, true));
+      lines.append(inner);
     } else {
-      lines.append(renderLine(line));
+      lines.append(renderLine(line, false));
     }
   }
   article.append(lines);
   return article;
 }
 
-function renderLine(line) {
+// inside a block the label is the line's own: the solvent's name, "step 1"
+function renderLine(line, withLabel) {
   const p = el("p", line.note ? "step-line step-note" : "step-line");
-  if (line.label) p.append(el("span", "line-label", line.label));
+  if (withLabel && line.label) p.append(el("span", "line-name", line.label));
   line.values.forEach((value, i) => {
     if (i) p.append(el("span", "line-sep", "·"));
     const span = el("span", "line-value", value.text);
