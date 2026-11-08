@@ -5,7 +5,7 @@
 // vocabulary added is the label of a column family without a name
 // column ("Spin" for a rotation step).
 
-import { fieldKey } from "./sheet-header-logic.js";
+import { fieldKey, lower } from "./sheet-header-logic.js";
 
 // columns that make a step's headline rather than a row
 const HEADLINE = { material_name: "material", layer_type: "layer", tool_gb_name: "tool" };
@@ -95,11 +95,6 @@ const CATEGORY_WORDS = new Set(["state", "type", "mode", "atmosphere", "athmosph
 const TIME_LIKE = new Set(["time", "temperature", "duration"]);
 const SHORT = { relative_humidity: "RH" };
 const FLAGS = { yes: true, no: false, true: true, false: false };
-
-// "Source" -> "source", but "UV-Ozone", "PbI2" and "RH" as they are
-function lower(word) {
-  return /^[A-Z][a-z]+$/.test(word) ? word.toLowerCase() : word;
-}
 
 // a column's words without trailing numbers: "Substrate temperature 2"
 function wordsOf(param) {
@@ -364,11 +359,11 @@ export function sampleGroups(view) {
   return { kind: "flat", blocks: vars.map(block), also: [] };
 }
 
-// the one line the folded overview keeps: "9 steps · step 5 varies · 2 to check"
 // The layer stack, the way the lab names a batch: the substrate's
 // conductive layer, then each step's material in order ("ITO / NiOx /
 // PbI2 / C60 / Cu"). A varying material lists its values; a step without
-// one (cleaning, an empty step) adds nothing.
+// one (cleaning, an empty step) adds nothing. Empty cells (null from the
+// server) are no name.
 export function layerStack(view) {
   const layers = [];
   const conductive = (view.info?.fields || [])
@@ -376,11 +371,13 @@ export function layerStack(view) {
   if (conductive) layers.push(conductive.value);
   for (const step of view.steps || []) {
     const material = (step.params || []).find((p) => HEADLINE[fieldKey(p.name)] === "material");
-    if (material) layers.push(material.values.map((v) => String(v.value)).join(" or "));
+    const names = (material?.values || []).map((v) => v.value).filter((v) => v !== null && v !== "");
+    if (names.length) layers.push(names.join(" or "));
   }
   return layers.join(" / ");
 }
 
+// the one line the folded overview keeps: "9 steps · step 5 varies · 2 to check"
 export function overviewSummary(view) {
   const steps = view.steps || [];
   const parts = [steps.length + (steps.length === 1 ? " step" : " steps")];

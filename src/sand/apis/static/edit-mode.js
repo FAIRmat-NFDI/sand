@@ -110,7 +110,7 @@ function busy(text) {
   applyStatus.classList.add("busy");
 }
 
-// the header's line: the updates of the shown sheet and what became of them
+// the overview folds once the shown sheet has updates
 function updateProgress() {
   if (!current) {
     setOverviewUpdates(null);

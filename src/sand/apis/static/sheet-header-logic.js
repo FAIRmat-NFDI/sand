@@ -3,6 +3,11 @@
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+// "Source" -> "source", but "UV-Ozone", "PbI2" and "RH" as they are
+export function lower(word) {
+  return /^[A-Z][a-z]+$/.test(word) ? word.toLowerCase() : word;
+}
+
 // a header's words as a key: "Substrate conductive layer" -> "substrate_conductive_layer"
 export function fieldKey(name) {
   return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
@@ -56,7 +61,9 @@ export function metaLines(info) {
   if (dimension) substrate.push(withUnit(dimension));
   const pixels = take("number_of_pixels");
   if (pixels) substrate.push(pixels.value + (pixels.value === "1" ? " pixel" : " pixels"));
-  substrate.push(...all.filter((f) => !used.has(f)).map((f) => (f.name || f.header) + " " + withUnit(f)));
+  // the other fields as "name value", mid-line: "batch 1 · sample area 6.25 cm^2"
+  const named = (f) => String(f.name || f.header).replace(/^\S+/, lower) + " " + withUnit(f);
+  substrate.push(...all.filter((f) => !used.has(f)).map(named));
   return { main, substrate };
 }
 

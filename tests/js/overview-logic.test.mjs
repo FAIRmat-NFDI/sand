@@ -427,4 +427,13 @@ test("the layer stack: the conductive layer, then each step's material", () => {
   assert.equal(layerStack(view), "ITO / NiOx / 2PACz or Me-4PACz / Cu");
   assert.equal(layerStack({ info: { fields: [] }, steps: [] }), "");
   assert.equal(layerStack({}), "");
+  // empty cells are no name; a blank conductive layer is left out; a
+  // numbered material ("Material name 1") is a family's, not the step's
+  const gaps = { info: { fields: [{ name: "Substrate conductive layer", value: "" }] }, steps: [
+    step(1, "Spin Coating", [param("Material name", [["NiOx", FIRST], [null, LAST]])]),
+    step(2, "Spin Coating", [param("Material name", [["", FIRST], ["Cu", LAST]])]),
+    step(3, "Evaporation", [param("Material name", one(""))]),
+    step(4, "Co-Evaporation", [param("Material name 1", one("PbI2"), { family: { group: null, index: 1 } })]),
+  ] };
+  assert.equal(layerStack(gaps), "NiOx / Cu");
 });
