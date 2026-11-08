@@ -106,7 +106,12 @@ export function readKey(items) {
 // step named ("step 1 UV ozone cleaning") more often than on a dropped
 // clause, so it is hidden until the check is precise (kit_known_gaps)
 export function previewNotes(report) {
-  const shown = new Set((report.ready || []).map((edit) => edit.line));
+  const ready = report.ready || [];
+  const shown = new Set(ready.map((edit) => edit.line));
+  // the samples already at the value stand in the edit's samples cell
+  for (const edit of ready) {
+    if (edit.unchanged) shown.add(`   · ${edit.unchanged}, nothing to change`);
+  }
   return (report.preview || "").split("\n")
     .filter((line) => line && !shown.has(line) && !/^\s+from "/.test(line)
       && !line.startsWith("⚠ no update in:"));

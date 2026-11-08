@@ -29,7 +29,7 @@ from sand.sheet_edit.edits import (
     Unreadable,
     Unresolved,
 )
-from sand.sheet_edit.ground import Grounded, Refused, column_name
+from sand.sheet_edit.ground import Grounded, Refused, column_name, samples_text
 from sand.sheet_edit.render import EMPTY, value_text
 
 INDENT = '   '
@@ -77,37 +77,34 @@ def edit_summary(result: Grounded, catalog: Catalog) -> dict[str, str]:
     target = catalog.column(result.edit.target)
     assert target is not None  # ground refused it otherwise
     new = value_text(result.value)
-    if result.rows:
-        held = {r: g.value for g in target.groups for r in g.rows}
-        old = value_text(held.get(result.rows[0]))
-    else:
-        old = new
+    old = _old_text(result, target) if result.rows else new
+    # the samples left out because they hold the value already: said at
+    # the edit, so nobody wonders why sample 1 is not in the list
+    unchanged = ''
+    if result.rows and result.unchanged:
+        kept = samples_text(result.unchanged, catalog)
+        unchanged = f'{kept} already {result.edit.new or "empty"}'
     return {
         'step': target.column.section.label,
         'column': target.column.header,
         'old': old,
         'new': new,
         'samples': samples_text(result.rows or result.unchanged, catalog),
+        'unchanged': unchanged,
     }
 
 
 def _change(result: Grounded, target: ColumnInfo, catalog: Catalog) -> str:
-    """'3000 → 4000, all 12 samples'. The rows written all hold the same
-    value: check O refused the edit otherwise."""
-    held = {r: g.value for g in target.groups for r in g.rows}
-    old = value_text(held.get(result.rows[0]))
+    """'3000 → 4000, all 12 samples'; 'various → 4000, …' when the rows
+    written hold different values (the note under it says which)."""
+    old = _old_text(result, target)
     return f'{old} → {value_text(result.value)}, {samples_text(result.rows, catalog)}'
 
 
-def samples_text(rows: tuple[int, ...], catalog: Catalog) -> str:
-    """'all 12 samples', 'samples 1–3', 'sample 7'; a row without a
-    label is named 'row 5' (as the catalog says it)."""
-    if len(rows) == len(catalog.samples):
-        return f'all {len(rows)} samples'
-    names = catalog.names(rows)
-    if names.startswith('row '):
-        return names
-    return f'{"sample" if len(rows) == 1 else "samples"} {names}'
+def _old_text(result: Grounded, target: ColumnInfo) -> str:
+    held = {r: g.value for g in target.groups for r in g.rows}
+    olds = list(dict.fromkeys(value_text(held.get(r)) for r in result.rows))
+    return olds[0] if len(olds) == 1 else 'various'
 
 
 def _marks(result: Grounded, target: ColumnInfo, catalog: Catalog) -> list[str]:

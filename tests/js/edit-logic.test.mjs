@@ -137,6 +137,13 @@ test("the preview notes are what the ready edits do not show", () => {
   const withWords = { ...REPORT, preview: REPORT.ready[0].line + "\n   from \"speed 4000\"\n   · read from 'four thousand'" };
   assert.deepEqual(previewNotes(withWords), ["   · read from 'four thousand'"]);
   assert.deepEqual(previewNotes({ ...REPORT, preview: "" }), []);
+  // the samples already at the value are in the edit's samples cell, not a note
+  const aside = {
+    ...REPORT,
+    preview: REPORT.ready[0].line + "\n   · samples 8–13 already 4000, nothing to change\n   · read from 'four thousand'",
+    ready: [{ ...REPORT.ready[0], unchanged: "samples 8–13 already 4000" }],
+  };
+  assert.deepEqual(previewNotes(aside), ["   · read from 'four thousand'"]);
 });
 
 test("the summary line of a completed job", () => {

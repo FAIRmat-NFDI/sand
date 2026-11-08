@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  fieldKey, formatDay, isSheetFile, metaLines, nameFromFile, uploadedText,
+  fieldKey, formatDay, isSheetFile, metaLines, nameFromFile, renameChoice, uploadedText,
+  withRenamed,
 } from "../../src/sand/apis/static/sheet-header-logic.js";
 
 function field(name, value, unit = null) {
@@ -94,4 +95,26 @@ test("the name proposed from the file", () => {
   assert.equal(isSheetFile("a.XLSX"), true);
   assert.equal(isSheetFile("a.xls"), false);
   assert.equal(isSheetFile("a.csv"), false);
+});
+
+test("a rename sends the name single-spaced, keeps an unchanged one, refuses a blank", () => {
+  assert.deepEqual(renameChoice("batch 7", "  batch   8 "), { action: "rename", name: "batch 8" });
+  assert.deepEqual(renameChoice("batch 7", " batch 7\n"), { action: "keep", name: "batch 7" });
+  assert.deepEqual(renameChoice("batch 7", "   "), { action: "refuse", name: "" });
+  assert.deepEqual(renameChoice(undefined, ""), { action: "refuse", name: "" });
+  assert.deepEqual(renameChoice(undefined, "batch 7"), { action: "rename", name: "batch 7" });
+});
+
+test("the renamed sheet keeps its place in the list and what the response left out", () => {
+  const list = [
+    { entry_id: "e2", upload_id: "u2", name: "new", created: "2026-11-02T10:00:00Z" },
+    { entry_id: "e1", upload_id: "u1", name: "old", created: "2026-11-01T10:00:00Z" },
+  ];
+  const renamed = { entry_id: "e1", upload_id: "u1", name: "older", created: null, entry_url: "http://n/u1/e1" };
+  assert.deepEqual(withRenamed(list, renamed), [
+    list[0],
+    { entry_id: "e1", upload_id: "u1", name: "older", created: "2026-11-01T10:00:00Z", entry_url: "http://n/u1/e1" },
+  ]);
+  assert.notEqual(withRenamed(list, renamed)[1], list[1]); // a new object, the list is not mutated
+  assert.equal(list[1].name, "old");
 });

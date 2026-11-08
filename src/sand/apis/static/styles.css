@@ -205,6 +205,39 @@ body {
   overflow-wrap: anywhere;
 }
 
+.sheet-name-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sheet-rename-btn {
+  flex: 0 0 auto;
+}
+
+.sheet-rename-btn .material-icons {
+  font-size: 18px;
+}
+
+/* the name edited in place: the heading's type on a line */
+.sheet-name-edit {
+  flex: 0 1 auto;
+  max-width: 100%;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 2px solid #2A4CDF;
+  border-radius: 0;
+  background: transparent;
+  font-family: inherit;
+  outline: none;
+}
+
+.sheet-name-edit:disabled {
+  color: #777;
+  border-bottom-color: #bbb;
+}
+
 .sheet-title a {
   font-size: 0.875rem;
   color: #2A4CDF;
@@ -592,9 +625,10 @@ body {
 
 /* the step's lines, written like notes: a quiet label, the values after it */
 .step-lines {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: baseline;
+  row-gap: 4px;
   border-top: 1px solid #eef0f3;
   padding-top: 10px;
   font-size: 0.84rem;
@@ -619,6 +653,22 @@ body {
 
 .line-label {
   color: #6b7079;
+}
+
+.line-label:not(:empty) {
+  margin-right: 10px;
+}
+
+/* a block ("solution"): its lines stacked in the second column, each
+   behind its own name, in the values' colour */
+.step-block-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.line-name {
   margin-right: 7px;
 }
 
@@ -1416,6 +1466,10 @@ body {
   grid-column: 4;
   font-size: 0.78rem;
   color: #6b7079;
+}
+
+.report-unchanged {
+  display: block;
 }
 
 .report-edit > :last-child {

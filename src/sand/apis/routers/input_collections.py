@@ -22,6 +22,7 @@ from sand.models.input_collections import (
     InputItemModel,
     InputListResponse,
     JobResponse,
+    RenameRequest,
     ReviseDatetimeRequest,
     ReviseInputRequest,
     ReviseInputResponse,
@@ -258,6 +259,44 @@ async def create_hysprint_input_collection(
 
     return InputCollectionSummaryModel(
         name=name, **_entry_response(voice, result.upload_id, result.entry_id)
+    )
+
+
+@router.patch(
+    '/input-collections/{upload_id}/name',
+    response_model=InputCollectionSummaryModel,
+    # the service does not read `created` back: left out, not null, so
+    # the page keeps the list's
+    response_model_exclude_none=True,
+)
+async def rename_input_collection(
+    upload_id: str,
+    body: RenameRequest,
+    request: Request,
+    collection_entry_id: str,
+) -> InputCollectionSummaryModel:
+    """Rename an experiment: the collection's name, which the list shows,
+    and the upload's name in NOMAD. Blank is refused. The answer has no
+    `created`: the page keeps the list's."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    name = ' '.join(body.name.split())
+    if not name:
+        raise HTTPException(status_code=400, detail='Give the sheet a name')
+
+    try:
+        async with voice.build_client(token) as client:
+            renamed = await voice.rename_input_collection(
+                client, upload_id, collection_entry_id, name
+            )
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return InputCollectionSummaryModel(
+        name=renamed.name,
+        created=renamed.created,
+        **_entry_response(voice, upload_id, collection_entry_id),
     )
 
 
