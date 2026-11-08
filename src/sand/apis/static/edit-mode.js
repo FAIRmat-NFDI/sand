@@ -1,4 +1,4 @@
-// The Sheet card: what the edit job did, the confirm-all button, and
+// The Edits card: what the edit job did, the confirm-all button, and
 // the final sheet to download. The job runs by itself: it reads an
 // update as soon as it is saved (or its words revised), and writes the
 // confirmed edits a moment after a confirmation. Confirmations come

@@ -271,7 +271,7 @@ async def rename_input_collection(
     request: Request,
     collection_entry_id: str,
 ) -> InputCollectionSummaryModel:
-    """Rename an experiment: the collection's name, which the list shows,
+    """Rename a sheet: the collection's name, which the list shows,
     and the upload's name in NOMAD. Blank is refused. The answer has no
     `created`: the page keeps the list's."""
     voice = _voice_service(request)
@@ -1250,8 +1250,8 @@ async def download_final_sheet(
     request: Request,
     collection_entry_id: str,
 ) -> Response:
-    """The sheet as it stands, as an xlsx download named after the
-    experiment: the one the last completed job left (the original plus
+    """The sheet as it stands, as an xlsx download under the sheet's
+    name: the one the last completed job left (the original plus
     the confirmed edits), or the uploaded one while no job has written
     a sheet."""
     voice = _voice_service(request)
@@ -1321,7 +1321,7 @@ async def download_final_sheet(
 
 def _attachment(filename: str) -> str:
     """Headers are latin-1: an ASCII fallback plus the real name encoded
-    (RFC 6266), so an experiment named in any script downloads."""
+    (RFC 6266), so a sheet named in any script downloads."""
     ascii_name = ''.join(
         c if c.isascii() and c.isprintable() and c not in '"\\' else '_'
         for c in filename

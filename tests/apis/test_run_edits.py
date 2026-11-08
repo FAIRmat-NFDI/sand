@@ -171,7 +171,7 @@ async def test_no_uploaded_sheet(voice, starter):
     response = await start(voice)
 
     assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
-    assert response.json()['detail'] == ('no sheet was uploaded here')
+    assert response.json()['detail'] == 'no sheet was uploaded here'
     assert starter.started == []
     assert STATUS_FILE not in voice.writer.files
 
