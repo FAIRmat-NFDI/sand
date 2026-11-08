@@ -761,6 +761,48 @@ def test_a_number_stored_as_text_is_the_same_value(synthetic_xlsx):
     # one value to the user: the strict rule, an empty `old` is refused
     why = refused(ground(edit(old=None), mixed))
     assert why.endswith("holds '3000' on samples 1–5, 7–13, not empty")
+    # nor does 3000.0 differ: one amount, however the cells spell it
+    spelled = build(
+        edited(
+            synthetic_xlsx,
+            lambda ws: [
+                ws.__setitem__(f'{speed}{r}', '3000' if r in range(3, 9) else 3000.0)
+                for r in range(3, 15)
+            ],
+        )
+    )
+    why = refused(ground(edit(old=None), spelled))
+    assert why.endswith("holds '3000' on samples 1–5, 7–13, not empty")
+
+
+def test_counted_values_run_from_the_first_sample_asked_to_the_last(synthetic_xlsx):
+    cell = letter('5: Close Space Sublimation', 'Substrate temperature [°C]')
+    cycling = build(
+        edited(
+            synthetic_xlsx,
+            lambda ws: [
+                ws.__setitem__(f'{cell}{r}', [100, 105, 110, 115][(r - 3) % 4])
+                for r in range(3, 15)
+            ],
+        )
+    )
+    why = refused(
+        ground(
+            edit(
+                target=SUBSTRATE,
+                rows=between('8', '13'),
+                old='99',
+                new='130',
+                said='substrate temperature 130 for samples 8 to 13',
+            ),
+            cycling,
+        )
+    )
+    # the first and last of the samples asked, not of the column
+    assert why.endswith(
+        "holds 4 different values on samples 8–13, from '110' on sample 8 "
+        "to '115' on sample 13, not '99'"
+    )
 
 
 def test_a_column_that_counts_up_is_set_for_all_samples(counting):

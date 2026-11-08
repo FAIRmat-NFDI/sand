@@ -663,40 +663,59 @@ def old_problems(
 
 
 def _rows_not_holding(column: ColumnInfo, text: str, rows) -> list[int]:
-    held = {r: g.value for g in column.groups for r in g.rows}
+    held = _by_row(column)
     return [r for r in rows if not same_value(text, held.get(r))]
 
 
+def _by_row(column: ColumnInfo) -> dict[int, object]:
+    return {r: g.value for g in column.groups for r in g.rows}
+
+
+def _key(v) -> str:
+    """One key per value as the user reads it, the way `same_value`
+    compares: a number by its amount (3000, 3000.0 and '3000' are one),
+    TRUE/FALSE as words, text as written, empty as ''."""
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return ''
+    if isinstance(v, bool):
+        return 'TRUE' if v else 'FALSE'
+    if isinstance(v, int | float):
+        return format(Decimal(str(v)).normalize(), 'f')
+    if isinstance(v, str):
+        n = value(v) if any(ch.isdigit() for ch in v) else None
+        return format(n.value.normalize(), 'f') if n is not None else v.strip()
+    return _text(v)
+
+
 def _values(column: ColumnInfo, rows: list[int]) -> list[object]:
-    """The distinct values the rows hold, in sheet order, as the user
-    reads them: 3000 stored as text is the number 3000."""
+    """The distinct values the rows hold (`_key`), in row order."""
+    held = _by_row(column)
     seen: dict[str, object] = {}
-    for g in column.groups:
-        if any(r in rows for r in g.rows):
-            seen.setdefault(_text(g.value), g.value)
+    for r in sorted(rows):
+        seen.setdefault(_key(held.get(r)), held.get(r))
     return list(seen.values())
 
 
 def _held(column: ColumnInfo, catalog: Catalog, rows: list[int]) -> str:
     """ "'3000' on samples 1–3 and empty on samples 4–5"; many values:
     "11 different values on samples 2–13, from 'PbBr3' on sample 2 to
-    'PbBr13' on sample 13"."""
-    by_value: dict[str, list[int]] = {}
-    for g in column.groups:
-        for r in g.rows:
-            if r in rows:
-                by_value.setdefault(_text(g.value), []).append(r)
-    shown = {v: ('empty' if v == '' else repr(v)) for v in by_value}
-    if len(by_value) > _LISTED_VALUES:
-        first, last = next(iter(by_value)), next(reversed(by_value))
+    'PbBr13' on sample 13", the first and the last of the rows asked."""
+    held = _by_row(column)
+    by_key: dict[str, list[int]] = {}
+    shown: dict[str, str] = {}
+    for r in sorted(rows):
+        k = _key(held.get(r))
+        by_key.setdefault(k, []).append(r)
+        shown.setdefault(k, 'empty' if k == '' else repr(_text(held.get(r))))
+    if len(by_key) > _LISTED_VALUES:
+        first, last = next(iter(by_key)), _key(held.get(max(rows)))
         return (
-            f'{len(by_value)} different values on samples {catalog.names(sorted(rows))}, '
-            f'from {shown[first]} on sample {catalog.names(by_value[first][:1])} '
-            f'to {shown[last]} on sample {catalog.names(by_value[last][-1:])}'
+            f'{len(by_key)} different values on samples {catalog.names(sorted(rows))}, '
+            f'from {shown[first]} on sample {catalog.names(by_key[first][:1])} '
+            f'to {shown[last]} on sample {catalog.names(by_key[last][-1:])}'
         )
     return ' and '.join(
-        f'{shown[v]} on samples {catalog.names(sorted(rs))}'
-        for v, rs in by_value.items()
+        f'{shown[k]} on samples {catalog.names(rs)}' for k, rs in by_key.items()
     )
 
 
