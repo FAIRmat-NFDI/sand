@@ -18,7 +18,6 @@ const substrateEl = document.getElementById("overview-substrate");
 const stepsTitle = document.getElementById("steps-title");
 const stepGrid = document.getElementById("step-grid");
 const samplesBlock = document.getElementById("samples-block");
-const samplesNote = document.getElementById("samples-note");
 const samplesBox = document.getElementById("samples-box");
 const OPEN_KEY = "sand.overview.open";
 const LONG_VALUE = 24; // characters; a longer value may wrap inside
@@ -132,7 +131,6 @@ function renderSamples(groups) {
   samplesBlock.hidden = groups.kind === "none";
   if (groups.kind === "none") return;
   if (groups.kind === "flat") {
-    samplesNote.textContent = groups.blocks.map((b) => axisText(b) + " (" + b.step + ")").join(" · ");
     groups.blocks.forEach((block, i) => {
       const row = el("div", "sample-row");
       const head = el("div", "sample-axis");
@@ -152,8 +150,6 @@ function renderSamples(groups) {
     });
     return;
   }
-  samplesNote.textContent = axisText(groups.a) + " (" + groups.a.step + ") × " + axisText(groups.b) + " (" + groups.b.step + ")"
-    + (groups.also.length ? " · also varies: " + groups.also.join(", ") : "");
   groups.rows.forEach((row, i) => {
     const line = el("div", "sample-row");
     const head = el("div", "sample-axis");
