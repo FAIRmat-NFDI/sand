@@ -60,6 +60,37 @@ function familyLabel(family, families) {
   return siblings > 1 ? base + " " + family.index : base;
 }
 
+// The blocks a card writes the way a recipe does: the solution (its
+// solvents, solutes and loose "Solution …" columns) and the spin program
+// (its rotation steps and loose "Spin …" columns) each stand behind one
+// label. A block forms when the step has the block's core family: a
+// cleaning step's solvent is no solution, a lone spin delay no program.
+const BLOCKS = [
+  { label: "solution", core: "solutes", groups: new Set(["solvents", "solutes"]) },
+  { label: "spin", core: "rotation_steps", groups: new Set(["rotation_steps"]), steps: true },
+];
+function blocksOf(params) {
+  return BLOCKS.filter((b) => params.some((p) => p.family?.group === b.core));
+}
+function blockOf(param, blocks) {
+  return blocks.find((b) => (param.family && b.groups.has(param.family.group))
+    || new RegExp("(^|_)" + b.label + "(_|$)").test(fieldKey(param.name))) || null;
+}
+
+// a loose column inside a block: the block says its word, the column's
+// other words say what the number is ("volume 80 uL", "T 70 °C", "delay 5 s")
+// or what is so ("filtered", "no filtered")
+function blockValue(p, block, changed) {
+  const value = valueOf(p, changed, { drop: new Set(wordsOf(p).map((w) => w.toLowerCase())) });
+  if (p.type === "text") {
+    value.text = value.text.replace(new RegExp("(^|\\s)" + block.label + "(?=\\s|$)", "i"), "").trim();
+    return value;
+  }
+  const words = wordsOf(p).filter((w) => w.toLowerCase() !== block.label).map((w) => shortName(lower(w)));
+  if (words.length) value.text = words.join(" ") + " " + value.text;
+  return value;
+}
+
 // the column that names a family's thing: "Solvent 1 name", "Material
 // name 2", "Source material name 1", or a cleaning step's bare "Solvent 1"
 function isNameColumn(param) {
@@ -188,6 +219,8 @@ export function stepCard(step, changed = []) {
   const items = []; // {at, line} or {at, single: param}; singles run together
   const ratios = [];
   const text = (p) => String(p.values[0].value);
+  const blocks = blocksOf(step.params);
+  const inBlock = (p) => blockOf(p, blocks);
   for (const params of families.values()) {
     const family = params[0].family;
     const label = family && FAMILY_LABELS[family.group];
@@ -205,18 +238,25 @@ export function stepCard(step, changed = []) {
       // the name says what the measures are: "PbI2  572 mg/ml"
       const drop = new Set(wordsOf(name).map((w) => w.toLowerCase()));
       const values = rest.map((p) => valueOf(p, changed, { drop })).filter((v) => v.text);
-      // the material's own line needs no label: the card names it already
-      items.push({ at, line: { label: text(name) === head.material?.text ? "" : text(name), values } });
+      // the material's own line needs no label: the card names it already;
+      // inside a block each line says what it is
+      const block = inBlock(name);
+      const label = !block && text(name) === head.material?.text ? "" : text(name);
+      items.push({ at, line: { label, values }, block });
     } else if (name) {
-      items.push({ at, single: name, value: valueOf(name, changed) }); // "Ethanol"
+      items.push({ at, single: name, value: valueOf(name, changed), block: inBlock(name) }); // "Ethanol"
     } else if (label && rest.length > 1) {
       const siblings = [...families.keys()].filter((k) => k.startsWith(family.group + ":")).length;
-      // the family's label says it: "Spin 1  400 rpm · 15 s"
+      // the family's label says it: "Spin 1  400 rpm · 15 s"; inside the
+      // block the steps of a spin program count: "step 1  400 rpm · 15 s"
       const drop = new Set(rest.flatMap((p) => wordsOf(p).map((w) => w.toLowerCase())).filter((w) => w === label.toLowerCase() || rest.every((p) => wordsOf(p).map((x) => x.toLowerCase()).includes(w))));
       const values = rest.map((p) => valueOf(p, changed, { drop }));
-      items.push({ at, line: { label: siblings > 1 ? familyLabel(family, families) : "", values } });
+      const block = inBlock(rest[0]);
+      let name = "";
+      if (siblings > 1) name = block?.steps ? "step " + family.index : familyLabel(family, families);
+      items.push({ at, line: { label: name, values }, block });
     } else {
-      for (const p of params) items.push({ at: order.get(p), single: p });
+      for (const p of params) items.push({ at: order.get(p), single: p, block: inBlock(p) });
     }
   }
   if (ratios.length) {
@@ -238,7 +278,7 @@ export function stepCard(step, changed = []) {
   const groups = new Map();
   const singles = items.filter((i) => i.single && !i.value);
   for (const item of singles) {
-    if (isNote(item.single)) continue;
+    if (isNote(item.single) || item.block) continue;
     const word = firstWord(item.single.name);
     const key = word.toLowerCase();
     if (!groups.has(key)) groups.set(key, { word, items: [] });
@@ -250,6 +290,10 @@ export function stepCard(step, changed = []) {
     if (isNote(p)) {
       notes.push({ label: "", note: true, values: [valueOf(p, changed)] });
       items.splice(items.indexOf(item), 1);
+      continue;
+    }
+    if (item.block) {
+      item.value = blockValue(p, item.block, changed);
       continue;
     }
     const group = groups.get(firstWord(p.name).toLowerCase());
@@ -270,7 +314,30 @@ export function stepCard(step, changed = []) {
     item.line = line;
   }
   items.sort((x, y) => x.at - y.at);
-  // what is left runs together, in the sheet's order
+  // a block's lines stand together behind its label, where its first
+  // column is: each family on its own line, the loose columns run together
+  const rest = items.filter((i) => !i.block);
+  for (const block of blocks) {
+    const members = items.filter((i) => i.block === block)
+      .map((i) => (i.single?.family ? { ...i, line: { label: "", values: [i.value] } } : i));
+    if (members.length) rest.push({ at: members[0].at, line: { label: block.label, lines: runTogether(members) } });
+  }
+  rest.sort((x, y) => x.at - y.at);
+  const lines = runTogether(rest);
+  lines.push(...notes);
+  return {
+    position: step.position,
+    headline: step.step_type,
+    material: head.material || null,
+    sub: [head.layer, head.tool].filter(Boolean),
+    empty: step.empty,
+    varies: stepVaries(step),
+    lines,
+  };
+}
+
+// lines as they are; loose values run together, in the sheet's order
+function runTogether(items) {
   const lines = [];
   let run = null;
   for (const item of items) {
@@ -284,16 +351,7 @@ export function stepCard(step, changed = []) {
       lines.push(run);
     }
   }
-  lines.push(...notes);
-  return {
-    position: step.position,
-    headline: step.step_type,
-    material: head.material || null,
-    sub: [head.layer, head.tool].filter(Boolean),
-    empty: step.empty,
-    varies: stepVaries(step),
-    lines,
-  };
+  return lines;
 }
 
 // the chips' names by row: the label; with labels repeated across

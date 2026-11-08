@@ -619,9 +619,10 @@ body {
 
 /* the step's lines, written like notes: a quiet label, the values after it */
 .step-lines {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: baseline;
+  row-gap: 4px;
   border-top: 1px solid #eef0f3;
   padding-top: 10px;
   font-size: 0.84rem;
@@ -646,6 +647,22 @@ body {
 
 .line-label {
   color: #6b7079;
+}
+
+.line-label:not(:empty) {
+  margin-right: 10px;
+}
+
+/* a block ("solution"): its lines stacked in the second column, each
+   behind its own name, in the values' colour */
+.step-block-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.line-name {
   margin-right: 7px;
 }
 
