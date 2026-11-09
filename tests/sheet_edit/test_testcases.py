@@ -257,3 +257,29 @@ def test_each_pass_is_asked_under_the_case_id(cases, synthetic_xlsx):
 
     rt.run([case], synthetic_xlsx, records)
     assert names == ['range.first', 'range.second']
+
+
+def test_a_flagged_column_dropped_in_silence_fails(cases, synthetic_xlsx):
+    silent = ProposedEdits(edits=[], unresolved=[])
+    case = next(c for c in cases if c.id == 'formula-column')
+    verdict = rt.judge(
+        case, interpret_instruction(case.text, synthetic_xlsx, lambda t, c: silent)
+    )
+    assert not verdict.ok and verdict.notes[-1].endswith('not flagged, nothing said')
+    # no edit asked: saying the sample is not there is the refusal
+    case = next(c for c in cases if c.id == 'missing-sample')
+    said = NotFound(reason='not_found', said='sample 6')
+    answer = ProposedEdits(edits=[], unresolved=[said])
+    verdict = rt.judge(
+        case, interpret_instruction(case.text, synthetic_xlsx, lambda t, c: answer)
+    )
+    assert verdict.ok
+
+
+def test_the_cache_is_reused_only_for_the_same_question(tmp_path):
+    slot = tmp_path / 'range.first.json'
+    rt.keep(slot, 'gemini/flash', 'step 2', answer={'edits': [], 'unresolved': []})
+    assert rt.reusable(slot, 'gemini/flash', 'step 2')['answer']['edits'] == []
+    assert rt.reusable(slot, 'openai/flash', 'step 2') is None
+    assert rt.reusable(slot, 'gemini/flash', 'step 3') is None
+    assert rt.reusable(tmp_path / 'none.json', 'gemini/flash', 'step 2') is None

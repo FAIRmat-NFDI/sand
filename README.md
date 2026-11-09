@@ -285,12 +285,12 @@ proposed (≥ 95 %) or at least flagged (100 %), refusals said (100 %),
 and the count of edits nobody asked for (0).
 
 - `--only ID` runs one case.
-- `--model NAME` asks another model; the default is the one `nomad.yaml`
-  sets for the lab.
+- `--model NAME` asks another model; the default is the edit job's, read
+  from the distribution's `nomad.yaml`.
 
 Model answers are kept as `evals/sheet_edit/cache/<model>/<case id>.first.json`
-and `.second.json`, one per pass. A file is reused while its instruction
-and the prompt version (`PROMPT_VERSION` in `resolve.py`, bumped on every
+and `.second.json`, one per pass. A file is reused while its model,
+instruction and the prompt version (`PROMPT_VERSION` in `resolve.py`, bumped on every
 prompt change) are the same; delete the folder for fresh answers.
 The sheet they are asked about is written there too, as
 `synthetic_sheet.xlsx`, to open next to them. The script never runs in CI; `tests/sheet_edit/test_testcases.py`

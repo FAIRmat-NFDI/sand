@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import os
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -49,7 +50,6 @@ from sand.sheet_edit.resolve import (  # noqa: E402
     read_answer,
 )
 
-DEFAULT_MODEL = 'gemini/gemini-3.6-flash'  # the lab's, as nomad.yaml sets it
 TEMPERATURE = 0  # the job's (actions/edit/workflows.py)
 MAX_RETRIES = 3  # the extraction workflow's max_retry_attempts
 GAVE_UP = 'Max retry attempts reached.'  # its message after the last retry
@@ -223,6 +223,12 @@ def judge(case: Case, result: Interpretation) -> Verdict:
         else:
             v.invented += 1
             v.notes.append(f'{name}: not asked for ({_value(g)!r})')
+    silent = _dropped_in_silence(case, result, refused | {g.edit.target for g in ready})
+    if silent:
+        v.refused_ok = False
+        v.notes += [
+            f'{_name(t, result.catalog)}: not flagged, nothing said' for t in silent
+        ]
     if case.unresolved and not kinds & set(case.unresolved):
         v.refused_ok = False
         v.notes.append(
@@ -230,6 +236,19 @@ def judge(case: Case, result: Interpretation) -> Verdict:
             + (', '.join(sorted(kinds)) if kinds else 'no unresolved item')
         )
     return v
+
+
+def _dropped_in_silence(
+    case: Case, result: Interpretation, seen: set[str]
+) -> list[str]:
+    """Flagged columns neither refused, written nor said. With no edit
+    asked, a not-found is about this one."""
+    kinds = {u.reason for u in result.proposal.unresolved}
+    if not case.edits and 'not_found' in kinds:
+        return []
+    return [
+        t for t in case.flagged if t not in seen and not _unresolved_about(t, result)
+    ]
 
 
 def _unresolved_about(target: str, result: Interpretation) -> bool:
@@ -349,8 +368,9 @@ def cached_model(model: str, cache: Path) -> Ask:
     prompts joined as the worker joins them, temperature 0, the answer
     parsed and checked against the schema, the worker's retries with its
     wording. Each answer, or giving up, is kept as
-    cache/<model>/<case id>.<pass>.json, reused while its instruction and
-    PROMPT_VERSION (bumped on every prompt change) are the same."""
+    cache/<model>/<case id>.<pass>.json, reused while its model,
+    instruction and PROMPT_VERSION (bumped on every prompt change) are
+    the same."""
     from nomad_llm_extraction.pipeline.schema_filling.llm_engine import LiteLLMEngine
     from nomad_llm_extraction.utils.utils import validate_with_schema
 
@@ -362,13 +382,11 @@ def cached_model(model: str, cache: Path) -> Ask:
         prompt = f'{system}\n\n{text}'
         said = text.rpartition('Instruction: ')[2]
         slot = folder / f'{name}.json'
-        if slot.exists():
-            kept = json.loads(slot.read_text())
-            same = (kept.get('instruction'), kept.get('prompt_version'))
-            if same == (said, PROMPT_VERSION):
-                if kept.get('error'):
-                    raise ModelGaveUp(kept['error'])
-                return json.dumps(kept['answer'])
+        kept = reusable(slot, model, said)
+        if kept is not None:
+            if kept.get('error'):
+                raise ModelGaveUp(kept['error'])
+            return json.dumps(kept['answer'])
         retry = ''
         raw = ''
         for _ in range(MAX_RETRIES):
@@ -401,6 +419,16 @@ def cached_model(model: str, cache: Path) -> Ask:
         raise ModelGaveUp(GAVE_UP)
 
     return call
+
+
+def reusable(slot: Path, model: str, said: str) -> dict | None:
+    """The kept answer, if it was asked of this model, with this
+    instruction and these prompts."""
+    if not slot.exists():
+        return None
+    kept = json.loads(slot.read_text())
+    same = (kept.get('model'), kept.get('instruction'), kept.get('prompt_version'))
+    return kept if same == (model, said, PROMPT_VERSION) else None
 
 
 def keep(slot: Path, model: str, said: str, **kept: object) -> None:
@@ -456,11 +484,23 @@ def run(
     return verdicts
 
 
+def configured_model() -> str:
+    """The job's model, from the distribution's nomad.yaml: this runs on
+    the distribution's .venv, whose parent folder holds it."""
+    distro = Path(sys.prefix).parent / 'nomad.yaml'
+    if 'NOMAD_CONFIG' not in os.environ and distro.exists():
+        os.environ['NOMAD_CONFIG'] = str(distro)
+    from nomad.config import config
+
+    from sand.actions.common import llm_model_name
+
+    config.load_plugins()  # NOMAD loads them at startup, a script must ask
+    return llm_model_name()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
-    parser.add_argument(
-        '--model', default=DEFAULT_MODEL, help=f'default {DEFAULT_MODEL}'
-    )
+    parser.add_argument('--model', help="default: the job's, from nomad.yaml")
     parser.add_argument('--only', help='run this one case')
     args = parser.parse_args(argv)
 
@@ -471,7 +511,9 @@ def main(argv: list[str] | None = None) -> int:
     cases = load_cases(HERE / 'testcases.json', build(sheet))
     if args.only and all(c.id != args.only for c in cases):
         parser.error(f'no case {args.only!r}; ids: {", ".join(c.id for c in cases)}')
-    verdicts = run(cases, sheet, cached_model(args.model, HERE / 'cache'), args.only)
+    model = args.model or configured_model()
+    print(f'model {model}', file=sys.stderr, flush=True)
+    verdicts = run(cases, sheet, cached_model(model, HERE / 'cache'), args.only)
     print(report(verdicts))
     return 0 if all(v.ok for v in verdicts) else 1
 
