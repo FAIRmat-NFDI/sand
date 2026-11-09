@@ -1,6 +1,6 @@
 """Measure the sheet editor against the real model.
 
-Every case of a testcases file is run through `interpret_instruction`,
+Every case of testcases.json, on the synthetic sheet, is run through `interpret_instruction`,
 the function the edit job runs, with the model answering the two passes
 the way the job's worker asks it (nomad-llm-extraction's engine, the
 same prompt, schema and temperature, the same retries). What comes out
@@ -9,7 +9,7 @@ value) that must be ready, the columns that must be flagged (refused or
 left unresolved, never written), the unresolved kinds that must be said.
 
     ~/fairmat/nomad-distro-dev/.venv/bin/python \\
-        evals/sheet_edit/run_testcases.py [--model gemini/...] [--only ID] [--show]
+        evals/sheet_edit/run_testcases.py [--only ID] [--model gemini/...]
 
 Run with the distribution's Python: the engine is installed there, and
 sand too (editable, so this checkout's code runs). Not `uv run` in the
@@ -33,6 +33,8 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path.insert(0, str(REPO / 'tests' / 'sheet_edit'))  # the synthetic sheet
 
+from synthetic_sheet import build as synthetic  # noqa: E402
+
 from sand.sheet_edit.apply import (  # noqa: E402
     Interpretation,
     Resolve,
@@ -43,7 +45,7 @@ from sand.sheet_edit.edits import Unreadable  # noqa: E402
 from sand.sheet_edit.ground import Grounded, Refused, same_value  # noqa: E402
 from sand.sheet_edit.resolve import CallLLM, agree, prompts, read_answer  # noqa: E402
 
-DEFAULT_MODEL = 'gemini/gemini-2.5-flash'  # sand's default; pass nomad.yaml's
+DEFAULT_MODEL = 'gemini/gemini-3.6-flash'  # the lab's, as nomad.yaml sets it
 TEMPERATURE = 0  # the job's (actions/edit/workflows.py)
 MAX_RETRIES = 3  # the extraction workflow's max_retry_attempts
 GAVE_UP = 'Max retry attempts reached.'  # its message after the last retry
@@ -291,13 +293,13 @@ def _percent(part: int, whole: int) -> float | None:
     return None if whole == 0 else round(100 * part / whole, 1)
 
 
-def report(verdicts: list[Verdict], show: bool) -> str:
+def report(verdicts: list[Verdict]) -> str:
     lines = []
     for v in verdicts:
         lines.append(f'{v.case.id:<18} {"ok" if v.ok else "FAIL"}')
         for note in v.notes:
             lines.append(f'{"":<18}   {note}')
-        if show or not v.ok:
+        if not v.ok:
             lines.extend(f'{"":<18}   | {line}' for line in v.preview.splitlines())
     s = summarize(verdicts)
     lines.append('')
@@ -447,29 +449,18 @@ def run(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
-    parser.add_argument('--cases', type=Path, default=HERE / 'testcases.json')
     parser.add_argument(
-        '--sheet', type=Path, help='an xlsx; default: the synthetic sheet'
+        '--model', default=DEFAULT_MODEL, help=f'default {DEFAULT_MODEL}'
     )
-    parser.add_argument('--model', default=DEFAULT_MODEL)
-    parser.add_argument('--cache', type=Path, default=HERE / 'cache')
-    parser.add_argument('--only', help='one case id')
-    parser.add_argument(
-        '--show', action='store_true', help='print every preview, not only failed'
-    )
+    parser.add_argument('--only', help='run this one case')
     args = parser.parse_args(argv)
 
-    if args.sheet:
-        sheet = args.sheet.read_bytes()
-    else:
-        from synthetic_sheet import build as synthetic
-
-        sheet = synthetic()
-    cases = load_cases(args.cases, build(sheet))
+    sheet = synthetic()
+    cases = load_cases(HERE / 'testcases.json', build(sheet))
     if args.only and all(c.id != args.only for c in cases):
         parser.error(f'no case {args.only!r}; ids: {", ".join(c.id for c in cases)}')
-    verdicts = run(cases, sheet, cached_model(args.model, args.cache), args.only)
-    print(report(verdicts, args.show))
+    verdicts = run(cases, sheet, cached_model(args.model, HERE / 'cache'), args.only)
+    print(report(verdicts))
     return 0 if all(v.ok for v in verdicts) else 1
 
 

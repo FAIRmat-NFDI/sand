@@ -175,7 +175,7 @@ def test_the_summary_adds_up(cases, catalog, synthetic_xlsx):
     s = rt.summarize([good, bad])
     assert (s['cases'], s['passed']) == (2, 1)
     assert (s['proposed'], s['precision'], s['collateral']) == (50.0, 50.0, 1)
-    text = rt.report([good, bad], show=False)
+    text = rt.report([good, bad])
     assert text.startswith('range              ok\nrange              FAIL')
     assert 'proposed 50.0 % (target 95 %)' in text
 

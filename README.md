@@ -266,25 +266,29 @@ relies on it, and after every change to the prompts or the model, it is
 measured against the real model:
 
 ```sh
-cd ~/fairmat/sand   # the distribution's Python: the engine is installed there
-~/fairmat/nomad-distro-dev/.venv/bin/python evals/sheet_edit/run_testcases.py --model gemini/...
+cd ~/fairmat/sand
+~/fairmat/nomad-distro-dev/.venv/bin/python evals/sheet_edit/run_testcases.py
 ```
 
-The key comes from the shell (`GEMINI_API_KEY`). Not `uv run` in the
-distribution, which may sync it. Each case is two model calls; the
-script prints one progress line per case, the results at the end.
+It runs with the distribution's Python, where the extraction engine is
+installed; not `uv run` in the distribution, which may sync it. The key
+comes from the shell (`GEMINI_API_KEY`).
 
 `evals/sheet_edit/testcases.json` holds about twenty instructions on the
 synthetic sheet, each with the edits it must produce (column, samples,
 value), the columns it must leave alone and the refusals it must say.
 The script runs each through the same function, prompt and schema the
-job uses, and prints the cases that went wrong and the numbers the plan
-gates on: precision of the ready edits (≥ 99 %), asked edits proposed
-(≥ 95 %) or at least flagged (100 %), refusals said (100 %), and the
-count of edits nobody asked for (0). Pass `--model` the name
-`nomad.yaml` gives the plugin; `--show` prints every preview, `--only ID`
-one case, `--cases` and `--sheet` another set on another sheet (the
-lab's own set stays out of the repository). Model answers are cached
-under `evals/sheet_edit/cache/`, so a rerun costs calls only for prompts
-that changed. The script never runs in CI; `tests/sheet_edit/test_testcases.py`
+job uses, prints a line per case while it runs, then the cases that went
+wrong with the preview the user would have seen, and the numbers the
+plan gates on: precision of the ready edits (≥ 99 %), asked edits
+proposed (≥ 95 %) or at least flagged (100 %), refusals said (100 %),
+and the count of edits nobody asked for (0).
+
+- `--only ID` runs one case.
+- `--model NAME` asks another model; the default is the one `nomad.yaml`
+  sets for the lab.
+
+Model answers are kept in `evals/sheet_edit/cache/`, so a rerun asks the
+model only the questions that changed; delete the folder for fresh
+answers. The script never runs in CI; `tests/sheet_edit/test_testcases.py`
 checks the cases and the judgement offline.
