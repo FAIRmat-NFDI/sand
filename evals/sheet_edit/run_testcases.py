@@ -468,6 +468,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     sheet = synthetic()
+    # the sheet the cases are asked about, to open next to the answers
+    (HERE / 'cache').mkdir(exist_ok=True)
+    (HERE / 'cache' / 'synthetic_sheet.xlsx').write_bytes(sheet)
     cases = load_cases(HERE / 'testcases.json', build(sheet))
     if args.only and all(c.id != args.only for c in cases):
         parser.error(f'no case {args.only!r}; ids: {", ".join(c.id for c in cases)}')
