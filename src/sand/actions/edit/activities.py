@@ -357,6 +357,8 @@ def _report(
             for key, edit in step.interpretation.ready.items()
         ],
         'confirmed': [key for key in step.interpretation.ready if key in confirmed],
+        # what the job could not settle (uncertain, ambiguous, not found)
+        'unresolved': len(step.interpretation.proposal.unresolved),
         'cells_written': len(written),
         'refused': step.refused,
     }

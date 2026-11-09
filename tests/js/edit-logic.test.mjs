@@ -121,6 +121,9 @@ test("the state chip of an input", () => {
   assert.equal(label(note, { ...REPORT, confirmed: ["k1"] }), "Applied");
   assert.equal(label(note, { ...REPORT, confirmed: ["k1"], refused: "a formula error" }), "Not written");
   assert.equal(label(note, { ...REPORT, ready: [] }), "No edit found");
+  // two readings sand could not decide between: not "nothing found"
+  assert.equal(label(note, { ...REPORT, ready: [], unresolved: 1 }), "Unclear");
+  assert.equal(label(note, { ...REPORT, unresolved: 1 }), "1 edit to confirm");
   assert.equal(inputState(note, REPORT, false, true).state, "ready");
 });
 

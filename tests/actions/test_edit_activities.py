@@ -222,6 +222,7 @@ async def test_apply_caches_the_agreed_proposal_and_reports_the_edit(upload):
     assert report['cells_written'] == 0
     assert report['refused'] is None
     assert report['confirmed'] == []
+    assert report['unresolved'] == 0
     (ready,) = report['ready']
     assert (
         ready['line']
@@ -258,6 +259,7 @@ async def test_disagreeing_answers_make_the_input_uncertain(upload):
         apply(upload, 1, [answer(SPEED_EDIT), answer(other)])
     )
     assert report['ready'] == []
+    assert report['unresolved'] == 1  # the page says "Unclear"
     assert report['preview'].startswith(f'? uncertain: "{SAID}"')
 
 

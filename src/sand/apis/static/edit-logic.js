@@ -83,6 +83,8 @@ export function inputState(item, report, jobRunning, canConfirm) {
   }
   if ((report.confirmed_since || []).length) return { state: "writing", label: "Confirmed, writing..." };
   if ((report.confirmed || []).length) return { state: "applied", label: "Applied" };
+  // found, but not settled: the reasons are under the input
+  if (report.unresolved) return { state: "unclear", label: "Unclear" };
   return { state: "none", label: "No edit found" };
 }
 
