@@ -339,6 +339,12 @@ function renderReport(report) {
       row.append(btn);
     }
     box.append(row);
+    for (const check of edit.checks || []) {
+      const p = document.createElement("p");
+      p.className = "report-check";
+      p.textContent = "Check: " + check;
+      box.append(p);
+    }
   }
   for (const note of previewNotes(report)) {
     const p = document.createElement("p");

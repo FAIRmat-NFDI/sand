@@ -162,7 +162,9 @@ class Verdict:
     edits; `invented` and `collateral` are ready edits nobody asked for
     (another column; the right column with other rows or value);
     `written` is a flagged column that got a ready edit, the worst
-    outcome; `failed` is set when the job itself would have failed."""
+    outcome; `failed` is set when the job itself would have failed.
+    `checked` and `wrong_checked`: of the right and of the wrong ready
+    edits, those a word check marked, which the user confirms one by one."""
 
     case: Case
     proposed: int = 0
@@ -171,6 +173,8 @@ class Verdict:
     invented: int = 0
     collateral: int = 0
     written: int = 0
+    checked: int = 0
+    wrong_checked: int = 0
     refused_ok: bool = True  # the unresolved kinds asked for were said
     failed: str = ''
     notes: list[str] = field(default_factory=list)
@@ -198,6 +202,9 @@ def judge(case: Case, result: Interpretation) -> Verdict:
         if hit:
             v.proposed += 1
             matched.append(hit)
+            if hit.checks:
+                v.checked += 1
+                v.notes.append(f'{want.name}: proposed with a check')
         elif any(g.edit.target == want.target for g in ready):
             # the column is right, the rows or the value are not: the
             # ready edit is counted below, the asked one is missed
@@ -209,20 +216,7 @@ def judge(case: Case, result: Interpretation) -> Verdict:
         else:
             v.missed += 1
             v.notes.append(f'{want.name}: nothing proposed')
-    wanted = {w.target for w in case.edits}
-    for g in ready:
-        if g in matched:
-            continue
-        name = _name(g.edit.target, result.catalog)
-        if g.edit.target in case.flagged:
-            v.written += 1
-            v.notes.append(f'{name}: WRITTEN, must be flagged')
-        elif g.edit.target in wanted:
-            v.collateral += 1
-            v.notes.append(f'{name}: other rows or value ({_value(g)!r})')
-        else:
-            v.invented += 1
-            v.notes.append(f'{name}: not asked for ({_value(g)!r})')
+    _count_unasked(v, ready, matched, result)
     silent = _dropped_in_silence(case, result, refused | {g.edit.target for g in ready})
     if silent:
         v.refused_ok = False
@@ -236,6 +230,31 @@ def judge(case: Case, result: Interpretation) -> Verdict:
             + (', '.join(sorted(kinds)) if kinds else 'no unresolved item')
         )
     return v
+
+
+def _count_unasked(
+    v: Verdict, ready: list[Grounded], matched: list[Grounded], result: Interpretation
+) -> None:
+    """Ready edits no expected edit matched: written although flagged,
+    collateral (an asked column, other rows or value), or invented."""
+    case = v.case
+    wanted = {w.target for w in case.edits}
+    for g in ready:
+        if g in matched:
+            continue
+        name = _name(g.edit.target, result.catalog)
+        if g.checks:
+            v.wrong_checked += 1
+            name += ' (with a check)'
+        if g.edit.target in case.flagged:
+            v.written += 1
+            v.notes.append(f'{name}: WRITTEN, must be flagged')
+        elif g.edit.target in wanted:
+            v.collateral += 1
+            v.notes.append(f'{name}: other rows or value ({_value(g)!r})')
+        else:
+            v.invented += 1
+            v.notes.append(f'{name}: not asked for ({_value(g)!r})')
 
 
 def _dropped_in_silence(
@@ -309,6 +328,10 @@ def summarize(verdicts: list[Verdict]) -> dict[str, object]:
         'invented': sum(v.invented for v in verdicts),
         'collateral': sum(v.collateral for v in verdicts),
         'written': sum(v.written for v in verdicts),
+        'checked': sum(v.checked for v in verdicts),
+        'wrong_checked': sum(v.wrong_checked for v in verdicts),
+        # what "confirm all" would write wrongly: the one number to keep at 0
+        'wrong_unchecked': wrong - sum(v.wrong_checked for v in verdicts),
     }
 
 
@@ -341,6 +364,10 @@ def report(verdicts: list[Verdict]) -> str:
     lines.append(
         f'invented {s["invented"]} · collateral {s["collateral"]} · '
         f'written although flagged {s["written"]}'
+    )
+    lines.append(
+        f'with a check: {s["checked"]} right, {s["wrong_checked"]} wrong · '
+        f'wrong without a check {s["wrong_unchecked"]}'
     )
     return '\n'.join(lines)
 

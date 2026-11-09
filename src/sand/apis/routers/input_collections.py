@@ -1143,6 +1143,18 @@ async def confirm_edits(
                 for report in status.get('inputs', [])
                 for edit in report.get('ready', [])
             }
+            marked = {
+                edit['key']
+                for report in status.get('inputs', [])
+                for edit in report.get('ready', [])
+                if edit.get('checks')
+            }
+            if len(body.keys) > 1 and marked & set(body.keys):
+                # the page's confirm-all leaves them out; held here too
+                raise HTTPException(
+                    status_code=422,
+                    detail='an edit with a check is confirmed on its own',
+                )
             unknown = sorted(set(body.keys) - set(reports))
             if unknown and _job_running(status, None):
                 # the running job's reports replace the old ones as it goes

@@ -104,18 +104,25 @@ def _without_overlaps(
 ) -> list[Grounded | Refused]:
     """The later of two edits writing the same cell is refused: "solvent 2
     to DMSO for samples 1 to 3 and to ETH for sample 2" cannot both be
-    done, and the writer would refuse the whole step."""
+    done, and the writer would refuse the whole step. An edit a word
+    check marked comes after every clean one: it never blocks a clean
+    edit of the same cell."""
     taken: dict[tuple[str, int], Grounded] = {}  # (target, row) -> the edit
-    out: list[Grounded | Refused] = []
-    for r in results:
+    decided: dict[int, Grounded | Refused] = {}
+    order = sorted(
+        range(len(results)),
+        key=lambda i: isinstance(results[i], Grounded) and bool(results[i].checks),
+    )
+    for i in order:
+        r = results[i]
         if isinstance(r, Refused):
-            out.append(r)
+            decided[i] = r
             continue
         cells = [(r.edit.target, row) for row in r.rows]
         first = next((taken[c] for c in cells if c in taken), None)
         if first is None:
             taken.update(dict.fromkeys(cells, r))
-            out.append(r)
+            decided[i] = r
             continue
         rows = [row for target, row in cells if taken.get((target, row)) is first]
         column = catalog.column(r.edit.target)
@@ -124,8 +131,8 @@ def _without_overlaps(
             f'{column_name(column)} on samples {catalog.names(rows)} is already '
             f'changed by "{first.edit.said}"'
         )
-        out.append(Refused(r.edit, (why,)))
-    return out
+        decided[i] = Refused(r.edit, (why,))
+    return [decided[i] for i in range(len(results))]
 
 
 def apply_all(  # noqa: PLR0913

@@ -165,8 +165,10 @@ def test_nothing_confirmed_writes_nothing(synthetic_xlsx):
 
 def test_a_later_input_sees_an_earlier_edit_once_it_is_confirmed(synthetic_xlsx):
     steps = run(synthetic_xlsx, [SOLVENT, TIME])
-    assert steps[1].interpretation.preview.startswith('✗ not applied')  # no DMSO yet
-    assert "holds 'IPA' on samples 1–3, not 'DMSO'" in steps[1].interpretation.preview
+    # no DMSO yet: the anchor check finds it, the edit waits for its own check
+    (ready,) = steps[1].interpretation.ready.values()
+    assert "holds 'IPA' on samples 1–3, not 'DMSO'" in ready.checks[0]
+    assert '⚠ check:' in steps[1].interpretation.preview
 
     steps = run(synthetic_xlsx, [SOLVENT, TIME], confirmed=keys(steps[0]))
     assert len(steps[0].written) == THREE_ROWS
@@ -280,3 +282,15 @@ def test_the_writer_may_still_refuse_a_confirmed_edit(synthetic_xlsx):
     confirmed |= keys(run(synthetic_xlsx, [VARIATION_SAID, SOLVENT], confirmed)[1])
     steps = run(synthetic_xlsx, [VARIATION_SAID, SOLVENT], confirmed)
     assert [len(s.written) for s in steps] == [0, THREE_ROWS]
+
+
+def test_a_marked_edit_never_blocks_a_clean_one_of_the_same_cell(synthetic_xlsx):
+    said = 'spin coating 2 speed 4000'
+    wrong = edit(SPEED, 'all', '3000', '4100', said)  # 4100: a check
+    right = edit(SPEED, 'all', '3000', '4000', said)
+    result = interpret_instruction(
+        said, synthetic_xlsx, lambda t, c: proposal(wrong, right)
+    )
+    marked, clean = result.results
+    assert isinstance(marked, Refused) and 'already changed' in marked.reasons[0]
+    assert list(result.ready.values()) == [clean] and clean.checks == ()

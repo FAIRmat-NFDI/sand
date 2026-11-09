@@ -351,6 +351,8 @@ def _report(
                 'key': key,
                 'line': edit_lines(edit, catalog)[0],
                 **edit_summary(edit, catalog),
+                # word checks: shown on the edit, never confirmed by confirm-all
+                'checks': list(edit.checks),
             }
             for key, edit in step.interpretation.ready.items()
         ],

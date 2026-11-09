@@ -145,21 +145,26 @@ def test_the_whole_outcome_of_one_instruction(catalog):
     ]
 
 
-def test_a_refused_edit_lists_its_reasons(catalog):
+def test_a_checked_edit_lists_its_checks(catalog):
     assert lines(catalog, edit(new='4100')) == [
-        '✗ not applied: "speed 4000"',
-        "   Rotation speed [rpm] (2: Spin Coating): '4100' is not in your words; "
-        'you said 4000',
+        '2: Spin Coating · Rotation speed [rpm]: 3000 → 4100, all 12 samples',
+        '   from "speed 4000"',
+        "   ⚠ check: '4100' is not in your words; you said 4000",
     ]
     rows = Samples(samples=['1', '2', '3'], subbatch=None)
     wrong = edit(rows=rows, old='2000', new='4000', said='samples 1 to 5 speed 4100')
-    assert lines(catalog, wrong) == [
-        '✗ not applied: "samples 1 to 5 speed 4100"',
-        '   you named samples 4–5, which the edit does not include',
-        "   Rotation speed [rpm] (2: Spin Coating) holds '3000' on samples 1–3, "
-        "not '2000'",
-        "   Rotation speed [rpm] (2: Spin Coating): '4000' is not in your words; "
-        'you said 4100',
+    assert lines(catalog, wrong)[2:] == [
+        '   ⚠ check: you named samples 4–5, which the edit does not include',
+        "   ⚠ check: Rotation speed [rpm] (2: Spin Coating) holds '3000' on "
+        "samples 1–3, not '2000'",
+        "   ⚠ check: '4000' is not in your words; you said 4100",
+    ]
+
+
+def test_a_refused_edit_lists_its_reasons(catalog):
+    assert lines(catalog, edit(new='fast', said='speed fast')) == [
+        '✗ not applied: "speed fast"',
+        "   Rotation speed [rpm] (2: Spin Coating) holds numbers; 'fast' is not a number",
     ]
 
 

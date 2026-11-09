@@ -1553,6 +1553,18 @@ body {
   font-style: italic;
 }
 
+/* a word check found something: the edit is confirmed on its own */
+.report-check {
+  grid-column: 1 / -1;
+  margin: 2px 0 6px;
+  padding: 4px 8px;
+  font-size: 0.82rem;
+  color: #92400e;
+  background: #fffbeb;
+  border-left: 3px solid #f59e0b;
+  border-radius: 2px;
+}
+
 .report-note {
   grid-column: 1 / -1;
   margin: 4px 0;

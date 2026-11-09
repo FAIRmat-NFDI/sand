@@ -340,11 +340,12 @@ def test_an_anchor_is_no_disagreement_and_is_kept(catalog, synthetic_xlsx):
             [Edit.model_validate(dmso)],
             [],
         )
-        # solvent 2 holds IPA, not DMSO: refused, in either order
+        # solvent 2 holds IPA, not DMSO: a check on the edit, in either order
         result = interpret_instruction(
             said, synthetic_xlsx, lambda t, c: ask(c, answer(*a), answer(*b), t)
         )
-        assert result.ready == {}
+        (ready,) = result.ready.values()
+        assert "not 'DMSO'" in ready.checks[0]
     # two different anchors for the same write: each is a reading
     other = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'IPA'})
     item = only(ask(catalog, answer(dmso), answer(other)), Uncertain)
