@@ -22,6 +22,7 @@ changed. Never run in CI.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import sys
@@ -358,8 +359,12 @@ def cached_model(model: str, cache: Path) -> CallLLM:
         raw = ''
         for _ in range(MAX_RETRIES):
             try:
+                # a copy: litellm rewrites the schema in place for Gemini
+                # (anyOf null -> nullable), which would fail every null
+                # in the answer below. The worker's activities each get
+                # their own copy through Temporal.
                 raw = engine.generate(
-                    prompt + retry, schema, {'temperature': TEMPERATURE}
+                    prompt + retry, copy.deepcopy(schema), {'temperature': TEMPERATURE}
                 )
             except Exception as why:
                 raise JobWouldFail(f'the model call failed: {why}') from why
