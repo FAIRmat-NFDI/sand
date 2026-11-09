@@ -41,6 +41,9 @@ from sand.sheet_edit.render import table
 # recorded with every proposal (changelog, status); bump on any change to
 # the prompts below or to the table in render.py, which the model reads
 PROMPT_VERSION = 'v2'
+# the job's cache keeps proposals after `agree`: bump the second part on
+# a change to how two opinions agree, so agreed answers are asked again
+CACHE_VERSION = f'{PROMPT_VERSION}+agree-2'
 
 # (system prompt, user text, JSON schema) -> the model's answer, as text.
 # The schema is for the provider's structured output; the answer is still
@@ -251,23 +254,18 @@ _HEDGED = 'a pass also left these words unresolved'
 # the rows of an edit, as compared between the two opinions: the sheet
 # rows when the sample words resolve, else the spec as given
 RowsAgreementKey = Literal['all'] | frozenset[int] | tuple
-# (target, rows, anchor, new): what two opinions must agree on
-AgreementKey = tuple[str, RowsAgreementKey, tuple[str, str] | None, str]
+# (target, rows, new): what two opinions must agree on
+AgreementKey = tuple[str, RowsAgreementKey, str]
 
 
 def _agreement_key(edit: Edit, catalog: Catalog) -> AgreementKey:
-    """What two passes must agree on: the cells and the value. Left out:
-    `old`, which ground checks against the sheet anyway, and `said`,
-    which the passes may cut differently for one and the same edit and
-    coverage checks against the instruction. The value is compared as
-    written: material names are case-sensitive (PbI2, Me-4PACz)."""
-    anchor = (edit.anchor.column, edit.anchor.equals.strip()) if edit.anchor else None
-    return (
-        edit.target,
-        _rows_agreement_key(edit.rows, catalog),
-        anchor,
-        edit.new.strip(),
-    )
+    """What two passes must agree on: what would be written, the cells and
+    the value. Left out: `old`, which ground checks against the sheet;
+    `said`, which the passes may cut differently for one and the same
+    edit; the anchor, which only points and is checked by ground on the
+    edit kept (pass A's). The value is compared as written: material
+    names are case-sensitive (PbI2, Me-4PACz)."""
+    return (edit.target, _rows_agreement_key(edit.rows, catalog), edit.new.strip())
 
 
 def _rows_agreement_key(rows: RowSpec, catalog: Catalog) -> RowsAgreementKey:

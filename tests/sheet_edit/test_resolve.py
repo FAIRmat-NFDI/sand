@@ -9,6 +9,7 @@ from sand.sheet_edit.catalog import build
 from sand.sheet_edit.coverage import Coverage
 from sand.sheet_edit.edits import (
     Ambiguous,
+    Edit,
     NotFound,
     ProposedEdits,
     Range,
@@ -309,7 +310,7 @@ def test_a_hedge_on_the_other_passs_cut_of_the_quote_counts(catalog):
     assert proposal.unresolved[0].why == 'a pass also left these words unresolved'
 
 
-def test_where_anchor_and_all_are_their_own_readings(catalog):
+def test_where_and_all_are_their_own_readings(catalog):
     everyone = [s.label for s in catalog.samples]
     b = answer(edit(rows={'samples': everyone, 'subbatch': None}))
     item = only(ask(catalog, answer(edit()), b), Uncertain)
@@ -343,8 +344,25 @@ def test_where_anchor_and_all_are_their_own_readings(catalog):
             old='600',
         )
     )
-    assert isinstance(ask(catalog, a, b).unresolved[0], Uncertain)
     assert len(ask(catalog, a, a).edits) == 1
+
+
+def test_an_anchor_is_no_disagreement(catalog):
+    # the same cells and value, pointed at with and without an anchor (or
+    # through another one): the same write; pass A's edit is kept, and
+    # ground checks its anchor
+    said = 'time of the DMSO 300'
+    time = {'target': TIME_2, 'said': said, 'new': '300', 'old': '600'}
+    dmso = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'DMSO'})
+    plain = edit(**time, anchor=None)
+    other = edit(**time, anchor={'column': TIME_2, 'equals': '600'})
+    for a, b in [(dmso, plain), (plain, dmso), (dmso, other)]:
+        proposal = ask(catalog, answer(a), answer(b))
+        assert proposal.unresolved == []
+        assert proposal.edits == [Edit.model_validate(a)]
+    # a different value is still a disagreement, anchor or not
+    item = only(ask(catalog, answer(dmso), answer({**plain, 'new': '400'})), Uncertain)
+    assert [r.new for r in item.readings] == ['300', '400']
 
 
 def test_unresolved_items_of_either_pass_are_kept_once(catalog):

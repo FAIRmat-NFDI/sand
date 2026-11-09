@@ -234,7 +234,7 @@ class _Files:
 async def _read_files(data: JobInput) -> _Files:
     """The shared cache under the job's own: what this job got wins over
     what earlier jobs published."""
-    from sand.sheet_edit.resolve import PROMPT_VERSION
+    from sand.sheet_edit.resolve import CACHE_VERSION
 
     voice = common.voice_service()
     async with voice.build_client(common.user_token(data.user_id)) as client:
@@ -249,8 +249,8 @@ async def _read_files(data: JobInput) -> _Files:
         raise ApplicationError(
             'the sheet to edit is gone from the collection', non_retryable=True
         )
-    cache = load_llm_cache(shared, data.llm_model_name, PROMPT_VERSION, data.job_id)
-    cache.update(load_llm_cache(own, data.llm_model_name, PROMPT_VERSION, data.job_id))
+    cache = load_llm_cache(shared, data.llm_model_name, CACHE_VERSION, data.job_id)
+    cache.update(load_llm_cache(own, data.llm_model_name, CACHE_VERSION, data.job_id))
     return _Files(
         original,
         cache,
@@ -261,7 +261,7 @@ async def _read_files(data: JobInput) -> _Files:
 async def _write_cache(files: _Files, data: JobInput) -> None:
     """The job's own file, this job's entries only: one writer, so
     another job on the same upload cannot lose them."""
-    from sand.sheet_edit.resolve import PROMPT_VERSION
+    from sand.sheet_edit.resolve import CACHE_VERSION
 
     voice = common.voice_service()
     async with voice.build_client(common.user_token(data.user_id)) as client:
@@ -270,7 +270,7 @@ async def _write_cache(files: _Files, data: JobInput) -> None:
             data.upload_id,
             job_cache_file(data.job_id),
             llm_cache_json(
-                files.cache.of_job(data.job_id), data.llm_model_name, PROMPT_VERSION
+                files.cache.of_job(data.job_id), data.llm_model_name, CACHE_VERSION
             ),
         )
 
@@ -279,16 +279,16 @@ async def _publish_cache(writer, client, files: _Files, data: JobInput) -> None:
     """The job's readable answers into the shared cache, for later jobs;
     its own file goes. Two jobs publishing at once can lose each other's
     entries here, which costs a later job model calls, not a result."""
-    from sand.sheet_edit.resolve import PROMPT_VERSION
+    from sand.sheet_edit.resolve import CACHE_VERSION
 
     shared = await writer.read_json(client, data.upload_id, CACHE_FILE)
-    merged = load_llm_cache(shared, data.llm_model_name, PROMPT_VERSION, data.job_id)
+    merged = load_llm_cache(shared, data.llm_model_name, CACHE_VERSION, data.job_id)
     merged.update(files.cache.of_job(data.job_id, readable_only=True))
     await writer.write_json(
         client,
         data.upload_id,
         CACHE_FILE,
-        llm_cache_json(merged, data.llm_model_name, PROMPT_VERSION),
+        llm_cache_json(merged, data.llm_model_name, CACHE_VERSION),
     )
     await writer.delete_raw_file(client, data.upload_id, job_cache_file(data.job_id))
 

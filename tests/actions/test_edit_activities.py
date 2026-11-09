@@ -22,7 +22,7 @@ from sand.services.voice_eln import CollectedInput
 from sand.sheet_edit import changelog
 from sand.sheet_edit.catalog import build
 from sand.sheet_edit.edits import proposed_edits_schema
-from sand.sheet_edit.resolve import PROMPT_VERSION, system_prompt
+from sand.sheet_edit.resolve import CACHE_VERSION, system_prompt
 from sand.sheet_edit.session import (
     CACHE_FILE,
     CHANGELOG_FILE,
@@ -238,7 +238,7 @@ async def test_apply_caches_the_agreed_proposal_and_reports_the_edit(upload):
 
     assert upload.writer.written == [JOB_CACHE]  # the job's own, not the shared
     data = cache_file(upload)
-    assert (data['model'], data['prompt_version']) == (MODEL, PROMPT_VERSION)
+    assert (data['model'], data['prompt_version']) == (MODEL, CACHE_VERSION)
     (entry,) = data['proposals'].values()
     assert entry['job'] == 'job-1'
     assert entry['proposal']['edits'] == [SPEED_EDIT]
