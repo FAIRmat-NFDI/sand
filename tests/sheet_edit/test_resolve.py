@@ -9,6 +9,7 @@ from sand.sheet_edit.catalog import build
 from sand.sheet_edit.coverage import Coverage
 from sand.sheet_edit.edits import (
     Ambiguous,
+    Edit,
     NotFound,
     ProposedEdits,
     Range,
@@ -309,7 +310,7 @@ def test_a_hedge_on_the_other_passs_cut_of_the_quote_counts(catalog):
     assert proposal.unresolved[0].why == 'a pass also left these words unresolved'
 
 
-def test_where_anchor_and_all_are_their_own_readings(catalog):
+def test_where_and_all_are_their_own_readings(catalog):
     everyone = [s.label for s in catalog.samples]
     b = answer(edit(rows={'samples': everyone, 'subbatch': None}))
     item = only(ask(catalog, answer(edit()), b), Uncertain)
@@ -324,27 +325,53 @@ def test_where_anchor_and_all_are_their_own_readings(catalog):
         ask(catalog, a, answer(edit(rows={**where, 'equals': None}))).unresolved[0],
         Uncertain,
     )
-    anchor = {'column': SOLVENT_2, 'equals': 'DMSO'}
-    a = answer(
-        edit(
-            target=TIME_2,
-            anchor=anchor,
-            said='time of the DMSO 300',
-            new='300',
-            old='600',
+
+
+def test_an_anchor_is_no_disagreement_and_is_kept(catalog, synthetic_xlsx):
+    # the same cells and value, with and without an anchor: one write; the
+    # anchor is kept, whichever pass gave it, so ground checks it
+    said = 'time of the DMSO 300'
+    time = {'target': TIME_2, 'said': said, 'new': '300', 'old': '600'}
+    dmso = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'DMSO'})
+    plain = edit(**time, anchor=None)
+    for a, b in [([dmso], [plain]), ([plain], [dmso]), ([plain, dmso], [plain])]:
+        proposal = ask(catalog, answer(*a), answer(*b))
+        assert (proposal.edits, proposal.unresolved) == (
+            [Edit.model_validate(dmso)],
+            [],
         )
-    )
-    b = answer(
-        edit(
-            target=TIME_2,
-            anchor=None,
-            said='time of the DMSO 300',
-            new='300',
-            old='600',
+        # solvent 2 holds IPA, not DMSO: refused, in either order
+        result = interpret_instruction(
+            said, synthetic_xlsx, lambda t, c: ask(c, answer(*a), answer(*b), t)
         )
+        assert result.ready == {}
+    # two different anchors for the same write: each is a reading
+    other = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'IPA'})
+    item = only(ask(catalog, answer(dmso), answer(other)), Uncertain)
+    assert [r.anchor.equals for r in item.readings] == ['DMSO', 'IPA']
+    # a different value is still a disagreement, anchor or not
+    item = only(ask(catalog, answer(dmso), answer({**plain, 'new': '400'})), Uncertain)
+    assert [r.new for r in item.readings] == ['300', '400']
+
+
+def test_repeats_of_one_write_in_a_pass_are_all_compared(catalog):
+    said = 'time of the DMSO 300'
+    time = {'target': TIME_2, 'said': said, 'new': '300', 'old': '600'}
+    dmso = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'DMSO'})
+    ipa = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'IPA'})
+    # only one pass, through two anchors: both are shown
+    item = only(ask(catalog, answer(dmso, ipa), answer()), Uncertain)
+    assert [r.anchor.equals for r in item.readings] == ['DMSO', 'IPA']
+    # a hedge on the quote of a later repeat counts too
+    repeat = {**time, 'said': 'time 300', 'anchor': None}
+    hedge = {'reason': 'not_found', 'said': 'time 300'}
+    proposal = ask(
+        catalog,
+        answer(edit(**{**time, 'anchor': None}), edit(**repeat)),
+        answer(edit(**{**time, 'anchor': None}), unresolved=[hedge]),
     )
-    assert isinstance(ask(catalog, a, b).unresolved[0], Uncertain)
-    assert len(ask(catalog, a, a).edits) == 1
+    assert proposal.edits == []
+    assert proposal.unresolved[0].why == 'a pass also left these words unresolved'
 
 
 def test_unresolved_items_of_either_pass_are_kept_once(catalog):
