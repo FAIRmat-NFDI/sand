@@ -44,6 +44,18 @@ export function pendingKeys(reports) {
   return keys;
 }
 
+// the pending edits "confirm all" may confirm: not those a word check
+// marked, which the user confirms one by one
+export function bulkKeys(reports) {
+  const marked = new Set();
+  for (const report of reports) {
+    for (const edit of report.ready || []) {
+      if ((edit.checks || []).length) marked.add(edit.key);
+    }
+  }
+  return pendingKeys(reports).filter((key) => !marked.has(key));
+}
+
 // an input one of whose edits was just confirmed: its words are a
 // record (the inputs list says so too, as `locked`, from the file)
 export function inputLocked(report) {

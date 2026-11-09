@@ -165,8 +165,10 @@ def test_nothing_confirmed_writes_nothing(synthetic_xlsx):
 
 def test_a_later_input_sees_an_earlier_edit_once_it_is_confirmed(synthetic_xlsx):
     steps = run(synthetic_xlsx, [SOLVENT, TIME])
-    assert steps[1].interpretation.preview.startswith('✗ not applied')  # no DMSO yet
-    assert "holds 'IPA' on samples 1–3, not 'DMSO'" in steps[1].interpretation.preview
+    # no DMSO yet: the anchor check finds it, the edit waits for its own check
+    (ready,) = steps[1].interpretation.ready.values()
+    assert "holds 'IPA' on samples 1–3, not 'DMSO'" in ready.checks[0]
+    assert '⚠ check:' in steps[1].interpretation.preview
 
     steps = run(synthetic_xlsx, [SOLVENT, TIME], confirmed=keys(steps[0]))
     assert len(steps[0].written) == THREE_ROWS

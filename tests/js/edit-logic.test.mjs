@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import {
   confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputLocked, inputState,
-  inputsToRead, pendingKeys, previewNotes, readKey, reportsByEntry, unwrittenCount,
+  bulkKeys, inputsToRead, pendingKeys, previewNotes, readKey, reportsByEntry, unwrittenCount,
   unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
 
@@ -225,3 +225,13 @@ test("the download name comes from the server when it says one", () => {
   assert.equal(downloadFilename("attachment; filename*=UTF-8''%E0%A4%A", "x.xlsx"), "x.xlsx");
 });
 
+
+test("confirm all leaves out the edits a word check marked", () => {
+  const report = {
+    ready: [{ key: "k1" }, { key: "k2", checks: ["'4400' is not in your words"] }, { key: "k3", checks: [] }],
+    confirmed: [],
+  };
+  assert.deepEqual(pendingKeys([report]), ["k1", "k2", "k3"]);
+  assert.deepEqual(bulkKeys([report]), ["k1", "k3"]);
+  assert.deepEqual(bulkKeys([{ ...report, confirmed: ["k1"] }]), ["k3"]);
+});

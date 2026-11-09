@@ -93,6 +93,12 @@ def refused(result) -> str:
     return ' | '.join(result.reasons)
 
 
+def checked(result) -> str:
+    """A word check found something: proposed, with the checks shown."""
+    assert isinstance(result, Grounded) and result.checks, result
+    return ' | '.join(result.checks)
+
+
 # --- W writable ---------------------------------------------------------------
 
 
@@ -262,8 +268,8 @@ def test_a_range_stays_inside_its_subbatch(two_subbatches):
     assert result.rows == (9, 10, 11)
 
 
-def test_a_different_subbatch_in_the_words_is_refused(two_subbatches):
-    why = refused(
+def test_a_different_subbatch_in_the_words_is_checked(two_subbatches):
+    why = checked(
         ground(
             edit(
                 rows=samples('1', subbatch='1'),
@@ -305,15 +311,15 @@ def test_a_label_in_one_subbatch_needs_no_subbatch(two_subbatches):
 # --- S sample words -----------------------------------------------------------
 
 
-def test_naming_samples_but_answering_all_is_refused(catalog):
-    why = refused(
+def test_naming_samples_but_answering_all_is_checked(catalog):
+    why = checked(
         ground(edit(rows='all', said='speed 4000 for samples 1 to 3'), catalog)
     )
     assert why == 'you named samples 1–3, but the edit would apply to all samples'
 
 
-def test_naming_samples_but_answering_a_condition_is_refused(catalog):
-    why = refused(
+def test_naming_samples_but_answering_a_condition_is_checked(catalog):
+    why = checked(
         ground(
             edit(
                 rows=Where(where=VARIATION, equals='10min'),
@@ -328,8 +334,8 @@ def test_naming_samples_but_answering_a_condition_is_refused(catalog):
     )
 
 
-def test_naming_a_subbatch_but_answering_all_is_refused(two_subbatches, catalog):
-    why = refused(
+def test_naming_a_subbatch_but_answering_all_is_checked(two_subbatches, catalog):
+    why = checked(
         ground(
             edit(rows='all', said='speed 4000 for all samples of subbatch 1'),
             two_subbatches,
@@ -345,19 +351,19 @@ def test_naming_a_subbatch_but_answering_all_is_refused(two_subbatches, catalog)
     assert result.rows == ALL_ROWS
 
 
-def test_an_unknown_subbatch_in_the_words_is_refused(catalog, two_subbatches):
+def test_an_unknown_subbatch_in_the_words_is_checked(catalog, two_subbatches):
     said = 'speed 4000 for all samples of subbatch 5'
     assert (
-        refused(ground(edit(rows='all', said=said), catalog))
+        checked(ground(edit(rows='all', said=said), catalog))
         == 'there is no subbatch 5'
     )
     said = 'speed 4000 for sample 7 of subbatch 5'  # 7 exists, in subbatch 0 only
-    why = refused(ground(edit(rows=samples('7'), said=said), two_subbatches))
+    why = checked(ground(edit(rows=samples('7'), said=said), two_subbatches))
     assert why == 'there is no subbatch 5'
 
 
 def test_a_label_in_two_subbatches_names_both(two_subbatches):
-    why = refused(
+    why = checked(
         ground(edit(rows='all', said='speed 4000 for sample 1'), two_subbatches)
     )
     assert why == (
@@ -366,8 +372,8 @@ def test_a_label_in_two_subbatches_names_both(two_subbatches):
     )
 
 
-def test_a_partly_named_range_is_refused(catalog):
-    why = refused(
+def test_a_partly_named_range_is_checked(catalog):
+    why = checked(
         ground(
             edit(rows=between('1', '3'), said='speed 4000 for samples 1 and 2'), catalog
         )
@@ -375,8 +381,8 @@ def test_a_partly_named_range_is_refused(catalog):
     assert why == 'the edit includes samples 3, which you did not name'
 
 
-def test_a_named_sample_that_does_not_exist_is_refused(catalog):
-    why = refused(
+def test_a_named_sample_that_does_not_exist_is_checked(catalog):
+    why = checked(
         ground(
             edit(rows=samples('5', '7'), said='speed 4000 for samples 5, 6 and 7'),
             catalog,
@@ -398,7 +404,7 @@ def test_a_sample_without_a_label_is_named_by_its_row(synthetic_xlsx):
     sample, nomad_id = letter(INFO, 'Sample'), letter(INFO, 'Nomad ID')
     no_label = edited(synthetic_xlsx, lambda ws: ws.__setitem__(f'{sample}3', None))
     catalog = build(with_formula_results(no_label, {f'{nomad_id}3': 'KIT_Synth_1'}))
-    why = refused(ground(edit(rows='all', said='speed 4000 for KIT_Synth_1'), catalog))
+    why = checked(ground(edit(rows='all', said='speed 4000 for KIT_Synth_1'), catalog))
     assert why == 'you named samples row 3, but the edit would apply to all samples'
 
 
@@ -422,8 +428,8 @@ def test_a_range_the_user_did_not_name_is_a_doubt(catalog):
     assert result.confidence == 'low'
 
 
-def test_a_named_sample_the_edit_leaves_out_is_refused(catalog):
-    why = refused(
+def test_a_named_sample_the_edit_leaves_out_is_checked(catalog):
+    why = checked(
         ground(
             edit(rows=samples('1', '3'), said='speed 4000 for samples 1, 3 and 7'),
             catalog,
@@ -432,8 +438,8 @@ def test_a_named_sample_the_edit_leaves_out_is_refused(catalog):
     assert why == 'you named samples 7, which the edit does not include'
 
 
-def test_a_sample_the_user_did_not_name_is_refused(catalog):
-    why = refused(
+def test_a_sample_the_user_did_not_name_is_checked(catalog):
+    why = checked(
         ground(edit(rows=samples('1', '7'), said='speed 4000 for sample 1'), catalog)
     )
     assert why == 'the edit includes samples 7, which you did not name'
@@ -465,11 +471,11 @@ def test_except_takes_samples_out(catalog):
     said = 'speed 4000 for samples 1 to 7 except 3'
     result = ground(edit(rows=samples('1', '2', '4', '5', '7'), said=said), catalog)
     assert result.rows == (3, 4, 6, 7, 8)
-    why = refused(
+    why = checked(
         ground(edit(rows=samples('1', '2', '3', '4', '5', '7'), said=said), catalog)
     )
     assert why.startswith('you excluded samples 3, but the edit includes them')
-    why = refused(ground(edit(rows='all', said='all samples except 3'), catalog))
+    why = checked(ground(edit(rows='all', said='all samples except 3'), catalog))
     assert why == 'you excluded samples 3, but the edit would apply to all samples'
     rest = [s.label for s in catalog.samples if s.label != '3']
     result = ground(edit(rows=samples(*rest), said='all samples except 3'), catalog)
@@ -611,12 +617,12 @@ def test_said_samples_unknown(catalog, said, unknown):
 
 
 def test_old_must_be_what_the_cell_holds(catalog):
-    why = refused(ground(edit(old='2000'), catalog))
+    why = checked(ground(edit(old='2000'), catalog))
     assert why == (
         "Rotation speed [rpm] (2: Spin Coating) holds '3000' on samples 1–5, 7–13, "
         "not '2000'"
     )
-    why = refused(ground(edit(old=None), catalog))
+    why = checked(ground(edit(old=None), catalog))
     assert why.endswith('not empty')
 
 
@@ -627,7 +633,7 @@ def test_old_describes_the_rows_still_to_change(catalog):
         catalog,
     )
     assert isinstance(result, Grounded)
-    why = refused(
+    why = checked(
         ground(
             edit(
                 target=SUBSTRATE, old='110', new='120', said='substrate temperature 120'
@@ -665,7 +671,7 @@ def test_rows_holding_different_values_take_one_edit(catalog):
         assert result.rows == ALL_ROWS
         assert (result.confidence, result.notes) == ('high', ())
     # a value none of them holds: the model read another line
-    why = refused(
+    why = checked(
         ground(
             edit(
                 target=SUBSTRATE, old='99', new='130', said='substrate temperature 130'
@@ -690,7 +696,7 @@ def substrate_values(synthetic_xlsx, values):
 
 def test_three_values_are_listed_and_four_counted(synthetic_xlsx):
     # a foreign `old` is refused, and the refusal says what the rows hold
-    three = refused(
+    three = checked(
         ground(
             edit(
                 target=SUBSTRATE, old='99', new='130', said='substrate temperature 130'
@@ -702,7 +708,7 @@ def test_three_values_are_listed_and_four_counted(synthetic_xlsx):
         "holds '100' on samples 1–3, 11–13 and '105' on samples 4–5, 7 "
         "and '110' on samples 8–10, not '99'"
     )
-    four = refused(
+    four = checked(
         ground(
             edit(
                 target=SUBSTRATE, old='99', new='130', said='substrate temperature 130'
@@ -738,7 +744,7 @@ def test_empty_cells_among_the_values_are_called_empty(synthetic_xlsx):
         half_empty,
     )
     assert isinstance(passed, Grounded)
-    why = refused(
+    why = checked(
         ground(
             edit(target=CLEAN_SOLVENT_2, old='XYZ', new='DMSO', said='solvent 2 DMSO'),
             half_empty,
@@ -759,7 +765,7 @@ def test_a_number_stored_as_text_is_the_same_value(synthetic_xlsx):
         )
     )
     # one value to the user: the strict rule, an empty `old` is refused
-    why = refused(ground(edit(old=None), mixed))
+    why = checked(ground(edit(old=None), mixed))
     assert why.endswith("holds '3000' on samples 1–5, 7–13, not empty")
     # nor does 3000.0 differ: one amount, however the cells spell it
     spelled = build(
@@ -771,7 +777,7 @@ def test_a_number_stored_as_text_is_the_same_value(synthetic_xlsx):
             ],
         )
     )
-    why = refused(ground(edit(old=None), spelled))
+    why = checked(ground(edit(old=None), spelled))
     assert why.endswith("holds '3000' on samples 1–5, 7–13, not empty")
 
 
@@ -786,7 +792,7 @@ def test_counted_values_run_from_the_first_sample_asked_to_the_last(synthetic_xl
             ],
         )
     )
-    why = refused(
+    why = checked(
         ground(
             edit(
                 target=SUBSTRATE,
@@ -828,7 +834,7 @@ def test_a_column_that_counts_up_is_set_for_all_samples(counting):
     )
     assert isinstance(held, Grounded) and held.rows == ALL_ROWS[1:]
     # a value none of them holds: refused, the values counted the same way
-    why = refused(
+    why = checked(
         ground(
             edit(
                 target=CLEAN_SOLVENT_2, old='XYZ', new='PbBr2', said='solvent 2 PbBr2'
@@ -859,12 +865,12 @@ def test_an_anchor_reaches_its_own_number(catalog):
     result = ground(ipa(CLEAN_TIME_2), catalog)  # Solvent 2 -> Time 2
     assert result.rows == ALL_ROWS
     assert result.confidence == 'high'
-    why = refused(ground(ipa(CLEAN_TIME_1), catalog))  # Solvent 2 -> Time 1
+    why = checked(ground(ipa(CLEAN_TIME_1), catalog))  # Solvent 2 -> Time 1
     assert why == 'Solvent 2 is number 2, Time 1 [s] is number 1'
 
 
 def test_an_anchor_must_hold_its_value(catalog):
-    why = refused(
+    why = checked(
         ground(ipa(CLEAN_TIME_2, equals='DMSO', said='time of the DMSO 300'), catalog)
     )
     assert why == (
@@ -873,7 +879,7 @@ def test_an_anchor_must_hold_its_value(catalog):
 
 
 def test_an_anchor_stays_in_its_step(catalog):
-    why = refused(ground(ipa(SPEED, said='speed of the IPA 300'), catalog))
+    why = checked(ground(ipa(SPEED, said='speed of the IPA 300'), catalog))
     assert why.startswith(
         'Solvent 2 (1: Cleaning UV-Ozone) is not in the step of Rotation speed'
     )
@@ -887,12 +893,12 @@ def test_an_anchor_value_missing_from_the_words_is_a_doubt(catalog):
 # --- V value in the words ---------------------------------------------------------
 
 
-def test_a_number_not_said_is_refused(catalog):
-    why = refused(ground(edit(new='4100', said='speed 4000'), catalog))
+def test_a_number_not_said_is_checked(catalog):
+    why = checked(ground(edit(new='4100', said='speed 4000'), catalog))
     assert why == (
         "Rotation speed [rpm] (2: Spin Coating): '4100' is not in your words; you said 4000"
     )
-    why = refused(ground(edit(new='4000', said='speed 4 krpm'), catalog))
+    why = checked(ground(edit(new='4000', said='speed 4 krpm'), catalog))
     assert why.endswith('you said 4 krpm')  # the LLM converted: refused, see #108
 
 
@@ -923,7 +929,7 @@ def test_numbers_of_the_column_name_are_not_values(catalog):
         edit(VOLUME_3, old='50', new='100', said='step 3 solvent 1 volume 100'), catalog
     )
     assert (result.confidence, result.value) == ('high', 100)
-    why = refused(
+    why = checked(
         ground(
             edit(VOLUME_3, old='50', new='1', said='step 3 solvent 1 volume 100'),
             catalog,
@@ -1097,7 +1103,7 @@ def test_dates_keep_the_sheets_form(catalog):
         assert why == (
             f"Date (Experiment Info) holds dates written as 20250101; '{said[5:]}' is not one"
         )
-    why = refused(
+    why = checked(
         ground(
             edit(DATE, old='20250101', new='20250202', said='date 20250201'), catalog
         )

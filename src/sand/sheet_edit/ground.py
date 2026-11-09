@@ -9,9 +9,12 @@ differ), V `new` is in the user's words, T it fits
 the column's type, U its unit is the column's. N rows that already hold
 the value are reported, not written.
 
-A check refuses only on evidence against the proposal. Where code finds
+W, R, T and U are facts about the sheet: they refuse. S, A, O and V read
+the user's words with patterns, which can be wrong: what they find
+against the proposal is a check, shown on the edit, which the user must
+confirm on its own (never through "confirm all"). Where code finds
 nothing to compare ("the usual speed" names no number) the edit passes
-with a doubt and low confidence: the user confirms it once.
+with a doubt and low confidence.
 """
 
 import datetime
@@ -70,6 +73,8 @@ class Grounded:
     unchanged: tuple[int, ...] = ()  # rows already holding `new`: reported, not written
     notes: tuple[str, ...] = ()  # warnings the user sees before confirming
     doubts: tuple[str, ...] = ()  # what code could not check in the words
+    # what the word checks (S A O V) found against it: confirmed one by one
+    checks: tuple[str, ...] = ()
 
     @property
     def status(self) -> str:
@@ -78,7 +83,7 @@ class Grounded:
     @property
     def confidence(self) -> Confidence:
         """low: confirm one by one; medium: glance; high: can be skipped."""
-        if self.doubts:
+        if self.checks or self.doubts:
             return 'low'
         return 'medium' if self.notes else 'high'
 
@@ -112,18 +117,17 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
     except Refusal as why:
         return Refused(edit, (str(why),))
 
-    problems, doubts = sample_words_problems(edit, catalog, rows)  # S
+    checks, doubts = sample_words_problems(edit, catalog, rows)  # S
     anchor = None
     if edit.anchor is not None:  # A
         anchor = catalog.column(edit.anchor.column)
         found = anchor_problems(edit, target, anchor, catalog, rows)
-        problems, doubts = problems + found[0], doubts + found[1]
-    problems += old_problems(edit, target, catalog, rows)  # O
+        checks, doubts = checks + found[0], doubts + found[1]
+    checks += old_problems(edit, target, catalog, rows)  # O
     found = value_problems(edit, target, anchor, catalog)  # V
-    problems, doubts = problems + found[0], doubts + found[2]
+    checks, doubts = checks + found[0], doubts + found[2]
     notes = (*notes, *found[1])
-    new, problems_t = typed_value(edit.new, target)  # T, U
-    problems += problems_t
+    new, problems = typed_value(edit.new, target)  # T, U
     if problems:
         return Refused(edit, tuple(problems))
 
@@ -146,6 +150,7 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
         unchanged,
         notes,
         tuple(doubts),
+        tuple(checks),
     )
 
 

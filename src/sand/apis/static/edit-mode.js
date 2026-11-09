@@ -10,7 +10,7 @@
 
 import { errorDetail, experimentUrl } from "./api.js";
 import {
-  confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputsToRead, pendingKeys,
+  bulkKeys, confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputsToRead,
   readKey, reportsByEntry, unwrittenCount, unwrittenKey, writtenEdits,
 } from "./edit-logic.js";
 import { requireExperiment, showSheet } from "./experiments.js";
@@ -227,7 +227,7 @@ async function poll(experiment, generation) {
     ? { ...reportsShown, ...reportsByEntry(status) }
     : reportsByEntry(status);
   setReports(reportsShown, running, confirmHandler(experiment));
-  showPending(status.phase === "completed" ? pendingKeys(status.inputs || []) : []);
+  showPending(status.phase === "completed" ? bulkKeys(status.inputs || []) : []);
   if (status.phase === "completed") {
     editedReady = true;
     idle();

@@ -101,14 +101,15 @@ def test_the_judge_counts_wrong_rows_and_values(cases, catalog, synthetic_xlsx):
     )
     assert not verdict.ok
     assert (verdict.missed, verdict.collateral) == (1, 1)
-    # the value is right but on every sample: the samples check refuses
-    # it (the user named 1 to 3), so it is flagged, not written
+    # the value is right but on every sample: the samples check marks it
+    # (the user named 1 to 3); wrong, but never written through confirm all
     wrong_rows = _proposal(case, catalog, rows=tuple(s.row for s in catalog.samples))
     verdict = rt.judge(
         case, interpret_instruction(case.text, synthetic_xlsx, lambda t, c: wrong_rows)
     )
     assert not verdict.ok
-    assert (verdict.flagged, verdict.missed, verdict.collateral) == (1, 0, 0)
+    assert (verdict.missed, verdict.collateral, verdict.wrong_checked) == (1, 1, 1)
+    assert rt.summarize([verdict])['wrong_unchecked'] == 0
 
 
 def test_the_judge_wants_a_refusal_where_the_case_asks_one(cases, synthetic_xlsx):
@@ -182,17 +183,32 @@ def test_the_summary_adds_up(cases, catalog, synthetic_xlsx):
 
 def test_a_refused_edit_is_flagged_not_passed(cases, catalog, synthetic_xlsx):
     case = next(c for c in cases if c.id == 'range')
-    # 4400 is not in the words: ground refuses it, nothing is written
+    # a word in a number column: ground refuses it, nothing is written
     verdict = rt.judge(
         case,
         interpret_instruction(
-            case.text, synthetic_xlsx, lambda t, c: _proposal(case, catalog, new='4400')
+            case.text, synthetic_xlsx, lambda t, c: _proposal(case, catalog, new='fast')
         ),
     )
     assert not verdict.ok
     assert (verdict.flagged, verdict.missed, verdict.collateral) == (1, 0, 0)
     assert rt.summarize([verdict])['flagged'] == rt.TARGETS['flagged']
     assert rt.summarize([verdict])['proposed'] == 0
+
+
+def test_an_edit_with_a_check_is_counted_apart(cases, catalog, synthetic_xlsx):
+    case = next(c for c in cases if c.id == 'range')
+    # 4400 is not in the words: proposed with a check, a wrong edit the
+    # user confirms on its own
+    verdict = rt.judge(
+        case,
+        interpret_instruction(
+            case.text, synthetic_xlsx, lambda t, c: _proposal(case, catalog, new='4400')
+        ),
+    )
+    s = rt.summarize([verdict])
+    assert (s['collateral'], s['wrong_checked'], s['wrong_unchecked']) == (1, 1, 0)
+    assert 'with a check: 0 right, 1 wrong' in rt.report([verdict])
 
 
 def test_an_unrelated_not_found_does_not_cover_a_dropped_edit(

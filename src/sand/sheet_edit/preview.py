@@ -53,8 +53,8 @@ def preview(
 
 
 def edit_lines(result: Grounded | Refused, catalog: Catalog) -> list[str]:
-    """One edit: what changes where, its words, then each note (·) and
-    doubt (?). A refused edit: its words and each reason."""
+    """One edit: what changes where, its words, then each note (·), check
+    (⚠) and doubt (?). A refused edit: its words and each reason."""
     if isinstance(result, Refused):
         return [f'✗ not applied: "{result.edit.said}"', *_indented(result.reasons)]
     target = catalog.column(result.edit.target)
@@ -67,6 +67,7 @@ def edit_lines(result: Grounded | Refused, catalog: Catalog) -> list[str]:
     lines += _indented(f'· {_short(note, target)}' for note in result.notes)
     if result.rows:  # a no-op changes nothing, so no formula changes either
         lines += _indented(f'· {mark}' for mark in _marks(result, target, catalog))
+    lines += _indented(f'⚠ check: {_short(c, target)}' for c in result.checks)
     lines += _indented(f'? {_short(doubt, target)}' for doubt in result.doubts)
     return lines
 
