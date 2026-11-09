@@ -258,3 +258,29 @@ uv run pytest
 node --test tests/js/*.test.mjs   # frontend logic, no dependencies
 ruff check .
 ```
+
+### Measuring the reading against the real model
+
+The tests run the sheet editor with canned model answers. Before a lab
+relies on it, and after every change to the prompts or the model, it is
+measured against the real model:
+
+```sh
+cd ~/fairmat/nomad-distro-dev   # the environment with the engine and the key
+uv run python ~/fairmat/sand/evals/sheet_edit/run_testcases.py --model gemini/...
+```
+
+`evals/sheet_edit/testcases.json` holds about twenty instructions on the
+synthetic sheet, each with the edits it must produce (column, samples,
+value), the columns it must leave alone and the refusals it must say.
+The script runs each through the same function, prompt and schema the
+job uses, and prints the cases that went wrong and the numbers the plan
+gates on: precision of the ready edits (≥ 99 %), asked edits proposed
+(≥ 95 %) or at least flagged (100 %), refusals said (100 %), and the
+count of edits nobody asked for (0). Pass `--model` the name
+`nomad.yaml` gives the plugin; `--show` prints every preview, `--only ID`
+one case, `--cases` and `--sheet` another set on another sheet (the
+lab's own set stays out of the repository). Model answers are cached
+under `evals/sheet_edit/cache/`, so a rerun costs calls only for prompts
+that changed. The script never runs in CI; `tests/sheet_edit/test_testcases.py`
+checks the cases and the judgement offline.

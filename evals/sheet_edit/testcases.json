@@ -1,0 +1,146 @@
+{
+  "sheet": "synthetic",
+  "cases": [
+    {
+      "id": "all-samples",
+      "why": "the plain case: one column, every sample",
+      "text": "step 2 rotation speed 4000 for all samples",
+      "expect": {"edits": [{"step": 2, "column": "Rotation speed", "rows": "all", "new": "4000"}]}
+    },
+    {
+      "id": "range",
+      "why": "a range of samples",
+      "text": "set the rotation speed of step 2 to 4000 for samples 1 to 3",
+      "expect": {"edits": [{"step": 2, "column": "Rotation speed", "rows": ["1", "2", "3"], "new": "4000"}]}
+    },
+    {
+      "id": "range-over-gap",
+      "why": "sample 6 does not exist: the range skips it, nothing invented",
+      "text": "annealing temperature of step 6 to 140 for samples 4 to 8",
+      "expect": {"edits": [{"step": 6, "column": "Annealing temperature", "rows": ["4", "5", "7", "8"], "new": "140"}]}
+    },
+    {
+      "id": "listed-samples",
+      "why": "samples named one by one",
+      "text": "cleaning time 1 to 900 seconds for samples 2, 5 and 9",
+      "expect": {"edits": [{"step": 1, "column": "Time 1", "rows": ["2", "5", "9"], "new": "900"}]}
+    },
+    {
+      "id": "anchor",
+      "why": "the column is named by a value in a sibling column (the ethanol's volume)",
+      "text": "the volume of the ethanol in step 3 to 80 for all samples",
+      "expect": {"edits": [{"step": 3, "column": "Solvent 1 volume", "rows": "all", "new": "80"}]}
+    },
+    {
+      "id": "where-rows",
+      "why": "the rows are named by a value they hold",
+      "text": "the samples with substrate temperature 115 get annealing time 15 in step 6",
+      "expect": {"edits": [{"step": 6, "column": "Annealing time", "rows": ["8", "9", "10", "11", "12", "13"], "new": "15"}]}
+    },
+    {
+      "id": "clear",
+      "why": "clearing a cell",
+      "text": "clear the layer type of step 2 for all samples",
+      "expect": {"edits": [{"step": 2, "column": "Layer type", "rows": "all", "new": ""}]}
+    },
+    {
+      "id": "fill-empty",
+      "why": "an empty column gets its first value",
+      "text": "solvent 1 volume of step 2 is 60 for all samples",
+      "expect": {"edits": [{"step": 2, "column": "Solvent 1 volume", "rows": "all", "new": "60"}]}
+    },
+    {
+      "id": "text-value",
+      "why": "a chemical name into a text column, a range to the last sample",
+      "text": "step 2 solvent 1 name to DMF for samples 7 to 13",
+      "expect": {"edits": [{"step": 2, "column": "Solvent 1 name", "rows": ["7", "8", "9", "10", "11", "12", "13"], "new": "DMF"}]}
+    },
+    {
+      "id": "material",
+      "why": "the material of a step, said with the old value",
+      "text": "the material of step 8 is Cu instead of Ag",
+      "expect": {"edits": [{"step": 8, "column": "Material name", "rows": "all", "new": "Cu"}]}
+    },
+    {
+      "id": "info-column",
+      "why": "an Experiment Info column",
+      "text": "variation to 30min for samples 11 to 13",
+      "expect": {"edits": [{"step": "Experiment Info", "column": "Variation", "rows": ["11", "12", "13"], "new": "30min"}]}
+    },
+    {
+      "id": "two-edits",
+      "why": "two edits in one instruction, same samples",
+      "text": "step 2 speed 3500 and annealing time 12 for samples 1 to 5",
+      "expect": {"edits": [
+        {"step": 2, "column": "Rotation speed", "rows": ["1", "2", "3", "4", "5"], "new": "3500"},
+        {"step": 2, "column": "Annealing time", "rows": ["1", "2", "3", "4", "5"], "new": "12"}
+      ]}
+    },
+    {
+      "id": "self-correction",
+      "why": "the speaker corrects the number mid-sentence: only the last one counts",
+      "text": "step 2 annealing temperature 110, no sorry, 120 for all samples",
+      "expect": {"edits": [{"step": 2, "column": "Annealing temperature", "rows": "all", "new": "120"}]}
+    },
+    {
+      "id": "number-words",
+      "why": "a transcript writes numbers as words",
+      "text": "step two rotation time to forty five seconds for all samples",
+      "expect": {"edits": [{"step": 2, "column": "Rotation time", "rows": "all", "new": "45"}]}
+    },
+    {
+      "id": "asr-noise",
+      "why": "fillers and a spelled-out number, as speech recognition writes them",
+      "text": "um step 2 uh rotation speed four thousand for all the samples please",
+      "expect": {"edits": [{"step": 2, "column": "Rotation speed", "rows": "all", "new": "4000"}]}
+    },
+    {
+      "id": "note-text",
+      "why": "free text into a Notes column, one sample",
+      "text": "add a note to step 2 for sample 1: film looked hazy",
+      "expect": {"edits": [{"step": 2, "column": "Notes", "rows": ["1"], "new": "film looked hazy"}]}
+    },
+    {
+      "id": "noop",
+      "why": "the cell already holds the value: nothing to write, nothing invented",
+      "text": "step 2 rotation speed 3000 for all samples",
+      "expect": {"edits": []}
+    },
+    {
+      "id": "unknown-column",
+      "why": "no such column: must be said, never guessed",
+      "text": "set the humidity of step 2 to 30 percent for all samples",
+      "expect": {"edits": [], "unresolved": ["not_found", "uncertain"]}
+    },
+    {
+      "id": "ambiguous-step",
+      "why": "three spin-coating steps: the words fit more than one column",
+      "text": "rotation speed to 5000 for all samples",
+      "expect": {"edits": [], "unresolved": ["ambiguous", "uncertain"]}
+    },
+    {
+      "id": "missing-sample",
+      "why": "sample 6 does not exist",
+      "text": "step 2 annealing time 15 for sample 6",
+      "expect": {"edits": [], "flagged": [{"step": 2, "column": "Annealing time"}]}
+    },
+    {
+      "id": "formula-column",
+      "why": "a formula column is read-only",
+      "text": "set the deposition time of step 5 to 300 for all samples",
+      "expect": {"edits": [], "flagged": [{"step": 5, "column": "Deposition Time"}]}
+    },
+    {
+      "id": "wrong-kind",
+      "why": "a word into a numeric column",
+      "text": "step 2 rotation speed to fast for all samples",
+      "expect": {"edits": [], "flagged": [{"step": 2, "column": "Rotation speed"}]}
+    },
+    {
+      "id": "other-unit",
+      "why": "hours into a [min] column: not converted in code yet, so never written as said",
+      "text": "annealing time of step 2 to 2 hours for all samples",
+      "expect": {"edits": [], "flagged": [{"step": 2, "column": "Annealing time"}]}
+    }
+  ]
+}
