@@ -222,7 +222,11 @@ async def test_apply_caches_the_agreed_proposal_and_reports_the_edit(upload):
     assert report['cells_written'] == 0
     assert report['refused'] is None
     assert report['confirmed'] == []
-    assert report['unresolved'] == 0
+    assert (report['unresolved'], report['not_applied'], report['unchanged']) == (
+        0,
+        0,
+        0,
+    )
     (ready,) = report['ready']
     assert (
         ready['line']
@@ -251,6 +255,19 @@ async def test_apply_caches_the_agreed_proposal_and_reports_the_edit(upload):
     again = await activities.agree_cache_and_apply_input(apply(upload, 1, []))
     assert again == {**report, 'from_cache': True}
     assert upload.writer.written == [JOB_CACHE]  # not rewritten
+
+
+async def test_the_report_counts_refused_and_unchanged_edits(upload):
+    fast = {**SPEED_EDIT, 'new': 'fast'}  # a word in a number column: refused
+    report = await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(fast), answer(fast)])
+    )
+    assert (report['ready'], report['not_applied'], report['unchanged']) == ([], 1, 0)
+    same = {**SPEED_EDIT, 'new': '3000'}  # the cells hold 3000 already
+    report = await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(same), answer(same)])
+    )
+    assert (report['ready'], report['not_applied'], report['unchanged']) == ([], 0, 1)
 
 
 async def test_disagreeing_answers_make_the_input_uncertain(upload):
