@@ -24,7 +24,11 @@ from sand.sheet_edit.numbers import Number, numbers, value
 
 # a clause ends at punctuation or at one of these words:
 # "speed 4000, time 40", "speed 4000 and time 40"
-_SPLIT_RE = re.compile(r'[,;.!?](?=\s|$)|\n|\b(?:and|then|also)\b', re.IGNORECASE)
+# they join clauses; never a sheet word, even when a header holds one
+_JOINING = ('and', 'then', 'also')
+_SPLIT_RE = re.compile(
+    rf'[,;.!?](?=\s|$)|\n|\b(?:{"|".join(_JOINING)})\b', re.IGNORECASE
+)
 _WORD_RE = re.compile(r'[A-Za-z]{3,}')
 _PREFIX = 4  # 'anneal' names 'Annealing'; 'tem' names nothing
 # header words that describe the sheet, not a cell: "for all samples"
@@ -249,7 +253,7 @@ def _vocabulary(catalog: Catalog) -> set[str]:
     texts += [c.column.section.label for c in catalog.columns]
     texts += list(_sheet_values(catalog))
     words = {w.lower() for w in _WORD_RE.findall(' '.join(texts))}
-    return words - _GENERIC
+    return words - _GENERIC - set(_JOINING)
 
 
 def _known(token: str, vocabulary: set[str]) -> bool:
@@ -319,7 +323,8 @@ def _report(
     words or the uncovered stretch it was found in) and to the nearest
     used items. "speed 4000 rpm for 30 seconds", one edit using 4000 rpm
     -> "for 30 seconds"."""
-    clause = next(c for c in clauses if c[0] <= what[0] < c[1])
+    # a value spanning a joining word ('Wash and dry') is in no clause
+    clause = next((c for c in clauses if c[0] <= what[0] < c[1]), region)
     start = max([clause[0], region[0], *(u[1] for u in used if u[1] <= what[0])])
     end = min([clause[1], region[1], *(u[0] for u in used if u[0] >= what[1])])
     return instruction[start:end].strip(' \t\n,;.:!?')

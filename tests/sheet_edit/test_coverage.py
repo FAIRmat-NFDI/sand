@@ -254,3 +254,21 @@ def test_an_unresolved_item_must_quote_the_instruction_too(catalog):
         not_applied('the speed 4000', catalog, unresolved=[not_found('speed 4000')])
         == ()
     )
+
+
+def test_a_joining_word_the_sheet_holds_is_not_a_sheet_word(synthetic_xlsx):
+    # a cleaning note crashed the job: the sheet holds 'and', which also
+    # cuts clauses, so the flagged 'and' was in no clause
+    def change(ws):
+        for row in ws.iter_rows():
+            for cell in row:
+                if cell.value == 'IPA':
+                    cell.value = 'IPA and acetone'
+
+    catalog = build(edited(synthetic_xlsx, change))
+    said = 'speed 4000, and then time 40, also hot'
+    assert not_applied(said, catalog, edit()) == ('time 40', 'hot')
+    # a value holding the word is still a value: 'IPA and acetone' is
+    # reported, not dropped
+    said = 'speed 4000 and solvent IPA and acetone'
+    assert not_applied(said, catalog, edit()) == ('solvent IPA', 'acetone')
