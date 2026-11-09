@@ -354,7 +354,9 @@ def cached_model(model: str, cache: Path) -> CallLLM:
             kept = json.loads(slot.read_text())
             if kept.get('error'):
                 raise ModelGaveUp(kept['error'])
-            return kept['answer']
+            answer = kept['answer']
+            # older files kept the answer as text
+            return answer if isinstance(answer, str) else json.dumps(answer)
         retry = ''
         raw = ''
         for _ in range(MAX_RETRIES):
@@ -376,18 +378,25 @@ def cached_model(model: str, cache: Path) -> CallLLM:
                 raise JobWouldFail(f'the answer is not JSON: {why}') from why
             valid, message = validate_with_schema(data, schema)
             if valid:
-                answer = json.dumps(data)
-                slot.write_text(json.dumps({'model': model, 'answer': answer}))
-                return answer
+                keep(slot, model, text, answer=data)
+                return json.dumps(data)
             retry += (
                 f'\n\nPrevious attempt output:\n{raw}\n\nNote: The previous '
                 f'attempt resulted in an error: ValidationError: {message}. '
                 'Please try again and ensure the output adheres to the schema.'
             )
-        slot.write_text(json.dumps({'model': model, 'error': GAVE_UP, 'raw': raw}))
+        keep(slot, model, text, error=GAVE_UP, raw=raw)
         raise ModelGaveUp(GAVE_UP)
 
     return call
+
+
+def keep(slot: Path, model: str, text: str, **kept: object) -> None:
+    """One cached answer, readable: the instruction it answers, which pass
+    (the second reads the steps last to first), the answer as JSON."""
+    said = text.rpartition('Instruction: ')[2]
+    head = {'model': model, 'instruction': said}
+    slot.write_text(json.dumps({**head, **kept}, indent=2, ensure_ascii=False) + '\n')
 
 
 def asking(call: CallLLM) -> Resolve:
