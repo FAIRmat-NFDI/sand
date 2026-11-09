@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-import hashlib
 import json
 import sys
 from collections.abc import Callable
@@ -43,7 +42,12 @@ from sand.sheet_edit.apply import (  # noqa: E402
 from sand.sheet_edit.catalog import Catalog, build  # noqa: E402
 from sand.sheet_edit.edits import Unreadable  # noqa: E402
 from sand.sheet_edit.ground import Grounded, Refused, same_value  # noqa: E402
-from sand.sheet_edit.resolve import agree, prompts, read_answer  # noqa: E402
+from sand.sheet_edit.resolve import (  # noqa: E402
+    PROMPT_VERSION,
+    agree,
+    prompts,
+    read_answer,
+)
 
 DEFAULT_MODEL = 'gemini/gemini-3.6-flash'  # the lab's, as nomad.yaml sets it
 TEMPERATURE = 0  # the job's (actions/edit/workflows.py)
@@ -345,8 +349,8 @@ def cached_model(model: str, cache: Path) -> Ask:
     prompts joined as the worker joins them, temperature 0, the answer
     parsed and checked against the schema, the worker's retries with its
     wording. Each answer, or giving up, is kept as
-    cache/<model>/<case id>.<pass>.json; a file whose prompt has changed
-    since is asked again and overwritten."""
+    cache/<model>/<case id>.<pass>.json, reused while its instruction and
+    PROMPT_VERSION (bumped on every prompt change) are the same."""
     from nomad_llm_extraction.pipeline.schema_filling.llm_engine import LiteLLMEngine
     from nomad_llm_extraction.utils.utils import validate_with_schema
 
@@ -356,11 +360,12 @@ def cached_model(model: str, cache: Path) -> Ask:
 
     def call(name: str, system: str, text: str, schema: dict) -> str:
         prompt = f'{system}\n\n{text}'
-        mark = fingerprint(model, prompt, schema)
+        said = text.rpartition('Instruction: ')[2]
         slot = folder / f'{name}.json'
         if slot.exists():
             kept = json.loads(slot.read_text())
-            if kept.get('fingerprint') == mark:
+            same = (kept.get('instruction'), kept.get('prompt_version'))
+            if same == (said, PROMPT_VERSION):
                 if kept.get('error'):
                     raise ModelGaveUp(kept['error'])
                 return json.dumps(kept['answer'])
@@ -385,36 +390,28 @@ def cached_model(model: str, cache: Path) -> Ask:
                 raise JobWouldFail(f'the answer is not JSON: {why}') from why
             valid, message = validate_with_schema(data, schema)
             if valid:
-                keep(slot, model, mark, text, answer=data)
+                keep(slot, model, said, answer=data)
                 return json.dumps(data)
             retry += (
                 f'\n\nPrevious attempt output:\n{raw}\n\nNote: The previous '
                 f'attempt resulted in an error: ValidationError: {message}. '
                 'Please try again and ensure the output adheres to the schema.'
             )
-        keep(slot, model, mark, text, error=GAVE_UP, raw=raw)
+        keep(slot, model, said, error=GAVE_UP, raw=raw)
         raise ModelGaveUp(GAVE_UP)
 
     return call
 
 
-def fingerprint(model: str, prompt: str, schema: dict) -> str:
-    """What the answer was given for: a changed prompt asks again."""
-    question = json.dumps([model, prompt, schema], sort_keys=True)
-    return hashlib.sha256(question.encode()).hexdigest()
-
-
-def keep(slot: Path, model: str, mark: str, text: str, **kept: object) -> None:
+def keep(slot: Path, model: str, said: str, **kept: object) -> None:
     """One cached answer, readable: the instruction, the answer as JSON."""
-    said = text.rpartition('Instruction: ')[2]
-    head = {'model': model, 'instruction': said}
+    head = {'model': model, 'prompt_version': PROMPT_VERSION, 'instruction': said}
     if isinstance(kept.get('raw'), str):
         try:  # a failed answer that is still JSON reads as JSON
             kept['raw'] = json.loads(kept['raw'])
         except json.JSONDecodeError:
             pass
-    whole = {**head, **kept, 'fingerprint': mark}
-    slot.write_text(json.dumps(whole, indent=2, ensure_ascii=False) + '\n')
+    slot.write_text(json.dumps({**head, **kept}, indent=2, ensure_ascii=False) + '\n')
 
 
 def asking(call: Ask, case_id: str) -> Resolve:
