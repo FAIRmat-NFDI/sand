@@ -196,14 +196,7 @@ def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdi
     left the same words unresolved. Every other edit is uncertain, one
     item per quote with every reading of it. Unresolved items of either
     pass are kept once."""
-    keys_a: dict[AgreementKey, Edit] = {}
-    keys_b: dict[AgreementKey, Edit] = {}
-    for edit in a.edits:
-        keys_a.setdefault(
-            _agreement_key(edit, catalog), edit
-        )  # a repeat differs in `old` only
-    for edit in b.edits:
-        keys_b.setdefault(_agreement_key(edit, catalog), edit)
+    by_a, by_b = _by_write(a.edits, catalog), _by_write(b.edits, catalog)
     hedged = {_quote(u.said) for u in [*a.unresolved, *b.unresolved]}
     edits: list[Edit] = []
     uncertain: dict[str, Uncertain] = {}  # by quote, in order of appearance
@@ -220,18 +213,27 @@ def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdi
                 reason='uncertain', readings=[edit], why=why, said=edit.said
             )
 
-    for key, edit in keys_a.items():
-        if key not in keys_b:
+    for key, group in by_a.items():
+        edit = group[0]
+        if key not in by_b:
             doubt(edit, _ONE_PASS)
-        elif hedged & {_quote(edit.said), _quote(keys_b[key].said)}:
+            continue
+        pointed = _first_per_anchor([*group, *by_b[key]])
+        if len(pointed) > 1:
+            # the same write pointed at through different cells: each
+            # pointer is a reading
+            for e in pointed.values():
+                doubt(e, _DIFFER)
+        elif hedged & {_quote(edit.said), _quote(by_b[key][0].said)}:
             # the passes may cut the quote differently: a hedge on either
             # pass's quote counts
             doubt(edit, _HEDGED)
         else:
-            edits.append(edit)
-    for key, edit in keys_b.items():
-        if key not in keys_a:
-            doubt(edit, _ONE_PASS)
+            # a pointer either pass gave is kept, so that ground checks it
+            edits.append(next(iter(pointed.values()), edit))
+    for key, group in by_b.items():
+        if key not in by_a:
+            doubt(group[0], _ONE_PASS)
     seen: set[tuple] = set()
     unresolved: list[Unresolved] = []
     for item in [*a.unresolved, *b.unresolved]:
@@ -262,10 +264,28 @@ def _agreement_key(edit: Edit, catalog: Catalog) -> AgreementKey:
     """What two passes must agree on: what would be written, the cells and
     the value. Left out: `old`, which ground checks against the sheet;
     `said`, which the passes may cut differently for one and the same
-    edit; the anchor, which only points and is checked by ground on the
-    edit kept (pass A's). The value is compared as written: material
+    edit; the anchor, which only points: an anchor of either pass is
+    kept for ground to check, two different ones disagree. The value is compared as written: material
     names are case-sensitive (PbI2, Me-4PACz)."""
     return (edit.target, _rows_agreement_key(edit.rows, catalog), edit.new.strip())
+
+
+def _by_write(edits: list[Edit], catalog: Catalog) -> dict[AgreementKey, list[Edit]]:
+    """A pass's edits by what they write: a repeat (the same write) may
+    differ in `old`, `said` or the anchor."""
+    groups: dict[AgreementKey, list[Edit]] = {}
+    for edit in edits:
+        groups.setdefault(_agreement_key(edit, catalog), []).append(edit)
+    return groups
+
+
+def _first_per_anchor(edits: list[Edit]) -> dict[tuple[str, str], Edit]:
+    pointed: dict[tuple[str, str], Edit] = {}
+    for edit in edits:
+        if edit.anchor:
+            key = (edit.anchor.column, edit.anchor.equals.strip())
+            pointed.setdefault(key, edit)
+    return pointed
 
 
 def _rows_agreement_key(rows: RowSpec, catalog: Catalog) -> RowsAgreementKey:

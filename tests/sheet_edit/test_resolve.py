@@ -325,41 +325,30 @@ def test_where_and_all_are_their_own_readings(catalog):
         ask(catalog, a, answer(edit(rows={**where, 'equals': None}))).unresolved[0],
         Uncertain,
     )
-    anchor = {'column': SOLVENT_2, 'equals': 'DMSO'}
-    a = answer(
-        edit(
-            target=TIME_2,
-            anchor=anchor,
-            said='time of the DMSO 300',
-            new='300',
-            old='600',
-        )
-    )
-    b = answer(
-        edit(
-            target=TIME_2,
-            anchor=None,
-            said='time of the DMSO 300',
-            new='300',
-            old='600',
-        )
-    )
-    assert len(ask(catalog, a, a).edits) == 1
 
 
-def test_an_anchor_is_no_disagreement(catalog):
-    # the same cells and value, pointed at with and without an anchor (or
-    # through another one): the same write; pass A's edit is kept, and
-    # ground checks its anchor
+def test_an_anchor_is_no_disagreement_and_is_kept(catalog, synthetic_xlsx):
+    # the same cells and value, with and without an anchor: one write; the
+    # anchor is kept, whichever pass gave it, so ground checks it
     said = 'time of the DMSO 300'
     time = {'target': TIME_2, 'said': said, 'new': '300', 'old': '600'}
     dmso = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'DMSO'})
     plain = edit(**time, anchor=None)
-    other = edit(**time, anchor={'column': TIME_2, 'equals': '600'})
-    for a, b in [(dmso, plain), (plain, dmso), (dmso, other)]:
-        proposal = ask(catalog, answer(a), answer(b))
-        assert proposal.unresolved == []
-        assert proposal.edits == [Edit.model_validate(a)]
+    for a, b in [([dmso], [plain]), ([plain], [dmso]), ([plain, dmso], [plain])]:
+        proposal = ask(catalog, answer(*a), answer(*b))
+        assert (proposal.edits, proposal.unresolved) == (
+            [Edit.model_validate(dmso)],
+            [],
+        )
+        # solvent 2 holds IPA, not DMSO: refused, in either order
+        result = interpret_instruction(
+            said, synthetic_xlsx, lambda t, c: ask(c, answer(*a), answer(*b), t)
+        )
+        assert result.ready == {}
+    # two different anchors for the same write: each is a reading
+    other = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'IPA'})
+    item = only(ask(catalog, answer(dmso), answer(other)), Uncertain)
+    assert [r.anchor.equals for r in item.readings] == ['DMSO', 'IPA']
     # a different value is still a disagreement, anchor or not
     item = only(ask(catalog, answer(dmso), answer({**plain, 'new': '400'})), Uncertain)
     assert [r.new for r in item.readings] == ['300', '400']
