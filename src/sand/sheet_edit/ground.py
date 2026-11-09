@@ -38,6 +38,7 @@ from sand.sheet_edit.numbers import (
     UnitMismatch,
     check_unit,
     numbers,
+    same_unit,
     value,
 )
 from sand.sheet_edit.render import EMPTY
@@ -763,13 +764,24 @@ def value_problems(
         notes = (
             [f'{where}: read from {spoken[0]!r}'] if len(spoken) == len(matches) else []
         )
-        return [], notes, []
+        return _unit_said(number, matches, target), notes, []
     if candidates:
         said_numbers = ', '.join(c.text for c in candidates)
         return [f'{where} is not in your words; you said {said_numbers}'], [], []
     # nothing to compare: no number said, or a date said in words ('2nd of
     # February 2025'), which code does not read yet
     return [], [], doubt
+
+
+def _unit_said(number: Number, matches: list[Number], target: ColumnInfo) -> list[str]:
+    """`new` without a unit, the words with one the column does not have:
+    "rotation speed 500 rpm/s" answered "500" for a [rpm] column. U reads
+    only `new`, so the unit the model left out is compared here (#165)."""
+    if number.unit is not None or not target.unit:
+        return []
+    if any(m.unit is None or same_unit(m.unit, target.unit) for m in matches):
+        return []
+    return [f'{column_name(target)} is in {target.unit}; you said {matches[0].text}']
 
 
 def value_numbers(

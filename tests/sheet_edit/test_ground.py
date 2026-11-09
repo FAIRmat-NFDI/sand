@@ -1232,3 +1232,21 @@ def test_a_type_refusal_also_lists_the_checks(catalog):
     why = refused(ground(edit(old='2000', new='fast', said='speed fast'), catalog))
     assert why.startswith('Rotation speed [rpm] (2: Spin Coating) holds numbers')
     assert "holds '3000'" in why and "not '2000'" in why
+
+
+def test_a_unit_said_that_the_column_does_not_have_is_a_check(catalog):
+    # the model left out the unit the user said: U never sees it (#165)
+    result = ground(edit(new='500', said='spin coating 2 speed 500 rpm/s'), catalog)
+    assert checked(result) == (
+        'Rotation speed [rpm] (2: Spin Coating) is in rpm; you said 500 rpm/s'
+    )
+    result = ground(
+        edit(ANNEAL_TIME, old='10', new='2', said='annealing time 2 hours'), catalog
+    )
+    assert 'is in min; you said 2 hours' in checked(result)
+    # the column's own unit, another spelling of it, or no unit: no check
+    for said in ('speed 500 rpm', 'speed 500 RPM', 'speed 500'):
+        result = ground(edit(new='500', said=said), catalog)
+        assert isinstance(result, Grounded) and result.checks == (), said
+    # the unit kept in `new`: U refuses, as before
+    refused(ground(edit(new='500 rpm/s', said='speed 500 rpm/s'), catalog))
