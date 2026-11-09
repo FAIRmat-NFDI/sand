@@ -381,7 +381,8 @@ def render(log: Changelog) -> str:
     }
     block = None
     for e in log.entries:
-        head = (e.input, e.said, e.confirmed_by, e.confirmed_at)
+        # checks too: two edits of the same words, one past a check
+        head = (e.input, e.said, e.confirmed_by, e.confirmed_at, e.checks)
         if head != block:
             block = head
             lines.extend(['', _block_line(e)])
