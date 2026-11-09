@@ -261,3 +261,40 @@ uv run pytest
 node --test tests/js/*.test.mjs   # frontend logic, no dependencies
 ruff check .
 ```
+
+### Measuring the reading against the real model
+
+The tests run the sheet editor with canned model answers. Before a lab
+relies on it, and after every change to the prompts or the model, it is
+measured against the real model:
+
+```sh
+cd ~/fairmat/sand
+~/fairmat/nomad-distro-dev/.venv/bin/python evals/sheet_edit/run_testcases.py
+```
+
+It runs with the distribution's Python, where the extraction engine is
+installed; not `uv run` in the distribution, which may sync it. The key
+comes from the shell (`GEMINI_API_KEY`).
+
+`evals/sheet_edit/testcases.json` holds about twenty instructions on the
+synthetic sheet, each with the edits it must produce (column, samples,
+value), the columns it must leave alone and the refusals it must say.
+The script runs each through the same function, prompt and schema the
+job uses, prints a line per case while it runs, then the cases that went
+wrong with the preview the user would have seen, and the numbers the
+plan gates on: precision of the ready edits (≥ 99 %), asked edits
+proposed (≥ 95 %) or at least flagged (100 %), refusals said (100 %),
+and the count of edits nobody asked for (0).
+
+- `--only ID` runs one case.
+- `--model NAME` asks another model; the default is the edit job's, read
+  from the distribution's `nomad.yaml`.
+
+Model answers are kept as `evals/sheet_edit/cache/<model>/<case id>.first.json`
+and `.second.json`, one per pass. A file is reused while its model,
+instruction and the prompt version (`PROMPT_VERSION` in `resolve.py`, bumped on every
+prompt change) are the same; delete the folder for fresh answers.
+The sheet they are asked about is written there too, as
+`synthetic_sheet.xlsx`, to open next to them. The script never runs in CI; `tests/sheet_edit/test_testcases.py`
+checks the cases and the judgement offline.

@@ -147,3 +147,6 @@ dmypy.json
 .pyre/
 
 env
+
+# model answers of the evaluation (evals/sheet_edit/run_testcases.py)
+/evals/sheet_edit/cache/
