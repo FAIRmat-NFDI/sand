@@ -373,7 +373,7 @@ async def test_another_collections_job_is_refused(voice, synthetic_xlsx):
     response = await get(voice, 'final-sheet')
 
     assert response.status_code == HTTPStatus.CONFLICT
-    assert "another experiment's job" in response.json()['detail']
+    assert "another sheet's job" in response.json()['detail']
 
 
 async def test_no_sheet_uploaded(voice):

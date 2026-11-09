@@ -11,7 +11,7 @@ plus a changelog.
   stored in NOMAD unchanged.
 - **Record** spoken updates, with a live transcript while speaking.
 - **Write** updates by hand.
-- **Review** all updates of an experiment in the order they were made,
+- **Review** all updates of a sheet in the order they were made,
   correct their text, or delete one (its NOMAD entry and, for a recording,
   the audio).
 - **Read**: as soon as an update is saved, an LLM turns it into cell
@@ -29,7 +29,7 @@ plus a changelog.
 flowchart LR
     user([Researcher]) --> ui[sand page<br/>in the browser]
     ui --> api[sand API<br/>inside NOMAD]
-    api --> upload[(NOMAD upload<br/>= one experiment:<br/>sheet + updates)]
+    api --> upload[(NOMAD upload<br/>= one sheet:<br/>the file + updates)]
     upload -- audio --> eln[nomad-voice-eln<br/>transcribes]
     eln --> upload
     api -- read, write --> job[edit job<br/>on the action worker]
@@ -37,7 +37,7 @@ flowchart LR
     job --> result[final sheet + changelog<br/>in the upload]
 ```
 
-- An **experiment** is one NOMAD upload. It holds the uploaded sheet, an
+- A **sheet** is one NOMAD upload. It holds the uploaded file, an
   `InputCollection` entry and every recording (`AudioInput`) and note
   (`WrittenNote`) made for it. These entry types come from
   [`nomad-voice-eln`](https://github.com/FAIRmat-NFDI/nomad-voice-eln).
@@ -172,9 +172,12 @@ same browser; sand warns when the login is about to end.
 
 ## Using it
 
-1. **New experiment** → choose the sheet (`.xlsx`), give the experiment a
-   name, **Create from sheet**. A refused sheet lists its problems; fix
-   the file and upload again. The name can be changed later with the
+1. **Upload the sheet**: drop the `.xlsx` on the header (or choose it),
+   give it a name, **Upload the sheet**. A refused sheet lists its
+   problems; fix the file and upload again. The header then names the
+   sheet, its date, samples and layer stack; the overview under it shows
+   the steps the way a lab notebook writes them. **Other sheets** opens
+   one uploaded earlier. The name can be changed later with the
    pencil next to it in the header; the downloads follow it.
 2. **Record** or **write** updates. Say or type one change at a time, with
    the step, the value and the samples it applies to. The updates appear
@@ -191,9 +194,9 @@ same browser; sand warns when the login is about to end.
    record and cannot be revised or deleted. A wrong reading is not
    confirmed: correct the update's text or add a new update.
 5. **Download** the edited sheet (the original is a download too, under
-   the file name it was uploaded with). The list under the summary names every
-   edit written; the changelog, folded below it, holds every cell
-   changed, the update it came from and who confirmed it.
+   the file name it was uploaded with). The Edits card lists every edit
+   written; the changelog, folded below it, holds every cell changed, the
+   update it came from and who confirmed it.
 
 **Read again** appears when a reading failed (for example when the LLM
 could not be reached) and starts it once more.
@@ -205,15 +208,15 @@ read there as well.
 
 Optional.
 
-1. Select an experiment and click **Voice mode on**.
-2. sand checks the experiment, the login, the recognizer and the microphone.
+1. Open a sheet and click **Voice mode on**.
+2. sand checks the sheet, the login, the recognizer and the microphone.
    When asked, say **"hey sand"** within 10 seconds; otherwise voice mode
    stays off and you can click again.
 3. **Listening** is shown: voice mode is on.
 
 Voice mode stays on until you click **Voice mode off** or leave or reload
 the page. It does not turn itself off after some time, so turn it off when
-the experiment is done. After a reload it is always off.
+the work is done. After a reload it is always off.
 
 | To | Say |
 |---|---|

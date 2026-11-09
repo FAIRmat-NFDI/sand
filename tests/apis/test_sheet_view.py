@@ -171,7 +171,7 @@ async def test_an_edited_sheet_that_cannot_be_vouched_for(voice, synthetic_xlsx,
     assert (body['source'], body['sha256']) == ('uploaded', sha256(synthetic_xlsx))
     assert body['changed'] == []
     assert body['warnings'][-1] == (
-        'the edited sheet stored with this experiment does not match its '
+        'the edited sheet stored with this upload does not match its '
         'changelog; this is the uploaded sheet'
     )
 
@@ -214,7 +214,7 @@ async def test_another_collections_edits_are_not_this_sheets(voice, synthetic_xl
     assert (body['source'], body['changed']) == ('uploaded', [])
     assert speed_param(body)['values'][0]['value'] == '3000'
     assert body['warnings'][-1] == (
-        "another experiment's job wrote this upload's edited sheet; "
+        "another sheet's job wrote this upload's edited sheet; "
         'this is the uploaded sheet'
     )
 
@@ -234,7 +234,7 @@ async def test_no_sheet(voice):
     response = await get_view(voice)
 
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json()['detail'] == 'this experiment did not start from a sheet'
+    assert response.json()['detail'] == 'this sheet was not uploaded here'
 
 
 async def test_a_cell_edited_back_is_not_a_change(voice, synthetic_xlsx):

@@ -37,7 +37,7 @@
               </button>
               <input class="sheet-name sheet-name-edit" id="sheet-name-edit" aria-label="New name of the sheet" maxlength="200" hidden>
             </div>
-            <a id="experiment-link" target="_blank" rel="noopener noreferrer" hidden>View in NOMAD</a>
+            <a id="sheet-link" target="_blank" rel="noopener noreferrer" hidden>View in NOMAD</a>
           </div>
           <div class="sheet-actions">
             <div class="sheet-switch">
@@ -99,7 +99,6 @@
           <div class="overview-block" id="samples-block" hidden>
             <div class="overview-block-head">
               <h3>Samples · grouped by what varies</h3>
-              <span id="samples-note"></span>
             </div>
             <div class="samples-box" id="samples-box"></div>
           </div>
@@ -186,8 +185,7 @@
         </section>
 
         <section class="card section section-apply">
-          <h2 class="section-title"><span class="material-icons">table_chart</span>Sheet</h2>
-          <p class="section-hint" id="sheet-summary"></p>
+          <h2 class="section-title"><span class="material-icons">table_chart</span>Edits</h2>
           <div class="controls">
             <button class="btn btn-primary" id="confirm-all-btn" type="button" hidden>
               <span class="material-icons">done_all</span>

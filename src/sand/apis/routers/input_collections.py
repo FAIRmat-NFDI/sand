@@ -27,10 +27,6 @@ from sand.models.input_collections import (
     ReviseInputRequest,
     ReviseInputResponse,
     ReviseLabelRequest,
-    SheetCollectionResponse,
-    SheetColumnModel,
-    SheetSampleModel,
-    SheetSummaryModel,
     SheetUploadResponse,
 )
 from sand.services.nomad_api import (
@@ -275,7 +271,7 @@ async def rename_input_collection(
     request: Request,
     collection_entry_id: str,
 ) -> InputCollectionSummaryModel:
-    """Rename an experiment: the collection's name, which the list shows,
+    """Rename a sheet: the collection's name, which the list shows,
     and the upload's name in NOMAD. Blank is refused. The answer has no
     `created`: the page keeps the list's."""
     voice = _voice_service(request)
@@ -302,7 +298,7 @@ async def rename_input_collection(
 
 @router.post(
     '/input-collections/from-sheet',
-    response_model=SheetCollectionResponse,
+    response_model=InputCollectionSummaryModel,
     status_code=201,
 )
 async def create_sheet_input_collection(
@@ -310,9 +306,9 @@ async def create_sheet_input_collection(
     request: Request,
     *,
     name: str = Form(''),
-) -> SheetCollectionResponse:
-    """An experiment that starts from an uploaded lab sheet: the edit
-    job's original, stored unchanged.
+) -> InputCollectionSummaryModel:
+    """A sheet's collection: the uploaded lab sheet is the edit job's
+    original, stored unchanged.
 
     A sheet the ingest checks refuse is refused before anything is
     created; the problems are the user's to fix and come back verbatim
@@ -326,7 +322,6 @@ async def create_sheet_input_collection(
     problems = await asyncio.to_thread(ingest_problems, xlsx)
     if problems:
         raise HTTPException(status_code=422, detail={'problems': problems})
-    sheet = await asyncio.to_thread(catalog.build, xlsx)
     file_name = PurePath(file.filename or '').name
     name = name.strip() or PurePath(file_name).stem or 'sheet'
 
@@ -341,71 +336,26 @@ async def create_sheet_input_collection(
                     client, result.upload_id, ORIGINAL_FILE, xlsx, XLSX_CONTENT_TYPE
                 )
             except NomadAPIError as exc:
-                # without its sheet the collection is an experiment whose
-                # edit job can only fail: take it back
+                # without its sheet the collection's edit job can only
+                # fail: take it back
                 try:
                     await voice.delete_input_collection(client, result.upload_id)
                 except NomadAPIError:
                     raise HTTPException(
                         status_code=502,
-                        detail=f'{_nomad_detail(exc)}; the half-made experiment '
+                        detail=f'{_nomad_detail(exc)}; the half-made sheet '
                         f'{result.upload_id} could not be removed either',
                     ) from exc
                 raise
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
-    return SheetCollectionResponse(
+    return InputCollectionSummaryModel(
         name=name,
         # NOMAD stamps the entry a moment later; the list shows this one
         created=datetime.now(timezone.utc).isoformat(),
-        sheet=_sheet_summary(sheet, xlsx),
         **_entry_response(voice, result.upload_id, result.entry_id),
     )
-
-
-def _sheet_summary(sheet: catalog.Catalog, xlsx: bytes) -> SheetSummaryModel:
-    return SheetSummaryModel(
-        name=sheet.structure.sheet_name,
-        samples=[
-            SheetSampleModel(label=s.label or f'row {s.row}', subbatch=s.subbatch)
-            for s in sheet.samples
-        ],
-        needs_subbatch=sheet.needs_subbatch,
-        columns=[
-            SheetColumnModel(
-                id=c.id, section=c.column.section.label, header=c.column.header
-            )
-            for c in sheet.columns
-        ],
-        sha256=sha256(xlsx),
-    )
-
-
-@router.get(
-    '/input-collections/{upload_id}/sheet-summary', response_model=SheetSummaryModel
-)
-async def sheet_summary(
-    upload_id: str,
-    request: Request,
-    collection_entry_id: str,
-) -> SheetSummaryModel:
-    """The uploaded sheet as the edit job sees it; 404 when the
-    experiment did not start from a sheet (the page's mode switch)."""
-    voice = _voice_service(request)
-    token = get_bearer_token(request)
-
-    try:
-        async with voice.build_client(token) as client:
-            xlsx = await voice.writer.read_raw_file(client, upload_id, ORIGINAL_FILE)
-    except NomadAPIError as exc:
-        raise _http_error(exc) from exc
-
-    if xlsx is None:
-        raise HTTPException(
-            status_code=404, detail='this experiment did not start from a sheet'
-        )
-    return _sheet_summary(await asyncio.to_thread(catalog.build, xlsx), xlsx)
 
 
 @router.get('/input-collections/{upload_id}/sheet-view')
@@ -430,7 +380,7 @@ async def sheet_view(
             )
             if original is None:
                 raise HTTPException(
-                    status_code=404, detail='this experiment did not start from a sheet'
+                    status_code=404, detail='this sheet was not uploaded here'
                 )
             final = await voice.writer.read_raw_file(
                 client, upload_id, FINAL_FILE, wait=False
@@ -452,7 +402,7 @@ async def sheet_view(
         warning = (
             'an edit job is writing the sheet; this is the uploaded sheet'
             if _job_running(status, None)
-            else 'the edited sheet stored with this experiment does not match '
+            else 'the edited sheet stored with this upload does not match '
             'its changelog; this is the uploaded sheet'
         )
     elif log is not None and (
@@ -462,7 +412,7 @@ async def sheet_view(
         # collection's updates, so they are not this sheet's
         sheet, log = original, None
         warning = (
-            "another experiment's job wrote this upload's edited sheet; "
+            "another sheet's job wrote this upload's edited sheet; "
             'this is the uploaded sheet'
         )
     built = await asyncio.to_thread(lambda: view.sheet_view(catalog.build(sheet), log))
@@ -961,7 +911,7 @@ async def start_edit_async(
                 if original is None:
                     raise HTTPException(
                         status_code=422,
-                        detail='no sheet was uploaded for editing in this experiment',
+                        detail='no sheet was uploaded here',
                     )
                 inputs = await voice.collect_inputs(
                     client, upload_id, collection_entry_id=collection_entry_id
@@ -1018,9 +968,7 @@ async def _edit_status(
     # the status file is upload-level and an upload can hold several
     # collections: only report a status belonging to the requested one
     if status is None or status.get('collection_entry_id') != collection_entry_id:
-        raise HTTPException(
-            status_code=404, detail='no edit job for this experiment yet'
-        )
+        raise HTTPException(status_code=404, detail='no edit job for this sheet yet')
     if status.get('phase') not in ('completed', 'failed') and not _job_running(
         status, collection_entry_id
     ):
@@ -1261,7 +1209,7 @@ async def download_original_sheet(
     collection_entry_id: str,
 ) -> Response:
     """The sheet as uploaded, under the uploaded file's name (kept in the
-    collection's description); under the experiment's name with
+    collection's description); under the sheet's name with
     "(original)" when that is gone or not a file name any more. Both
     were written at the upload: read at once, a running job's writes
     must not hold this up."""
@@ -1276,7 +1224,7 @@ async def download_original_sheet(
             if sheet is None:
                 raise HTTPException(
                     status_code=404,
-                    detail='no sheet was uploaded for editing in this experiment',
+                    detail='no sheet was uploaded here',
                 )
             file_name = await voice.input_collection_description(
                 client, upload_id, collection_entry_id, wait=False
@@ -1302,8 +1250,8 @@ async def download_final_sheet(
     request: Request,
     collection_entry_id: str,
 ) -> Response:
-    """The sheet as it stands, as an xlsx download named after the
-    experiment: the one the last completed job left (the original plus
+    """The sheet as it stands, as an xlsx download under the sheet's
+    name: the one the last completed job left (the original plus
     the confirmed edits), or the uploaded one while no job has written
     a sheet."""
     voice = _voice_service(request)
@@ -1318,7 +1266,7 @@ async def download_final_sheet(
                 # the upload's sheet files are another collection's now
                 raise HTTPException(
                     status_code=409,
-                    detail="another experiment's job wrote this upload's sheet; "
+                    detail="another sheet's job wrote this upload's sheet; "
                     'run the job again',
                 )
             if status is not None and _job_running(status, None):
@@ -1356,7 +1304,7 @@ async def download_final_sheet(
                 if sheet is None:
                     raise HTTPException(
                         status_code=404,
-                        detail='no sheet was uploaded for editing in this experiment',
+                        detail='no sheet was uploaded here',
                     )
             name = await voice.input_collection_name(
                 client, upload_id, collection_entry_id
@@ -1373,7 +1321,7 @@ async def download_final_sheet(
 
 def _attachment(filename: str) -> str:
     """Headers are latin-1: an ASCII fallback plus the real name encoded
-    (RFC 6266), so an experiment named in any script downloads."""
+    (RFC 6266), so a sheet named in any script downloads."""
     ascii_name = ''.join(
         c if c.isascii() and c.isprintable() and c not in '"\\' else '_'
         for c in filename

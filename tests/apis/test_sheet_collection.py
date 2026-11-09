@@ -8,9 +8,7 @@ from synthetic_sheet import edited
 
 from sand.services.nomad_api import XLSX_CONTENT_TYPE
 from sand.services.voice_eln import InputCollectionSummary
-from sand.sheet_edit import catalog
 from sand.sheet_edit.session import ORIGINAL_FILE
-from sand.sheet_edit.workbook import sha256
 
 pytestmark = pytest.mark.asyncio
 
@@ -48,23 +46,6 @@ async def test_good_sheet_becomes_a_collection(voice, synthetic_xlsx):
     assert voice.writer.files == {ORIGINAL_FILE: synthetic_xlsx}
     assert voice.writer.types == {ORIGINAL_FILE: XLSX_CONTENT_TYPE}
 
-    # the summary is the catalog the job will edit against
-    built = catalog.build(synthetic_xlsx)
-    sheet = body['sheet']
-    assert sheet['name'] == built.structure.sheet_name
-    assert sheet['sha256'] == sha256(synthetic_xlsx)
-    assert sheet['samples'] == [
-        {'label': s.label, 'subbatch': s.subbatch} for s in built.samples
-    ]
-    assert [s['label'] for s in sheet['samples']][:3] == ['1', '2', '3']
-    assert sheet['needs_subbatch'] is False
-    assert [(c['id'], c['section'], c['header']) for c in sheet['columns']] == [
-        (c.id, c.column.section.label, c.column.header) for c in built.columns
-    ]
-    assert ('2: Spin Coating', 'Rotation speed [rpm]') in {
-        (c['section'], c['header']) for c in sheet['columns']
-    }
-
 
 async def test_the_list_says_when_each_sheet_was_uploaded(voice):
     voice.collections = [
@@ -82,29 +63,6 @@ async def test_the_list_says_when_each_sheet_was_uploaded(voice):
         ('Batch 7', '2026-11-02T09:30:00+00:00'),
         ('older', None),
     ]
-
-
-async def test_sheet_summary_is_the_uploaded_sheets(voice, synthetic_xlsx):
-    created = (await post_sheet(voice, synthetic_xlsx)).json()
-
-    async with api(voice) as client:
-        response = await client.get(
-            f'/api/input-collections/{UPLOAD}/sheet-summary',
-            params={'collection_entry_id': COLLECTION},
-        )
-
-    assert response.status_code == HTTPStatus.OK, response.text
-    assert response.json() == created['sheet']
-
-
-async def test_no_sheet_summary_without_a_sheet(voice):
-    async with api(voice) as client:
-        response = await client.get(
-            f'/api/input-collections/{UPLOAD}/sheet-summary',
-            params={'collection_entry_id': COLLECTION},
-        )
-
-    assert response.status_code == HTTPStatus.NOT_FOUND
 
 
 async def test_real_kit_sheet_is_accepted(voice, real_kit_xlsx):
@@ -136,7 +94,7 @@ async def test_a_collection_that_cannot_be_taken_back_is_named(voice, synthetic_
 
     assert response.status_code == HTTPStatus.BAD_GATEWAY
     assert response.json()['detail'] == (
-        f'NOMAD is down; the half-made experiment {UPLOAD} could not be removed either'
+        f'NOMAD is down; the half-made sheet {UPLOAD} could not be removed either'
     )
 
 

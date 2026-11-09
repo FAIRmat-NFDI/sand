@@ -15,7 +15,7 @@ const header = document.getElementById("sheet-header");
 const sheetNameEl = document.getElementById("sheet-name");
 const renameBtn = document.getElementById("rename-btn");
 const renameInput = document.getElementById("sheet-name-edit");
-const experimentLink = document.getElementById("experiment-link");
+const sheetLink = document.getElementById("sheet-link");
 const sheetMeta = document.getElementById("sheet-meta");
 const sheetStack = document.getElementById("sheet-stack");
 const sheetsBtn = document.getElementById("sheets-btn");
@@ -88,7 +88,7 @@ export function showSheet(experiment, view) {
   header.classList.toggle("sheet-missing", view === null);
   if (!experiment) {
     sheetNameEl.textContent = "";
-    experimentLink.hidden = true;
+    sheetLink.hidden = true;
     renderParts(sheetMeta, []);
     renderParts(sheetStack, []);
     return;
@@ -96,8 +96,8 @@ export function showSheet(experiment, view) {
   // callers hold the object they were given; a rename replaced it in the list
   const listed = experimentsById[experiment.entry_id] || experiment;
   sheetNameEl.textContent = listed.name || listed.upload_id;
-  experimentLink.href = experiment.entry_url;
-  experimentLink.hidden = false;
+  sheetLink.href = experiment.entry_url;
+  sheetLink.hidden = false;
   if (!view) {
     renderParts(sheetMeta, view === null ? ["Made without a sheet: nothing to update here."] : []);
     renderParts(sheetStack, []);
