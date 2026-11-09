@@ -9,10 +9,11 @@ differ), V `new` is in the user's words, T it fits
 the column's type, U its unit is the column's. N rows that already hold
 the value are reported, not written.
 
-W, R, T and U are facts about the sheet: they refuse. S, A, O and V read
-the user's words with patterns, which can be wrong: what they find
-against the proposal is a check, shown on the edit, which the user must
-confirm on its own (never through "confirm all"). Where code finds
+W, R, T and U refuse: past them the write is impossible or plainly wrong.
+S, A, O and V compare the proposal with the words or with what the
+sheet holds around it; a mismatch there may be the check's misreading,
+and the write stays possible: it is a check, shown on the edit, which
+the user must confirm on its own (never through "confirm all"). Where code finds
 nothing to compare ("the usual speed" names no number) the edit passes
 with a doubt and low confidence.
 """
@@ -129,7 +130,7 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
     notes = (*notes, *found[1])
     new, problems = typed_value(edit.new, target)  # T, U
     if problems:
-        return Refused(edit, tuple(problems))
+        return Refused(edit, (*problems, *checks))
 
     held = {r: g.value for g in target.groups for r in g.rows}  # N
     unchanged = tuple(r for r in rows if same_value(edit.new, held.get(r)))

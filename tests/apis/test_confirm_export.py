@@ -104,6 +104,19 @@ async def test_a_confirmed_key_keeps_its_first_record(voice):
     assert records['k2']['by'] == USERNAME
 
 
+async def test_an_edit_with_a_check_is_confirmed_on_its_own(voice):
+    marked = {'key': 'k3', 'line': '...', 'checks': ["'4400' is not in your words"]}
+    put_status(voice, 'completed', inputs=[{'input': 1, 'ready': [*READY, marked]}])
+
+    response = await confirm(voice, ['k1', 'k3'])
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert 'confirmed on its own' in response.json()['detail']
+    assert CONFIRMATIONS_FILE not in voice.writer.files
+
+    assert (await confirm(voice, ['k3'])).status_code == HTTPStatus.OK
+    assert (await confirm(voice, ['k1', 'k2'])).status_code == HTTPStatus.OK
+
+
 async def test_two_confirms_at_once_both_survive(voice):
     put_status(voice, 'completed')
 

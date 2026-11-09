@@ -282,3 +282,15 @@ def test_the_writer_may_still_refuse_a_confirmed_edit(synthetic_xlsx):
     confirmed |= keys(run(synthetic_xlsx, [VARIATION_SAID, SOLVENT], confirmed)[1])
     steps = run(synthetic_xlsx, [VARIATION_SAID, SOLVENT], confirmed)
     assert [len(s.written) for s in steps] == [0, THREE_ROWS]
+
+
+def test_a_marked_edit_never_blocks_a_clean_one_of_the_same_cell(synthetic_xlsx):
+    said = 'spin coating 2 speed 4000'
+    wrong = edit(SPEED, 'all', '3000', '4100', said)  # 4100: a check
+    right = edit(SPEED, 'all', '3000', '4000', said)
+    result = interpret_instruction(
+        said, synthetic_xlsx, lambda t, c: proposal(wrong, right)
+    )
+    marked, clean = result.results
+    assert isinstance(marked, Refused) and 'already changed' in marked.reasons[0]
+    assert list(result.ready.values()) == [clean] and clean.checks == ()

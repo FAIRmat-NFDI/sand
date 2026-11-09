@@ -59,6 +59,8 @@ class Entry:
     said: str | None
     confirmed_by: str | None
     confirmed_at: str | None  # ISO 8601, UTC
+    # what a word check found: the user confirmed the edit past it
+    checks: tuple[str, ...] = ()
 
     def __post_init__(self):
         """Also runs on a loaded log: a stored entry is trusted no more
@@ -83,6 +85,12 @@ class Entry:
             raise ValueError(f'{self.cell}: words and confirmation go together')
         if self.confirmed_at is not None:
             datetime.datetime.fromisoformat(self.confirmed_at)  # raises otherwise
+        if not isinstance(self.checks, tuple) or not all(
+            isinstance(c, str) for c in self.checks
+        ):
+            raise ValueError(f'{self.cell}: checks must be texts')
+        if self.checks and self.said is None:
+            raise ValueError(f'{self.cell}: a formula result has no checks')
 
     @property
     def by_formula(self) -> bool:
@@ -154,6 +162,7 @@ def changelog(
                     said=edit.edit.said if edit else None,
                     confirmed_by=confirmed.by if confirmed else None,
                     confirmed_at=_utc_text(confirmed.at) if confirmed else None,
+                    checks=edit.checks if edit else (),
                 )
             )
     catalog = steps[0].interpretation.catalog if steps else build(original)
@@ -281,7 +290,12 @@ def from_json(text: str) -> Changelog:
 
 
 def _entry(data: dict) -> Entry:
-    return Entry(**{f.name: data[f.name] for f in fields(Entry)})
+    """A log written before checks existed has none."""
+    known = {f.name: data[f.name] for f in fields(Entry) if f.name != 'checks'}
+    checks = data.get('checks', [])
+    if not isinstance(checks, list):
+        raise ValueError('checks must be a list')
+    return Entry(**known, checks=tuple(checks))
 
 
 def _json_entry(e: Entry) -> dict:
@@ -384,7 +398,8 @@ def _block_line(e: Entry) -> str:
         return f'{e.input}. by formula'
     assert e.confirmed_at is not None  # Entry's invariant
     when = datetime.datetime.fromisoformat(e.confirmed_at).strftime('%Y-%m-%d %H:%M %Z')
-    return f'{e.input}. "{e.said}" · confirmed by {e.confirmed_by}, {when}'
+    line = f'{e.input}. "{e.said}" · confirmed by {e.confirmed_by}, {when}'
+    return line + ''.join(f'\n   past a check: {c}' for c in e.checks)
 
 
 def _where(e: Entry) -> str:

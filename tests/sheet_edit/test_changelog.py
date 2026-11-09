@@ -40,6 +40,7 @@ TESTER = Confirmation(by='tester', at=WHEN)
 
 SOLVENT = 'solvent 2 to DMSO for samples 1 to 3'
 SPEED_4000, SPEED_5000 = 'speed 4000', 'speed 5000'
+SPEED_UP = 'speed up to 4000'  # answered 4400: a check
 VARIATION_SAID = 'variation 30min for sample 1'
 SPEED_6000_ONE = 'speed 6000 for sample 1'
 
@@ -59,6 +60,7 @@ PROPOSALS = {
         )
     ],
     SPEED_4000: [edit(SPEED, 'all', '3000', '4000', SPEED_4000)],
+    SPEED_UP: [edit(SPEED, 'all', '3000', '4400', SPEED_UP)],
     SPEED_5000: [edit(SPEED, 'all', '4000', '5000', SPEED_5000)],
     SPEED_6000_ONE: [
         edit(
@@ -499,3 +501,19 @@ def test_render(with_results):
 def test_render_without_changes(synthetic_xlsx):
     log = changelog(synthetic_xlsx, [], {}, MODEL)
     assert render(log).endswith('\n\nno cell changed')
+
+
+def test_an_edit_confirmed_past_a_check_says_so(synthetic_xlsx):
+    log, _ = logged(synthetic_xlsx, [SPEED_UP])
+    checks = {e.checks for e in log.entries}
+    said = "Rotation speed [rpm] (2: Spin Coating): '4400' is not in your words"
+    assert checks == {(f'{said}; you said 4000',)}
+    assert from_json(to_json(log)) == log
+    assert f'   past a check: {said}' in render(log)
+    # a log written before checks existed reads as one without them
+    data = json.loads(to_json(log))
+    data.pop('digest')
+    for entry in data['entries']:
+        del entry['checks']
+    data['digest'] = _digest(data)
+    assert {e.checks for e in from_json(json.dumps(data)).entries} == {()}

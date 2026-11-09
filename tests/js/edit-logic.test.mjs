@@ -235,3 +235,9 @@ test("confirm all leaves out the edits a word check marked", () => {
   assert.deepEqual(bulkKeys([report]), ["k1", "k3"]);
   assert.deepEqual(bulkKeys([{ ...report, confirmed: ["k1"] }]), ["k3"]);
 });
+
+test("confirm all names the edits it leaves out", () => {
+  assert.equal(confirmAllLabel(2, 1), "Confirm 2 edits without a check");
+  assert.equal(confirmAllLabel(1, 3), "Confirm 1 edit without a check");
+  assert.equal(confirmAllLabel(2), "Confirm all 2 edits");
+});

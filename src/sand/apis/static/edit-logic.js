@@ -87,7 +87,9 @@ export function inputState(item, report, jobRunning, canConfirm) {
 }
 
 // the label of the button that confirms every pending edit
-export function confirmAllLabel(pending) {
+// `checked`: pending edits with a check, which it leaves out
+export function confirmAllLabel(pending, checked = 0) {
+  if (checked) return "Confirm " + pending + (pending === 1 ? " edit" : " edits") + " without a check";
   if (pending === 1) return "Confirm the edit";
   return "Confirm all " + pending + " edits";
 }

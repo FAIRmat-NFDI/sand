@@ -10,7 +10,7 @@
 
 import { errorDetail, experimentUrl } from "./api.js";
 import {
-  bulkKeys, confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputsToRead,
+  bulkKeys, confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputsToRead, pendingKeys,
   readKey, reportsByEntry, unwrittenCount, unwrittenKey, writtenEdits,
 } from "./edit-logic.js";
 import { requireExperiment, showSheet } from "./experiments.js";
@@ -121,13 +121,14 @@ function updateProgress() {
   setOverviewUpdates(updates);
 }
 
-function showPending(keys) {
+// `checked`: the pending edits with a check, confirmed one by one
+function showPending(keys, checked = 0) {
   pending = keys;
   // this experiment's own confirm-all brings the button back itself
   if (current && confirming === current.entry_id) return;
   confirmAllBtn.hidden = keys.length === 0;
   confirmAllBtn.disabled = false;
-  confirmAllLabelEl.textContent = confirmAllLabel(keys.length);
+  confirmAllLabelEl.textContent = confirmAllLabel(keys.length, checked);
 }
 
 // the sheet to download is the last run's: not while a job runs, not
@@ -227,7 +228,13 @@ async function poll(experiment, generation) {
     ? { ...reportsShown, ...reportsByEntry(status) }
     : reportsByEntry(status);
   setReports(reportsShown, running, confirmHandler(experiment));
-  showPending(status.phase === "completed" ? bulkKeys(status.inputs || []) : []);
+  if (status.phase === "completed") {
+    const all = status.inputs || [];
+    const bulk = bulkKeys(all);
+    showPending(bulk, pendingKeys(all).length - bulk.length);
+  } else {
+    showPending([]);
+  }
   if (status.phase === "completed") {
     editedReady = true;
     idle();

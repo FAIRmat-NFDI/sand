@@ -695,7 +695,7 @@ def substrate_values(synthetic_xlsx, values):
 
 
 def test_three_values_are_listed_and_four_counted(synthetic_xlsx):
-    # a foreign `old` is refused, and the refusal says what the rows hold
+    # a foreign `old` is a check, and the refusal says what the rows hold
     three = checked(
         ground(
             edit(
@@ -764,7 +764,7 @@ def test_a_number_stored_as_text_is_the_same_value(synthetic_xlsx):
             lambda ws: [ws.__setitem__(f'{speed}{r}', '3000') for r in range(3, 9)],
         )
     )
-    # one value to the user: the strict rule, an empty `old` is refused
+    # one value to the user: the strict rule, an empty `old` is a check
     why = checked(ground(edit(old=None), mixed))
     assert why.endswith("holds '3000' on samples 1–5, 7–13, not empty")
     # nor does 3000.0 differ: one amount, however the cells spell it
@@ -833,7 +833,7 @@ def test_a_column_that_counts_up_is_set_for_all_samples(counting):
         counting,
     )
     assert isinstance(held, Grounded) and held.rows == ALL_ROWS[1:]
-    # a value none of them holds: refused, the values counted the same way
+    # a value none of them holds: a check, the values counted the same way
     why = checked(
         ground(
             edit(
@@ -899,7 +899,7 @@ def test_a_number_not_said_is_checked(catalog):
         "Rotation speed [rpm] (2: Spin Coating): '4100' is not in your words; you said 4000"
     )
     why = checked(ground(edit(new='4000', said='speed 4 krpm'), catalog))
-    assert why.endswith('you said 4 krpm')  # the LLM converted: refused, see #108
+    assert why.endswith('you said 4 krpm')  # the LLM converted: a check, see #108
 
 
 def test_a_spoken_number_is_a_note(catalog):
@@ -1225,3 +1225,10 @@ def test_real_kit_sheet(real_kit_xlsx):
     assert result.notes == ('samples 20 to 25: no sample 22, applied to 5 samples',)
     noop = ground(edit(target=speed, new='3000', said='speed 3000'), catalog)
     assert noop.status == 'noop'
+
+
+def test_a_type_refusal_also_lists_the_checks(catalog):
+    # a word in a number column, and an `old` the cells do not hold
+    why = refused(ground(edit(old='2000', new='fast', said='speed fast'), catalog))
+    assert why.startswith('Rotation speed [rpm] (2: Spin Coating) holds numbers')
+    assert "holds '3000'" in why and "not '2000'" in why
