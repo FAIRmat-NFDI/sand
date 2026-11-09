@@ -37,6 +37,7 @@ from sand.sheet_edit.numbers import (
     Number,
     UnitMismatch,
     check_unit,
+    comparable,
     numbers,
     same_unit,
     value,
@@ -764,7 +765,7 @@ def value_problems(
         notes = (
             [f'{where}: read from {spoken[0]!r}'] if len(spoken) == len(matches) else []
         )
-        return _unit_said(number, matches, target), notes, []
+        return _unit_said(number, matches, target, catalog), notes, []
     if candidates:
         said_numbers = ', '.join(c.text for c in candidates)
         return [f'{where} is not in your words; you said {said_numbers}'], [], []
@@ -773,15 +774,30 @@ def value_problems(
     return [], [], doubt
 
 
-def _unit_said(number: Number, matches: list[Number], target: ColumnInfo) -> list[str]:
-    """`new` without a unit, the words with one the column does not have:
-    "rotation speed 500 rpm/s" answered "500" for a [rpm] column. U reads
-    only `new`, so the unit the model left out is compared here (#165)."""
-    if number.unit is not None or not target.unit:
+def _unit_said(
+    number: Number, matches: list[Number], target: ColumnInfo, catalog: Catalog
+) -> list[str]:
+    """The unit said with the value is not the column's, and `new` does not
+    carry it (the model left it out, or wrote the column's): "rotation
+    speed 500 rpm/s" answered "500" for a [rpm] column (#165). Only units
+    of the column's quantity or of another column of the sheet count:
+    'uh' and 'um' after a spoken number are words, not units."""
+    if not target.unit:
         return []
+    if number.unit is not None and not same_unit(number.unit, target.unit):
+        return []  # U refuses it
     if any(m.unit is None or same_unit(m.unit, target.unit) for m in matches):
         return []
-    return [f'{column_name(target)} is in {target.unit}; you said {matches[0].text}']
+    units = {c.unit for c in catalog.columns if c.unit}
+    meant = [
+        m
+        for m in matches
+        if comparable(m.unit, target.unit) or any(same_unit(m.unit, u) for u in units)
+    ]
+    if not meant:
+        return []
+    said = ', '.join(m.text for m in meant)
+    return [f'{column_name(target)}: you said {said}, the column is in {target.unit}']
 
 
 def value_numbers(
@@ -879,6 +895,10 @@ def _typed(new: str, target: ColumnInfo) -> object:
             raise Refusal(f'{name} holds dates written as 20250101; {new!r} is not one')
         if target.type in ('int', 'float'):
             raise Refusal(f'{name} holds numbers; {new!r} is not a number')
+        if target.unit and any(ch.isdigit() for ch in new):
+            # '500 r/min' into an empty [rpm] column: a number with words
+            # code cannot read, never written as text
+            raise Refusal(f'{name} is in {target.unit}; {new!r} is not a number')
         return new  # an empty or mixed column keeps what was said
     try:
         check_unit(number, target.unit)  # U

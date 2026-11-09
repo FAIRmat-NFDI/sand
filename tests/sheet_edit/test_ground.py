@@ -69,6 +69,16 @@ def words(synthetic_xlsx):
     return build(edited(synthetic_xlsx, change))
 
 
+@pytest.fixture(scope='module')
+def acceleration(synthetic_xlsx):
+    def change(ws):  # the lab's sheet has an rpm/s column
+        ws[f'{letter("7: Spin Coating", "Rotation time [s]")}2'] = (
+            'Acceleration [rpm/s]'
+        )
+
+    return build(edited(synthetic_xlsx, change))
+
+
 def edit(target=SPEED, rows='all', **fields):
     fields = {
         'anchor': None,
@@ -1234,19 +1244,58 @@ def test_a_type_refusal_also_lists_the_checks(catalog):
     assert "holds '3000'" in why and "not '2000'" in why
 
 
-def test_a_unit_said_that_the_column_does_not_have_is_a_check(catalog):
+def test_a_unit_said_that_the_column_does_not_have_is_a_check(catalog, acceleration):
     # the model left out the unit the user said: U never sees it (#165)
-    result = ground(edit(new='500', said='spin coating 2 speed 500 rpm/s'), catalog)
+    said = 'spin coating 2 speed 500 rpm/s'
+    result = ground(edit(new='500', said=said), acceleration)
     assert checked(result) == (
-        'Rotation speed [rpm] (2: Spin Coating) is in rpm; you said 500 rpm/s'
+        'Rotation speed [rpm] (2: Spin Coating): you said 500 rpm/s, '
+        'the column is in rpm'
     )
-    result = ground(
-        edit(ANNEAL_TIME, old='10', new='2', said='annealing time 2 hours'), catalog
-    )
-    assert 'is in min; you said 2 hours' in checked(result)
-    # the column's own unit, another spelling of it, or no unit: no check
-    for said in ('speed 500 rpm', 'speed 500 RPM', 'speed 500'):
-        result = ground(edit(new='500', said=said), catalog)
-        assert isinstance(result, Grounded) and result.checks == (), said
-    # the unit kept in `new`: U refuses, as before
+    hours = {'old': '10', 'said': 'annealing time 2 hours'}
+    for new in ('2', '2 min'):  # left out, or swapped for the column's
+        result = ground(edit(ANNEAL_TIME, new=new, **hours), catalog)
+        assert 'you said 2 hours, the column is in min' in checked(result), new
+    # only the mentions with another unit are quoted
+    said = 'annealing time 100 °C for 100 s'
+    result = ground(edit(ANNEAL_TIME, old='10', new='100', said=said), catalog)
+    assert 'you said 100 °C, 100 s,' in checked(result)
+
+
+@pytest.mark.parametrize(
+    'said',
+    [
+        'speed 500 rpm',
+        'speed 500 RPM',
+        'speed 500 revolutions per minute',
+        'speed 500',
+        # words after a spoken number, not units
+        'step 2 rotation speed five hundred uh for all the samples',
+        'speed 500 um for all samples',
+        'speed 500 are fine',
+    ],
+)
+def test_no_unit_check_for_the_columns_unit_or_words(catalog, said):
+    result = ground(edit(new='500', said=said), catalog)
+    assert isinstance(result, Grounded) and result.checks == (), said
+
+
+def test_a_unit_kept_in_the_value_is_still_the_unit_checks(catalog):
     refused(ground(edit(new='500 rpm/s', said='speed 500 rpm/s'), catalog))
+    # another spelling of the column's unit is the column's unit
+    result = ground(
+        edit(new='500 revolutions per minute', said='speed 500 revolutions per minute'),
+        catalog,
+    )
+    assert isinstance(result, Grounded) and result.value == 500  # noqa: PLR2004
+    # a number with words code cannot read, into an empty [rpm] column:
+    # refused, never written as text
+    why = refused(
+        ground(
+            edit('C069', old=None, new='500 r/min', said='7 speed 500 r/min'), catalog
+        )
+    )
+    assert (
+        why
+        == "Rotation speed [rpm] (7: Spin Coating) is in rpm; '500 r/min' is not a number"
+    )

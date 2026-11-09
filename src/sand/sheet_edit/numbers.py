@@ -175,11 +175,27 @@ def check_unit(number: Number, header_unit: str | None) -> None:
 
 
 def same_unit(said: str, header: str) -> bool:
-    """Whether `said` is a spelling of the header's unit; never converts."""
+    """Whether `said` is the header's unit, in any spelling: 'revolutions
+    per minute' is rpm, 'mmol/L' is mM. Never converts a value."""
     a, b = _unit(said), _unit(header)
     if a is None or b is None:  # a unit pint does not know: spelling must match
         return said.strip() == header.strip()
-    return a == b
+    if a == b:
+        return True
+    try:
+        factor = _registry().Quantity(1, a).to(b).magnitude
+    except Exception:  # another dimension, or an offset unit (°C, K)
+        return False
+    return abs(factor - 1) < 1e-9  # noqa: PLR2004
+
+
+def comparable(said: str, header: str) -> bool:
+    """Whether the two units measure the same quantity: h and min do, rpm/s
+    and rpm do not."""
+    a, b = _unit(said), _unit(header)
+    if a is None or b is None:
+        return False
+    return a.dimensionality == b.dimensionality
 
 
 @lru_cache(maxsize=1)
