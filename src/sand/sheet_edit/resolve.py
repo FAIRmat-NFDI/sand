@@ -216,24 +216,27 @@ def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdi
     for key, group in by_a.items():
         edit = group[0]
         if key not in by_b:
-            doubt(edit, _ONE_PASS)
+            for reading in _readings(group):
+                doubt(reading, _ONE_PASS)
             continue
-        pointed = _first_per_anchor([*group, *by_b[key]])
+        both = [*group, *by_b[key]]
+        pointed = _first_per_anchor(both)
         if len(pointed) > 1:
             # the same write pointed at through different cells: each
             # pointer is a reading
             for e in pointed.values():
                 doubt(e, _DIFFER)
-        elif hedged & {_quote(edit.said), _quote(by_b[key][0].said)}:
-            # the passes may cut the quote differently: a hedge on either
-            # pass's quote counts
+        elif hedged & {_quote(e.said) for e in both}:
+            # the passes (and repeats) may cut the quote differently: a
+            # hedge on any of these quotes counts
             doubt(edit, _HEDGED)
         else:
             # a pointer either pass gave is kept, so that ground checks it
             edits.append(next(iter(pointed.values()), edit))
     for key, group in by_b.items():
         if key not in by_a:
-            doubt(group[0], _ONE_PASS)
+            for reading in _readings(group):
+                doubt(reading, _ONE_PASS)
     seen: set[tuple] = set()
     unresolved: list[Unresolved] = []
     for item in [*a.unresolved, *b.unresolved]:
@@ -277,6 +280,12 @@ def _by_write(edits: list[Edit], catalog: Catalog) -> dict[AgreementKey, list[Ed
     for edit in edits:
         groups.setdefault(_agreement_key(edit, catalog), []).append(edit)
     return groups
+
+
+def _readings(group: list[Edit]) -> list[Edit]:
+    """One pass's repeats of a write, as the user sees them: one reading
+    per anchor, or the first edit when none has one."""
+    return list(_first_per_anchor(group).values()) or group[:1]
 
 
 def _first_per_anchor(edits: list[Edit]) -> dict[tuple[str, str], Edit]:

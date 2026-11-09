@@ -354,6 +354,26 @@ def test_an_anchor_is_no_disagreement_and_is_kept(catalog, synthetic_xlsx):
     assert [r.new for r in item.readings] == ['300', '400']
 
 
+def test_repeats_of_one_write_in_a_pass_are_all_compared(catalog):
+    said = 'time of the DMSO 300'
+    time = {'target': TIME_2, 'said': said, 'new': '300', 'old': '600'}
+    dmso = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'DMSO'})
+    ipa = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'IPA'})
+    # only one pass, through two anchors: both are shown
+    item = only(ask(catalog, answer(dmso, ipa), answer()), Uncertain)
+    assert [r.anchor.equals for r in item.readings] == ['DMSO', 'IPA']
+    # a hedge on the quote of a later repeat counts too
+    repeat = {**time, 'said': 'time 300', 'anchor': None}
+    hedge = {'reason': 'not_found', 'said': 'time 300'}
+    proposal = ask(
+        catalog,
+        answer(edit(**{**time, 'anchor': None}), edit(**repeat)),
+        answer(edit(**{**time, 'anchor': None}), unresolved=[hedge]),
+    )
+    assert proposal.edits == []
+    assert proposal.unresolved[0].why == 'a pass also left these words unresolved'
+
+
 def test_unresolved_items_of_either_pass_are_kept_once(catalog):
     ambiguous = {
         'reason': 'ambiguous',
