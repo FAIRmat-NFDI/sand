@@ -8,12 +8,13 @@ is compared with what the case expects: the edits (column, samples,
 value) that must be ready, the columns that must be flagged (refused or
 left unresolved, never written), the unresolved kinds that must be said.
 
-    uv run --directory ~/fairmat/nomad-distro-dev python \\
+    ~/fairmat/nomad-distro-dev/.venv/bin/python \\
         evals/sheet_edit/run_testcases.py [--model gemini/...] [--only ID] [--show]
 
-Run from the distribution's environment: that is where the engine and
-the provider's key live (GEMINI_API_KEY, read by the engine, never by
-this script). Every model answer is cached under cache/ by model and
+Run with the distribution's Python: the engine is installed there, and
+sand too (editable, so this checkout's code runs). Not `uv run` in the
+distribution, which may sync it. The provider's key comes from the shell
+(GEMINI_API_KEY, read by the engine, never by this script). Every model answer is cached under cache/ by model and
 prompt, so a rerun after a prompt change only pays for the prompts that
 changed. Never run in CI.
 """
@@ -412,7 +413,9 @@ def run(
     if not chosen:
         raise ValueError(f'no case {only!r}')
     verdicts = []
-    for case in chosen:
+    for number, case in enumerate(chosen, 1):
+        # progress on stderr: a case is two model calls, a few seconds
+        print(f'{number}/{len(chosen)} {case.id}', file=sys.stderr, flush=True)
         try:
             verdicts.append(judge(case, interpret_instruction(case.text, sheet, ask)))
         except JobWouldFail as why:

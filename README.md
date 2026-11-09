@@ -266,9 +266,13 @@ relies on it, and after every change to the prompts or the model, it is
 measured against the real model:
 
 ```sh
-cd ~/fairmat/nomad-distro-dev   # the environment with the engine and the key
-uv run python ~/fairmat/sand/evals/sheet_edit/run_testcases.py --model gemini/...
+cd ~/fairmat/sand   # the distribution's Python: the engine is installed there
+~/fairmat/nomad-distro-dev/.venv/bin/python evals/sheet_edit/run_testcases.py --model gemini/...
 ```
+
+The key comes from the shell (`GEMINI_API_KEY`). Not `uv run` in the
+distribution, which may sync it. Each case is two model calls; the
+script prints one progress line per case, the results at the end.
 
 `evals/sheet_edit/testcases.json` holds about twenty instructions on the
 synthetic sheet, each with the edits it must produce (column, samples,
