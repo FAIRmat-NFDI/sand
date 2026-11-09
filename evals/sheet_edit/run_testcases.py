@@ -14,9 +14,8 @@ left unresolved, never written), the unresolved kinds that must be said.
 Run with the distribution's Python: the engine is installed there, and
 sand too (editable, so this checkout's code runs). Not `uv run` in the
 distribution, which may sync it. The provider's key comes from the shell
-(GEMINI_API_KEY, read by the engine, never by this script). Every model answer is cached under cache/ by model and
-prompt, so a rerun after a prompt change only pays for the prompts that
-changed. Never run in CI.
+(GEMINI_API_KEY, read by the engine, never by this script). Every answer is kept as cache/<model>/<case id>.<pass>.json,
+so a rerun only asks the questions whose prompt changed. Never run in CI.
 """
 
 from __future__ import annotations
@@ -26,6 +25,7 @@ import copy
 import hashlib
 import json
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -43,7 +43,7 @@ from sand.sheet_edit.apply import (  # noqa: E402
 from sand.sheet_edit.catalog import Catalog, build  # noqa: E402
 from sand.sheet_edit.edits import Unreadable  # noqa: E402
 from sand.sheet_edit.ground import Grounded, Refused, same_value  # noqa: E402
-from sand.sheet_edit.resolve import CallLLM, agree, prompts, read_answer  # noqa: E402
+from sand.sheet_edit.resolve import agree, prompts, read_answer  # noqa: E402
 
 DEFAULT_MODEL = 'gemini/gemini-3.6-flash'  # the lab's, as nomad.yaml sets it
 TEMPERATURE = 0  # the job's (actions/edit/workflows.py)
@@ -335,30 +335,35 @@ class JobWouldFail(Exception):
     that is not JSON, the provider unreachable."""
 
 
-def cached_model(model: str, cache: Path) -> CallLLM:
+# (the slot's name, system prompt, user text, schema) -> the answer text
+Ask = Callable[[str, str, str, dict], str]
+PASSES = {False: 'first', True: 'second'}  # resolve.py's two opinions
+
+
+def cached_model(model: str, cache: Path) -> Ask:
     """The job's way of asking: the extraction library's engine, the two
     prompts joined as the worker joins them, temperature 0, the answer
     parsed and checked against the schema, the worker's retries with its
-    wording. Answers, and giving up, are kept on disk by model and prompt."""
+    wording. Each answer, or giving up, is kept as
+    cache/<model>/<case id>.<pass>.json; a file whose prompt has changed
+    since is asked again and overwritten."""
     from nomad_llm_extraction.pipeline.schema_filling.llm_engine import LiteLLMEngine
     from nomad_llm_extraction.utils.utils import validate_with_schema
 
     engine = LiteLLMEngine(model_name=model)
-    cache.mkdir(parents=True, exist_ok=True)
+    folder = cache / model.rpartition('/')[2]
+    folder.mkdir(parents=True, exist_ok=True)
 
-    def call(system: str, text: str, schema: dict) -> str:
+    def call(name: str, system: str, text: str, schema: dict) -> str:
         prompt = f'{system}\n\n{text}'
-        key = hashlib.sha256(
-            json.dumps([model, prompt, schema], sort_keys=True).encode()
-        ).hexdigest()
-        slot = cache / f'{key}.json'
+        mark = fingerprint(model, prompt, schema)
+        slot = folder / f'{name}.json'
         if slot.exists():
             kept = json.loads(slot.read_text())
-            if kept.get('error'):
-                raise ModelGaveUp(kept['error'])
-            answer = kept['answer']
-            # older files kept the answer as text
-            return answer if isinstance(answer, str) else json.dumps(answer)
+            if kept.get('fingerprint') == mark:
+                if kept.get('error'):
+                    raise ModelGaveUp(kept['error'])
+                return json.dumps(kept['answer'])
         retry = ''
         raw = ''
         for _ in range(MAX_RETRIES):
@@ -380,22 +385,27 @@ def cached_model(model: str, cache: Path) -> CallLLM:
                 raise JobWouldFail(f'the answer is not JSON: {why}') from why
             valid, message = validate_with_schema(data, schema)
             if valid:
-                keep(slot, model, text, answer=data)
+                keep(slot, model, mark, text, answer=data)
                 return json.dumps(data)
             retry += (
                 f'\n\nPrevious attempt output:\n{raw}\n\nNote: The previous '
                 f'attempt resulted in an error: ValidationError: {message}. '
                 'Please try again and ensure the output adheres to the schema.'
             )
-        keep(slot, model, text, error=GAVE_UP, raw=raw)
+        keep(slot, model, mark, text, error=GAVE_UP, raw=raw)
         raise ModelGaveUp(GAVE_UP)
 
     return call
 
 
-def keep(slot: Path, model: str, text: str, **kept: object) -> None:
-    """One cached answer, readable: the instruction it answers, which pass
-    (the second reads the steps last to first), the answer as JSON."""
+def fingerprint(model: str, prompt: str, schema: dict) -> str:
+    """What the answer was given for: a changed prompt asks again."""
+    question = json.dumps([model, prompt, schema], sort_keys=True)
+    return hashlib.sha256(question.encode()).hexdigest()
+
+
+def keep(slot: Path, model: str, mark: str, text: str, **kept: object) -> None:
+    """One cached answer, readable: the instruction, the answer as JSON."""
     said = text.rpartition('Instruction: ')[2]
     head = {'model': model, 'instruction': said}
     if isinstance(kept.get('raw'), str):
@@ -403,18 +413,20 @@ def keep(slot: Path, model: str, text: str, **kept: object) -> None:
             kept['raw'] = json.loads(kept['raw'])
         except json.JSONDecodeError:
             pass
-    slot.write_text(json.dumps({**head, **kept}, indent=2, ensure_ascii=False) + '\n')
+    whole = {**head, **kept, 'fingerprint': mark}
+    slot.write_text(json.dumps(whole, indent=2, ensure_ascii=False) + '\n')
 
 
-def asking(call: CallLLM) -> Resolve:
-    """The worker's resolve: the two prompts, each answer read, a model
-    that gave up an unreadable opinion, the opinions agreed."""
+def asking(call: Ask, case_id: str) -> Resolve:
+    """The worker's resolve for one case: the two prompts, each answer
+    read, a model that gave up an unreadable opinion, the opinions agreed."""
 
     def ask(text: str, catalog: Catalog):
         opinions = []
         for p in prompts(text, catalog):
+            name = f'{case_id}.{PASSES[p.second_opinion]}'
             try:
-                answer = call(p.system, p.text, p.schema)
+                answer = call(name, p.system, p.text, p.schema)
             except ModelGaveUp as why:
                 opinions.append(
                     Unreadable(reason='unreadable', detail=str(why), said=text)
@@ -427,9 +439,8 @@ def asking(call: CallLLM) -> Resolve:
 
 
 def run(
-    cases: list[Case], sheet: bytes, call: CallLLM, only: str | None = None
+    cases: list[Case], sheet: bytes, call: Ask, only: str | None = None
 ) -> list[Verdict]:
-    ask = asking(call)
     chosen = [c for c in cases if only is None or c.id == only]
     if not chosen:
         raise ValueError(f'no case {only!r}')
@@ -437,6 +448,7 @@ def run(
     for number, case in enumerate(chosen, 1):
         # progress on stderr: a case is two model calls, a few seconds
         print(f'{number}/{len(chosen)} {case.id}', file=sys.stderr, flush=True)
+        ask = asking(call, case.id)
         try:
             verdicts.append(judge(case, interpret_instruction(case.text, sheet, ask)))
         except JobWouldFail as why:

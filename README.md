@@ -288,7 +288,7 @@ and the count of edits nobody asked for (0).
 - `--model NAME` asks another model; the default is the one `nomad.yaml`
   sets for the lab.
 
-Model answers are kept in `evals/sheet_edit/cache/`, so a rerun asks the
-model only the questions that changed; delete the folder for fresh
-answers. The script never runs in CI; `tests/sheet_edit/test_testcases.py`
+Model answers are kept as `evals/sheet_edit/cache/<model>/<case id>.first.json`
+and `.second.json`, one per pass, so a rerun asks the model only the
+questions whose prompt changed; delete the folder for fresh answers. The script never runs in CI; `tests/sheet_edit/test_testcases.py`
 checks the cases and the judgement offline.

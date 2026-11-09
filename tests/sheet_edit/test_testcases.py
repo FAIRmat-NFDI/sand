@@ -230,14 +230,14 @@ def test_the_model_giving_up_is_unreadable_and_a_bad_answer_fails_the_job(
 ):
     case = next(c for c in cases if c.id == 'range')
 
-    def gives_up(system, text, schema):
+    def gives_up(name, system, text, schema):
         raise rt.ModelGaveUp(rt.GAVE_UP)
 
     (verdict,) = rt.run([case], synthetic_xlsx, gives_up)
     assert verdict.flagged == 1 and not verdict.failed
     assert 'unreadable' in verdict.preview or 'could not be read' in verdict.preview
 
-    def not_json(system, text, schema):
+    def not_json(name, system, text, schema):
         raise rt.JobWouldFail('the answer is not JSON')
 
     (verdict,) = rt.run([case], synthetic_xlsx, not_json)
@@ -245,3 +245,15 @@ def test_the_model_giving_up_is_unreadable_and_a_bad_answer_fails_the_job(
     assert rt.summarize([verdict])['failed'] == 1
     with pytest.raises(ValueError, match='no case'):
         rt.run([case], synthetic_xlsx, not_json, only='nope')
+
+
+def test_each_pass_is_asked_under_the_case_id(cases, synthetic_xlsx):
+    case = next(c for c in cases if c.id == 'range')
+    names = []
+
+    def records(name, system, text, schema):
+        names.append(name)
+        raise rt.ModelGaveUp(rt.GAVE_UP)
+
+    rt.run([case], synthetic_xlsx, records)
+    assert names == ['range.first', 'range.second']
