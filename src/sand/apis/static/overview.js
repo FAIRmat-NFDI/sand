@@ -150,6 +150,15 @@ function renderSamples(groups) {
     });
     return;
   }
+  // the row heads name the first axis; the second, across the cells,
+  // needs its own head: its cells show bare values ("900 s")
+  const across = el("div", "sample-row sample-across");
+  across.append(el("div", "sample-axis"));
+  const acrossName = el("div", "sample-across-name");
+  acrossName.append(el("span", "sample-axis-name", axisText(groups.b)));
+  acrossName.append(el("span", "sample-axis-step", groups.b.step));
+  across.append(acrossName);
+  samplesBox.append(across);
   groups.rows.forEach((row, i) => {
     const line = el("div", "sample-row");
     const head = el("div", "sample-axis");
@@ -168,6 +177,9 @@ function renderSamples(groups) {
     line.append(cells);
     samplesBox.append(line);
   });
+  if (groups.also.length) {
+    samplesBox.append(el("p", "sample-also", "Also varies: " + groups.also.join(", ")));
+  }
 }
 
 // The overview of the shown sheet (the sheet view), or none.

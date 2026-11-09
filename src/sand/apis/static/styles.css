@@ -748,6 +748,28 @@ body {
   color: #9aa0aa;
 }
 
+/* the second axis of a cross, over its cells */
+.sample-across {
+  margin-bottom: -8px;
+}
+
+.sample-across-name {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.sample-across-name .sample-axis-step {
+  display: inline;
+}
+
+.sample-also {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #6b7079;
+}
+
 .sample-cells {
   flex: 1;
   display: grid;
