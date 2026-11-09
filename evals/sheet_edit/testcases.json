@@ -63,7 +63,7 @@
     },
     {
       "id": "info-column",
-      "why": "an Experiment Info column",
+      "why": "an Experiment Info column; the rule says old is null when samples differ, but the named samples hold one value: ground refuses a null old here",
       "text": "variation to 30min for samples 11 to 13",
       "expect": {"edits": [{"step": "Experiment Info", "column": "Variation", "rows": ["11", "12", "13"], "new": "30min"}]}
     },
@@ -138,7 +138,7 @@
     },
     {
       "id": "other-unit",
-      "why": "hours into a [min] column: not converted in code yet, so never written as said",
+      "why": "hours into a [min] column: not converted in code yet. If the model drops the unit and answers 2, ground writes 2 minutes: a known gap in the value check (issue #108)",
       "text": "annealing time of step 2 to 2 hours for all samples",
       "expect": {"edits": [], "flagged": [{"step": 2, "column": "Annealing time"}]}
     }

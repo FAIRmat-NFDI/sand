@@ -3,10 +3,10 @@
 Every case of a testcases file is run through `interpret_instruction`,
 the function the edit job runs, with the model answering the two passes
 the way the job's worker asks it (nomad-llm-extraction's engine, the
-same prompt, schema and temperature). What comes out is compared with
-what the case expects: the edits (column, samples, value) that must be
-ready, the columns that must be flagged (refused or left unresolved,
-never written), the unresolved kinds that must be said.
+same prompt, schema and temperature, the same retries). What comes out
+is compared with what the case expects: the edits (column, samples,
+value) that must be ready, the columns that must be flagged (refused or
+left unresolved, never written), the unresolved kinds that must be said.
 
     uv run --directory ~/fairmat/nomad-distro-dev python \\
         evals/sheet_edit/run_testcases.py [--model gemini/...] [--only ID] [--show]
@@ -31,14 +31,20 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path.insert(0, str(REPO / 'tests' / 'sheet_edit'))  # the synthetic sheet
 
-from sand.sheet_edit.apply import Interpretation, interpret_instruction  # noqa: E402
+from sand.sheet_edit.apply import (  # noqa: E402
+    Interpretation,
+    Resolve,
+    interpret_instruction,
+)
 from sand.sheet_edit.catalog import Catalog, build  # noqa: E402
+from sand.sheet_edit.edits import Unreadable  # noqa: E402
 from sand.sheet_edit.ground import Grounded, Refused, same_value  # noqa: E402
-from sand.sheet_edit.resolve import CallLLM, resolve  # noqa: E402
+from sand.sheet_edit.resolve import CallLLM, agree, prompts, read_answer  # noqa: E402
 
 DEFAULT_MODEL = 'gemini/gemini-2.5-flash'  # sand's default; pass nomad.yaml's
 TEMPERATURE = 0  # the job's (actions/edit/workflows.py)
-MAX_RETRIES = 3  # the extraction workflow's default
+MAX_RETRIES = 3  # the extraction workflow's max_retry_attempts
+GAVE_UP = 'Max retry attempts reached.'  # its message after the last retry
 INFO = 'Experiment Info'
 
 # the plan's gate before KIT uses it
@@ -51,7 +57,7 @@ TARGETS = {'precision': 99, 'flagged': 100, 'proposed': 95, 'refusals': 100}
 @dataclass(frozen=True)
 class Expected:
     """One expected edit, resolved on the sheet: Excel rows and the value
-    as `ground` would write it (None clears)."""
+    as said ('' clears)."""
 
     target: str
     name: str  # "Rotation speed (2: Spin Coating)"
@@ -89,25 +95,22 @@ def load_cases(path: Path, catalog: Catalog) -> list[Case]:
         )
     ids = [c.id for c in cases]
     if len(set(ids)) != len(ids):
-        raise ValueError(
-            f'case ids repeat: {sorted({i for i in ids if ids.count(i) > 1})}'
-        )
+        repeated = sorted({i for i in ids if ids.count(i) > 1})
+        raise ValueError(f'case ids repeat: {repeated}')
     return cases
 
 
 def column_id(step: int | str, column: str, catalog: Catalog) -> str:
     """The id of `column` in `step`, by the sheet's own words: the step's
     number (or "Experiment Info") and the header without its unit."""
-    section = INFO if step == INFO else f'{step}:'
+
+    def in_step(label: str) -> bool:
+        return label == INFO if step == INFO else label.startswith(f'{step}:')
+
     found = [
         c.id
         for c in catalog.columns
-        if (
-            c.column.section.label == INFO
-            if section == INFO
-            else c.column.section.label.startswith(section)
-        )
-        and _header(c.column.header) == column
+        if in_step(c.column.section.label) and _header(c.column.header) == column
     ]
     if len(found) != 1:
         raise ValueError(f'{column!r} in step {step!r}: {len(found)} columns match')
@@ -121,6 +124,8 @@ def _header(header: str) -> str:
 def rows_of(rows: str | list[str], catalog: Catalog) -> tuple[int, ...]:
     if rows == 'all':
         return tuple(s.row for s in catalog.samples)
+    if isinstance(rows, str):
+        raise ValueError(f'rows must be "all" or a list of sample labels, not {rows!r}')
     by_label = {s.label: s.row for s in catalog.samples}
     missing = [r for r in rows if r not in by_label]
     if missing:
@@ -130,9 +135,14 @@ def rows_of(rows: str | list[str], catalog: Catalog) -> tuple[int, ...]:
 
 def _expected(raw: dict, catalog: Catalog) -> Expected:
     target = column_id(raw['step'], raw['column'], catalog)
+    return Expected(
+        target, _name(target, catalog), rows_of(raw['rows'], catalog), raw['new']
+    )
+
+
+def _name(target: str, catalog: Catalog) -> str:
     column = next(c for c in catalog.columns if c.id == target)
-    name = f'{_header(column.column.header)} ({column.column.section.label})'
-    return Expected(target, name, rows_of(raw['rows'], catalog), raw['new'])
+    return f'{_header(column.column.header)} ({column.column.section.label})'
 
 
 # --- the judgement --------------------------------------------------------------
@@ -142,8 +152,9 @@ def _expected(raw: dict, catalog: Catalog) -> Expected:
 class Verdict:
     """How one case went. `proposed`/`flagged`/`missed` count the expected
     edits; `invented` and `collateral` are ready edits nobody asked for
-    (a wrong value, wrong rows); `written` is a flagged column that got
-    a ready edit, the worst outcome."""
+    (another column; the right column with other rows or value);
+    `written` is a flagged column that got a ready edit, the worst
+    outcome; `failed` is set when the job itself would have failed."""
 
     case: Case
     proposed: int = 0
@@ -153,6 +164,7 @@ class Verdict:
     collateral: int = 0
     written: int = 0
     refused_ok: bool = True  # the unresolved kinds asked for were said
+    failed: str = ''
     notes: list[str] = field(default_factory=list)
     preview: str = ''
 
@@ -161,7 +173,7 @@ class Verdict:
         """Every asked edit proposed as asked, nothing else written, the
         refusals asked for said. A flagged edit is safe, not a pass."""
         wrong = self.flagged or self.missed or self.invented or self.collateral
-        return not wrong and not self.written and self.refused_ok
+        return not wrong and not self.written and self.refused_ok and not self.failed
 
 
 def judge(case: Case, result: Interpretation) -> Verdict:
@@ -183,7 +195,7 @@ def judge(case: Case, result: Interpretation) -> Verdict:
             # ready edit is counted below, the asked one is missed
             v.missed += 1
             v.notes.append(f'{want.name}: proposed with other rows or value')
-        elif want.target in refused or kinds:
+        elif want.target in refused or _unresolved_about(want.target, result):
             v.flagged += 1
             v.notes.append(f'{want.name}: flagged, not proposed')
         else:
@@ -193,7 +205,7 @@ def judge(case: Case, result: Interpretation) -> Verdict:
     for g in ready:
         if g in matched:
             continue
-        name = _name(g, result.catalog)
+        name = _name(g.edit.target, result.catalog)
         if g.edit.target in case.flagged:
             v.written += 1
             v.notes.append(f'{name}: WRITTEN, must be flagged')
@@ -212,21 +224,39 @@ def judge(case: Case, result: Interpretation) -> Verdict:
     return v
 
 
+def _unresolved_about(target: str, result: Interpretation) -> bool:
+    """An unresolved item that covers this column: an unreadable answer
+    covers everything; uncertain readings and ambiguous candidates name
+    their columns. A not-found about other words covers nothing."""
+    for u in result.proposal.unresolved:
+        if u.reason == 'unreadable':
+            return True
+        if u.reason == 'uncertain' and any(r.target == target for r in u.readings):
+            return True
+        if u.reason == 'ambiguous' and target in u.candidates:
+            return True
+    return False
+
+
 def _same(got: Grounded, want: Expected) -> bool:
     if tuple(sorted(got.rows)) != want.rows:
         return False
     if want.new == '':
         return got.value is None
-    return got.value is not None and same_value(want.new, got.value)
+    if got.value is None:
+        return False
+    if isinstance(got.value, str):
+        # text the way the job accepts it: case and spacing aside
+        return _norm(got.value) == _norm(want.new)
+    return same_value(want.new, got.value)
+
+
+def _norm(text: str) -> str:
+    return ' '.join(text.split()).casefold()
 
 
 def _value(g: Grounded) -> object:
     return '' if g.value is None else g.value
-
-
-def _name(g: Grounded, catalog: Catalog) -> str:
-    column = next(c for c in catalog.columns if c.id == g.edit.target)
-    return f'{_header(column.column.header)} ({column.column.section.label})'
 
 
 # --- the numbers ----------------------------------------------------------------
@@ -238,10 +268,13 @@ def summarize(verdicts: list[Verdict]) -> dict[str, object]:
     flagged = sum(v.flagged for v in verdicts)
     wrong = sum(v.invented + v.collateral + v.written for v in verdicts)
     refusals_asked = [v for v in verdicts if v.case.unresolved or v.case.flagged]
-    refusals_ok = [v for v in refusals_asked if v.refused_ok and not v.written]
+    refusals_ok = [
+        v for v in refusals_asked if v.refused_ok and not v.written and not v.failed
+    ]
     return {
         'cases': len(verdicts),
         'passed': sum(v.ok for v in verdicts),
+        'failed': sum(bool(v.failed) for v in verdicts),
         'precision': _percent(proposed, proposed + wrong),
         'proposed': _percent(proposed, asked),
         'flagged': _percent(proposed + flagged, asked),
@@ -266,7 +299,10 @@ def report(verdicts: list[Verdict], show: bool) -> str:
             lines.extend(f'{"":<18}   | {line}' for line in v.preview.splitlines())
     s = summarize(verdicts)
     lines.append('')
-    lines.append(f'{s["passed"]}/{s["cases"]} cases pass')
+    passed = f'{s["passed"]}/{s["cases"]} cases pass'
+    if s['failed']:
+        passed += f' · {s["failed"]} would fail the job'
+    lines.append(passed)
     numbers = []
     for key in ('precision', 'proposed', 'flagged', 'refusals'):
         value = s[key]
@@ -285,13 +321,23 @@ def report(verdicts: list[Verdict], show: bool) -> str:
 # --- the model ------------------------------------------------------------------
 
 
+class ModelGaveUp(Exception):
+    """No answer fit the schema in MAX_RETRIES: the worker's
+    'Max retry attempts reached.', an unreadable opinion."""
+
+
+class JobWouldFail(Exception):
+    """What fails the whole job on the worker: an empty answer, an answer
+    that is not JSON, the provider unreachable."""
+
+
 def cached_model(model: str, cache: Path) -> CallLLM:
     """The job's way of asking: the extraction library's engine, the two
     prompts joined as the worker joins them, temperature 0, the answer
-    parsed and checked against the schema, a few retries with the error
-    quoted back. Answers are kept on disk by model and prompt."""
-    from jsonschema import ValidationError, validate
+    parsed and checked against the schema, the worker's retries with its
+    wording. Answers, and giving up, are kept on disk by model and prompt."""
     from nomad_llm_extraction.pipeline.schema_filling.llm_engine import LiteLLMEngine
+    from nomad_llm_extraction.utils.utils import validate_with_schema
 
     engine = LiteLLMEngine(model_name=model)
     cache.mkdir(parents=True, exist_ok=True)
@@ -303,39 +349,78 @@ def cached_model(model: str, cache: Path) -> CallLLM:
         ).hexdigest()
         slot = cache / f'{key}.json'
         if slot.exists():
-            return json.loads(slot.read_text())['answer']
+            kept = json.loads(slot.read_text())
+            if kept.get('error'):
+                raise ModelGaveUp(kept['error'])
+            return kept['answer']
         retry = ''
         raw = ''
         for _ in range(MAX_RETRIES):
-            raw = engine.generate(prompt + retry, schema, {'temperature': TEMPERATURE})
+            try:
+                raw = engine.generate(
+                    prompt + retry, schema, {'temperature': TEMPERATURE}
+                )
+            except Exception as why:
+                raise JobWouldFail(f'the model call failed: {why}') from why
+            if not raw:
+                raise JobWouldFail('the model answered nothing')
             try:
                 data = json.loads(raw)
-                validate(data, schema)
-            except (json.JSONDecodeError, ValidationError) as why:
-                error = str(why).partition('\n')[0]
-                retry += (
-                    f'\n\nPrevious attempt output:\n{raw}\n\nNote: The previous '
-                    f'attempt resulted in an error: {error}. Please try again and '
-                    'ensure the output adheres to the schema.'
-                )
-                continue
-            answer = json.dumps(data)
-            slot.write_text(json.dumps({'model': model, 'answer': answer}))
-            return answer
-        # the worker reports this as unreadable; the raw text says why
-        return raw
+            except json.JSONDecodeError as why:
+                raise JobWouldFail(f'the answer is not JSON: {why}') from why
+            valid, message = validate_with_schema(data, schema)
+            if valid:
+                answer = json.dumps(data)
+                slot.write_text(json.dumps({'model': model, 'answer': answer}))
+                return answer
+            retry += (
+                f'\n\nPrevious attempt output:\n{raw}\n\nNote: The previous '
+                f'attempt resulted in an error: ValidationError: {message}. '
+                'Please try again and ensure the output adheres to the schema.'
+            )
+        slot.write_text(json.dumps({'model': model, 'error': GAVE_UP, 'raw': raw}))
+        raise ModelGaveUp(GAVE_UP)
 
     return call
+
+
+def asking(call: CallLLM) -> Resolve:
+    """The worker's resolve: the two prompts, each answer read, a model
+    that gave up an unreadable opinion, the opinions agreed."""
+
+    def ask(text: str, catalog: Catalog):
+        opinions = []
+        for p in prompts(text, catalog):
+            try:
+                answer = call(p.system, p.text, p.schema)
+            except ModelGaveUp as why:
+                opinions.append(
+                    Unreadable(reason='unreadable', detail=str(why), said=text)
+                )
+            else:
+                opinions.append(read_answer(answer, text, catalog))
+        return agree(opinions, catalog)
+
+    return ask
 
 
 def run(
     cases: list[Case], sheet: bytes, call: CallLLM, only: str | None = None
 ) -> list[Verdict]:
-    def ask(text, catalog):
-        return resolve(text, catalog, call)
-
+    ask = asking(call)
     chosen = [c for c in cases if only is None or c.id == only]
-    return [judge(c, interpret_instruction(c.text, sheet, ask)) for c in chosen]
+    if not chosen:
+        raise ValueError(f'no case {only!r}')
+    verdicts = []
+    for case in chosen:
+        try:
+            verdicts.append(judge(case, interpret_instruction(case.text, sheet, ask)))
+        except JobWouldFail as why:
+            v = Verdict(case, missed=len(case.edits), failed=str(why))
+            v.refused_ok = not case.unresolved
+            v.notes.append(f'the job would fail: {why}')
+            verdicts.append(v)
+    return verdicts
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -359,6 +444,8 @@ def main(argv: list[str] | None = None) -> int:
 
         sheet = synthetic()
     cases = load_cases(args.cases, build(sheet))
+    if args.only and all(c.id != args.only for c in cases):
+        parser.error(f'no case {args.only!r}; ids: {", ".join(c.id for c in cases)}')
     verdicts = run(cases, sheet, cached_model(args.model, args.cache), args.only)
     print(report(verdicts, args.show))
     return 0 if all(v.ok for v in verdicts) else 1

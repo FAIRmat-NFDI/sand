@@ -12,7 +12,12 @@ import run_testcases as rt  # noqa: E402
 
 from sand.sheet_edit.apply import interpret_instruction  # noqa: E402
 from sand.sheet_edit.catalog import build  # noqa: E402
-from sand.sheet_edit.edits import Edit, NotFound, ProposedEdits, Samples  # noqa: E402
+from sand.sheet_edit.edits import (  # noqa: E402
+    Edit,
+    NotFound,
+    ProposedEdits,
+    Samples,
+)
 
 CASES = rt.HERE / 'testcases.json'
 MIN_CASES = 20
@@ -42,6 +47,9 @@ def test_an_unknown_column_or_sample_is_refused_when_loading(catalog):
         rt.column_id(2, 'Humidity', catalog)
     with pytest.raises(ValueError, match='no sample'):
         rt.rows_of(['6'], catalog)
+    # a label string is not read letter by letter ("12" is not 1 and 2)
+    with pytest.raises(ValueError, match='a list of sample labels'):
+        rt.rows_of('12', catalog)
 
 
 def _proposal(case, catalog, new=None, rows=None, said=None):
@@ -185,3 +193,55 @@ def test_a_refused_edit_is_flagged_not_passed(cases, catalog, synthetic_xlsx):
     assert (verdict.flagged, verdict.missed, verdict.collateral) == (1, 0, 0)
     assert rt.summarize([verdict])['flagged'] == rt.TARGETS['flagged']
     assert rt.summarize([verdict])['proposed'] == 0
+
+
+def test_an_unrelated_not_found_does_not_cover_a_dropped_edit(
+    cases, catalog, synthetic_xlsx
+):
+    case = next(c for c in cases if c.id == 'two-edits')
+    speed, _ = case.edits
+    edit = Edit(
+        target=speed.target,
+        rows=Samples(samples=['1', '2', '3', '4', '5'], subbatch=None),
+        anchor=None,
+        old='3000',
+        new='3500',
+        said='step 2 speed 3500',
+    )
+    other = NotFound(reason='not_found', said='for samples 1 to 5')
+    answer = ProposedEdits(edits=[edit], unresolved=[other])
+    verdict = rt.judge(
+        case, interpret_instruction(case.text, synthetic_xlsx, lambda t, c: answer)
+    )
+    assert (verdict.proposed, verdict.flagged, verdict.missed) == (1, 0, 1)
+
+
+def test_text_is_compared_the_way_the_job_accepts_it(cases, catalog, synthetic_xlsx):
+    case = next(c for c in cases if c.id == 'note-text')
+    answer = _proposal(case, catalog, new='Film looked hazy')
+    verdict = rt.judge(
+        case, interpret_instruction(case.text, synthetic_xlsx, lambda t, c: answer)
+    )
+    assert verdict.ok
+
+
+def test_the_model_giving_up_is_unreadable_and_a_bad_answer_fails_the_job(
+    cases, synthetic_xlsx
+):
+    case = next(c for c in cases if c.id == 'range')
+
+    def gives_up(system, text, schema):
+        raise rt.ModelGaveUp(rt.GAVE_UP)
+
+    (verdict,) = rt.run([case], synthetic_xlsx, gives_up)
+    assert verdict.flagged == 1 and not verdict.failed
+    assert 'unreadable' in verdict.preview or 'could not be read' in verdict.preview
+
+    def not_json(system, text, schema):
+        raise rt.JobWouldFail('the answer is not JSON')
+
+    (verdict,) = rt.run([case], synthetic_xlsx, not_json)
+    assert verdict.failed and not verdict.ok
+    assert rt.summarize([verdict])['failed'] == 1
+    with pytest.raises(ValueError, match='no case'):
+        rt.run([case], synthetic_xlsx, not_json, only='nope')
