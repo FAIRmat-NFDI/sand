@@ -396,6 +396,11 @@ def keep(slot: Path, model: str, text: str, **kept: object) -> None:
     (the second reads the steps last to first), the answer as JSON."""
     said = text.rpartition('Instruction: ')[2]
     head = {'model': model, 'instruction': said}
+    if isinstance(kept.get('raw'), str):
+        try:  # a failed answer that is still JSON reads as JSON
+            kept['raw'] = json.loads(kept['raw'])
+        except json.JSONDecodeError:
+            pass
     slot.write_text(json.dumps({**head, **kept}, indent=2, ensure_ascii=False) + '\n')
 
 
