@@ -294,7 +294,7 @@ def _run_at(start: int, end: int, runs: list[Span]) -> Span | None:
 
 
 def _clauses(instruction: str) -> list[Span]:
-    """The instruction cut at punctuation and 'and': "speed 4000, and time
+    """The instruction cut at punctuation and the joining words: "speed 4000, and time
     40" -> "speed 4000", "time 40". Not inside a list of samples:
     "samples 1, 3 and 7 to 9" stays one clause."""
     clauses, start = [], 0
@@ -323,8 +323,9 @@ def _report(
     words or the uncovered stretch it was found in) and to the nearest
     used items. "speed 4000 rpm for 30 seconds", one edit using 4000 rpm
     -> "for 30 seconds"."""
-    # a value spanning a joining word ('Wash and dry') is in no clause
-    clause = next((c for c in clauses if c[0] <= what[0] < c[1]), region)
+    # a value starting at a separator (a cell 'then dry') is in no clause:
+    # it is reported in the next one (clauses are ordered)
+    clause = next((c for c in clauses if what[0] < c[1]), region)
     start = max([clause[0], region[0], *(u[1] for u in used if u[1] <= what[0])])
     end = min([clause[1], region[1], *(u[0] for u in used if u[0] >= what[1])])
     return instruction[start:end].strip(' \t\n,;.:!?')

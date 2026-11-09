@@ -272,3 +272,17 @@ def test_a_joining_word_the_sheet_holds_is_not_a_sheet_word(synthetic_xlsx):
     # reported, not dropped
     said = 'speed 4000 and solvent IPA and acetone'
     assert not_applied(said, catalog, edit()) == ('solvent IPA', 'acetone')
+
+
+def test_a_sheet_value_starting_at_a_joining_word_is_reported_in_its_clause(
+    synthetic_xlsx,
+):
+    def change(ws):
+        for row in ws.iter_rows():
+            for cell in row:
+                if cell.value == 'IPA':
+                    cell.value = 'then anneal'
+
+    catalog = build(edited(synthetic_xlsx, change))
+    said = 'speed 4000, then anneal at 100 and time 40'
+    assert not_applied(said, catalog, edit()) == ('anneal at 100', 'time 40')
