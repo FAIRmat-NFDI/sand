@@ -83,7 +83,9 @@ class Grounded:
 
     @property
     def confidence(self) -> Confidence:
-        """low: confirm one by one; medium: glance; high: can be skipped."""
+        """low: a check or a doubt; medium: notes; high: neither. Only a
+        check keeps an edit out of confirm-all: a doubt (nothing in the
+        words to compare) does not."""
         if self.checks or self.doubts:
             return 'low'
         return 'medium' if self.notes else 'high'

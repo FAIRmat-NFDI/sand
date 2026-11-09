@@ -131,7 +131,7 @@ class EditResult(_Model):
     reasons: tuple[str, ...] = ()  # why it is not ok, as user messages
     confidence: Confidence | None = None  # for applied edits
     notes: tuple[str, ...] = ()
-    doubts: tuple[str, ...] = ()  # low confidence: confirm each
+    doubts: tuple[str, ...] = ()  # low confidence; confirm-all may take it
 
 
 def proposed_edits_model(catalog: Catalog) -> type[ProposedEdits]:
