@@ -35,6 +35,7 @@ def edit(target, rows='all', anchor=None, old='3000', new='4000') -> dict:
         'rows': rows,
         'anchor': anchor,
         'old': old,
+        'said_old': None,
         'new': new,
         'said': 'speed 4000',
     }

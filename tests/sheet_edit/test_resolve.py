@@ -67,6 +67,7 @@ def edit(**fields):
         'rows': 'all',
         'anchor': None,
         'old': '3000',
+        'said_old': None,
         'new': '4000',
         'said': SAID,
     }
@@ -166,7 +167,7 @@ def test_the_schema_cannot_express_what_only_code_produces(catalog):
     assert 'unreadable' not in schema
     assert user_text(SAID, catalog, second_opinion=False).startswith('| ID | Step |')
     assert (
-        PROMPT_VERSION == 'v3'
+        PROMPT_VERSION == 'v4'
     )  # bumped with the rules: cached answers are asked again
 
 
@@ -331,7 +332,13 @@ def test_an_anchor_is_no_disagreement_and_is_kept(catalog, synthetic_xlsx):
     # the same cells and value, with and without an anchor: one write; the
     # anchor is kept, whichever pass gave it, so ground checks it
     said = 'time of the DMSO 300'
-    time = {'target': TIME_2, 'said': said, 'new': '300', 'old': '600'}
+    time = {
+        'target': TIME_2,
+        'said': said,
+        'new': '300',
+        'old': '600',
+        'said_old': None,
+    }
     dmso = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'DMSO'})
     plain = edit(**time, anchor=None)
     for a, b in [([dmso], [plain]), ([plain], [dmso]), ([plain, dmso], [plain])]:
@@ -355,9 +362,55 @@ def test_an_anchor_is_no_disagreement_and_is_kept(catalog, synthetic_xlsx):
     assert [r.new for r in item.readings] == ['300', '400']
 
 
+def test_an_old_value_said_is_no_disagreement_and_is_kept(catalog, synthetic_xlsx):
+    said = 'step 2 rotation speed from 2000 to 4000'
+    heard = edit(said=said, said_old='2000')
+    missed = edit(said=said)
+    for a, b in [(heard, missed), (missed, heard)]:
+        proposal = ask(catalog, answer(a), answer(b))
+        assert [e.said_old for e in proposal.edits] == ['2000']
+        # the sheet holds 3000: a check, whichever pass heard it
+        result = interpret_instruction(
+            said, synthetic_xlsx, lambda t, c: ask(c, answer(a), answer(b), t)
+        )
+        (ready,) = result.ready.values()
+        assert "you said it was '2000'" in ready.checks[0]
+        # the 2000 is used, by said_old: no "no update in" for it
+        assert 'no update in' not in result.preview
+    # one amount written two ways is one old value
+    for same in ('2,000', '2000.0'):
+        proposal = ask(catalog, answer(heard), answer(edit(said=said, said_old=same)))
+        assert [e.said_old for e in proposal.edits] == ['2000'], same
+    # one number in two units is two old values
+    minutes = edit(said=said, said_old='2 min')
+    item = only(
+        ask(catalog, answer(minutes), answer(edit(said=said, said_old='2 h'))),
+        Uncertain,
+    )
+    assert [r.said_old for r in item.readings] == ['2 min', '2 h']
+    # two old values heard: each is a reading
+    other = edit(said=said, said_old='3000')
+    item = only(ask(catalog, answer(heard), answer(other)), Uncertain)
+    assert [r.said_old for r in item.readings] == ['2000', '3000']
+    # the readings differ only there: the preview says which is which
+    result = interpret_instruction(
+        said,
+        synthetic_xlsx,
+        lambda t, c: ask(c, answer(heard), answer(other), t),
+    )
+    assert 'you said it was 2000' in result.preview
+    assert 'you said it was 3000' in result.preview
+
+
 def test_repeats_of_one_write_in_a_pass_are_all_compared(catalog):
     said = 'time of the DMSO 300'
-    time = {'target': TIME_2, 'said': said, 'new': '300', 'old': '600'}
+    time = {
+        'target': TIME_2,
+        'said': said,
+        'new': '300',
+        'old': '600',
+        'said_old': None,
+    }
     dmso = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'DMSO'})
     ipa = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'IPA'})
     # only one pass, through two anchors: both are shown

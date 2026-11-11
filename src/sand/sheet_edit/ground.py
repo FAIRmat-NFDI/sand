@@ -662,13 +662,53 @@ def old_problems(
         r for r in _rows_not_holding(target, edit.old or '', rows) if r in to_change
     ]
     if not wrong:
-        return []
+        return _old_said_problems(edit, target, catalog, to_change)
     held = _values(target, to_change)
     if len(held) > 1 and (not edit.old or any(same_value(edit.old, v) for v in held)):
-        return []
+        return _old_said_problems(edit, target, catalog, to_change)
     claimed = 'empty' if not edit.old else repr(edit.old)
     return [
         f'{column_name(target)} holds {_held(target, catalog, wrong)}, not {claimed}'
+    ]
+
+
+_EMPTY_SAID = re.compile(r'empty|blank|nothing|none|null', re.I)
+
+
+def _old_said_problems(
+    edit: Edit, target: ColumnInfo, catalog: Catalog, to_change: list[int]
+) -> list[str]:
+    """The old value the user said ("from 2000 to 4000"), as the model read
+    it, against the sheet: the model's `old` is the table's, so a wrong
+    value the user remembers never reaches the check above."""
+    if not edit.said_old or not edit.said_old.strip():
+        return []
+    said = edit.said_old.strip()
+    if target.type in ('bool', 'date', 'yyyymmdd') or _EMPTY_SAID.fullmatch(said):
+        # 'yes', '1st of January', 'empty': other spellings than the cells',
+        # not compared yet
+        return []
+    number = value(said)
+    if (
+        number
+        and number.unit
+        and not (target.unit and same_unit(number.unit, target.unit))
+    ):
+        return []  # '0.05 ml' over a [uL] column: no conversion yet (#108)
+    # TODO: check that `said_old` is in the user's words, as V does for
+    # `new`; one the model made up should be a check too
+    held = _by_row(target)
+    wrong = [  # speech writes text in any case: 'ag' is Ag
+        r
+        for r in to_change
+        if not same_value(said, held.get(r))
+        and said.casefold() != _key(held.get(r)).casefold()
+    ]
+    if not wrong:
+        return []
+    return [
+        f'{column_name(target)}: you said it was {said!r}; '
+        f'it holds {_held(target, catalog, wrong)}'
     ]
 
 

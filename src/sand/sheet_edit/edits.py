@@ -69,6 +69,9 @@ class Edit(_Model):
     anchor: Anchor | None
     old: str | None  # what the LLM believes is in the cell; None: empty
     new: str  # as the user said it, not converted
+    # the current value as the user said it ("from 2000 to 4000"); None:
+    # not said. Ground compares it with the sheet: `old` is the table's
+    said_old: str | None = None
     said: str  # the user's words this edit came from
 
 
@@ -169,6 +172,7 @@ def proposed_edits_model(catalog: Catalog) -> type[ProposedEdits]:
         target=(writable, ...),
         rows=(Literal['all'] | samples | range_ | where, ...),
         anchor=(anchor | None, ...),
+        said_old=(str | None, ...),
     )
     ambiguous = create_model(
         'Ambiguous',

@@ -176,7 +176,7 @@ def _edit_quoted(instruction: str, span: Span, edit: Edit, catalog: Catalog) -> 
 
 def _texts(edit: Edit) -> list[str]:
     """The words of the edit's fields: what it uses from the instruction."""
-    texts = [edit.new, edit.old or '']
+    texts = [edit.new, edit.old or '', edit.said_old or '']
     if edit.anchor:
         texts.append(edit.anchor.equals)
     rows = edit.rows
