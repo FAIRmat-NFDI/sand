@@ -336,9 +336,11 @@ def _report(
 ) -> dict:
     """One input as the GUI shows it: the preview, and each edit that may
     be confirmed with its key."""
+    from sand.sheet_edit.ground import Grounded, Refused
     from sand.sheet_edit.preview import edit_lines, edit_summary
 
     catalog = step.interpretation.catalog
+    results = step.interpretation.results
     written = {(c.row, c.column) for c in step.written if c.field == 'value'}
     return {
         'input': number,
@@ -357,6 +359,11 @@ def _report(
             for key, edit in step.interpretation.ready.items()
         ],
         'confirmed': [key for key in step.interpretation.ready if key in confirmed],
+        # what the job could not settle (uncertain, ambiguous, not found)
+        'unresolved': len(step.interpretation.proposal.unresolved),
+        # edits a check refused, and edits the sheet already holds
+        'not_applied': sum(isinstance(r, Refused) for r in results),
+        'unchanged': sum(isinstance(r, Grounded) and not r.rows for r in results),
         'cells_written': len(written),
         'refused': step.refused,
     }

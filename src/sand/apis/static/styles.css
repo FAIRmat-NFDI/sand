@@ -1287,6 +1287,16 @@ body {
   font-weight: 400;
 }
 
+.input-meta .input-state.is-not-applied {
+  background: #fde7e7;
+  color: #b3261e;
+}
+
+.input-meta .input-state.is-unclear {
+  background: #fffbeb;
+  color: #92400e;
+}
+
 .input-meta .input-state.is-refused {
   background: #fde7e7;
   color: #b3261e;
