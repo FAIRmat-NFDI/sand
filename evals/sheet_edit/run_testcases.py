@@ -237,7 +237,9 @@ def judge(case: Case, result: Interpretation) -> Verdict:
         elif (
             want.target in refused
             or _unresolved_about(want.target, result)
-            or (want.check and 'not_found' in kinds)  # what it points at is not there
+            # what it points at is not there: a not-found can only be about
+            # this edit when the case asks for no other
+            or (want.check and len(case.edits) == 1 and 'not_found' in kinds)
         ):
             v.flagged += 1
             if want.check:

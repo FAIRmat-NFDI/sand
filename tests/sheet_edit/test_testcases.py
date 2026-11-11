@@ -374,6 +374,13 @@ def test_an_edit_that_needs_a_check_may_be_flagged_instead(cases, synthetic_xlsx
     )
     assert verdict.ok and (verdict.flagged, verdict.held) == (1, 1)
     assert rt.summarize([verdict])['flagged'] == rt.TARGETS['flagged']
+    # beside another asked edit, a not-found may be about that one: missed
+    other = next(c for c in cases if c.id == 'two-edits').edits[0]
+    two = replace(case, edits=(*case.edits, other))
+    verdict = rt.judge(
+        two, interpret_instruction(case.text, synthetic_xlsx, lambda t, c: answer)
+    )
+    assert not verdict.ok and verdict.held == 0
 
 
 def test_a_check_on_an_edit_that_must_be_clean_fails(cases, synthetic_xlsx):
