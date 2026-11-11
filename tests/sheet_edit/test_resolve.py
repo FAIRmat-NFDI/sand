@@ -166,7 +166,7 @@ def test_the_schema_cannot_express_what_only_code_produces(catalog):
     assert 'unreadable' not in schema
     assert user_text(SAID, catalog, second_opinion=False).startswith('| ID | Step |')
     assert (
-        PROMPT_VERSION == 'v2'
+        PROMPT_VERSION == 'v3'
     )  # bumped with the rules: cached answers are asked again
 
 

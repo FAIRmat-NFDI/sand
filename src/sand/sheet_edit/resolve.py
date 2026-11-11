@@ -40,7 +40,7 @@ from sand.sheet_edit.render import table
 
 # recorded with every proposal (changelog, status); bump on any change to
 # the prompts below or to the table in render.py, which the model reads
-PROMPT_VERSION = 'v2'
+PROMPT_VERSION = 'v3'
 # the job's cache keeps proposals after `agree`: bump the second part on
 # a change to how two opinions agree, so agreed answers are asked again
 CACHE_VERSION = f'{PROMPT_VERSION}+agree-2'
@@ -66,8 +66,9 @@ user did not mention.
 - "said": the exact words of the instruction this edit comes from, copied \
 verbatim, nothing else.
 - "new": the value as the user said it. Never convert units, scale or round. \
-To clear a cell, "new" is "" (the user said to clear, empty or remove it); \
-(empty) is never a value.
+Keep the unit the user said with the number ("500 rpm/s", "2 hours"), \
+even when it differs from the column's unit. To clear a cell, "new" is "" \
+(the user said to clear, empty or remove it); (empty) is never a value.
 - "old": the current value the table shows for the cell, without the quotes; \
 null when the cell is empty or when the samples hold different values.
 - "rows": "all" when the user names no samples; the samples named; a range \
@@ -91,8 +92,10 @@ How to answer:
 a value, a sample or a column the user did not say.
 - Copy the user's exact words for this edit into "said", unchanged.
 - Put the value in "new" exactly as spoken: no unit conversion, no \
-rounding, no rescaling. Clearing a cell (the user says clear, empty, \
-remove) is "new": ""; the marker (empty) is not a value.
+rounding, no rescaling. A unit the user said stays with the number \
+("2 hours", "500 rpm/s"), whatever unit the column has. Clearing a cell \
+(the user says clear, empty, remove) is "new": ""; the marker (empty) is \
+not a value.
 - "old" is the current value shown in the table for that cell, quotes \
 left out, or null for an empty cell or samples that hold different values.
 - Choose "rows" as "all" if no sample is named, else the named samples, a \

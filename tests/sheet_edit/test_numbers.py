@@ -5,6 +5,7 @@ import pytest
 from sand.sheet_edit.numbers import (
     UnitMismatch,
     check_unit,
+    comparable,
     numbers,
     ranges,
     same_unit,
@@ -415,10 +416,24 @@ def test_value_is_the_whole_text_or_nothing(text, expected):
         ('cm²', 'cm^2', True),
         ('a.u.', 'a.u.', True),  # a unit pint does not know: by spelling
         ('a.u.', 'arb', False),
+        ('mmol/L', 'mM', True),  # by meaning, not spelling
+        ('revolutions per minute', 'rpm', True),
     ],
 )
 def test_same_unit(said, header, same):
     assert same_unit(said, header) is same
+
+
+@pytest.mark.parametrize(
+    ('said', 'header', 'same_kind'),
+    [
+        ('h', 'min', True),
+        ('rpm/s', 'rpm', False),
+        ('a.u.', 'rpm', False),  # a unit pint does not know
+    ],
+)
+def test_comparable(said, header, same_kind):
+    assert comparable(said, header) is same_kind
 
 
 @pytest.mark.parametrize(
