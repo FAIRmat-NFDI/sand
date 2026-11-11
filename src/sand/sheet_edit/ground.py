@@ -662,7 +662,7 @@ def old_problems(
         r for r in _rows_not_holding(target, edit.old or '', rows) if r in to_change
     ]
     if not wrong:
-        return []
+        return _old_said_problems(edit, target, catalog, to_change)
     held = _values(target, to_change)
     if len(held) > 1 and (not edit.old or any(same_value(edit.old, v) for v in held)):
         return []
@@ -670,6 +670,57 @@ def old_problems(
     return [
         f'{column_name(target)} holds {_held(target, catalog, wrong)}, not {claimed}'
     ]
+
+
+# "from 2000 to 4000", "Cu instead of Ag": the old value the user said
+_FROM_TO = re.compile(
+    r'\bfrom\s+(?P<old>[^,;]+?)\s+(?:to|into)\s+(?P<new>[^,;]+)', re.I
+)
+_INSTEAD = re.compile(r'(?P<new>\S+)\s+instead\s+of\s+(?P<old>[^\s,;.]+)', re.I)
+
+
+def _old_said_problems(
+    edit: Edit, target: ColumnInfo, catalog: Catalog, to_change: list[int]
+) -> list[str]:
+    """The model's `old` is the table's (the prompt asks for it), so a
+    wrong old value the user said is compared here: "from 2000 to 4000"
+    over rows holding 3000. Only when the words pair it with `new`, so
+    "samples 1 to 3" is never read as one."""
+    said = _old_in_words(edit.said, edit.new)
+    if said is None:
+        return []
+    held = _by_row(target)
+    wrong = [  # speech writes text in any case: 'ag' is Ag
+        r
+        for r in to_change
+        if not same_value(said, held.get(r))
+        and said.casefold() != _key(held.get(r)).casefold()
+    ]
+    if not wrong:
+        return []
+    return [
+        f'{column_name(target)}: you said it was {said!r}; '
+        f'it holds {_held(target, catalog, wrong)}'
+    ]
+
+
+def _old_in_words(said: str, new: str) -> str | None:
+    for pattern in (_FROM_TO, _INSTEAD):
+        for m in pattern.finditer(said):
+            if _starts_with(m['new'], new):
+                return m['old'].strip()
+    return None
+
+
+def _starts_with(words: str, new: str) -> bool:
+    """`words` begins with the value `new`: as a number ('4000 rpm for all'
+    begins with 4000) or as text."""
+    if not new.strip():
+        return False
+    number, found = value(new), numbers(words)
+    if number is not None:
+        return bool(found) and found[0].start == 0 and found[0].value == number.value
+    return words.casefold().startswith(new.strip().casefold())
 
 
 def _rows_not_holding(column: ColumnInfo, text: str, rows) -> list[int]:

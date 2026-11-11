@@ -350,7 +350,7 @@ def _one(case, old, new=None, anchor=None):
     return lambda t, c: ProposedEdits(edits=[edit], unresolved=[])
 
 
-def test_a_wrong_old_value_is_checked_only_when_the_model_keeps_it(
+def test_a_wrong_old_value_is_checked_whichever_old_the_model_gives(
     cases, synthetic_xlsx
 ):
     case = next(c for c in cases if c.id == 'wrong-old')
@@ -358,11 +358,11 @@ def test_a_wrong_old_value_is_checked_only_when_the_model_keeps_it(
         case, interpret_instruction(case.text, synthetic_xlsx, _one(case, '2000'))
     )
     assert said.ok and said.checked == 1
-    # the table's value as old: nothing compares the user's 2000 (the gap)
+    # the table's value as old: the user's 2000 is compared from the words
     table = rt.judge(
         case, interpret_instruction(case.text, synthetic_xlsx, _one(case, '3000'))
     )
-    assert not table.ok and table.check_missed == 1
+    assert table.ok and table.checked == 1
 
 
 def test_an_edit_that_needs_a_check_may_be_flagged_instead(cases, synthetic_xlsx):

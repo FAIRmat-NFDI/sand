@@ -1301,3 +1301,51 @@ def test_a_unit_kept_in_the_value_is_still_the_unit_checks(catalog):
     # no number in it: kept as said
     result = ground(edit('C069', old=None, new='fast', said='7 speed fast'), catalog)
     assert isinstance(result, Grounded) and result.value == 'fast'
+
+
+@pytest.mark.parametrize(
+    'said',
+    [
+        'step 2 rotation speed from 2000 to 4000 for all samples',
+        'step 2 rotation speed 4000 instead of 2000',
+        'step 2 rotation speed from 2000 rpm to 4000 rpm',
+    ],
+)
+def test_a_wrong_old_value_said_is_a_check_even_when_old_is_the_tables(catalog, said):
+    # the prompt asks for the table's value as old: the words are compared
+    result = ground(edit(old='3000', new='4000', said=said), catalog)
+    assert checked(result).startswith(
+        "Rotation speed [rpm] (2: Spin Coating): you said it was '2000"
+    )
+    assert "it holds '3000' on samples 1–5, 7–13" in checked(result)
+
+
+@pytest.mark.parametrize(
+    ('said', 'rows'),
+    [
+        ('step 2 rotation speed from 3000 to 4000', 'all'),
+        ('step 2 rotation speed from three thousand to 4000', 'all'),
+        # a range of samples is not an old value: its 'to' side is not new
+        ('step 2 rotation speed 4000 for samples from 1 to 3', None),
+        ('step 2 rotation speed 4000', 'all'),
+    ],
+)
+def test_no_check_when_the_old_value_said_is_held(catalog, said, rows):
+    rows = rows or samples('1', '2', '3')
+    result = ground(edit(rows=rows, old='3000', new='4000', said=said), catalog)
+    assert isinstance(result, Grounded) and result.checks == (), said
+
+
+def test_an_old_text_said_compares_in_any_case(catalog):
+    target = next(
+        c.id
+        for c in catalog.columns
+        if c.column.section.label == '8: Evaporation'
+        and c.column.header == 'Material name'
+    )
+    said = 'the material of step 8 is Cu instead of ag'
+    result = ground(edit(target, old='Ag', new='Cu', said=said), catalog)
+    assert isinstance(result, Grounded) and result.checks == ()
+    said = 'the material of step 8 is Cu instead of Au'
+    result = ground(edit(target, old='Ag', new='Cu', said=said), catalog)
+    assert "you said it was 'Au'; it holds 'Ag'" in checked(result)
