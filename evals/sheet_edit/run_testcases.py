@@ -65,14 +65,16 @@ TARGETS = {'precision': 99, 'flagged': 100, 'proposed': 95, 'refusals': 100}
 @dataclass(frozen=True)
 class Expected:
     """One expected edit, resolved on the sheet: Excel rows and the value
-    as said ('' clears). `check`: the words contradict the sheet, so the
-    right edit must carry a check (confirmed on its own, #163)."""
+    as said ('' clears). `check` True: the words contradict the sheet, so
+    the right edit must carry a check (confirmed on its own, #163), or be
+    flagged: either keeps it out of confirm-all. False: it must carry
+    none. None: either."""
 
     target: str
     name: str  # "Rotation speed (2: Spin Coating)"
     rows: tuple[int, ...]
     new: str
-    check: bool = False
+    check: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -150,7 +152,7 @@ def _expected(raw: dict, catalog: Catalog) -> Expected:
         _name(target, catalog),
         rows_of(raw['rows'], catalog),
         raw['new'],
-        raw.get('check', False),
+        raw.get('check'),
     )
 
 
@@ -172,7 +174,9 @@ class Verdict:
     `checked` and `wrong_checked`: of the right and of the wrong ready
     edits, those a word check marked, which the user confirms one by one.
     `check_missed`: right edits the case wants marked that came unmarked,
-    which confirm-all would write."""
+    which confirm-all would write; `held` of the flagged, those the case
+    wants marked, safe as well. `check_extra`: right edits marked that
+    the case wants clean, one click too many."""
 
     case: Case
     proposed: int = 0
@@ -184,6 +188,8 @@ class Verdict:
     checked: int = 0
     wrong_checked: int = 0
     check_missed: int = 0
+    check_extra: int = 0
+    held: int = 0
     refused_ok: bool = True  # the unresolved kinds asked for were said
     failed: str = ''
     notes: list[str] = field(default_factory=list)
@@ -193,8 +199,9 @@ class Verdict:
     def ok(self) -> bool:
         """Every asked edit proposed as asked, nothing else written, the
         refusals asked for said. A flagged edit is safe, not a pass."""
-        wrong = self.flagged or self.missed or self.invented or self.collateral
-        wrong = wrong or self.written or self.check_missed
+        wrong = self.flagged > self.held or self.missed or self.invented
+        wrong = wrong or self.collateral or self.written
+        wrong = wrong or self.check_missed or self.check_extra
         return not wrong and self.refused_ok and not self.failed
 
 
@@ -212,7 +219,11 @@ def judge(case: Case, result: Interpretation) -> Verdict:
         if hit:
             v.proposed += 1
             matched.append(hit)
-            if hit.checks:
+            if hit.checks and want.check is False:
+                v.checked += 1
+                v.check_extra += 1
+                v.notes.append(f'{want.name}: proposed with a check it should not have')
+            elif hit.checks:
                 v.checked += 1
                 v.notes.append(f'{want.name}: proposed with a check')
             elif want.check:
@@ -223,9 +234,17 @@ def judge(case: Case, result: Interpretation) -> Verdict:
             # ready edit is counted below, the asked one is missed
             v.missed += 1
             v.notes.append(f'{want.name}: proposed with other rows or value')
-        elif want.target in refused or _unresolved_about(want.target, result):
+        elif (
+            want.target in refused
+            or _unresolved_about(want.target, result)
+            or (want.check and 'not_found' in kinds)  # what it points at is not there
+        ):
             v.flagged += 1
-            v.notes.append(f'{want.name}: flagged, not proposed')
+            if want.check:
+                v.held += 1
+                v.notes.append(f'{want.name}: flagged, as safe as a check')
+            else:
+                v.notes.append(f'{want.name}: flagged, not proposed')
         else:
             v.missed += 1
             v.notes.append(f'{want.name}: nothing proposed')
@@ -343,8 +362,9 @@ def summarize(verdicts: list[Verdict]) -> dict[str, object]:
         'written': sum(v.written for v in verdicts),
         'checked': sum(v.checked for v in verdicts),
         'wrong_checked': sum(v.wrong_checked for v in verdicts),
-        'check_asked': sum(w.check for v in verdicts for w in v.case.edits),
+        'check_asked': sum(bool(w.check) for v in verdicts for w in v.case.edits),
         'check_missed': sum(v.check_missed for v in verdicts),
+        'check_extra': sum(v.check_extra for v in verdicts),
         # what "confirm all" would write wrongly: the one number to keep at 0
         'wrong_unchecked': wrong - sum(v.wrong_checked for v in verdicts),
     }
@@ -382,8 +402,8 @@ def report(verdicts: list[Verdict]) -> str:
     )
     lines.append(
         f'with a check: {s["checked"]} right ({s["check_asked"]} asked for), '
-        f'{s["wrong_checked"]} wrong · check missing {s["check_missed"]} · '
-        f'wrong without a check {s["wrong_unchecked"]}'
+        f'{s["wrong_checked"]} wrong · check missing {s["check_missed"]}, '
+        f'not wanted {s["check_extra"]} · wrong without a check {s["wrong_unchecked"]}'
     )
     return '\n'.join(lines)
 

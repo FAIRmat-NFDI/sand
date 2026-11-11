@@ -163,23 +163,23 @@
       "id": "samples-unnamed",
       "why": "no sample number in the words: a doubt, which still lets the edit into confirm-all",
       "text": "step 2 rotation speed 4000 for the first three samples",
-      "expect": {"edits": [{"step": 2, "column": "Rotation speed", "rows": ["1", "2", "3"], "new": "4000"}]}
+      "expect": {"edits": [{"step": 2, "column": "Rotation speed", "rows": ["1", "2", "3"], "new": "4000", "check": false}]}
     },
     {
       "id": "wrong-old",
-      "why": "the user remembers the old value wrong (the sheet holds 3000): proposed, with a check (#163)",
+      "why": "the user remembers the old value wrong (the sheet holds 3000): proposed with a check (#163), or flagged. The old-value check reads the model's old: an answer copying the table's 3000 slips through",
       "text": "step 2 rotation speed from 2000 to 4000 for all samples",
       "expect": {"edits": [{"step": 2, "column": "Rotation speed", "rows": "all", "new": "4000", "check": true}]}
     },
     {
       "id": "wrong-anchor",
-      "why": "the column is named through a solvent step 3 does not hold (Ethanol, not DMF): proposed, with a check (#163)",
+      "why": "the column is named through a solvent step 3 does not hold (Ethanol, not DMF): proposed with a check (#163), or not found. An answer without the anchor writes Ethanol's volume unmarked",
       "text": "the volume of the DMF in step 3 to 80 for all samples",
       "expect": {"edits": [{"step": 3, "column": "Solvent 1 volume", "rows": "all", "new": "80", "check": true}]}
     },
     {
       "id": "unit-kept",
-      "why": "rpm/s into an [rpm] column: the model keeps the unit (#165), the unit check refuses it",
+      "why": "rpm/s into an [rpm] column: the model keeps the unit (#165), the unit check refuses it. The synthetic sheet has no rpm/s column, so a dropped unit is written unmarked: what this case watches",
       "text": "step 2 rotation speed 500 rpm/s for all samples",
       "expect": {"edits": [], "flagged": [{"step": 2, "column": "Rotation speed"}]}
     },
@@ -187,7 +187,7 @@
       "id": "unit-spelled",
       "why": "the column's unit said in words is the column's unit: no check",
       "text": "step 2 rotation speed 4000 revolutions per minute for all samples",
-      "expect": {"edits": [{"step": 2, "column": "Rotation speed", "rows": "all", "new": "4000"}]}
+      "expect": {"edits": [{"step": 2, "column": "Rotation speed", "rows": "all", "new": "4000", "check": false}]}
     }
   ]
 }
