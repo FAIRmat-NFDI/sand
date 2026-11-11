@@ -37,6 +37,7 @@ SPEED, ANNEAL_TIME, SOLVENT_2, VARIATION, TIME_2 = (
     'C007',
     'C014',
 )
+SUBSTRATE_TEMP = 'C055'  # 5: CSS, 120 on samples 1-7, 115 on 8-13
 SAID = 'speed 4000 for samples 1 to 3'
 NOTHING = Coverage((), ())
 
@@ -496,8 +497,8 @@ def test_preview_of_uncertain_and_unreadable_items(catalog):
     )
     assert preview([], proposal.unresolved, NOTHING, catalog) == (
         f'? uncertain: "{SAID}"\n'
-        '   2: Spin Coating · Rotation speed [rpm] → 4000, all samples or '
-        '2: Spin Coating · Annealing time [min] → 4000, all samples\n'
+        '   2: Spin Coating · Rotation speed [rpm] → 4000, all samples (1–5, 7–13)\n'
+        '   or 2: Spin Coating · Annealing time [min] → 4000, all samples (1–5, 7–13)\n'
         '   the two passes read these words differently'
     )
     one = edit(
@@ -533,12 +534,23 @@ def test_a_reading_shows_subbatch_anchor_and_an_empty_where(two_subbatches):
     b = {**a, 'rows': {'where': VARIATION, 'equals': None}, 'anchor': None}
     proposal = ask(two_subbatches, answer(a), answer(b))
     assert preview([], proposal.unresolved, NOTHING, two_subbatches).splitlines()[
-        1
-    ] == (
+        1:3
+    ] == [
         f'   1: Cleaning UV-Ozone · Time 2 [s] → 300, samples 1, 2 of subbatch {one}, '
-        'pointed through Solvent 2 = DMSO or '
-        '1: Cleaning UV-Ozone · Time 2 [s] → 300, where Experiment Info · Variation is empty'
-    )
+        'pointed through Solvent 2 = DMSO',
+        '   or 1: Cleaning UV-Ozone · Time 2 [s] → 300, where Experiment Info · '
+        'Variation is empty (no sample)',
+    ]
+
+
+def test_a_reading_by_all_or_by_a_value_names_its_samples(catalog):
+    # "the spin coating which uses ...": every sample, or the rows holding
+    # it; the samples tell the readings apart
+    rows = {'where': SUBSTRATE_TEMP, 'equals': '115'}
+    proposal = ask(catalog, answer(edit()), answer(edit(rows=rows)))
+    lines = preview([], proposal.unresolved, NOTHING, catalog).splitlines()
+    assert lines[1].endswith('→ 4000, all samples (1–5, 7–13)')
+    assert lines[2].endswith('Substrate temperature [°C] = 115 (samples 8–13)')
 
 
 def test_interpret_instruction_applies_nothing_uncertain_or_unreadable(synthetic_xlsx):

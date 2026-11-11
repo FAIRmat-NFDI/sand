@@ -29,7 +29,14 @@ from sand.sheet_edit.edits import (
     Unreadable,
     Unresolved,
 )
-from sand.sheet_edit.ground import Grounded, Refused, column_name, samples_text
+from sand.sheet_edit.ground import (
+    Grounded,
+    Refusal,
+    Refused,
+    column_name,
+    resolve_rows,
+    samples_text,
+)
 from sand.sheet_edit.render import EMPTY, value_text
 
 INDENT = '   '
@@ -136,12 +143,11 @@ def _unresolved_lines(item: Unresolved, catalog: Catalog) -> list[str]:
         names = [_where(c) if c else cid for c, cid in zip(columns, item.candidates)]
         return [f'? ambiguous: "{item.said}"', f'{INDENT}{" or ".join(names)}?']
     if isinstance(item, Uncertain):
-        readings = ' or '.join(_reading(edit, catalog) for edit in item.readings)
-        return [
-            f'? uncertain: "{item.said}"',
-            f'{INDENT}{readings}',
-            f'{INDENT}{item.why}',
+        readings = [
+            f'{INDENT}{"or " if i else ""}{_reading(edit, catalog)}'
+            for i, edit in enumerate(item.readings)
         ]
+        return [f'? uncertain: "{item.said}"', *readings, f'{INDENT}{item.why}']
     if isinstance(item, Unreadable):
         return [f"? not done, the model's answer could not be read: {item.detail}"]
     return [f'? not found: "{item.said}"']
@@ -156,7 +162,7 @@ def _reading(edit: Edit, catalog: Catalog) -> str:
     rows = edit.rows
     subbatch = None
     if rows == 'all':
-        samples = 'all samples'
+        samples = f'all samples ({_written(rows, catalog)})'
     elif isinstance(rows, Samples):
         samples, subbatch = f'samples {", ".join(rows.samples)}', rows.subbatch
     elif isinstance(rows, Range):
@@ -167,6 +173,7 @@ def _reading(edit: Edit, catalog: Catalog) -> str:
         samples = f'where {name} ' + (
             'is empty' if rows.equals is None else f'= {rows.equals}'
         )
+        samples += f' ({_written(rows, catalog)})'
     text = f'{where} → {edit.new or EMPTY}, {samples}'
     if subbatch is not None:
         text += f' of subbatch {subbatch}'
@@ -177,6 +184,17 @@ def _reading(edit: Edit, catalog: Catalog) -> str:
     if edit.said_old and edit.said_old.strip():
         text += f', you said it was {edit.said_old.strip()}'
     return text
+
+
+def _written(rows, catalog: Catalog) -> str:
+    """The samples 'all' or a condition stands for, so that two readings
+    that differ there are told apart: '1–5, 7–13' vs 'samples 3, 7'."""
+    try:
+        found, _ = resolve_rows(rows, catalog)
+    except Refusal:
+        return 'no sample'
+    names = catalog.names(found)
+    return names if rows == 'all' else f'samples {names}'
 
 
 def _short(message: str, target: ColumnInfo) -> str:
