@@ -314,9 +314,14 @@ def _first_per_said_old(edits: list[Edit]) -> dict[str, Edit]:
     said: dict[str, Edit] = {}
     for edit in edits:
         if edit.said_old and edit.said_old.strip():
-            # by amount: one pass's '2,000' is the other's '2000'
+            # by amount and unit: '2,000' and '2000.0' are one, '2 min' and
+            # '2 h' are not
             number = value(edit.said_old)
-            key = str(number.value) if number else edit.said_old.strip().casefold()
+            key = (
+                f'{number.value.normalize():f} {number.unit or ""}'
+                if number
+                else edit.said_old.strip().casefold()
+            )
             said.setdefault(key, edit)
     return said
 

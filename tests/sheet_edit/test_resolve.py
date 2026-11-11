@@ -378,8 +378,16 @@ def test_an_old_value_said_is_no_disagreement_and_is_kept(catalog, synthetic_xls
         # the 2000 is used, by said_old: no "no update in" for it
         assert 'no update in' not in result.preview
     # one amount written two ways is one old value
-    proposal = ask(catalog, answer(heard), answer(edit(said=said, said_old='2,000')))
-    assert [e.said_old for e in proposal.edits] == ['2000']
+    for same in ('2,000', '2000.0'):
+        proposal = ask(catalog, answer(heard), answer(edit(said=said, said_old=same)))
+        assert [e.said_old for e in proposal.edits] == ['2000'], same
+    # one number in two units is two old values
+    minutes = edit(said=said, said_old='2 min')
+    item = only(
+        ask(catalog, answer(minutes), answer(edit(said=said, said_old='2 h'))),
+        Uncertain,
+    )
+    assert [r.said_old for r in item.readings] == ['2 min', '2 h']
     # two old values heard: each is a reading
     other = edit(said=said, said_old='3000')
     item = only(ask(catalog, answer(heard), answer(other)), Uncertain)
