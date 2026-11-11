@@ -137,9 +137,57 @@
     },
     {
       "id": "other-unit",
-      "why": "hours into a [min] column: not converted in code yet. If the model drops the unit and answers 2, ground writes 2 minutes: a known gap in the value check (issue #108)",
+      "why": "hours into a [min] column, never converted (#108): the model keeps the unit and the unit check refuses it; a dropped unit gets a word check (#165), written only if confirmed",
       "text": "annealing time of step 2 to 2 hours for all samples",
       "expect": {"edits": [], "flagged": [{"step": 2, "column": "Annealing time"}]}
+    },
+    {
+      "id": "and-then",
+      "why": "joining words between two edits are not sheet words (#160)",
+      "text": "step 2 rotation speed 3500 and then annealing time 12 for all samples",
+      "expect": {"edits": [{"step": 2, "column": "Rotation speed", "rows": "all", "new": "3500"}, {"step": 2, "column": "Annealing time", "rows": "all", "new": "12"}]}
+    },
+    {
+      "id": "step-by-material",
+      "why": "the step is named by its material: all samples or the rows holding Me-4PACz, the same cells, so the passes agree (#162)",
+      "text": "update the spin coating which uses Me-4PACz, the rotation time is 40 s",
+      "expect": {"edits": [{"step": 2, "column": "Rotation time", "rows": "all", "new": "40"}]}
+    },
+    {
+      "id": "samples-as-words",
+      "why": "sample numbers said as words",
+      "text": "step 2 rotation speed 4000 for samples one to three",
+      "expect": {"edits": [{"step": 2, "column": "Rotation speed", "rows": ["1", "2", "3"], "new": "4000"}]}
+    },
+    {
+      "id": "samples-unnamed",
+      "why": "no sample number in the words: a doubt, which still lets the edit into confirm-all",
+      "text": "step 2 rotation speed 4000 for the first three samples",
+      "expect": {"edits": [{"step": 2, "column": "Rotation speed", "rows": ["1", "2", "3"], "new": "4000", "check": false}]}
+    },
+    {
+      "id": "wrong-old",
+      "why": "the user remembers the old value wrong (the sheet holds 3000): proposed with a check (#163), or flagged. The old-value check reads the model's old: an answer copying the table's 3000 slips through",
+      "text": "step 2 rotation speed from 2000 to 4000 for all samples",
+      "expect": {"edits": [{"step": 2, "column": "Rotation speed", "rows": "all", "new": "4000", "check": true}]}
+    },
+    {
+      "id": "wrong-anchor",
+      "why": "the column is named through a solvent step 3 does not hold (Ethanol, not DMF): proposed with a check (#163), or not found. An answer without the anchor writes Ethanol's volume unmarked",
+      "text": "the volume of the DMF in step 3 to 80 for all samples",
+      "expect": {"edits": [{"step": 3, "column": "Solvent 1 volume", "rows": "all", "new": "80", "check": true}]}
+    },
+    {
+      "id": "unit-kept",
+      "why": "rpm/s into an [rpm] column: the model keeps the unit (#165), the unit check refuses it. The synthetic sheet has no rpm/s column, so a dropped unit is written unmarked: what this case watches",
+      "text": "step 2 rotation speed 500 rpm/s for all samples",
+      "expect": {"edits": [], "flagged": [{"step": 2, "column": "Rotation speed"}]}
+    },
+    {
+      "id": "unit-spelled",
+      "why": "the column's unit said in words is the column's unit: no check",
+      "text": "step 2 rotation speed 4000 revolutions per minute for all samples",
+      "expect": {"edits": [{"step": 2, "column": "Rotation speed", "rows": "all", "new": "4000", "check": false}]}
     }
   ]
 }

@@ -2,6 +2,7 @@
 resolves on the synthetic sheet, and the judge counts right."""
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ import run_testcases as rt  # noqa: E402
 from sand.sheet_edit.apply import interpret_instruction  # noqa: E402
 from sand.sheet_edit.catalog import build  # noqa: E402
 from sand.sheet_edit.edits import (  # noqa: E402
+    Anchor,
     Edit,
     NotFound,
     ProposedEdits,
@@ -208,7 +210,7 @@ def test_an_edit_with_a_check_is_counted_apart(cases, catalog, synthetic_xlsx):
     )
     s = rt.summarize([verdict])
     assert (s['collateral'], s['wrong_checked'], s['wrong_unchecked']) == (1, 1, 0)
-    assert 'with a check: 0 right, 1 wrong' in rt.report([verdict])
+    assert 'with a check: 0 right (0 asked for), 1 wrong' in rt.report([verdict])
 
 
 def test_an_unrelated_not_found_does_not_cover_a_dropped_edit(
@@ -299,3 +301,112 @@ def test_the_cache_is_reused_only_for_the_same_question(tmp_path):
     assert rt.reusable(slot, 'openai/flash', 'step 2') is None
     assert rt.reusable(slot, 'gemini/flash', 'step 3') is None
     assert rt.reusable(tmp_path / 'none.json', 'gemini/flash', 'step 2') is None
+
+
+def test_an_edit_that_needs_a_check_fails_without_one(cases, catalog, synthetic_xlsx):
+    case = next(c for c in cases if c.id == 'wrong-anchor')
+    (want,) = case.edits
+    assert want.check
+
+    def answer(anchor):
+        edit = Edit(
+            target=want.target,
+            rows='all',
+            anchor=anchor,
+            old='50',
+            new='80',
+            said=case.text,
+        )
+        return ProposedEdits(edits=[edit], unresolved=[])
+
+    # the anchor names DMF, the sheet holds Ethanol: the check marks it
+    dmf = Anchor(column=rt.column_id(3, 'Solvent 1 name', catalog), equals='DMF')
+    verdict = rt.judge(
+        case, interpret_instruction(case.text, synthetic_xlsx, lambda t, c: answer(dmf))
+    )
+    assert verdict.ok and verdict.checked == 1
+    # no anchor: nothing to check, the edit would go through confirm-all
+    verdict = rt.judge(
+        case,
+        interpret_instruction(case.text, synthetic_xlsx, lambda t, c: answer(None)),
+    )
+    assert not verdict.ok and verdict.check_missed == 1
+    assert verdict.notes == [
+        'Solvent 1 volume (3: Spin Coating): proposed without the check it needs'
+    ]
+    assert rt.summarize([verdict])['check_missed'] == 1
+
+
+def _one(case, old, new=None, anchor=None):
+    (want,) = case.edits
+    edit = Edit(
+        target=want.target,
+        rows='all',
+        anchor=anchor,
+        old=old,
+        new=want.new if new is None else new,
+        said=case.text,
+    )
+    return lambda t, c: ProposedEdits(edits=[edit], unresolved=[])
+
+
+def test_a_wrong_old_value_is_checked_only_when_the_model_keeps_it(
+    cases, synthetic_xlsx
+):
+    case = next(c for c in cases if c.id == 'wrong-old')
+    said = rt.judge(
+        case, interpret_instruction(case.text, synthetic_xlsx, _one(case, '2000'))
+    )
+    assert said.ok and said.checked == 1
+    # the table's value as old: nothing compares the user's 2000 (the gap)
+    table = rt.judge(
+        case, interpret_instruction(case.text, synthetic_xlsx, _one(case, '3000'))
+    )
+    assert not table.ok and table.check_missed == 1
+
+
+def test_an_edit_that_needs_a_check_may_be_flagged_instead(cases, synthetic_xlsx):
+    case = next(c for c in cases if c.id == 'wrong-anchor')
+    said = NotFound(reason='not_found', said='the DMF')
+    answer = ProposedEdits(edits=[], unresolved=[said])
+    verdict = rt.judge(
+        case, interpret_instruction(case.text, synthetic_xlsx, lambda t, c: answer)
+    )
+    assert verdict.ok and (verdict.flagged, verdict.held) == (1, 1)
+    assert rt.summarize([verdict])['flagged'] == rt.TARGETS['flagged']
+    # beside another asked edit, a not-found may be about that one: missed
+    other = next(c for c in cases if c.id == 'two-edits').edits[0]
+    two = replace(case, edits=(*case.edits, other))
+    verdict = rt.judge(
+        two, interpret_instruction(case.text, synthetic_xlsx, lambda t, c: answer)
+    )
+    assert not verdict.ok and verdict.held == 0
+
+
+def test_a_check_on_an_edit_that_must_be_clean_fails(cases, synthetic_xlsx):
+    case = next(c for c in cases if c.id == 'unit-spelled')
+    clean = rt.judge(
+        case, interpret_instruction(case.text, synthetic_xlsx, _one(case, '3000'))
+    )
+    assert clean.ok
+    # a wrong old value: the old-value check marks a right edit
+    marked = rt.judge(
+        case, interpret_instruction(case.text, synthetic_xlsx, _one(case, '2000'))
+    )
+    assert not marked.ok and marked.check_extra == 1
+    # no expectation: a check on a right edit passes
+    loose = rt.Case(case.id, case.text, (replace(case.edits[0], check=None),), (), ())
+    verdict = rt.judge(
+        loose, interpret_instruction(case.text, synthetic_xlsx, _one(case, '2000'))
+    )
+    assert verdict.ok and verdict.checked == 1
+    text = rt.report([marked, clean])
+    assert 'with a check: 1 right (0 asked for), 0 wrong' in text
+    assert 'check missing 0, not wanted 1' in text
+
+
+def test_check_is_read_from_the_case(cases):
+    by_id = {c.id: c for c in cases}
+    assert by_id['wrong-old'].edits[0].check is True
+    assert by_id['unit-spelled'].edits[0].check is False
+    assert by_id['range'].edits[0].check is None
