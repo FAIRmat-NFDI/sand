@@ -19,6 +19,7 @@ with a doubt and low confidence.
 """
 
 import datetime
+import itertools
 import re
 from dataclasses import dataclass
 from decimal import Decimal
@@ -665,62 +666,57 @@ def old_problems(
         return _old_said_problems(edit, target, catalog, to_change)
     held = _values(target, to_change)
     if len(held) > 1 and (not edit.old or any(same_value(edit.old, v) for v in held)):
-        return []
+        return _old_said_problems(edit, target, catalog, to_change)
     claimed = 'empty' if not edit.old else repr(edit.old)
     return [
         f'{column_name(target)} holds {_held(target, catalog, wrong)}, not {claimed}'
     ]
 
 
-# "from 2000 to 4000", "Cu instead of Ag": the old value the user said
-_FROM_TO = re.compile(
-    r'\bfrom\s+(?P<old>[^,;]+?)\s+(?:to|into)\s+(?P<new>[^,;]+)', re.I
-)
-_INSTEAD = re.compile(r'(?P<new>\S+)\s+instead\s+of\s+(?P<old>[^\s,;.]+)', re.I)
+# spoken fillers that may stand between the words of "from 2000 to 4000"
+_F = r'(?:\s+(?:uh|um|er|about|around|roughly|approximately))*\s+'
+_FROM = re.compile(rf'(?<![\w-])from{_F}$', re.I)  # the words before the old
+_RANGE_FROM = re.compile(rf'\b(?:samples?|rows?|steps?){_F}from{_F}$', re.I)
+_TO = re.compile(rf'^{_F}(?:to|into){_F}$', re.I)
+_INSTEAD_OF = re.compile(rf'^{_F}instead\s+of{_F}$', re.I)
+_THEN_FROM = re.compile(rf'^{_F}from{_F}$', re.I)
 
 
 def _old_said_problems(
     edit: Edit, target: ColumnInfo, catalog: Catalog, to_change: list[int]
 ) -> list[str]:
     """The model's `old` is the table's (the prompt asks for it), so a
-    wrong old value the user said is compared here: "from 2000 to 4000"
-    over rows holding 3000. Only when the words pair it with `new`, so
-    "samples 1 to 3" is never read as one."""
+    wrong old number the user said is compared here: "from 2000 to 4000"
+    over rows holding 3000. Only a number the words pair with `new`
+    ("from 2000 to 4000", "to 4000 from 2000", "4000 instead of 2000"),
+    never a range of samples ("samples from 1 to 5")."""
     said = _old_in_words(edit.said, edit.new)
     if said is None:
         return []
     held = _by_row(target)
-    wrong = [  # speech writes text in any case: 'ag' is Ag
-        r
-        for r in to_change
-        if not same_value(said, held.get(r))
-        and said.casefold() != _key(held.get(r)).casefold()
-    ]
+    wrong = [r for r in to_change if not same_value(said.text, held.get(r))]
     if not wrong:
         return []
     return [
-        f'{column_name(target)}: you said it was {said!r}; '
+        f'{column_name(target)}: you said it was {said.text!r}; '
         f'it holds {_held(target, catalog, wrong)}'
     ]
 
 
-def _old_in_words(said: str, new: str) -> str | None:
-    for pattern in (_FROM_TO, _INSTEAD):
-        for m in pattern.finditer(said):
-            if _starts_with(m['new'], new):
-                return m['old'].strip()
+def _old_in_words(said: str, new: str) -> Number | None:
+    wanted = value(new)
+    if wanted is None:
+        return None
+    for a, b in itertools.pairwise(numbers(said)):
+        between, before = said[a.end : b.start], said[: a.start]
+        if b.value == wanted.value and _TO.match(between):
+            if _FROM.search(before) and not _RANGE_FROM.search(before):
+                return a  # from 2000 to 4000
+        if a.value == wanted.value and (
+            _INSTEAD_OF.match(between) or _THEN_FROM.match(between)
+        ):
+            return b  # 4000 instead of 2000, to 4000 from 2000
     return None
-
-
-def _starts_with(words: str, new: str) -> bool:
-    """`words` begins with the value `new`: as a number ('4000 rpm for all'
-    begins with 4000) or as text."""
-    if not new.strip():
-        return False
-    number, found = value(new), numbers(words)
-    if number is not None:
-        return bool(found) and found[0].start == 0 and found[0].value == number.value
-    return words.casefold().startswith(new.strip().casefold())
 
 
 def _rows_not_holding(column: ColumnInfo, text: str, rows) -> list[int]:
