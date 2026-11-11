@@ -672,6 +672,9 @@ def old_problems(
     ]
 
 
+_EMPTY_SAID = re.compile(r'empty|blank|nothing|none|null', re.I)
+
+
 def _old_said_problems(
     edit: Edit, target: ColumnInfo, catalog: Catalog, to_change: list[int]
 ) -> list[str]:
@@ -681,6 +684,17 @@ def _old_said_problems(
     if not edit.said_old or not edit.said_old.strip():
         return []
     said = edit.said_old.strip()
+    if target.type in ('bool', 'date', 'yyyymmdd') or _EMPTY_SAID.fullmatch(said):
+        # 'yes', '1st of January', 'empty': other spellings than the cells',
+        # not compared yet
+        return []
+    number = value(said)
+    if (
+        number
+        and number.unit
+        and not (target.unit and same_unit(number.unit, target.unit))
+    ):
+        return []  # '0.05 ml' over a [uL] column: no conversion yet (#108)
     # TODO: check that `said_old` is in the user's words, as V does for
     # `new`; one the model made up should be a check too
     held = _by_row(target)

@@ -1366,3 +1366,19 @@ def test_the_old_value_said_is_checked_over_rows_holding_different_values(
     said = 'step 2 rotation speed from 2500 to 4000 for all samples'
     result = ground(edit(old=None, new='4000', said=said, said_old='2500'), mixed)
     assert "you said it was '2500'; it holds '3000' on samples 7–13" in checked(result)
+
+
+@pytest.mark.parametrize(
+    ('target', 'said_old'),
+    [
+        (SPEED, 'empty'),  # an empty cell, said in words
+        (SPEED, 'nothing'),
+        (VOLUME_3, '0.05 ml'),  # another unit: not converted yet (#108)
+        (DATE, '1st of January 2025'),  # dates are not compared yet
+    ],
+)
+def test_no_check_for_an_old_value_said_in_a_form_not_compared(
+    catalog, target, said_old
+):
+    result = ground(edit(target, new='60', said='60', said_old=said_old), catalog)
+    assert not any('you said it was' in c for c in getattr(result, 'checks', ()))

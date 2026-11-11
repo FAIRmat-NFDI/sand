@@ -174,6 +174,8 @@ def _reading(edit: Edit, catalog: Catalog) -> str:
         through = catalog.column(edit.anchor.column)
         name = through.column.header if through else edit.anchor.column
         text += f', pointed through {name} = {edit.anchor.equals}'
+    if edit.said_old and edit.said_old.strip():
+        text += f', you said it was {edit.said_old.strip()}'
     return text
 
 

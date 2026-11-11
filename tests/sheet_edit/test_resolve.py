@@ -375,6 +375,8 @@ def test_an_old_value_said_is_no_disagreement_and_is_kept(catalog, synthetic_xls
         )
         (ready,) = result.ready.values()
         assert "you said it was '2000'" in ready.checks[0]
+        # the 2000 is used, by said_old: no "no update in" for it
+        assert 'no update in' not in result.preview
     # one amount written two ways is one old value
     proposal = ask(catalog, answer(heard), answer(edit(said=said, said_old='2,000')))
     assert [e.said_old for e in proposal.edits] == ['2000']
@@ -382,6 +384,14 @@ def test_an_old_value_said_is_no_disagreement_and_is_kept(catalog, synthetic_xls
     other = edit(said=said, said_old='3000')
     item = only(ask(catalog, answer(heard), answer(other)), Uncertain)
     assert [r.said_old for r in item.readings] == ['2000', '3000']
+    # the readings differ only there: the preview says which is which
+    result = interpret_instruction(
+        said,
+        synthetic_xlsx,
+        lambda t, c: ask(c, answer(heard), answer(other), t),
+    )
+    assert 'you said it was 2000' in result.preview
+    assert 'you said it was 3000' in result.preview
 
 
 def test_repeats_of_one_write_in_a_pass_are_all_compared(catalog):
