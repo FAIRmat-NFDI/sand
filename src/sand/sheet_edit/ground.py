@@ -895,9 +895,9 @@ def _typed(new: str, target: ColumnInfo) -> object:
             raise Refusal(f'{name} holds dates written as 20250101; {new!r} is not one')
         if target.type in ('int', 'float'):
             raise Refusal(f'{name} holds numbers; {new!r} is not a number')
-        if target.unit and any(ch.isdigit() for ch in new):
-            # '500 r/min' into an empty [rpm] column: a number with words
-            # code cannot read, never written as text
+        if target.unit and numbers(new):
+            # '500 r/min' or 'five hundred r/min' into an empty [rpm] column:
+            # a number with words code cannot read, never written as text
             raise Refusal(f'{name} is in {target.unit}; {new!r} is not a number')
         return new  # an empty or mixed column keeps what was said
     try:

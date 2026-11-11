@@ -1290,12 +1290,14 @@ def test_a_unit_kept_in_the_value_is_still_the_unit_checks(catalog):
     assert isinstance(result, Grounded) and result.value == 500  # noqa: PLR2004
     # a number with words code cannot read, into an empty [rpm] column:
     # refused, never written as text
-    why = refused(
-        ground(
-            edit('C069', old=None, new='500 r/min', said='7 speed 500 r/min'), catalog
+    for new in ('500 r/min', 'five hundred r/min'):
+        why = refused(
+            ground(edit('C069', old=None, new=new, said=f'7 speed {new}'), catalog)
         )
-    )
-    assert (
-        why
-        == "Rotation speed [rpm] (7: Spin Coating) is in rpm; '500 r/min' is not a number"
-    )
+        assert (
+            why
+            == f'Rotation speed [rpm] (7: Spin Coating) is in rpm; {new!r} is not a number'
+        )
+    # no number in it: kept as said
+    result = ground(edit('C069', old=None, new='fast', said='7 speed fast'), catalog)
+    assert isinstance(result, Grounded) and result.value == 'fast'
