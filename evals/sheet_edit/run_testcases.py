@@ -5,7 +5,7 @@ the function the edit job runs, with the model answering the two passes
 the way the job's worker asks it (nomad-llm-extraction's engine, the
 same prompt, schema and temperature, the same retries). What comes out
 is compared with what the case expects: the edits (column, samples,
-value) that must be ready, the columns that must be flagged (refused or
+value, and whether a word check must mark it) that must be ready, the columns that must be flagged (refused or
 left unresolved, never written), the unresolved kinds that must be said.
 
     ~/fairmat/nomad-distro-dev/.venv/bin/python \\
@@ -65,12 +65,14 @@ TARGETS = {'precision': 99, 'flagged': 100, 'proposed': 95, 'refusals': 100}
 @dataclass(frozen=True)
 class Expected:
     """One expected edit, resolved on the sheet: Excel rows and the value
-    as said ('' clears)."""
+    as said ('' clears). `check`: the words contradict the sheet, so the
+    right edit must carry a check (confirmed on its own, #163)."""
 
     target: str
     name: str  # "Rotation speed (2: Spin Coating)"
     rows: tuple[int, ...]
     new: str
+    check: bool = False
 
 
 @dataclass(frozen=True)
@@ -144,7 +146,11 @@ def rows_of(rows: str | list[str], catalog: Catalog) -> tuple[int, ...]:
 def _expected(raw: dict, catalog: Catalog) -> Expected:
     target = column_id(raw['step'], raw['column'], catalog)
     return Expected(
-        target, _name(target, catalog), rows_of(raw['rows'], catalog), raw['new']
+        target,
+        _name(target, catalog),
+        rows_of(raw['rows'], catalog),
+        raw['new'],
+        raw.get('check', False),
     )
 
 
@@ -164,7 +170,9 @@ class Verdict:
     `written` is a flagged column that got a ready edit, the worst
     outcome; `failed` is set when the job itself would have failed.
     `checked` and `wrong_checked`: of the right and of the wrong ready
-    edits, those a word check marked, which the user confirms one by one."""
+    edits, those a word check marked, which the user confirms one by one.
+    `check_missed`: right edits the case wants marked that came unmarked,
+    which confirm-all would write."""
 
     case: Case
     proposed: int = 0
@@ -175,6 +183,7 @@ class Verdict:
     written: int = 0
     checked: int = 0
     wrong_checked: int = 0
+    check_missed: int = 0
     refused_ok: bool = True  # the unresolved kinds asked for were said
     failed: str = ''
     notes: list[str] = field(default_factory=list)
@@ -185,7 +194,8 @@ class Verdict:
         """Every asked edit proposed as asked, nothing else written, the
         refusals asked for said. A flagged edit is safe, not a pass."""
         wrong = self.flagged or self.missed or self.invented or self.collateral
-        return not wrong and not self.written and self.refused_ok and not self.failed
+        wrong = wrong or self.written or self.check_missed
+        return not wrong and self.refused_ok and not self.failed
 
 
 def judge(case: Case, result: Interpretation) -> Verdict:
@@ -205,6 +215,9 @@ def judge(case: Case, result: Interpretation) -> Verdict:
             if hit.checks:
                 v.checked += 1
                 v.notes.append(f'{want.name}: proposed with a check')
+            elif want.check:
+                v.check_missed += 1
+                v.notes.append(f'{want.name}: proposed without the check it needs')
         elif any(g.edit.target == want.target for g in ready):
             # the column is right, the rows or the value are not: the
             # ready edit is counted below, the asked one is missed
@@ -330,6 +343,8 @@ def summarize(verdicts: list[Verdict]) -> dict[str, object]:
         'written': sum(v.written for v in verdicts),
         'checked': sum(v.checked for v in verdicts),
         'wrong_checked': sum(v.wrong_checked for v in verdicts),
+        'check_asked': sum(w.check for v in verdicts for w in v.case.edits),
+        'check_missed': sum(v.check_missed for v in verdicts),
         # what "confirm all" would write wrongly: the one number to keep at 0
         'wrong_unchecked': wrong - sum(v.wrong_checked for v in verdicts),
     }
@@ -366,7 +381,8 @@ def report(verdicts: list[Verdict]) -> str:
         f'written although flagged {s["written"]}'
     )
     lines.append(
-        f'with a check: {s["checked"]} right, {s["wrong_checked"]} wrong · '
+        f'with a check: {s["checked"]} right ({s["check_asked"]} asked for), '
+        f'{s["wrong_checked"]} wrong · check missing {s["check_missed"]} · '
         f'wrong without a check {s["wrong_unchecked"]}'
     )
     return '\n'.join(lines)
