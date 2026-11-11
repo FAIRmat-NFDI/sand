@@ -167,7 +167,7 @@
     },
     {
       "id": "wrong-old",
-      "why": "the user remembers the old value wrong (the sheet holds 3000): proposed with a check (#163), or flagged. Checked from the words, whichever old the model gives",
+      "why": "the user remembers the old value wrong (the sheet holds 3000): proposed with a check (#163), or flagged. The model puts the 2000 it heard in said_old; code compares it with the sheet",
       "text": "step 2 rotation speed from 2000 to 4000 for all samples",
       "expect": {"edits": [{"step": 2, "column": "Rotation speed", "rows": "all", "new": "4000", "check": true}]}
     },

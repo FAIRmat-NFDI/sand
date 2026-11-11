@@ -19,7 +19,6 @@ with a doubt and low confidence.
 """
 
 import datetime
-import itertools
 import re
 from dataclasses import dataclass
 from decimal import Decimal
@@ -673,50 +672,30 @@ def old_problems(
     ]
 
 
-# spoken fillers that may stand between the words of "from 2000 to 4000"
-_F = r'(?:\s+(?:uh|um|er|about|around|roughly|approximately))*\s+'
-_FROM = re.compile(rf'(?<![\w-])from{_F}$', re.I)  # the words before the old
-_RANGE_FROM = re.compile(rf'\b(?:samples?|rows?|steps?){_F}from{_F}$', re.I)
-_TO = re.compile(rf'^{_F}(?:to|into){_F}$', re.I)
-_INSTEAD_OF = re.compile(rf'^{_F}instead\s+of{_F}$', re.I)
-_THEN_FROM = re.compile(rf'^{_F}from{_F}$', re.I)
-
-
 def _old_said_problems(
     edit: Edit, target: ColumnInfo, catalog: Catalog, to_change: list[int]
 ) -> list[str]:
-    """The model's `old` is the table's (the prompt asks for it), so a
-    wrong old number the user said is compared here: "from 2000 to 4000"
-    over rows holding 3000. Only a number the words pair with `new`
-    ("from 2000 to 4000", "to 4000 from 2000", "4000 instead of 2000"),
-    never a range of samples ("samples from 1 to 5")."""
-    said = _old_in_words(edit.said, edit.new)
-    if said is None:
+    """The old value the user said ("from 2000 to 4000"), as the model read
+    it, against the sheet: the model's `old` is the table's, so a wrong
+    value the user remembers never reaches the check above."""
+    if not edit.said_old or not edit.said_old.strip():
         return []
+    said = edit.said_old.strip()
+    # TODO: check that `said_old` is in the user's words, as V does for
+    # `new`; one the model made up should be a check too
     held = _by_row(target)
-    wrong = [r for r in to_change if not same_value(said.text, held.get(r))]
+    wrong = [  # speech writes text in any case: 'ag' is Ag
+        r
+        for r in to_change
+        if not same_value(said, held.get(r))
+        and said.casefold() != _key(held.get(r)).casefold()
+    ]
     if not wrong:
         return []
     return [
-        f'{column_name(target)}: you said it was {said.text!r}; '
+        f'{column_name(target)}: you said it was {said!r}; '
         f'it holds {_held(target, catalog, wrong)}'
     ]
-
-
-def _old_in_words(said: str, new: str) -> Number | None:
-    wanted = value(new)
-    if wanted is None:
-        return None
-    for a, b in itertools.pairwise(numbers(said)):
-        between, before = said[a.end : b.start], said[: a.start]
-        if b.value == wanted.value and _TO.match(between):
-            if _FROM.search(before) and not _RANGE_FROM.search(before):
-                return a  # from 2000 to 4000
-        if a.value == wanted.value and (
-            _INSTEAD_OF.match(between) or _THEN_FROM.match(between)
-        ):
-            return b  # 4000 instead of 2000, to 4000 from 2000
-    return None
 
 
 def _rows_not_holding(column: ColumnInfo, text: str, rows) -> list[int]:

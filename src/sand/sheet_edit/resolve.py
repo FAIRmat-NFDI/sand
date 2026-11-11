@@ -36,11 +36,12 @@ from sand.sheet_edit.edits import (
     proposed_edits_schema,
 )
 from sand.sheet_edit.ground import Refusal, resolve_rows
+from sand.sheet_edit.numbers import value
 from sand.sheet_edit.render import table
 
 # recorded with every proposal (changelog, status); bump on any change to
 # the prompts below or to the table in render.py, which the model reads
-PROMPT_VERSION = 'v3'
+PROMPT_VERSION = 'v4'
 # the job's cache keeps proposals after `agree`: bump the second part on
 # a change to how two opinions agree, so agreed answers are asked again
 CACHE_VERSION = f'{PROMPT_VERSION}+agree-2'
@@ -71,6 +72,9 @@ even when it differs from the column's unit. To clear a cell, "new" is "" \
 (the user said to clear, empty or remove it); (empty) is never a value.
 - "old": the current value the table shows for the cell, without the quotes; \
 null when the cell is empty or when the samples hold different values.
+- "said_old": the current value as the user said it, even when the table \
+shows another ("from 2000 to 4000": "2000"; "Cu instead of Ag": "Ag"); \
+null when the user names no current value.
 - "rows": "all" when the user names no samples; the samples named; a range \
 ("samples 1 to 3"); or "where" another column holds a value, to pick the \
 rows by it ("the samples with variation 20min": where = that column, \
@@ -78,8 +82,8 @@ equals = "20min").
 - "anchor": when the user names a value in a neighbouring column of the \
 same step to say which cell they mean ("the volume of the DMSO": the \
 volume column is the target, anchor = the solvent column, equals = "DMSO").
-- A value the user mentions as current ("the 3000") is a clue to the cell: \
-use it as "old".
+- A value the user mentions as current ("the 3000") is a clue to the cell \
+and goes into "said_old"; "old" stays what the table shows.
 - If the words fit more than one column, do not pick one: answer \
 "ambiguous" with every candidate.
 - If what the user points at is not in the table, answer "not_found".
@@ -98,6 +102,9 @@ rounding, no rescaling. A unit the user said stays with the number \
 not a value.
 - "old" is the current value shown in the table for that cell, quotes \
 left out, or null for an empty cell or samples that hold different values.
+- "said_old" is the value the user says the cell holds now, in their words \
+("4000 instead of 2000": "2000"), whatever the table shows; null if they \
+say none.
 - Choose "rows" as "all" if no sample is named, else the named samples, a \
 "first"/"last" range for "samples 1 to 3", or "where" when the user picks \
 rows by what another column holds ("the samples with variation 20min").
@@ -105,7 +112,7 @@ rows by what another column holds ("the samples with variation 20min").
 the same step ("the volume of the DMSO" edits the volume column; the \
 anchor is the solvent column with equals "DMSO").
 - When the user quotes a current value ("the 3000"), it identifies the \
-cell: it is the "old" value.
+cell and is the "said_old"; "old" is still the table's value.
 - Several columns could be meant? Then "ambiguous" with all of them, never \
 a guess.
 - Nothing in the table matches? Then "not_found".
@@ -224,18 +231,19 @@ def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdi
             continue
         both = [*group, *by_b[key]]
         pointed = _first_per_anchor(both)
-        if len(pointed) > 1:
-            # the same write pointed at through different cells: each
-            # pointer is a reading
-            for e in pointed.values():
+        olds = _first_per_said_old(both)
+        # the same write pointed at through different cells, or with two
+        # old values heard: each is a reading
+        differ = next((d for d in (pointed, olds) if len(d) > 1), {})
+        if differ:
+            for e in differ.values():
                 doubt(e, _DIFFER)
         elif hedged & {_quote(e.said) for e in both}:
             # the passes (and repeats) may cut the quote differently: a
             # hedge on any of these quotes counts
             doubt(edit, _HEDGED)
         else:
-            # a pointer either pass gave is kept, so that ground checks it
-            edits.append(next(iter(pointed.values()), edit))
+            edits.append(_kept(edit, pointed, olds))
     for key, group in by_b.items():
         if key not in by_a:
             for reading in _readings(group):
@@ -268,7 +276,9 @@ AgreementKey = tuple[str, RowsAgreementKey, str]
 
 def _agreement_key(edit: Edit, catalog: Catalog) -> AgreementKey:
     """What two passes must agree on: what would be written, the cells and
-    the value. Left out: `old`, which ground checks against the sheet;
+    the value. Left out: `old` and `said_old`, which ground checks
+    against the sheet (a `said_old` of either pass is kept, two different
+    ones disagree);
     `said`, which the passes may cut differently for one and the same
     edit; the anchor, which only points: an anchor of either pass is
     kept for ground to check, two different ones disagree. The value is compared as written: material
@@ -289,6 +299,26 @@ def _readings(group: list[Edit]) -> list[Edit]:
     """One pass's repeats of a write, as the user sees them: one reading
     per anchor, or the first edit when none has one."""
     return list(_first_per_anchor(group).values()) or group[:1]
+
+
+def _kept(edit: Edit, pointed: dict, olds: dict) -> Edit:
+    """A pointer or an old value either pass gave is kept, so that ground
+    checks it."""
+    kept = next(iter(pointed.values()), edit)
+    if olds and not (kept.said_old or '').strip():
+        kept = kept.model_copy(update={'said_old': next(iter(olds.values())).said_old})
+    return kept
+
+
+def _first_per_said_old(edits: list[Edit]) -> dict[str, Edit]:
+    said: dict[str, Edit] = {}
+    for edit in edits:
+        if edit.said_old and edit.said_old.strip():
+            # by amount: one pass's '2,000' is the other's '2000'
+            number = value(edit.said_old)
+            key = str(number.value) if number else edit.said_old.strip().casefold()
+            said.setdefault(key, edit)
+    return said
 
 
 def _first_per_anchor(edits: list[Edit]) -> dict[tuple[str, str], Edit]:

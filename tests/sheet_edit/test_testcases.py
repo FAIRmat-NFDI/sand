@@ -337,7 +337,7 @@ def test_an_edit_that_needs_a_check_fails_without_one(cases, catalog, synthetic_
     assert rt.summarize([verdict])['check_missed'] == 1
 
 
-def _one(case, old, new=None, anchor=None):
+def _one(case, old, new=None, anchor=None, said_old=None):
     (want,) = case.edits
     edit = Edit(
         target=want.target,
@@ -346,23 +346,25 @@ def _one(case, old, new=None, anchor=None):
         old=old,
         new=want.new if new is None else new,
         said=case.text,
+        said_old=said_old,
     )
     return lambda t, c: ProposedEdits(edits=[edit], unresolved=[])
 
 
-def test_a_wrong_old_value_is_checked_whichever_old_the_model_gives(
-    cases, synthetic_xlsx
-):
+def test_a_wrong_old_value_is_checked_when_the_model_hears_it(cases, synthetic_xlsx):
     case = next(c for c in cases if c.id == 'wrong-old')
-    said = rt.judge(
-        case, interpret_instruction(case.text, synthetic_xlsx, _one(case, '2000'))
-    )
-    assert said.ok and said.checked == 1
-    # the table's value as old: the user's 2000 is compared from the words
-    table = rt.judge(
-        case, interpret_instruction(case.text, synthetic_xlsx, _one(case, '3000'))
-    )
-    assert table.ok and table.checked == 1
+
+    def judged(old, said_old):
+        answer = _one(case, old, said_old=said_old)
+        return rt.judge(case, interpret_instruction(case.text, synthetic_xlsx, answer))
+
+    # the old value the user said, whichever old the table gave
+    for old in ('3000', '2000'):
+        verdict = judged(old, '2000')
+        assert verdict.ok and verdict.checked == 1, old
+    # the model did not hear it: written unmarked, the case fails
+    verdict = judged('3000', None)
+    assert not verdict.ok and verdict.check_missed == 1
 
 
 def test_an_edit_that_needs_a_check_may_be_flagged_instead(cases, synthetic_xlsx):

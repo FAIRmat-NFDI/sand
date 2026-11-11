@@ -1304,67 +1304,55 @@ def test_a_unit_kept_in_the_value_is_still_the_unit_checks(catalog):
 
 
 @pytest.mark.parametrize(
-    ('said', 'quoted'),
+    ('said', 'said_old'),
     [
         ('step 2 rotation speed from 2000 to 4000 for all samples', '2000'),
-        ('step 2 rotation speed 4000 instead of 2000', '2000'),
-        ('step 2 rotation speed 4000 rpm instead of 2000', '2000'),
-        ('step 2 rotation speed four thousand instead of 2000', '2000'),
-        ('step 2 speed from about 2000 to 4000', '2000'),
-        ('step 2 speed from 2,000 to 4,000', '2,000'),
-        ('step 2 speed to 4000 from 2000', '2000'),
-        # the pair of this edit, wherever it stands among others
-        ('time from 20 to 40 and speed from 2000 to 4000', '2000'),
-        ('speed from 2000 to 4000 and time from 20 to 40', '2000'),
+        ('step 2 rotation speed 4000 instead of two thousand', 'two thousand'),
+        ('step 2 rotation speed 4000 instead of 2000 rpm', '2000 rpm'),
     ],
 )
 def test_a_wrong_old_value_said_is_a_check_even_when_old_is_the_tables(
-    catalog, said, quoted
+    catalog, said, said_old
 ):
-    # the prompt asks for the table's value as old: the words are compared
-    result = ground(edit(old='3000', new='4000', said=said), catalog)
+    # old is the table's, as the prompt asks; said_old is compared
+    result = ground(edit(old='3000', new='4000', said=said, said_old=said_old), catalog)
     assert checked(result) == (
-        f"Rotation speed [rpm] (2: Spin Coating): you said it was '{quoted}'; "
+        f'Rotation speed [rpm] (2: Spin Coating): you said it was {said_old!r}; '
         "it holds '3000' on samples 1–5, 7–13"
     )
 
 
 @pytest.mark.parametrize(
-    'said',
-    [
-        'step 2 rotation speed from 3000 to 4000',
-        'step 2 rotation speed from three thousand to 4000',
-        'step 2 rotation speed 4000 instead of three thousand',
-        'step 2 speed from uh 3000 to 4000',
-        'step 2 speed from 3,000 to 4,000',
-        'step 2 rotation speed 4000',
-        # no number paired with 4000
-        'from now on step 2 rotation speed to 4000',
-        'change the speed from the current value to 4000',
-    ],
+    'said_old', ['3000', 'three thousand', '3,000', '3000 rpm', None, '', '  ']
 )
-def test_no_check_when_the_old_value_said_is_held_or_none_is_said(catalog, said):
-    result = ground(edit(old='3000', new='4000', said=said), catalog)
-    assert isinstance(result, Grounded) and result.checks == (), said
+def test_no_check_when_the_old_value_said_is_held_or_none_is_said(catalog, said_old):
+    said = 'step 2 rotation speed to 4000'
+    result = ground(edit(old='3000', new='4000', said=said, said_old=said_old), catalog)
+    assert isinstance(result, Grounded) and result.checks == (), said_old
 
 
-@pytest.mark.parametrize(
-    'said',
-    [
-        'annealing time 5 for samples from 1 to 5',
-        'annealing time 5 minutes from sample 1 to 5',
-    ],
-)
-def test_a_range_of_samples_is_not_an_old_value(catalog, said):
-    rows = samples('1', '2', '3', '4', '5')
-    result = ground(edit(ANNEAL_TIME, rows=rows, old='10', new='5', said=said), catalog)
-    assert isinstance(result, Grounded) and result.checks == (), said
+def test_an_old_text_said_compares_in_any_case(catalog):
+    target = next(
+        c.id
+        for c in catalog.columns
+        if c.column.section.label == '8: Evaporation'
+        and c.column.header == 'Material name'
+    )
+    said = 'the material of step 8 is Cu instead of ag'
+    result = ground(edit(target, old='Ag', new='Cu', said=said, said_old='ag'), catalog)
+    assert isinstance(result, Grounded) and result.checks == ()
+    said = 'the material of step 8 is Cu instead of Au'
+    result = ground(edit(target, old='Ag', new='Cu', said=said, said_old='Au'), catalog)
+    assert "you said it was 'Au'; it holds 'Ag'" in checked(result)
 
 
-def test_an_old_decimal_said_is_read_whole(catalog):
-    said = 'annealing time 15 instead of 10.5'
-    result = ground(edit(ANNEAL_TIME, old='10', new='15', said=said), catalog)
-    assert "you said it was '10.5'; it holds '10'" in checked(result)
+def test_a_wrong_old_of_the_model_keeps_its_own_message(catalog):
+    said = 'step 2 rotation speed from 2000 to 4000'
+    result = ground(edit(old='2000', new='4000', said=said, said_old='2000'), catalog)
+    assert checked(result) == (
+        "Rotation speed [rpm] (2: Spin Coating) holds '3000' on samples 1–5, 7–13, "
+        "not '2000'"
+    )
 
 
 def test_the_old_value_said_is_checked_over_rows_holding_different_values(
@@ -1376,5 +1364,5 @@ def test_the_old_value_said_is_checked_over_rows_holding_different_values(
 
     mixed = build(edited(synthetic_xlsx, change))
     said = 'step 2 rotation speed from 2500 to 4000 for all samples'
-    result = ground(edit(old=None, new='4000', said=said), mixed)
+    result = ground(edit(old=None, new='4000', said=said, said_old='2500'), mixed)
     assert "you said it was '2500'; it holds '3000' on samples 7–13" in checked(result)
