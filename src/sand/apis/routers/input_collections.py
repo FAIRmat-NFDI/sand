@@ -1059,7 +1059,12 @@ def _with_confirmations(status: dict, confirmed: dict | None) -> dict:
         report['unconfirmed_since'] = [key for key in written if key not in confirmed]
         report['confirmed'] = [*(k for k in written if k in confirmed), *since]
         report['confirmed_since'] = since
-        report['confirm_again'] = sum(
+        # only with something to do: edits to confirm, or a part to
+        # rephrase; an edit the sheet already holds needs nothing
+        todo = any(key not in confirmed for key in keys) or any(
+            report.get(field) for field in ('unresolved', 'not_applied', 'refused')
+        )
+        report['confirm_again'] = todo * sum(
             isinstance(c, dict)
             and c.get('input') == report.get('entry_id')
             and key not in keys

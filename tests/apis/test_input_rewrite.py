@@ -136,13 +136,37 @@ async def test_an_update_after_a_changed_one_is_to_confirm_again(voice):
 
 
 async def test_an_update_that_lost_its_edit_is_told_too(voice):
-    # n1 changed and n2 finds no edit now: refused, unclear or noted
-    put_status(voice, [{'input': 2, 'entry_id': 'n2', 'ready': [], 'confirmed': []}])
+    # n1 changed and n2's edit is refused now
+    put_status(
+        voice,
+        [
+            {
+                'input': 2,
+                'entry_id': 'n2',
+                'ready': [],
+                'confirmed': [],
+                'not_applied': 1,
+            }
+        ],
+    )
     put_confirmations(voice, {'k5': 'n2'})
 
     (report,) = (await status(voice))['inputs']
 
     assert report['confirm_again'] == 1
+
+
+async def test_an_update_the_sheet_already_holds_is_not_told(voice):
+    # n1 changed; n2's value is in the sheet already: nothing to do
+    put_status(
+        voice,
+        [{'input': 2, 'entry_id': 'n2', 'ready': [], 'confirmed': [], 'unchanged': 1}],
+    )
+    put_confirmations(voice, {'k5': 'n2'})
+
+    (report,) = (await status(voice))['inputs']
+
+    assert report['confirm_again'] == 0
 
 
 async def test_a_withdrawn_confirmation_waits_for_the_next_run(voice):
