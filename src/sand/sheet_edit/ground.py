@@ -12,8 +12,8 @@ the value are reported, not written.
 W, R, T and U refuse: past them the write is impossible or plainly wrong.
 S, A, O and V compare the proposal with the words or with what the
 sheet holds around it; a mismatch there may be the check's misreading,
-and the write stays possible: it is a check, shown on the edit, which
-the user must confirm on its own (never through "confirm all"). Where code finds
+and the write stays possible: it is a check, shown on the edit (and
+counted on "confirm all", which takes it too). Where code finds
 nothing to compare ("the usual speed" names no number) the edit passes
 with a doubt and low confidence.
 """
@@ -76,7 +76,7 @@ class Grounded:
     unchanged: tuple[int, ...] = ()  # rows already holding `new`: reported, not written
     notes: tuple[str, ...] = ()  # warnings the user sees before confirming
     doubts: tuple[str, ...] = ()  # what code could not check in the words
-    # what the word checks (S A O V) found against it: confirmed one by one
+    # what the word checks (S A O V) found against it: shown on the edit
     checks: tuple[str, ...] = ()
 
     @property
@@ -85,9 +85,7 @@ class Grounded:
 
     @property
     def confidence(self) -> Confidence:
-        """low: a check or a doubt; medium: notes; high: neither. Only a
-        check keeps an edit out of confirm-all: a doubt (nothing in the
-        words to compare) does not."""
+        """low: a check or a doubt; medium: notes; high: neither."""
         if self.checks or self.doubts:
             return 'low'
         return 'medium' if self.notes else 'high'

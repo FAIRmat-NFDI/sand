@@ -1563,7 +1563,7 @@ body {
   font-style: italic;
 }
 
-/* a word check found something: the edit is confirmed on its own */
+/* a word check found something: shown on the edit */
 .report-check {
   grid-column: 1 / -1;
   margin: 2px 0 6px;

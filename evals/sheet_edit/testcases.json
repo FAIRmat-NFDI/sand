@@ -137,7 +137,7 @@
     },
     {
       "id": "other-unit",
-      "why": "hours into a [min] column, never converted (#108): the model keeps the unit and the unit check refuses it; a dropped unit gets a word check (#165), written only if confirmed",
+      "why": "hours into a [min] column, never converted (#108): the model keeps the unit and the unit check refuses it; a dropped unit gets a word check (#165), a warning on the edit",
       "text": "annealing time of step 2 to 2 hours for all samples",
       "expect": {"edits": [], "flagged": [{"step": 2, "column": "Annealing time"}]}
     },
@@ -161,7 +161,7 @@
     },
     {
       "id": "samples-unnamed",
-      "why": "no sample number in the words: a doubt, which still lets the edit into confirm-all",
+      "why": "no sample number in the words: a doubt, not a check",
       "text": "step 2 rotation speed 4000 for the first three samples",
       "expect": {"edits": [{"step": 2, "column": "Rotation speed", "rows": ["1", "2", "3"], "new": "4000", "check": false}]}
     },

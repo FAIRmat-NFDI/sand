@@ -234,7 +234,7 @@ async def test_apply_caches_the_agreed_proposal_and_reports_the_edit(upload):
         == '2: Spin Coating · Rotation speed [rpm]: 3000 → 4000, samples 1–3'
     )
     assert report['preview'].startswith(ready['line'])
-    assert ready['checks'] == []  # a clean edit: confirm-all may take it
+    assert ready['checks'] == []  # a clean edit: no check
     assert {k: ready[k] for k in ('step', 'column', 'old', 'new', 'samples')} == {
         'step': '2: Spin Coating',
         'column': 'Rotation speed [rpm]',

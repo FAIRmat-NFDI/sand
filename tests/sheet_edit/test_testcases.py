@@ -104,7 +104,7 @@ def test_the_judge_counts_wrong_rows_and_values(cases, catalog, synthetic_xlsx):
     assert not verdict.ok
     assert (verdict.missed, verdict.collateral) == (1, 1)
     # the value is right but on every sample: the samples check marks it
-    # (the user named 1 to 3); wrong, but never written through confirm all
+    # (the user named 1 to 3); wrong, but shown with a warning
     wrong_rows = _proposal(case, catalog, rows=tuple(s.row for s in catalog.samples))
     verdict = rt.judge(
         case, interpret_instruction(case.text, synthetic_xlsx, lambda t, c: wrong_rows)
@@ -201,7 +201,7 @@ def test_a_refused_edit_is_flagged_not_passed(cases, catalog, synthetic_xlsx):
 def test_an_edit_with_a_check_is_counted_apart(cases, catalog, synthetic_xlsx):
     case = next(c for c in cases if c.id == 'range')
     # 4400 is not in the words: proposed with a check, a wrong edit the
-    # user confirms on its own
+    # user sees warned
     verdict = rt.judge(
         case,
         interpret_instruction(
@@ -325,7 +325,7 @@ def test_an_edit_that_needs_a_check_fails_without_one(cases, catalog, synthetic_
         case, interpret_instruction(case.text, synthetic_xlsx, lambda t, c: answer(dmf))
     )
     assert verdict.ok and verdict.checked == 1
-    # no anchor: nothing to check, the edit would go through confirm-all
+    # no anchor: nothing to check, the edit is shown without a warning
     verdict = rt.judge(
         case,
         interpret_instruction(case.text, synthetic_xlsx, lambda t, c: answer(None)),

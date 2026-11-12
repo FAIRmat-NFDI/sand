@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import {
   confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputLocked, inputState,
-  bulkKeys, inputsToRead, pendingKeys, previewNotes, readKey, reportsByEntry, unwrittenCount,
+  checkedKeys, inputsToRead, pendingKeys, previewNotes, readKey, reportsByEntry, unwrittenCount,
   unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
 
@@ -232,18 +232,19 @@ test("the download name comes from the server when it says one", () => {
 });
 
 
-test("confirm all leaves out the edits a word check marked", () => {
+test("confirm all takes the edits a word check marked, and counts them", () => {
   const report = {
     ready: [{ key: "k1" }, { key: "k2", checks: ["'4400' is not in your words"] }, { key: "k3", checks: [] }],
     confirmed: [],
   };
   assert.deepEqual(pendingKeys([report]), ["k1", "k2", "k3"]);
-  assert.deepEqual(bulkKeys([report]), ["k1", "k3"]);
-  assert.deepEqual(bulkKeys([{ ...report, confirmed: ["k1"] }]), ["k3"]);
+  assert.deepEqual(checkedKeys([report]), ["k2"]);
+  assert.deepEqual(checkedKeys([{ ...report, confirmed: ["k2"] }]), []);
 });
 
-test("confirm all names the edits it leaves out", () => {
-  assert.equal(confirmAllLabel(2, 1), "Confirm 2 edits without a check");
-  assert.equal(confirmAllLabel(1, 3), "Confirm 1 edit without a check");
+test("confirm all says how many of its edits have a check", () => {
+  assert.equal(confirmAllLabel(3, 1), "Confirm all 3 edits, 1 with a check");
+  assert.equal(confirmAllLabel(1, 1), "Confirm the edit, with a check");
+  assert.equal(confirmAllLabel(3, 3), "Confirm all 3 edits, all with a check");
   assert.equal(confirmAllLabel(2), "Confirm all 2 edits");
 });

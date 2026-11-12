@@ -44,16 +44,16 @@ export function pendingKeys(reports) {
   return keys;
 }
 
-// the pending edits "confirm all" may confirm: not those a word check
-// marked, which the user confirms one by one
-export function bulkKeys(reports) {
+// the pending edits a word check marked: confirm all takes them too,
+// its label says how many
+export function checkedKeys(reports) {
   const marked = new Set();
   for (const report of reports) {
     for (const edit of report.ready || []) {
       if ((edit.checks || []).length) marked.add(edit.key);
     }
   }
-  return pendingKeys(reports).filter((key) => !marked.has(key));
+  return pendingKeys(reports).filter((key) => marked.has(key));
 }
 
 // an input one of whose edits was just confirmed: its words are a
@@ -92,11 +92,13 @@ export function inputState(item, report, jobRunning, canConfirm) {
 }
 
 // the label of the button that confirms every pending edit
-// `checked`: pending edits with a check, which it leaves out
+// `checked`: how many of them have a check
 export function confirmAllLabel(pending, checked = 0) {
-  if (checked) return "Confirm " + pending + (pending === 1 ? " edit" : " edits") + " without a check";
-  if (pending === 1) return "Confirm the edit";
-  return "Confirm all " + pending + " edits";
+  const label = pending === 1 ? "Confirm the edit" : "Confirm all " + pending + " edits";
+  if (!checked) return label;
+  if (pending === 1) return label + ", with a check";
+  if (checked === pending) return label + ", all with a check";
+  return label + ", " + checked + " with a check";
 }
 
 // The inputs no job has read in these words: without a report, with a
