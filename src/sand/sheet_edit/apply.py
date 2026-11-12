@@ -14,9 +14,9 @@ A confirmation is bound to the input's text, the state it was given and
 the edit itself; a rerun that produces the identical edit keeps it, any
 difference asks again. One exception: an input read again only because
 an earlier input changed its sheet, that proposes the same change (same
-words, column, samples, new value) with no warning the user did not see
-when confirming, keeps its confirmation: it is carried (the old value is
-not compared; a changed one that matters gets the said-old check).
+words, column, samples, old and new values) with no warning the user
+did not see when confirming, keeps its confirmation: it is carried. The
+user confirmed what they saw; anything of it that changed asks again.
 """
 
 import json
@@ -201,7 +201,7 @@ def _carried(
 ) -> dict[str, str]:
     carried = {}
     for key, edit in interpretation.ready.items():
-        source = carry.get(change_key(text, edit))
+        source = carry.get(change_key(text, edit, interpretation.catalog))
         if key in confirmed or source is None:
             continue
         confirmed_under, seen = source
@@ -236,7 +236,12 @@ def _key(text: str, state: str, edit: Grounded) -> str:
     return sha256(json.dumps([text, state, _change(edit)]).encode())
 
 
-def change_key(text: str, edit: Grounded) -> str:
-    """The confirmation key without the sheet: what a confirmation carries
-    over to another sheet by."""
-    return sha256(json.dumps([text, _change(edit)]).encode())
+def change_key(text: str, edit: Grounded, catalog: Catalog) -> str:
+    """What the user saw and confirmed, without the rest of the sheet: a
+    confirmation carries over to another sheet by it. The old value of
+    each row is in it: "10 → 2" confirmed is not "1 → 2"."""
+    target = catalog.column(edit.edit.target)
+    assert target is not None  # ground refused the edit otherwise
+    held = {row: group.value for group in target.groups for row in group.rows}
+    olds = [repr(held.get(row)) for row in edit.rows]
+    return sha256(json.dumps([text, _change(edit), olds]).encode())

@@ -53,13 +53,13 @@ PROPOSALS = {
     'speed 5000': proposal(edit(SPEED, 'all', '3000', '5000', 'speed 5000')),
     # 4100 is not in the words: a check
     'spin speed 4000': proposal(edit(SPEED, 'all', '3000', '4100', 'spin speed 4000')),
-    'solvent 2 to ETH for samples 1 to 3': proposal(
+    'solvent 2 to IPA for samples 1 to 3': proposal(
         edit(
             CLEAN_SOLVENT_2,
             FIRST_THREE,
             'DMSO',
-            'ETH',
-            'solvent 2 to ETH for samples 1 to 3',
+            'IPA',
+            'solvent 2 to IPA for samples 1 to 3',
         )
     ),
     'solvent 2 to DMSO for samples 1 to 4': proposal(
@@ -334,7 +334,8 @@ def confirm_all(steps):
         own = {}
         for key, edit in step.interpretation.ready.items():
             confirmed.add(key)
-            own[change_key(step.text, edit)] = (key, frozenset(warnings(edit)))
+            change = change_key(step.text, edit, step.interpretation.catalog)
+            own[change] = (key, frozenset(warnings(edit)))
         carry.append(own)
     return confirmed, carry
 
@@ -353,10 +354,9 @@ def test_confirm_all_writes_a_chain_in_one_round(synthetic_xlsx):
     verify(synthetic_xlsx, steps[-1].state, steps[0].written + steps[1].written)
 
 
-def test_the_same_cell_and_new_value_carries_the_old_value_is_not_compared(
-    synthetic_xlsx,
-):
-    # 3000 -> 5000 confirmed; after speed 4000 is written it is 4000 -> 5000
+def test_a_changed_old_value_asks_again(synthetic_xlsx):
+    # 3000 -> 5000 confirmed; after speed 4000 is written it is 4000 -> 5000:
+    # not what the user saw
     inputs = [SPEED_SAID, 'speed 5000']
     confirmed, carry = confirm_all(run(synthetic_xlsx, inputs))
     # note 1 from the cache, note 2 read on the new sheet
@@ -367,10 +367,9 @@ def test_the_same_cell_and_new_value_carries_the_old_value_is_not_compared(
         synthetic_xlsx, inputs, on_speed_4000, confirmed, cache, carry=carry
     )
 
-    assert steps[1].carried
-    values = [c for c in steps[1].written if c.field == 'value']
-    assert {c.before for c in values} == {4000}
-    assert {c.after for c in values} == {5000}
+    assert steps[1].interpretation.ready  # 4000 -> 5000, to confirm
+    assert steps[1].carried == {}
+    assert steps[1].written == ()
 
 
 def test_other_samples_are_not_carried(synthetic_xlsx):
@@ -385,18 +384,16 @@ def test_other_samples_are_not_carried(synthetic_xlsx):
     assert steps[1].written == ()
 
 
-def test_a_new_word_check_is_not_carried(synthetic_xlsx):
-    inputs = [SPEED_SAID, 'spin speed 4000']
+def test_a_new_warning_is_not_carried(synthetic_xlsx):
+    # the speed note, read again after the solvent is written, still has
+    # its word check ('4100' is not in "spin speed 4000")
+    inputs = [SOLVENT, 'spin speed 4000']
     first = run(synthetic_xlsx, inputs)
     confirmed, carry = confirm_all(first)
     (marked,) = first[1].interpretation.ready.values()
     assert marked.checks
-    cache = {}
-    run(synthetic_xlsx, inputs[:1], cache=cache)
     # confirmed past the same check: carried
-    steps = apply_all(
-        synthetic_xlsx, inputs, on_speed_4000, confirmed, dict(cache), carry=carry
-    )
+    steps = apply_all(synthetic_xlsx, inputs, FakeLLM(), confirmed, {}, carry=carry)
     assert steps[1].carried
     # confirmed when it had no check: the check is new
     carry = [
@@ -404,9 +401,7 @@ def test_a_new_word_check_is_not_carried(synthetic_xlsx):
         for own in carry
     ]
 
-    steps = apply_all(
-        synthetic_xlsx, inputs, on_speed_4000, confirmed, dict(cache), carry=carry
-    )
+    steps = apply_all(synthetic_xlsx, inputs, FakeLLM(), confirmed, {}, carry=carry)
 
     assert steps[1].carried == {}
 
@@ -423,47 +418,31 @@ def test_a_carry_needs_its_confirmation(synthetic_xlsx):
     assert steps[1].carried == {}
 
 
-def reads_eth_later():
-    """The solvent note's answer: IPA as old on the original, ETH after."""
-    calls = []
-
-    def resolve(text, catalog):
-        if text != SOLVENT:
-            return PROPOSALS[text]
-        calls.append(text)
-        (edit,) = PROPOSALS[text].edits
-        return proposal(
-            edit.model_copy(update={'old': 'IPA' if len(calls) == 1 else 'ETH'})
-        )
-
-    return resolve
-
-
 def test_a_confirmation_is_never_carried_to_another_input(synthetic_xlsx):
-    # notes 1 and 3 say the same; only note 1 was confirmed. Note 2 puts
-    # ETH where note 1 put DMSO, so note 3 would change it back: not
-    # without its own confirmation
-    inputs = [SOLVENT, 'solvent 2 to ETH for samples 1 to 3', SOLVENT]
-    first = run(synthetic_xlsx, inputs)
+    # notes 1 and 4 say the same; note 2 puts IPA back, so note 4 would do
+    # what note 1 did (IPA -> DMSO): not without its own confirmation.
+    # Note 3 makes the sheet differ from the original
+    inputs = [SOLVENT, 'solvent 2 to IPA for samples 1 to 3', SPEED_SAID, SOLVENT]
     confirmations = {}
-    for step, entry_id in zip(first[:2], ['n1', 'n2'], strict=True):
+    for number, entry_id in enumerate(['n1', 'n2', 'n3']):
+        step = apply_all(synthetic_xlsx, inputs, FakeLLM(), set(confirmations), {})[
+            number
+        ]
         for key, ready in step.interpretation.ready.items():
             confirmations[key] = Confirmation(
                 by='tester',
                 at=datetime.datetime(2026, 11, 12, tzinfo=datetime.UTC),
                 input=entry_id,
-                change=change_key(step.text, ready),
+                change=change_key(step.text, ready, step.interpretation.catalog),
             )
-    carry = carry_of(confirmations, ['n1', 'n2', 'n3'])
+    carry = carry_of(confirmations, ['n1', 'n2', 'n3', 'n4'])
 
     steps = apply_all(
-        synthetic_xlsx, inputs, reads_eth_later(), set(confirmations), {}, carry=carry
+        synthetic_xlsx, inputs, FakeLLM(), set(confirmations), {}, carry=carry
     )
 
-    assert steps[1].carried  # note 2 read on note 1's DMSO, same change
-    # note 3 would change ETH back, the same change as note 1, no warning
-    (ready,) = steps[2].interpretation.ready.values()
-    assert change_key(SOLVENT, ready) in carry[0]
+    (ready,) = steps[3].interpretation.ready.values()
+    assert change_key(SOLVENT, ready, steps[3].interpretation.catalog) in carry[0]
     assert not warnings(ready)
-    assert steps[2].carried == {}
-    assert steps[2].written == ()
+    assert steps[3].carried == {}
+    assert steps[3].written == ()

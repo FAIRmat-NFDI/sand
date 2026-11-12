@@ -366,7 +366,7 @@ def _report(
                 # word checks: shown on the edit
                 'checks': list(edit.checks),
                 # what a confirmation stores, to carry it to another sheet
-                'change': change_key(step.text, edit),
+                'change': change_key(step.text, edit, catalog),
                 'warnings': list(warnings(edit)),
             }
             for key, edit in step.interpretation.ready.items()

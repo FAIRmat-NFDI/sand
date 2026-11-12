@@ -551,7 +551,8 @@ def test_a_carried_edit_is_logged_with_who_confirmed_the_same_change(synthetic_x
     confirmations = {}
     for step, who in zip(first, (TESTER, other), strict=True):  # n1, n2
         for key, ready in step.interpretation.ready.items():
-            confirmations[key] = replace(who, change=change_key(step.text, ready))
+            change = change_key(step.text, ready, step.interpretation.catalog)
+            confirmations[key] = replace(who, change=change)
 
     steps = apply_all(
         synthetic_xlsx,
