@@ -54,11 +54,14 @@ class CreateNoteRequest(BaseModel):
     label: str = ''  # optional free text for the user
 
 
+WrongReason = Literal['column', 'samples', 'value', 'other']
+
+
 class WrongEdit(BaseModel):
     """A proposed edit the user says is wrong, by its confirmation key."""
 
     key: str = Field(min_length=1, max_length=200)
-    reason: Literal['column', 'samples', 'value', 'other']
+    reason: WrongReason
 
 
 class FeedbackRequest(BaseModel):
@@ -135,6 +138,20 @@ class ConfirmEditsRequest(BaseModel):
 
 class ConfirmEditsResponse(BaseModel):
     confirmed: list[str]  # every confirmed key, the new ones included
+
+
+class RejectEditsRequest(BaseModel):
+    keys: list[str]  # ready edits of the last job, none confirmed
+    reason: WrongReason | None = None  # optional, as in the "Wrong" dialog
+    meant: str = Field('', max_length=5000)
+
+
+class RejectEditsResponse(BaseModel):
+    rejected: list[str]  # every rejected key, the new ones included
+
+
+class UndoRejectRequest(BaseModel):
+    keys: list[str]
 
 
 class SheetUploadResponse(BaseModel):

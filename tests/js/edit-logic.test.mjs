@@ -57,9 +57,10 @@ test("reports are found by the input's entry id", () => {
   assert.deepEqual(reportsByEntry({}), {});
 });
 
-test("pending keys are the ready edits nobody confirmed", () => {
+test("pending keys are the ready edits nobody decided", () => {
   assert.deepEqual(pendingKeys([REPORT]), ["k1"]);
   assert.deepEqual(pendingKeys([{ ...REPORT, confirmed: ["k1"] }]), []);
+  assert.deepEqual(pendingKeys([{ ...REPORT, rejected: ["k1"] }]), []);
   assert.deepEqual(pendingKeys([{ ...REPORT, ready: [] }]), []);
 });
 
@@ -156,6 +157,12 @@ test("the state chip of an input", () => {
   assert.equal(label(note, { ...two, confirm_again: 1 }), "2 edits to confirm · 1 confirmed before");
   assert.equal(label(note, { ...two, confirm_again: 3 }), "2 edits to confirm again");
   assert.equal(label(note, { ...REPORT, confirmed: ["k1"], refused: "a formula error" }), "Not written");
+  // rejected: decided, nothing written
+  assert.equal(label(note, { ...REPORT, rejected: ["k1"] }), "Rejected");
+  assert.equal(inputState(note, { ...REPORT, rejected: ["k1"] }, false, true).state, "rejected");
+  assert.equal(label(note, { ...REPORT, rejected: ["k1"], unresolved: 1 }), "Rejected · 1 unclear");
+  assert.equal(label(note, { ...two, confirmed: ["k1"], rejected: ["k2"] }), "Applied · 1 rejected");
+  assert.equal(label(note, { ...two, rejected: ["k2"] }), "1 edit to confirm");
   assert.equal(label(note, { ...REPORT, ready: [] }), "No edit found");
   // two readings sand could not decide between: not "nothing found"
   assert.equal(label(note, { ...REPORT, ready: [], unresolved: 1 }), "Unclear");
@@ -198,6 +205,7 @@ test("the summary line of a completed job", () => {
   assert.equal(
     editSummary({ changes: 0, inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] }),
     "1 edit confirmed, being written");
+  assert.equal(editSummary({ changes: 0, inputs: [{ ...REPORT, rejected: ["k1"] }] }), "1 edit rejected");
   assert.equal(
     editSummary({
       changes: 4,

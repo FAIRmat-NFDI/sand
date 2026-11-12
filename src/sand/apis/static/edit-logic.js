@@ -32,13 +32,13 @@ export function reportsByEntry(status) {
   return byEntry;
 }
 
-// ready edits nobody confirmed yet
+// ready edits nobody decided yet: neither confirmed nor rejected
 export function pendingKeys(reports) {
   const keys = [];
   for (const report of reports) {
-    const confirmed = new Set(report.confirmed || []);
+    const decided = new Set([...(report.confirmed || []), ...(report.rejected || [])]);
     for (const edit of report.ready || []) {
-      if (!confirmed.has(edit.key)) keys.push(edit.key);
+      if (!decided.has(edit.key)) keys.push(edit.key);
     }
   }
   return keys;
@@ -107,12 +107,15 @@ export function inputState(item, report, jobRunning, canConfirm) {
     return { state: "ready", label: label + " · " + before + " confirmed before" };
   }
   if ((report.confirmed_since || []).length) return { state: "writing", label: "Confirmed, writing..." };
-  if ((report.confirmed || []).length) {
+  const rejected = (report.rejected || []).length;
+  if ((report.confirmed || []).length || rejected) {
     // partly applied: the rest is told under the input, to rephrase
-    const parts = ["Applied"];
+    const applied = (report.confirmed || []).length > 0;
+    const parts = [applied ? "Applied" : "Rejected"];
+    if (applied && rejected) parts.push(rejected + " rejected");
     if (report.unresolved) parts.push(report.unresolved + " unclear");
     if (report.not_applied) parts.push(report.not_applied + " not applied");
-    return { state: "applied", label: parts.join(" · ") };
+    return { state: applied ? "applied" : "rejected", label: parts.join(" · ") };
   }
   // found, but not settled, refused or already so: the reasons are
   // under the input
@@ -254,6 +257,8 @@ function summaryParts(status) {
   if (pending) parts.push(count(pending, "edit waits", "edits wait") + " for your confirmation");
   const since = reports.reduce((n, report) => n + (report.confirmed_since || []).length, 0);
   if (since) parts.push(count(since, "edit confirmed", "edits confirmed") + ", being written");
+  const rejected = reports.reduce((n, report) => n + (report.rejected || []).length, 0);
+  if (rejected) parts.push(count(rejected, "edit rejected", "edits rejected"));
   const withdrawn = reports.reduce((n, report) => n + (report.unconfirmed_since || []).length, 0);
   if (withdrawn) parts.push(count(withdrawn, "edit", "edits") + " of a changed update, being taken out");
   const refused = reports.filter((report) => report.refused).length;

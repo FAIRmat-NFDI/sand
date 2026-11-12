@@ -350,6 +350,7 @@ async def test_reports_are_the_inputs_of_the_status(voice):
                 'confirmed_since': [],
                 'unconfirmed_since': [],
                 'confirm_again': False,
+                'rejected': [],
             }
         ],
     }

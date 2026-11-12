@@ -35,6 +35,7 @@ FINAL_FILE = 'sheet_edit/edited.xlsx.final'
 CHANGELOG_FILE = 'sheet_edit/changelog.json'
 CACHE_FILE = 'sheet_edit/llm_cache.json'
 CONFIRMATIONS_FILE = 'sheet_edit/confirmations.json'
+REJECTIONS_FILE = 'sheet_edit/rejections.json'
 STATUS_FILE = 'sheet_edit/status.json'
 
 CacheKey = tuple[str, str]
@@ -178,3 +179,50 @@ def confirmations_json(confirmations: dict[str, Confirmation]) -> dict:
         }
         for key, c in confirmations.items()
     }
+
+
+def read_rejections(raw: bytes | None) -> dict:
+    """The rejections file by edit key: {by, at, input, reason, meant,
+    proposed}. The job never reads it: a rejected edit is one nobody
+    confirmed. Raises ValueError on a damaged file, which is never
+    overwritten."""
+    if raw is None:
+        return {}
+    try:
+        data = json.loads(raw)
+    except ValueError as why:
+        raise ValueError(f'the rejections file is not JSON: {why}') from why
+    if not isinstance(data, dict):
+        raise ValueError('the rejections file is not a JSON object')
+    for key, entry in data.items():
+        if not _rejection_ok(entry):
+            raise ValueError(f'rejection {key!r} is malformed: {entry!r}')
+    return data
+
+
+_REJECTION_REASONS = (None, 'column', 'samples', 'value', 'other')
+
+
+def _rejection_ok(entry) -> bool:
+    if not isinstance(entry, dict) or set(entry) != {
+        'by',
+        'at',
+        'input',
+        'reason',
+        'meant',
+        'proposed',
+    }:
+        return False
+    try:
+        at = datetime.datetime.fromisoformat(entry['at'])
+    except (TypeError, ValueError):
+        return False
+    return (
+        isinstance(entry['by'], str)
+        and bool(entry['by'])
+        and at.tzinfo is not None
+        and isinstance(entry['input'], str)
+        and entry['reason'] in _REJECTION_REASONS
+        and isinstance(entry['meant'], str)
+        and (entry['proposed'] is None or isinstance(entry['proposed'], dict))
+    )
