@@ -52,6 +52,19 @@ class CreateNoteRequest(BaseModel):
     label: str = ''  # optional free text for the user
 
 
+class FeedbackRequest(BaseModel):
+    what_wrong: str = Field(min_length=1, max_length=5000)
+    expected: str = Field('', max_length=5000)
+    page: str = Field('', max_length=200)
+    user_agent: str = Field('', max_length=500)
+    # what the page showed or failed at lately, newest last
+    recent_errors: list[str] = Field(default_factory=list, max_length=20)
+
+
+class FeedbackResponse(BaseModel):
+    file: str
+
+
 class HysprintExtractResponse(BaseModel):
     archive: dict
     step_types: list[str]
