@@ -184,14 +184,16 @@ same browser; sand warns when the login is about to end.
    on the right in the order they were made; a transcript can be
    corrected there.
 3. Each update is **read** as soon as it is saved. Under it the page
-   shows the edits it is ready to write, each with a **Confirm** button,
-   and the reason for anything it could not place. A revised update is
+   shows the edits it is ready to write, each with **Confirm** and
+   **Reject**, and the reason for anything it could not place. A revised update is
    read again. Nothing is read while a recording is still being
    transcribed; a recording whose transcription failed has to be deleted
    first.
 4. **Confirm** the edits that are right, one by one or all at once. They
-   are written into the sheet a moment later. A wrong reading is not
-   confirmed: correct the update's text or add a new update. A written
+   are written into the sheet a moment later. **Reject** a wrong one: it
+   is never written, and the edit as proposed is kept with the sheet,
+   with what was wrong if you say so (Undo takes it back). To get the
+   right edit, correct the update's text or add a new update. A written
    update can still be revised or deleted: the sheet is rebuilt without
    its old edits, and the updates after it are read again and need your
    confirmation again.

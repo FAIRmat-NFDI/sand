@@ -1,6 +1,7 @@
 // User reports, stored in the open sheet's upload: the "Something's
 // wrong" button (shown only while a sheet is open) and the "Wrong" flag
-// on a proposed edit (inputs.js). A report changes nothing in the sheet.
+// on a written edit (inputs.js). A report changes nothing in the sheet.
+// The flag's dialog also rejects a proposed edit, its reason optional.
 
 import { errorDetail, experimentUrl } from "./api.js";
 import { editReportBody, pageReportBody, WRONG_REASONS } from "./feedback-logic.js";
@@ -16,6 +17,9 @@ const statusEl = document.getElementById("feedback-status");
 
 const editDialog = document.getElementById("edit-wrong-dialog");
 const editForm = document.getElementById("edit-wrong-form");
+const editTitle = document.getElementById("edit-wrong-title");
+const editLegend = document.getElementById("edit-wrong-legend");
+const editHint = document.getElementById("edit-wrong-hint");
 const editLine = document.getElementById("edit-wrong-line");
 const editReasons = document.getElementById("edit-wrong-reasons");
 const editMeant = document.getElementById("edit-wrong-meant");
@@ -28,6 +32,28 @@ let experiment = null;
 const reportedKeys = new Set();
 let editKey = null;
 let editAnswer = () => {};
+// how the open dialog sends: a report, or a rejection
+let editSend = null;
+let editDone = "";
+
+const EDIT_MODES = {
+  wrong: {
+    title: "This edit is wrong",
+    legend: "What's wrong with it?",
+    hint: "Saved with this sheet, so sand can learn from it. Nothing in the sheet changes: to fix it, reword the update or add a new one.",
+    send: "Send",
+    done: "Thanks, your report is saved.",
+    reasonRequired: true,
+  },
+  reject: {
+    title: "Reject this edit",
+    legend: "What's wrong with it? (optional)",
+    hint: "The edit is not written into the sheet. Saved with this sheet, so sand can learn from it. You can undo this.",
+    send: "Reject",
+    done: "Rejected.",
+    reasonRequired: false,
+  },
+};
 
 export function showFeedback(selected) {
   experiment = selected;
@@ -73,9 +99,36 @@ async function sendPage(event) {
 
 // Resolves true once the report is saved, false when cancelled.
 export function reportEdit(edit) {
+  return openEditDialog(edit, "wrong", async ({ key, reason, meant }) => {
+    await postReport(editReportBody({
+      key,
+      reason,
+      meant,
+      userAgent: navigator.userAgent,
+      errors: recentErrors(),
+    }));
+    reportedKeys.add(key);
+  });
+}
+
+// `reject({reason, meant})` throws when the rejection did not go
+// through; resolves true once it did, false when cancelled.
+export function rejectEdit(edit, reject) {
+  return openEditDialog(edit, "reject", ({ reason, meant }) => reject({ reason: reason || null, meant }));
+}
+
+function openEditDialog(edit, mode, send) {
   editAnswer(false);
   editKey = edit.key;
+  editSend = send;
   editForm.reset();
+  const words = EDIT_MODES[mode];
+  editTitle.textContent = words.title;
+  editLegend.textContent = words.legend;
+  editHint.textContent = words.hint;
+  editSendBtn.textContent = words.send;
+  editDone = words.done;
+  editForm.elements.reason[0].required = words.reasonRequired;
   editStatus.textContent = "";
   editLine.textContent = edit.line;
   editDialog.showModal();
@@ -90,20 +143,13 @@ export function reportEdit(edit) {
 async function sendEdit(event) {
   event.preventDefault();
   const reason = editForm.elements.reason.value;
-  if (!experiment || !editKey || !reason) return;
+  if (!experiment || !editKey || !editSend) return;
   editSendBtn.disabled = true;
   editStatus.textContent = "Sending…";
   try {
-    await postReport(editReportBody({
-      key: editKey,
-      reason,
-      meant: editMeant.value,
-      userAgent: navigator.userAgent,
-      errors: recentErrors(),
-    }));
-    reportedKeys.add(editKey);
+    await editSend({ key: editKey, reason, meant: editMeant.value });
     editAnswer(true);
-    editStatus.textContent = "Thanks, your report is saved.";
+    editStatus.textContent = editDone;
     setTimeout(() => editDialog.close(), 1000);
   } catch (err) {
     editStatus.textContent = "Could not send: " + err.message;

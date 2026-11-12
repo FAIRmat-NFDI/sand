@@ -1533,7 +1533,9 @@ body {
   }
 }
 
-.report-confirm.btn {
+.report-confirm.btn,
+.report-reject.btn,
+.report-undo.btn {
   text-transform: none;
   letter-spacing: 0;
   font-size: 0.8rem;
@@ -1553,6 +1555,22 @@ body {
 
 .report-writing {
   font-style: italic;
+}
+
+.report-reject.btn,
+.report-undo.btn {
+  color: #555;
+  border-color: #c4c7cc;
+}
+
+/* never written: no colour of its own */
+.report-rejected {
+  color: #757575;
+  white-space: nowrap;
+}
+
+.report-rejected::before {
+  content: "✕ ";
 }
 
 /* a word check found something: shown on the edit */
@@ -1884,7 +1902,8 @@ body {
   color: #777;
 }
 
-/* An edit's state cell: written or Confirm, then the "Wrong" flag */
+/* An edit's state cell: written with the "Wrong" flag, rejected with
+   Undo, or Confirm and Reject */
 .report-state {
   display: inline-flex;
   align-items: center;

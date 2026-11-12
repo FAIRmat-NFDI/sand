@@ -20,11 +20,11 @@ const refreshInputsBtn = document.getElementById("refresh-inputs-btn");
 const editsOnlyBtn = document.getElementById("edits-only-btn");
 const EDITS_ONLY_KEY = "sand.inputs.editsOnly";
 
-// the job's reports by entry id, whether a job runs (no confirming
-// meanwhile), and the confirm handler of the Sheet card
+// the job's reports by entry id, whether a job runs (no deciding
+// meanwhile), and the Sheet card's handlers that decide an edit
 let reports = {};
 let jobRunning = false;
-let onConfirm = null;
+let actions = null;
 let onInputsLoaded = null; // (experiment, items) after every load
 // the last rendered list, re-rendered when the reports change; a change
 // that arrives while an editor is open renders when the editor closes
@@ -194,7 +194,9 @@ function endRevision(refocus = false) {
   // back to the state the buttons had: none while a job runs, and a
   // confirmation in flight stays disabled
   for (const btn of li.querySelectorAll(".input-report button")) {
-    btn.disabled = jobRunning || !onConfirm || btn.dataset.busy === "1";
+    btn.disabled = btn.classList.contains("report-wrong")
+      ? editReported(btn.dataset.key)
+      : jobRunning || !actions || btn.dataset.busy === "1";
   }
   if (renderPending) {
     renderIfIdle(); // replaces the tiles
@@ -309,6 +311,7 @@ function wrongFlag(edit) {
   const flag = document.createElement("button");
   flag.type = "button";
   flag.className = "btn btn-icon report-wrong";
+  flag.dataset.key = edit.key;
   const icon = document.createElement("span");
   icon.className = "material-icons";
   flag.append(icon);
@@ -326,15 +329,36 @@ function wrongFlag(edit) {
   return flag;
 }
 
+// A button of an edit row; `act()` resolves false when it did not go
+// through, and the button is offered again.
+function decideButton(label, className, title, act) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn btn-outlined btn-small " + className;
+  btn.textContent = label;
+  btn.disabled = jobRunning || !actions;
+  btn.title = jobRunning ? "Wait: the updates are being read" : title;
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.dataset.busy = "1";
+    const done = await act();
+    delete btn.dataset.busy;
+    if (!done) btn.disabled = jobRunning || !actions;
+  });
+  return btn;
+}
+
 // The edits of a report, grouped under their step as the Sheet table
 // groups them: a step heading, then one aligned row per edit with its
-// state (written, or the button that confirms it) at the right.
+// state at the right: written (with the "Wrong" flag), rejected (with
+// Undo), or the buttons that decide it.
 function renderReport(report) {
   const box = document.createElement("div");
   box.className = "input-report";
   box.addEventListener("click", (e) => e.stopPropagation());
   const confirmed = new Set(report.confirmed || []);
   const since = new Set(report.confirmed_since || []);
+  const rejected = new Set(report.rejected || []);
   let step;
   for (const edit of report.ready || []) {
     if (edit.column !== undefined && edit.step !== step) {
@@ -355,24 +379,20 @@ function renderReport(report) {
       const mark = document.createElement("span");
       mark.className = "report-confirmed" + (since.has(edit.key) ? " report-writing" : "");
       mark.textContent = since.has(edit.key) ? "writing..." : "written";
-      state.append(mark);
+      state.append(mark, wrongFlag(edit));
+    } else if (rejected.has(edit.key)) {
+      const mark = document.createElement("span");
+      mark.className = "report-rejected";
+      mark.textContent = "rejected";
+      state.append(mark, decideButton("Undo", "report-undo", "Take the rejection back",
+        () => actions.undoReject(edit.key)));
     } else {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "btn btn-outlined btn-small report-confirm";
-      btn.textContent = "Confirm";
-      btn.disabled = jobRunning || !onConfirm;
-      btn.title = jobRunning ? "Wait: the updates are being read" : "Confirm this edit";
-      btn.addEventListener("click", async () => {
-        btn.disabled = true;
-        btn.dataset.busy = "1";
-        const done = await onConfirm(edit.key);
-        delete btn.dataset.busy;
-        if (!done) btn.disabled = jobRunning || !onConfirm;
-      });
-      state.append(btn);
+      state.append(
+        decideButton("Confirm", "report-confirm", "Confirm this edit", () => actions.confirm(edit.key)),
+        decideButton("Reject", "report-reject", "Reject this edit: it is not written",
+          () => actions.reject(edit)),
+      );
     }
-    state.append(wrongFlag(edit));
     box.append(row);
     for (const check of edit.checks || []) {
       const p = document.createElement("p");
@@ -397,11 +417,12 @@ function renderReport(report) {
 }
 
 // The job's reports (by entry id), from the Sheet card's polling.
-// `confirm(key)` resolves false when the confirmation did not go through.
-export function setReports(byEntry, running, confirm) {
+// `handlers`: {confirm(key), reject(edit), undoReject(key)}, each
+// resolving false when it did not go through; null: nothing to decide.
+export function setReports(byEntry, running, handlers) {
   reports = byEntry;
   jobRunning = running;
-  onConfirm = confirm;
+  actions = handlers;
   renderIfIdle();
 }
 
@@ -486,7 +507,7 @@ function renderInputs(experiment, items) {
     const right = document.createElement("span");
     right.className = "input-right";
     meta.append(right);
-    const state = inputState(item, report, jobRunning, Boolean(onConfirm));
+    const state = inputState(item, report, jobRunning, Boolean(actions));
     if (state) {
       const chip = document.createElement("span");
       chip.className = "input-state is-" + state.state;

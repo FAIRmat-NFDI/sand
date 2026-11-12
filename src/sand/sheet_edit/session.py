@@ -35,6 +35,7 @@ FINAL_FILE = 'sheet_edit/edited.xlsx.final'
 CHANGELOG_FILE = 'sheet_edit/changelog.json'
 CACHE_FILE = 'sheet_edit/llm_cache.json'
 CONFIRMATIONS_FILE = 'sheet_edit/confirmations.json'
+REJECTIONS_FILE = 'sheet_edit/rejections.json'
 STATUS_FILE = 'sheet_edit/status.json'
 
 CacheKey = tuple[str, str]
@@ -178,3 +179,21 @@ def confirmations_json(confirmations: dict[str, Confirmation]) -> dict:
         }
         for key, c in confirmations.items()
     }
+
+
+def read_rejections(raw: bytes | None) -> dict:
+    """The rejections file by edit key: {by, at, input, reason, meant,
+    proposed}. The job never reads it: a rejected edit is one nobody
+    confirmed. Raises ValueError on a damaged file, which is never
+    overwritten."""
+    if raw is None:
+        return {}
+    try:
+        data = json.loads(raw)
+    except ValueError as why:
+        raise ValueError(f'the rejections file is not JSON: {why}') from why
+    if not isinstance(data, dict) or not all(
+        isinstance(r, dict) and isinstance(r.get('input'), str) for r in data.values()
+    ):
+        raise ValueError('the rejections file is malformed')
+    return data

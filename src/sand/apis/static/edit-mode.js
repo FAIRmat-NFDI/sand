@@ -1,9 +1,9 @@
 // The Edits card: what the edit job did, the confirm-all button, and
 // the final sheet to download. The job runs by itself: it reads an
 // update as soon as it is saved (or its words revised), and writes the
-// confirmed edits a moment after a confirmation. Confirmations come
-// from the input tiles (inputs.js) through confirmEdit, or all at once
-// from here.
+// confirmed edits a moment after a confirmation. Confirmations and
+// rejections come from the input tiles (inputs.js) through
+// editActions; confirmations also all at once from here.
 //
 // The job's status file is polled, and selecting an experiment resumes
 // an unfinished job's polling (reload-proof).
@@ -14,6 +14,7 @@ import {
   readKey, reportsByEntry, unwrittenCount, unwrittenKey, writtenEdits,
 } from "./edit-logic.js";
 import { requireExperiment, showSheet } from "./experiments.js";
+import { rejectEdit } from "./feedback.js";
 import { setOverviewUpdates, showOverview } from "./overview.js";
 import { setInputsListener, setReports } from "./inputs.js";
 import { clearError, showError } from "./ui.js";
@@ -212,7 +213,7 @@ async function poll(experiment, generation) {
     reportsShown = {};
     showPending([]);
     updateProgress();
-    setReports({}, false, confirmHandler(experiment));
+    setReports({}, false, editActions(experiment));
     settle(experiment, null);
     return;
   }
@@ -228,7 +229,7 @@ async function poll(experiment, generation) {
   reportsShown = running
     ? { ...reportsShown, ...reportsByEntry(status) }
     : reportsByEntry(status);
-  setReports(reportsShown, running, confirmHandler(experiment));
+  setReports(reportsShown, running, editActions(experiment));
   if (status.phase === "completed") {
     const all = status.inputs || [];
     showPending(pendingKeys(all), checkedKeys(all).length);
@@ -309,8 +310,46 @@ function waitingNote(items) {
   }
 }
 
-function confirmHandler(experiment) {
-  return (key) => confirmEdit(experiment, key);
+function editActions(experiment) {
+  return {
+    confirm: (key) => confirmEdit(experiment, key),
+    reject: async (edit) => {
+      const done = await rejectEdit(edit, (why) => postReject(experiment, edit.key, why));
+      if (done && stillShown(experiment)) startPolling(experiment);
+      return done;
+    },
+    undoReject: (key) => undoReject(experiment, key),
+  };
+}
+
+// throws, for the dialog to show why
+async function postReject(experiment, key, { reason, meant }) {
+  const res = await fetch(experimentUrl(experiment, "edits/reject"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ keys: [key], reason, meant }),
+  });
+  if (!res.ok) throw new Error(await errorDetail(res));
+}
+
+async function undoReject(experiment, key) {
+  clearError();
+  try {
+    const res = await fetch(experimentUrl(experiment, "edits/undo-reject"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keys: [key] }),
+    });
+    if (!res.ok) {
+      showError("Could not undo: " + await errorDetail(res));
+      return false;
+    }
+  } catch (err) {
+    showError("Network error: " + err.message);
+    return false;
+  }
+  if (stillShown(experiment)) startPolling(experiment);
+  return true;
 }
 
 // true when confirmed
@@ -444,7 +483,7 @@ async function startJob(experiment) {
     busy("Starting...");
     gateDownload(unwrittenShown);
     // no confirming on the way out: the job's reservation refuses it
-    setReports(reportsShown, true, confirmHandler(experiment));
+    setReports(reportsShown, true, editActions(experiment));
   }
   try {
     const res = await fetch(experimentUrl(experiment, "edit-async"), { method: "POST" });
