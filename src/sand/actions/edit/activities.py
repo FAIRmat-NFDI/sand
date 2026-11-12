@@ -18,7 +18,7 @@ from sand.actions.edit.models import (
     WriteStatusInput,
 )
 from sand.services.nomad_api import XLSX_CONTENT_TYPE
-from sand.sheet_edit.apply import Step, apply_all
+from sand.sheet_edit.apply import Step, apply_all, change_key
 from sand.sheet_edit.catalog import Catalog
 from sand.sheet_edit.changelog import Confirmation
 from sand.sheet_edit.edits import ProposedEdits
@@ -31,6 +31,7 @@ from sand.sheet_edit.session import (
     STATUS_FILE,
     LlmCache,
     cache_key,
+    carry_of,
     job_cache_file,
     llm_cache_json,
     load_confirmations,
@@ -93,6 +94,7 @@ async def replay_cached_inputs(data: ReplayInput) -> dict:
         _never_asked,
         set(files.confirmations),
         files.cache.proposals,
+        carry=carry_of(files.confirmations),
         cached_only=True,
     )
     confirmed = set(files.confirmations)
@@ -199,6 +201,7 @@ async def store_final_sheet_and_changelog(data: JobInput) -> dict:
     # input reworded or an earlier edit confirmed since leaves it matching
     # nothing, and the user should be told to look again
     ready = {key for step in steps for key in step.interpretation.ready}
+    ready |= {key for step in steps for key in step.carried.values()}
     return {
         'final': sha256(final),
         'changed': final != files.original,
@@ -314,6 +317,7 @@ def _apply_inputs_from_cache(files: _Files, texts: list[str]) -> list[Step]:
         _never_asked,
         set(files.confirmations),
         files.cache.proposals,
+        carry=carry_of(files.confirmations),
     )
 
 
@@ -355,10 +359,18 @@ def _report(
                 **edit_summary(edit, catalog),
                 # word checks: shown on the edit
                 'checks': list(edit.checks),
+                # what a confirmation stores, to carry it to another sheet
+                'change': change_key(step.text, edit),
             }
             for key, edit in step.interpretation.ready.items()
         ],
-        'confirmed': [key for key in step.interpretation.ready if key in confirmed],
+        'confirmed': [
+            key
+            for key in step.interpretation.ready
+            if key in confirmed or key in step.carried
+        ],
+        # ready key -> the confirmation it carries (same change, earlier sheet)
+        'carried': step.carried,
         # what the job could not settle (uncertain, ambiguous, not found)
         'unresolved': len(step.interpretation.proposal.unresolved),
         # edits a check refused, and edits the sheet already holds

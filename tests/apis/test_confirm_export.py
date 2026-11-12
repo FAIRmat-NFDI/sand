@@ -160,6 +160,24 @@ async def test_a_report_that_names_no_input_is_read_again_first(voice):
     assert CONFIRMATIONS_FILE not in voice.writer.files
 
 
+async def test_a_confirmation_stores_what_it_confirmed(voice):
+    marked = {
+        'key': 'k3',
+        'line': '...',
+        'change': 'c3',
+        'checks': ["'4400' is not in your words"],
+    }
+    put_status(
+        voice, inputs=[{'input': 1, 'entry_id': 'n1', 'ready': [*READY, marked]}]
+    )
+
+    assert (await confirm(voice, ['k1', 'k3'])).status_code == HTTPStatus.OK
+    records = confirmations(voice)
+    assert 'change' not in records['k1']  # a report from before: nothing to carry
+    assert records['k3']['change'] == 'c3'
+    assert records['k3']['checks'] == ["'4400' is not in your words"]
+
+
 async def test_by_falls_back_to_the_user_id(voice):
     put_status(voice, 'completed')
     voice.me = {'user_id': USER}

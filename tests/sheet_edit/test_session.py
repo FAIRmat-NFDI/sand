@@ -8,6 +8,7 @@ from sand.sheet_edit.edits import Edit, ProposedEdits, Unreadable
 from sand.sheet_edit.session import (
     LlmCache,
     cache_key,
+    carry_of,
     confirmations_json,
     llm_cache_json,
     load_confirmations,
@@ -100,6 +101,16 @@ def test_confirmations_round_trip():
         'k2': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00', 'input': 'n2'}
     }
     assert load_confirmations(data) == confirmations
+    # what was confirmed, to carry it to another sheet
+    carried = {
+        'k3': Confirmation(
+            by='tester', at=WHEN, input='n3', change='c3', checks=("'x' is not",)
+        )
+    }
+    assert load_confirmations(confirmations_json(carried)) == carried
+    assert carry_of({**confirmations, **carried}) == {
+        'c3': ('k3', frozenset({"'x' is not"}))
+    }
     # a record made before confirmations named their input is left out
     old = {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00'}}
     assert load_confirmations({**data, **old}) == confirmations
@@ -125,6 +136,22 @@ def test_a_damaged_confirmations_file_is_refused_not_empty(raw):
         {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05', 'input': 'n1'}},  # no tz
         {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00', 'input': 3}},
         {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00', 'input': None}},
+        {
+            'k1': {
+                'by': 'tester',
+                'at': '2026-10-28T12:16:05+00:00',
+                'input': 'n1',
+                'change': 3,
+            }
+        },
+        {
+            'k1': {
+                'by': 'tester',
+                'at': '2026-10-28T12:16:05+00:00',
+                'input': 'n1',
+                'checks': 'x',
+            }
+        },
         {'k1': {'by': 3, 'at': '2026-10-28T12:16:05+00:00'}},
     ],
 )

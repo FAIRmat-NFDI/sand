@@ -194,7 +194,10 @@ same browser; sand warns when the login is about to end.
    confirmed: correct the update's text or add a new update. A written
    update can still be revised or deleted: the sheet is rebuilt without
    its old edits, and the updates after it are read again and need your
-   confirmation again.
+   confirmation again. A confirmed edit that an earlier update only moved
+   to another sheet state (same column, samples and new value, no new
+   check) keeps its confirmation, so **Confirm all** writes updates that
+   build on each other in one go.
 5. **Download** the edited sheet (the original is a download too, under
    the file name it was uploaded with). The Edits card lists every edit
    written; the changelog, folded below it, holds every cell changed, the

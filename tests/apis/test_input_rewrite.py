@@ -266,3 +266,44 @@ async def test_no_input_is_applied_by_another_collections_job(voice):
         )
 
     assert [i['applied'] for i in response.json()['inputs']] == [False]
+
+
+async def test_a_carried_edit_counts_as_confirmed(voice):
+    # n2's k6 was written by the job carrying k5 (the same change confirmed
+    # on the sheet before n1 was written)
+    carried = {
+        'input': 2,
+        'entry_id': 'n2',
+        'ready': [{'key': 'k6', 'line': '...'}],
+        'confirmed': ['k6'],
+        'carried': {'k6': 'k5'},
+    }
+    put_status(voice, [carried])
+    put_confirmations(voice, {'k5': 'n2'})
+
+    (report,) = (await status(voice))['inputs']
+
+    assert report['confirmed'] == ['k6']
+    assert report['unconfirmed_since'] == []
+    assert report['confirm_again'] == 0
+
+
+async def test_a_carried_edit_goes_with_its_confirmation(voice):
+    # n2 revised: k5 is removed, the sheet must lose k6
+    put_status(
+        voice,
+        [
+            {
+                'input': 2,
+                'entry_id': 'n2',
+                'ready': [{'key': 'k6', 'line': '...'}],
+                'confirmed': ['k6'],
+                'carried': {'k6': 'k5'},
+            }
+        ],
+    )
+    put_confirmations(voice, {})
+
+    (report,) = (await status(voice))['inputs']
+
+    assert report['unconfirmed_since'] == ['k6']

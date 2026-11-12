@@ -1023,7 +1023,7 @@ async def _applied_inputs(
         return set()
     # an input a running job has not reported yet counts by its record
     ready = {
-        report.get('entry_id'): {edit['key'] for edit in report.get('ready', [])}
+        report.get('entry_id'): _held(report)
         for report in status.get('inputs', [])
         if isinstance(report, dict)
     }
@@ -1070,6 +1070,14 @@ async def _drop_confirmations(
         )
 
 
+def _held(report: dict) -> set[str]:
+    """The confirmation keys that count for this report: its edits', and
+    the ones its carried edits were confirmed under."""
+    return {edit['key'] for edit in report.get('ready', [])} | set(
+        report.get('carried', {}).values()
+    )
+
+
 def _with_confirmations(status: dict, confirmed: dict | None) -> dict:
     """The reports say what the job knew when it ran; a confirmation made
     since shows at once, as `confirmed_since`, one removed since (its
@@ -1094,6 +1102,10 @@ def _with_confirmations(status: dict, confirmed: dict | None) -> dict:
             for key, c in confirmed.items()
             if isinstance(c, dict) and c.get('input') == entry_id
         }
+        lost = mine - _held(report)
+        # a carried edit counts while the confirmation it carries is there
+        carried = report.get('carried', {})
+        mine |= {key for key, under in carried.items() if under in mine}
         since = [key for key in keys if key in mine and key not in written]
         report['unconfirmed_since'] = [key for key in written if key not in mine]
         report['confirmed'] = [*(k for k in written if k in mine), *since]
@@ -1103,7 +1115,7 @@ def _with_confirmations(status: dict, confirmed: dict | None) -> dict:
         todo = any(key not in mine for key in keys) or any(
             report.get(field) for field in ('unresolved', 'not_applied', 'refused')
         )
-        report['confirm_again'] = todo * len(mine - set(keys))
+        report['confirm_again'] = todo * len(lost)
     return status
 
 
@@ -1267,18 +1279,26 @@ async def confirm_edits(
             me = await _me(client)
             by = me.get('username') or me.get('name') or me['user_id']
             now = datetime.now(timezone.utc)
+            # each key's own input's edit (two inputs may share a key)
+            edits = {
+                key: next(e for e in reports[key]['ready'] if e['key'] == key)
+                for key in body.keys
+            }
             for key in body.keys:
                 confirmed.setdefault(
                     key,
-                    Confirmation(by=by, at=now, input=reports[key].get('entry_id')),
+                    Confirmation(
+                        by=by,
+                        at=now,
+                        input=reports[key].get('entry_id'),
+                        change=edits[key].get('change'),
+                        checks=tuple(edits[key].get('checks', [])),
+                    ),
                 )
             # an input confirmed again: its confirmations that match none
             # of its edits (an earlier input changed) are done with
             ready = {
-                reports[key].get('entry_id'): {
-                    edit['key'] for edit in reports[key].get('ready', [])
-                }
-                for key in body.keys
+                reports[key].get('entry_id'): _held(reports[key]) for key in body.keys
             }
             confirmed = {
                 key: c

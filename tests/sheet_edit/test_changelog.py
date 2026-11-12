@@ -9,7 +9,7 @@ import pytest
 from openpyxl.utils import column_index_from_string
 from synthetic_sheet import letter, with_part
 
-from sand.sheet_edit.apply import apply_all
+from sand.sheet_edit.apply import apply_all, change_key
 from sand.sheet_edit.catalog import build
 from sand.sheet_edit.changelog import (
     Changelog,
@@ -24,6 +24,7 @@ from sand.sheet_edit.changelog import (
     written_now,
 )
 from sand.sheet_edit.edits import Edit, ProposedEdits, Range, Samples
+from sand.sheet_edit.session import carry_of
 from sand.sheet_edit.write import Write, write_cells
 
 CLEAN_SOLVENT_2, SPEED, VARIATION = 'C013', 'C025', 'C007'
@@ -539,3 +540,29 @@ def test_two_edits_of_the_same_words_keep_their_own_checks(synthetic_xlsx):
     # the solvent block, then the speed block with its checks
     assert text.count(f'1. "{BOTH}"') == 2  # noqa: PLR2004
     assert 'past a check: ' in text.split(f'1. "{BOTH}"')[2]
+
+
+def test_a_carried_edit_is_logged_with_who_confirmed_the_same_change(synthetic_xlsx):
+    # both confirmed on the original ("Confirm all"); the solvent note is
+    # read again on the sheet with speed 4000, and carried
+    inputs = [SPEED_4000, SOLVENT]
+    first = apply_all(synthetic_xlsx, inputs, resolve, set(), {})
+    other = Confirmation(by='other tester', at=WHEN, input='n2')
+    confirmations = {}
+    for step, who in zip(first, (TESTER, other), strict=True):
+        for key, ready in step.interpretation.ready.items():
+            confirmations[key] = replace(who, change=change_key(step.text, ready))
+
+    steps = apply_all(
+        synthetic_xlsx,
+        inputs,
+        resolve,
+        set(confirmations),
+        {},
+        carry=carry_of(confirmations),
+    )
+    log = changelog(synthetic_xlsx, steps, confirmations, MODEL)
+
+    assert steps[1].carried
+    solvent = [e for e in log.entries if e.input == inputs.index(SOLVENT) + 1]
+    assert {e.confirmed_by for e in solvent} == {'other tester'}

@@ -1,4 +1,4 @@
-from sand.sheet_edit.apply import apply_all, interpret_instruction
+from sand.sheet_edit.apply import apply_all, change_key, interpret_instruction
 from sand.sheet_edit.edits import Anchor, Edit, NotFound, ProposedEdits, Range, Samples
 from sand.sheet_edit.ground import Refused
 from sand.sheet_edit.write import verify
@@ -41,6 +41,9 @@ PROPOSALS = {
     SPEED_SAID: proposal(edit(SPEED, 'all', '3000', '4000', SPEED_SAID)),
     'speed 3000': proposal(edit(SPEED, 'all', '3000', '3000', 'speed 3000')),
     'speed 4100': proposal(edit(SPEED, 'all', '3000', '4100', 'speed 4000')),
+    'speed 5000': proposal(edit(SPEED, 'all', '3000', '5000', 'speed 5000')),
+    # 4100 is not in the words: a check
+    'spin speed 4000': proposal(edit(SPEED, 'all', '3000', '4100', 'spin speed 4000')),
     'solvent 2 to DMSO for samples 1 to 4': proposal(
         edit(
             CLEAN_SOLVENT_2,
@@ -294,3 +297,103 @@ def test_a_marked_edit_never_blocks_a_clean_one_of_the_same_cell(synthetic_xlsx)
     marked, clean = result.results
     assert isinstance(marked, Refused) and 'already changed' in marked.reasons[0]
     assert list(result.ready.values()) == [clean] and clean.checks == ()
+
+
+# --- a confirmation carried to the same change on another sheet ------------------
+
+
+def on_speed_4000(text, catalog):
+    """The model's answer once speed 4000 is written: it reads 4000 as old."""
+    (edit,) = PROPOSALS[text].edits
+    return proposal(edit.model_copy(update={'old': '4000'}))
+
+
+def confirm_all(steps):
+    """What "Confirm all" saves: every ready key, with what it confirmed."""
+    confirmed, carry = set(), {}
+    for step in steps:
+        for key, edit in step.interpretation.ready.items():
+            confirmed.add(key)
+            carry[change_key(step.text, edit)] = (key, frozenset(edit.checks))
+    return confirmed, carry
+
+
+def test_confirm_all_writes_a_chain_in_one_round(synthetic_xlsx):
+    # both read on the original, both confirmed: the solvent note's
+    # sheet changes once the speed is written, its change does not
+    inputs = [SPEED_SAID, SOLVENT]
+    confirmed, carry = confirm_all(run(synthetic_xlsx, inputs))
+
+    steps = apply_all(synthetic_xlsx, inputs, FakeLLM(), confirmed, {}, carry=carry)
+
+    assert keys(steps[1]).isdisjoint(confirmed)  # a new key on the new sheet
+    assert list(steps[1].carried.values())[0] in confirmed
+    assert steps[1].written
+    verify(synthetic_xlsx, steps[-1].state, steps[0].written + steps[1].written)
+
+
+def test_the_same_cell_and_new_value_carries_the_old_value_is_not_compared(
+    synthetic_xlsx,
+):
+    # 3000 -> 5000 confirmed; after speed 4000 is written it is 4000 -> 5000
+    inputs = [SPEED_SAID, 'speed 5000']
+    confirmed, carry = confirm_all(run(synthetic_xlsx, inputs))
+    # note 1 from the cache, note 2 read on the new sheet
+    cache = {}
+    run(synthetic_xlsx, inputs[:1], cache=cache)
+
+    steps = apply_all(
+        synthetic_xlsx, inputs, on_speed_4000, confirmed, cache, carry=carry
+    )
+
+    assert steps[1].carried
+    values = [c for c in steps[1].written if c.field == 'value']
+    assert {c.before for c in values} == {4000}
+    assert {c.after for c in values} == {5000}
+
+
+def test_other_samples_are_not_carried(synthetic_xlsx):
+    # samples 1 to 4 on the original; 1 to 3 hold DMSO once the first is
+    # written, so only sample 4 is left: another change, asked again
+    inputs = [SOLVENT, 'solvent 2 to DMSO for samples 1 to 4']
+    confirmed, carry = confirm_all(run(synthetic_xlsx, inputs))
+
+    steps = apply_all(synthetic_xlsx, inputs, FakeLLM(), confirmed, {}, carry=carry)
+
+    assert steps[1].carried == {}
+    assert steps[1].written == ()
+
+
+def test_a_new_word_check_is_not_carried(synthetic_xlsx):
+    inputs = [SPEED_SAID, 'spin speed 4000']
+    first = run(synthetic_xlsx, inputs)
+    confirmed, carry = confirm_all(first)
+    (marked,) = first[1].interpretation.ready.values()
+    assert marked.checks
+    cache = {}
+    run(synthetic_xlsx, inputs[:1], cache=cache)
+    # confirmed past the same check: carried
+    steps = apply_all(
+        synthetic_xlsx, inputs, on_speed_4000, confirmed, dict(cache), carry=carry
+    )
+    assert steps[1].carried
+    # confirmed when it had no check: the check is new
+    carry = {change: (key, frozenset()) for change, (key, _) in carry.items()}
+
+    steps = apply_all(
+        synthetic_xlsx, inputs, on_speed_4000, confirmed, dict(cache), carry=carry
+    )
+
+    assert steps[1].carried == {}
+
+
+def test_a_carry_needs_its_confirmation(synthetic_xlsx):
+    inputs = [SPEED_SAID, SOLVENT]
+    confirmed, carry = confirm_all(run(synthetic_xlsx, inputs))
+    (solvent_key,) = keys(run(synthetic_xlsx, inputs)[1])
+
+    steps = apply_all(
+        synthetic_xlsx, inputs, FakeLLM(), confirmed - {solvent_key}, {}, carry=carry
+    )
+
+    assert steps[1].carried == {}

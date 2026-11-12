@@ -12,7 +12,11 @@ Input k is interpreted against state_{k-1}, so "the volume of the DMSO"
 sees a DMSO an earlier input set, and only once that edit is confirmed.
 A confirmation is bound to the input's text, the state it was given and
 the edit itself; a rerun that produces the identical edit keeps it, any
-difference asks again.
+difference asks again. One exception: an input read again only because
+an earlier input changed its sheet, that proposes the same change (same
+words, column, samples, new value) with no new word check, keeps its
+confirmation: it is carried (the old value is not compared; a changed
+one that matters gets the said-old check).
 """
 
 import json
@@ -35,6 +39,9 @@ Resolve = Callable[[str, Catalog], ProposedEdits]
 # an anchored edit once an earlier input set DMSO. Only the LLM call is
 # cached, the checks after it are cheap and always rerun.
 Cache = dict[tuple[str, str], ProposedEdits]
+# change key -> (the confirmation key it was confirmed under, the word
+# checks the edit had then)
+Carry = dict[str, tuple[str, frozenset[str]]]
 
 
 @dataclass(frozen=True)
@@ -59,6 +66,9 @@ class Step:
     written: tuple[CellChange, ...]  # recomputed formula results included
     refused: str | None  # the writer refused the confirmed edits: state unchanged
     state: bytes
+    # ready keys written by a confirmation of the same change on another
+    # sheet: key -> the confirmation key it carries
+    carried: dict[str, str]
 
 
 def interpret_instruction(text: str, sheet: bytes, resolve: Resolve) -> Interpretation:
@@ -142,6 +152,7 @@ def apply_all(  # noqa: PLR0913
     confirmed: set[str],
     cache: Cache,
     *,
+    carry: Carry | None = None,
     cached_only: bool = False,
 ) -> list[Step]:
     """Every input in order, each against the sheet the earlier ones
@@ -149,6 +160,7 @@ def apply_all(  # noqa: PLR0913
     step's state is the final sheet. `cache` is filled as it goes. A
     writer refusal is recorded on the step; a failed verification is a
     bug in the writer and raises, since the file must not be used.
+    `carry` takes confirmations over to the same change on another sheet.
     `cached_only` stops before the first input the model was not asked
     about on its sheet (the inputs after it would read a sheet it may
     change)."""
@@ -160,10 +172,11 @@ def apply_all(  # noqa: PLR0913
             break
         cached = _cached(resolve, cache, digest)
         interpretation = interpret_instruction(text, state, cached)
+        carried = _carried(text, interpretation, confirmed, carry or {})
         writes = [
             Write(row, interpretation.catalog.index(edit.edit.target), edit.value)
             for key, edit in interpretation.ready.items()
-            if key in confirmed
+            if key in confirmed or key in carried
             for row in edit.rows
         ]
         written: tuple[CellChange, ...] = ()
@@ -174,8 +187,22 @@ def apply_all(  # noqa: PLR0913
                 written, state = tuple(result.changes), result.xlsx
             except WriteRefused as why:
                 refused = str(why)
-        steps.append(Step(text, interpretation, written, refused, state))
+        steps.append(Step(text, interpretation, written, refused, state, carried))
     return steps
+
+
+def _carried(
+    text: str, interpretation: Interpretation, confirmed: set[str], carry: Carry
+) -> dict[str, str]:
+    carried = {}
+    for key, edit in interpretation.ready.items():
+        source = carry.get(change_key(text, edit))
+        if key in confirmed or source is None:
+            continue
+        confirmed_under, checks = source
+        if confirmed_under in confirmed and set(edit.checks) <= checks:
+            carried[key] = confirmed_under
+    return carried
 
 
 def _cached(resolve: Resolve, cache: Cache, state: str) -> Resolve:
@@ -188,8 +215,17 @@ def _cached(resolve: Resolve, cache: Cache, state: str) -> Resolve:
     return cached
 
 
+def _change(edit: Grounded) -> list:
+    return [edit.edit.target, list(edit.rows), repr(edit.value)]
+
+
 def _key(text: str, state: str, edit: Grounded) -> str:
     """The confirmation key: the same words, on the same sheet, giving the
     same change."""
-    change = [edit.edit.target, list(edit.rows), repr(edit.value)]
-    return sha256(json.dumps([text, state, change]).encode())
+    return sha256(json.dumps([text, state, _change(edit)]).encode())
+
+
+def change_key(text: str, edit: Grounded) -> str:
+    """The confirmation key without the sheet: what a confirmation carries
+    over to another sheet by."""
+    return sha256(json.dumps([text, _change(edit)]).encode())

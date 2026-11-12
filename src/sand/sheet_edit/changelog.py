@@ -37,6 +37,11 @@ class Confirmation:
     # the input (entry id) whose words were confirmed, whatever the key
     # becomes: revising or deleting it removes its confirmations
     input: str
+    # what was confirmed, to carry it to the same change on another sheet
+    # (apply.change_key) and the word checks the edit had; None in
+    # records made before
+    change: str | None = None
+    checks: tuple[str, ...] = ()
 
     def __post_init__(self):
         if self.at.tzinfo is None:
@@ -178,15 +183,17 @@ def changelog(
 def _confirmed_cells(
     step: Step, confirmations: dict[str, Confirmation]
 ) -> dict[tuple[int, int], tuple[Grounded, Confirmation]]:
-    """(row, column) -> the confirmed edit that wrote it, and by whom."""
+    """(row, column) -> the confirmed edit that wrote it, and by whom (a
+    carried edit: who confirmed the same change on the other sheet)."""
     catalog: Catalog = step.interpretation.catalog
     cells = {}
     for key, edit in step.interpretation.ready.items():
-        if key not in confirmations:
+        confirmation = confirmations.get(step.carried.get(key, key))
+        if confirmation is None:
             continue
         column = catalog.index(edit.edit.target)
         for row in edit.rows:
-            cells[(row, column)] = (edit, confirmations[key])
+            cells[(row, column)] = (edit, confirmation)
     return cells
 
 

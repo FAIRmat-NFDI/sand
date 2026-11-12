@@ -25,7 +25,7 @@ import datetime
 import json
 from dataclasses import dataclass, field
 
-from sand.sheet_edit.apply import Cache
+from sand.sheet_edit.apply import Cache, Carry
 from sand.sheet_edit.changelog import Confirmation
 from sand.sheet_edit.edits import ProposedEdits, Unreadable
 from sand.sheet_edit.workbook import sha256
@@ -161,12 +161,29 @@ def load_confirmations(data: dict) -> dict[str, Confirmation]:
         if 'input' not in entry:
             continue
         entry_id = entry['input']
-        if not isinstance(entry_id, str):
+        change = entry.get('change')
+        checks = entry.get('checks', [])
+        if (
+            not isinstance(entry_id, str)
+            or not isinstance(change, str | None)
+            or not isinstance(checks, list)
+            or not all(isinstance(c, str) for c in checks)
+        ):
             raise ValueError(f'confirmation {key!r} is malformed: {entry!r}')
         confirmations[key] = Confirmation(
-            by=by, at=when, input=entry_id
+            by=by, at=when, input=entry_id, change=change, checks=tuple(checks)
         )  # naive: ValueError
     return confirmations
+
+
+def carry_of(confirmations: dict[str, Confirmation]) -> Carry:
+    """What `apply_all` carries the confirmations over by. A change
+    confirmed twice (on two sheets) carries the first."""
+    carry: Carry = {}
+    for key, c in confirmations.items():
+        if c.change is not None:
+            carry.setdefault(c.change, (key, frozenset(c.checks)))
+    return carry
 
 
 def confirmations_json(confirmations: dict[str, Confirmation]) -> dict:
@@ -175,6 +192,8 @@ def confirmations_json(confirmations: dict[str, Confirmation]) -> dict:
             'by': c.by,
             'at': c.at.isoformat(timespec='seconds'),
             'input': c.input,
+            **({'change': c.change} if c.change is not None else {}),
+            **({'checks': list(c.checks)} if c.checks else {}),
         }
         for key, c in confirmations.items()
     }
