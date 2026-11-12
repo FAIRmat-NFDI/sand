@@ -1405,6 +1405,9 @@ async def send_feedback(
                 status = await voice.writer.read_json(
                     client, upload_id, STATUS_FILE, wait=False
                 )
+                # upload-level: it may hold another collection's job
+                if status and status.get('collection_entry_id') != collection_entry_id:
+                    status = None
                 confirmed = await voice.writer.read_json(
                     client, upload_id, CONFIRMATIONS_FILE, wait=False
                 )
@@ -1418,7 +1421,7 @@ async def send_feedback(
                 page=body.page,
                 client={
                     'user_agent': body.user_agent,
-                    'recent_errors': [line[:1000] for line in body.recent_errors],
+                    'recent_errors': body.recent_errors,
                 },
                 sheet={
                     'upload_id': upload_id,

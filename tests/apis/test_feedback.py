@@ -31,7 +31,8 @@ def stored(voice, response) -> dict:
 
 
 async def test_a_report_is_stored_beside_the_sheet_with_what_the_user_saw(voice):
-    voice.writer.files[STATUS_FILE] = json.dumps({'phase': 'completed'}).encode()
+    status = {'phase': 'completed', 'collection_entry_id': COLLECTION}
+    voice.writer.files[STATUS_FILE] = json.dumps(status).encode()
     voice.writer.files[CONFIRMATIONS_FILE] = json.dumps({'k1': {}}).encode()
 
     response = await send(
@@ -54,7 +55,7 @@ async def test_a_report_is_stored_beside_the_sheet_with_what_the_user_saw(voice)
     assert [i['text'] for i in report['context']['inputs']] == [
         'speed is 4000 for samples 1 to 3'
     ]
-    assert report['context']['edit_status'] == {'phase': 'completed'}
+    assert report['context']['edit_status'] == status
     assert report['context']['confirmations'] == {'k1': {}}
     assert report['context']['error'] is None
     assert report['client']['recent_errors'] == ['10:15:02 GET x 502']
@@ -75,6 +76,16 @@ async def test_a_report_is_kept_when_the_sheet_cannot_be_read(voice):
     assert report['context']['inputs'] == []
 
 
+async def test_another_collections_edit_status_is_left_out(voice):
+    voice.writer.files[STATUS_FILE] = json.dumps(
+        {'phase': 'completed', 'collection_entry_id': 'collection-2'}
+    ).encode()
+
+    response = await send(voice)
+
+    assert stored(voice, response)['context']['edit_status'] is None
+
+
 async def test_two_reports_do_not_overwrite_each_other(voice):
     first = await send(voice)
     second = await send(voice, what_wrong='and again')
@@ -84,6 +95,13 @@ async def test_two_reports_do_not_overwrite_each_other(voice):
 
 async def test_an_empty_report_is_refused(voice):
     response = await send(voice, what_wrong='')
+
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert voice.writer.files == {}
+
+
+async def test_an_oversized_error_line_is_refused(voice):
+    response = await send(voice, recent_errors=['x' * 1001])
 
     assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
     assert voice.writer.files == {}
