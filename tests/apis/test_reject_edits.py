@@ -40,6 +40,18 @@ def put_status(voice, phase='completed', reports=None):
     ).encode()
 
 
+def record(entry_id) -> dict:
+    """A stored rejection of this input."""
+    return {
+        'by': 'user',
+        'at': '2026-11-12T10:00:00+00:00',
+        'input': entry_id,
+        'reason': None,
+        'meant': '',
+        'proposed': None,
+    }
+
+
 def rejections(voice) -> dict:
     return json.loads(voice.writer.files[REJECTIONS_FILE])
 
@@ -220,8 +232,8 @@ async def test_a_rejection_holds_for_every_input_with_its_key(voice):
 async def test_rejecting_an_input_again_drops_its_lost_rejections(voice):
     voice.writer.files[REJECTIONS_FILE] = json.dumps(
         {
-            'old': {'input': 'n1', 'by': 'user', 'at': '2026-11-12T10:00:00+00:00'},
-            'other': {'input': 'n2', 'by': 'user', 'at': '2026-11-12T10:00:00+00:00'},
+            'old': record('n1'),
+            'other': record('n2'),
         }
     ).encode()
 
@@ -244,13 +256,13 @@ async def test_an_input_with_every_edit_decided_has_nothing_to_confirm_again(voi
 async def test_deciding_an_input_again_drops_its_lost_decisions_of_both_kinds(voice):
     lost = {'by': 'user', 'at': '2026-11-12T10:00:00+00:00', 'input': 'n1'}
     voice.writer.files[CONFIRMATIONS_FILE] = json.dumps({'old-c': lost}).encode()
-    voice.writer.files[REJECTIONS_FILE] = json.dumps({'old-r': lost}).encode()
+    voice.writer.files[REJECTIONS_FILE] = json.dumps({'old-r': record('n1')}).encode()
 
     await post(voice, 'reject', {'keys': ['k1']})
     assert json.loads(voice.writer.files[CONFIRMATIONS_FILE]) == {}
     assert sorted(rejections(voice)) == ['k1']
 
-    voice.writer.files[REJECTIONS_FILE] = json.dumps({'old-r': lost}).encode()
+    voice.writer.files[REJECTIONS_FILE] = json.dumps({'old-r': record('n1')}).encode()
     await post(voice, 'confirm', {'keys': ['k2']})
     assert rejections(voice) == {}
 
@@ -260,8 +272,8 @@ async def test_revising_or_deleting_an_update_drops_its_rejections(voice, change
     voice.inputs = [note('n1', TEXT), note('n2', 'speed 5000')]
     voice.writer.files[REJECTIONS_FILE] = json.dumps(
         {
-            'k1': {'input': 'n1', 'by': 'user', 'at': '2026-11-12T10:00:00+00:00'},
-            'k7': {'input': 'n2', 'by': 'user', 'at': '2026-11-12T10:00:00+00:00'},
+            'k1': record('n1'),
+            'k7': record('n2'),
         }
     ).encode()
 
@@ -277,6 +289,32 @@ async def test_revising_or_deleting_an_update_drops_its_rejections(voice, change
 
     assert response.status_code in (HTTPStatus.OK, HTTPStatus.NO_CONTENT), response.text
     assert sorted(rejections(voice)) == ['k7']
+
+
+@pytest.mark.parametrize(
+    'damage',
+    [
+        {'input': 'n1'},  # fields missing
+        {**record('n1'), 'by': ''},
+        {**record('n1'), 'at': '2026-11-12T10:00:00'},  # no timezone
+        {**record('n1'), 'reason': 'typo'},
+        {**record('n1'), 'meant': None},
+        {**record('n1'), 'proposed': 'k1'},
+        {**record('n1'), 'extra': 1},
+    ],
+)
+async def test_a_partly_damaged_record_is_a_damaged_file(voice, damage):
+    stored = json.dumps({'k1': damage}).encode()
+    voice.writer.files[REJECTIONS_FILE] = stored
+
+    response = await post(voice, 'reject', {'keys': ['k2']})
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert voice.writer.files[REJECTIONS_FILE] == stored
+    assert (await report(voice))['rejected'] == []
+    assert (await post(voice, 'confirm', {'keys': ['k2']})).status_code == (
+        HTTPStatus.CONFLICT
+    )
 
 
 async def test_a_damaged_rejections_file_stops_a_revision_before_it_is_saved(voice):

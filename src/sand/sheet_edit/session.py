@@ -192,8 +192,37 @@ def read_rejections(raw: bytes | None) -> dict:
         data = json.loads(raw)
     except ValueError as why:
         raise ValueError(f'the rejections file is not JSON: {why}') from why
-    if not isinstance(data, dict) or not all(
-        isinstance(r, dict) and isinstance(r.get('input'), str) for r in data.values()
-    ):
-        raise ValueError('the rejections file is malformed')
+    if not isinstance(data, dict):
+        raise ValueError('the rejections file is not a JSON object')
+    for key, entry in data.items():
+        if not _rejection_ok(entry):
+            raise ValueError(f'rejection {key!r} is malformed: {entry!r}')
     return data
+
+
+_REJECTION_REASONS = (None, 'column', 'samples', 'value', 'other')
+
+
+def _rejection_ok(entry) -> bool:
+    if not isinstance(entry, dict) or set(entry) != {
+        'by',
+        'at',
+        'input',
+        'reason',
+        'meant',
+        'proposed',
+    }:
+        return False
+    try:
+        at = datetime.datetime.fromisoformat(entry['at'])
+    except (TypeError, ValueError):
+        return False
+    return (
+        isinstance(entry['by'], str)
+        and bool(entry['by'])
+        and at.tzinfo is not None
+        and isinstance(entry['input'], str)
+        and entry['reason'] in _REJECTION_REASONS
+        and isinstance(entry['meant'], str)
+        and (entry['proposed'] is None or isinstance(entry['proposed'], dict))
+    )
