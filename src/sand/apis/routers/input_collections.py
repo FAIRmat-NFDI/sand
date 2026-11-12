@@ -1245,6 +1245,7 @@ async def _decidable(  # noqa: PLR0913
     voice: VoiceElnService,
     upload_id: str,
     collection_entry_id: str,
+    *,
     keys: list[str],
     verb: str,
 ) -> tuple[dict, dict]:
@@ -1315,7 +1316,12 @@ async def confirm_edits(
     try:
         async with _upload_lock(upload_id), voice.build_client(token) as client:
             _, reports = await _decidable(
-                client, voice, upload_id, collection_entry_id, body.keys, 'confirm'
+                client,
+                voice,
+                upload_id,
+                collection_entry_id,
+                keys=body.keys,
+                verb='confirm',
             )
             confirmed = await _loaded_confirmations(client, voice, upload_id)
             rejected = await _loaded_rejections(client, voice, upload_id)
@@ -1391,7 +1397,12 @@ async def reject_edits(
     try:
         async with _upload_lock(upload_id), voice.build_client(token) as client:
             status, reports = await _decidable(
-                client, voice, upload_id, collection_entry_id, body.keys, 'reject'
+                client,
+                voice,
+                upload_id,
+                collection_entry_id,
+                keys=body.keys,
+                verb='reject',
             )
             confirmed = await _loaded_confirmations(client, voice, upload_id)
             rejected = await _loaded_rejections(client, voice, upload_id)
