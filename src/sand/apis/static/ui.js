@@ -1,9 +1,12 @@
 // Page-wide feedback: the error banner, "saved, view on NOMAD" links and
 // the confirm dialog.
 
+import { rememberError } from "./recent-errors.js";
+
 const error = document.getElementById("error");
 
 export function showError(msg) {
+  rememberError("shown: " + msg);
   error.textContent = msg;
   error.style.display = "block";
 }

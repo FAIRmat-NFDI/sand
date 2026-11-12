@@ -11,7 +11,13 @@
 <body>
   <div class="app-bar">
     <h1>SAND</h1>
-    <div class="app-bar-right" id="auth-area"></div>
+    <div class="app-bar-right">
+      <button class="btn btn-small feedback-btn" id="feedback-btn" type="button" title="Tell us what is not working" hidden>
+        <span class="material-icons">feedback</span>
+        Something's wrong
+      </button>
+      <div id="auth-area"></div>
+    </div>
   </div>
 
   <div class="container">
@@ -224,6 +230,23 @@
       <button class="btn btn-outlined" id="confirm-cancel" type="button">Cancel</button>
       <button class="btn btn-primary" id="confirm-ok" type="button">OK</button>
     </div>
+  </dialog>
+
+  <dialog class="confirm-dialog feedback-dialog" id="feedback-dialog" aria-labelledby="feedback-title">
+    <form id="feedback-form">
+      <h2 class="feedback-title" id="feedback-title">Something's wrong?</h2>
+      <label class="feedback-label" for="feedback-wrong">What's not working?</label>
+      <textarea class="text-field" id="feedback-wrong" required maxlength="5000"></textarea>
+      <label class="feedback-label" for="feedback-expected">What did you expect? (optional)</label>
+      <textarea class="text-field feedback-expected" id="feedback-expected" maxlength="5000"></textarea>
+      <p class="section-hint">Saved with this sheet, together with its notes and edits, so the problem can be found. It is not an update of the sheet.</p>
+      <p class="status-text" id="feedback-status" role="status"></p>
+      <div class="controls">
+        <span class="feedback-version" id="feedback-version"></span>
+        <button class="btn btn-outlined" id="feedback-cancel" type="button">Cancel</button>
+        <button class="btn btn-primary" id="feedback-send" type="submit">Send</button>
+      </div>
+    </form>
   </dialog>
 
   <script type="module" src="static/main.js"></script>

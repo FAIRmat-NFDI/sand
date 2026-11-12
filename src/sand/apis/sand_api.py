@@ -12,6 +12,7 @@ from nomad.config import config
 from sand.apis.deps import get_bearer_token
 from sand.apis.routers.input_collections import router as input_collections_router
 from sand.apis.routers.live_transcript import router as live_transcript_router
+from sand.feedback import sand_version
 from sand.hysprint.keyterms import KEYTERMS
 from sand.services.voice_eln import VoiceElnService
 
@@ -39,7 +40,7 @@ sand_api_entry_point = config.get_plugin_entry_point('sand.apis:sand_api')
 
 app = FastAPI(
     title='SAND',
-    version='0.1.0',
+    version=sand_version(),
     root_path=f'{config.services.api_base_path}/dashboards/{sand_api_entry_point.id_url_safe}',
 )
 
@@ -73,6 +74,7 @@ async def ui_config():
     """Frontend defaults: whether live transcription exists at all, the
     default state of the save-live-transcript toggle, and where to log in."""
     return {
+        'sand_version': sand_version(),
         'nomad_gui_url': NOMAD_GUI_URL,
         'live_transcript_available': bool(app.state.deepgram_api_key),
         'store_live_transcript': app.state.store_live_transcript,
