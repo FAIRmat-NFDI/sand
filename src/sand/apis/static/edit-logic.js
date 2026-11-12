@@ -56,10 +56,26 @@ export function checkedKeys(reports) {
   return pendingKeys(reports).filter((key) => marked.has(key));
 }
 
-// an input one of whose edits was just confirmed: its words are a
-// record (the inputs list says so too, as `locked`, from the file)
-export function inputLocked(report) {
-  return Boolean(report && (report.confirmed || []).length);
+// an input one of whose edits was confirmed (the inputs list says so
+// too, as `applied`, from the file)
+export function inputApplied(item, report) {
+  return Boolean(item.applied || (report && (report.confirmed || []).length));
+}
+
+// The warning before revising or deleting an applied input: the job
+// rebuilds the sheet without its edits and reads the inputs after it
+// again. Null for an input with nothing written.
+export function rewriteWarning(action, items, reports, entryId) {
+  const at = items.findIndex((item) => item.entry_id === entryId);
+  if (at < 0 || !inputApplied(items[at], reports[entryId])) return null;
+  const later = items.slice(at + 1).filter((item) => inputApplied(item, reports[item.entry_id])).length;
+  const first = action === "delete"
+    ? "This update was written into the sheet. Deleting it takes its edits out of the sheet."
+    : "This update was written into the sheet. Changing its words reads it again; its edits need your confirmation again.";
+  if (!later) return first;
+  return first + " " + (later === 1
+    ? "The 1 written update after it is read again and needs your confirmation again."
+    : "The " + later + " written updates after it are read again and need your confirmation again.");
 }
 
 // The one-word state of an input, for the chip in its card header:
@@ -70,7 +86,7 @@ export function inputState(item, report, jobRunning, canConfirm) {
   if (!item.text) return null;
   const reported = report && (report.text === undefined || report.text === item.text);
   if (!reported) {
-    if (item.locked) return { state: "applied", label: "Applied" };
+    if (item.applied) return { state: "applied", label: "Applied" };
     if (!canConfirm) return null;
     return jobRunning
       ? { state: "reading", label: "Reading..." }
@@ -79,10 +95,17 @@ export function inputState(item, report, jobRunning, canConfirm) {
   if (report.refused) return { state: "refused", label: "Not written" };
   const pending = pendingKeys([report]).length;
   if (pending) {
-    return { state: "ready", label: pending === 1 ? "1 edit to confirm" : pending + " edits to confirm" };
+    const label = pending === 1 ? "1 edit to confirm" : pending + " edits to confirm";
+    return { state: "ready", label: report.confirm_again ? label + " again" : label };
   }
   if ((report.confirmed_since || []).length) return { state: "writing", label: "Confirmed, writing..." };
-  if ((report.confirmed || []).length) return { state: "applied", label: "Applied" };
+  if ((report.confirmed || []).length) {
+    // partly applied: the rest is told under the input, to rephrase
+    const parts = ["Applied"];
+    if (report.unresolved) parts.push(report.unresolved + " unclear");
+    if (report.not_applied) parts.push(report.not_applied + " not applied");
+    return { state: "applied", label: parts.join(" · ") };
+  }
   // found, but not settled, refused or already so: the reasons are
   // under the input
   if (report.unresolved) return { state: "unclear", label: "Unclear" };
@@ -220,8 +243,12 @@ function summaryParts(status) {
   if (since) parts.push(count(since, "edit confirmed", "edits confirmed") + ", being written");
   const refused = reports.filter((report) => report.refused).length;
   if (refused) parts.push(count(refused, "update could not", "updates could not") + " be written");
-  // stale confirmations (status.stale_confirmations) are not a line: an
-  // edit that lost its confirmation shows as waiting again
+  // why confirmed edits wait again; other stale confirmations
+  // (status.stale_confirmations) are not a line
+  const again = reports.filter((report) => report.confirm_again).length;
+  if (again) {
+    parts.push(count(again, "update was", "updates were") + " read again after an earlier update changed");
+  }
   return parts;
 }
 

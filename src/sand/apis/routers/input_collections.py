@@ -550,7 +550,7 @@ async def list_inputs(
             inputs = await voice.collect_inputs(
                 client, upload_id, collection_entry_id=collection_entry_id
             )
-            locked = await _locked_inputs(client, voice, upload_id)
+            applied = await _applied_inputs(client, voice, upload_id)
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
@@ -567,7 +567,7 @@ async def list_inputs(
                 corrected=item.corrected,
                 status=item.status,
                 deletable=item.entry_id not in undeletable,
-                locked=item.entry_id in locked,
+                applied=item.entry_id in applied,
             )
             for item in inputs
         ]
@@ -596,20 +596,15 @@ async def revise_input(
 
     try:
         async with _upload_lock(upload_id), voice.build_client(token) as client:
-            if await _confirmed_input(
-                client, voice, upload_id, collection_entry_id, entry_id
-            ):
-                raise HTTPException(
-                    status_code=409,
-                    detail='a confirmed update is a record and cannot be changed; '
-                    'add a new update instead',
-                )
             kind = await voice.revise_input(
                 client,
                 upload_id,
                 entry_id,
                 body.text,
                 collection_entry_id=collection_entry_id,
+            )
+            await _drop_confirmations(
+                client, voice, upload_id, collection_entry_id, entry_id
             )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -704,20 +699,15 @@ async def delete_input(
 
     try:
         async with _upload_lock(upload_id), voice.build_client(token) as client:
-            if await _confirmed_input(
-                client, voice, upload_id, collection_entry_id, entry_id
-            ):
-                raise HTTPException(
-                    status_code=409,
-                    detail='a confirmed update is a record and cannot be deleted; '
-                    'add a new update that sets the value back',
-                )
             await voice.delete_input(
                 client,
                 upload_id,
                 entry_id,
                 collection_entry_id=collection_entry_id,
                 undeletable=_undeletable_entry_ids(upload_id),
+            )
+            await _drop_confirmations(
+                client, voice, upload_id, collection_entry_id, entry_id
             )
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
@@ -986,10 +976,9 @@ async def _edit_status(
     return _with_confirmations(status, confirmed or {})
 
 
-async def _locked_inputs(client, voice: VoiceElnService, upload_id: str) -> set[str]:
-    """The inputs (entry ids) named by a confirmation: their words are a
-    record. A damaged file is read as nothing locked here (a listing);
-    the endpoints that change an input refuse on it."""
+async def _applied_inputs(client, voice: VoiceElnService, upload_id: str) -> set[str]:
+    """The inputs (entry ids) named by a confirmation. A damaged file is
+    read as none here (a listing); the confirm endpoint refuses on it."""
     raw = await voice.writer.read_raw_file(client, upload_id, CONFIRMATIONS_FILE)
     try:
         confirmed = load_confirmations(read_confirmations(raw))
@@ -998,19 +987,17 @@ async def _locked_inputs(client, voice: VoiceElnService, upload_id: str) -> set[
     return {c.input for c in confirmed.values() if c.input is not None}
 
 
-async def _confirmed_input(
+async def _drop_confirmations(
     client,
     voice: VoiceElnService,
     upload_id: str,
     collection_entry_id: str,
     entry_id: str,
-) -> bool:
-    """Whether an edit of this input was ever confirmed. Its words are a
-    record then: the sheet's history is appended to, never rewritten.
-    The confirmations name their input, so the lock outlives the key
-    (which changes with the sheet state before the input) and the status
-    file (another collection's job may replace it). A damaged file locks
-    everything: it needs a look, like the confirm endpoint says."""
+) -> None:
+    """Remove the confirmations of an input that was revised or deleted:
+    they were bound to its old words, and words changed back must not
+    count as confirmed again. The next job reads it (and every later
+    input, whose sheet before changed) anew."""
     raw = await voice.writer.read_raw_file(client, upload_id, CONFIRMATIONS_FILE)
     try:
         confirmed = load_confirmations(read_confirmations(raw))
@@ -1018,38 +1005,45 @@ async def _confirmed_input(
         raise HTTPException(
             status_code=409, detail=f'confirmations file damaged: {why}'
         ) from why
-    if any(c.input == entry_id for c in confirmed.values()):
-        return True
-    # records made before confirmations named their input: by key
+    # records made before confirmations named their input: by the last
+    # job's report of it
+    keys = set()
     status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
-    if status is None or status.get('collection_entry_id') != collection_entry_id:
-        return False
-    overlaid = _with_confirmations(status, confirmations_json(confirmed))
-    for report in overlaid.get('inputs', []):
-        if isinstance(report, dict) and report.get('entry_id') == entry_id:
-            return bool(report.get('confirmed'))
-    return False
-    confirmed = await voice.writer.read_json(client, upload_id, CONFIRMATIONS_FILE)
-    for report in _with_confirmations(status, confirmed or {}).get('inputs', []):
-        if isinstance(report, dict) and report.get('entry_id') == entry_id:
-            return bool(report.get('confirmed'))
-    return False
+    if status is not None and status.get('collection_entry_id') == collection_entry_id:
+        for report in status.get('inputs', []):
+            if isinstance(report, dict) and report.get('entry_id') == entry_id:
+                keys = {edit['key'] for edit in report.get('ready', [])}
+    kept = {
+        key: c
+        for key, c in confirmed.items()
+        if c.input != entry_id and not (c.input is None and key in keys)
+    }
+    if len(kept) < len(confirmed):
+        await voice.writer.write_json(
+            client, upload_id, CONFIRMATIONS_FILE, confirmations_json(kept)
+        )
 
 
 def _with_confirmations(status: dict, confirmed: dict) -> dict:
     """The reports say what the job knew when it ran; a confirmation made
-    since shows at once, as `confirmed_since`: it waits for the next run."""
+    since shows at once, as `confirmed_since`: it waits for the next run.
+    `confirm_again`: an input with edits to confirm that lost a
+    confirmation, because an update before it was revised or deleted."""
     for report in status.get('inputs', []):
         if not isinstance(report, dict):
             continue
         known = set(report.get('confirmed', []))
-        since = [
-            edit['key']
-            for edit in report.get('ready', [])
-            if edit['key'] in confirmed and edit['key'] not in known
-        ]
+        keys = [edit['key'] for edit in report.get('ready', [])]
+        since = [key for key in keys if key in confirmed and key not in known]
         report['confirmed'] = [*report.get('confirmed', []), *since]
         report['confirmed_since'] = since
+        lost = any(
+            isinstance(c, dict)
+            and c.get('input') == report.get('entry_id')
+            and key not in keys
+            for key, c in confirmed.items()
+        )
+        report['confirm_again'] = lost and any(key not in confirmed for key in keys)
     return status
 
 
@@ -1155,8 +1149,8 @@ async def confirm_edits(
                     status_code=422,
                     detail=f'not a ready edit of the last job: {", ".join(unknown)}',
                 )
-            # a confirmation locks the input's words for good: they must be
-            # the words the report read, not a revision made since
+            # a confirmation is of the words the report read, not a
+            # revision made since
             inputs = await voice.collect_inputs(
                 client, upload_id, collection_entry_id=collection_entry_id
             )

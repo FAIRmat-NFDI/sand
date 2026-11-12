@@ -1153,14 +1153,6 @@ body {
   box-shadow: 0 0 0 2px rgba(42,76,223,0.3);
 }
 
-.input-tile.input-locked {
-  cursor: default;
-}
-
-.input-tile.input-locked:hover {
-  border-color: #d5d9e0;
-}
-
 .input-tile.selected {
   cursor: default;
   border-color: #f9a825;

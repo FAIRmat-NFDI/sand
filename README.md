@@ -190,9 +190,11 @@ same browser; sand warns when the login is about to end.
    transcribed; a recording whose transcription failed has to be deleted
    first.
 4. **Confirm** the edits that are right, one by one or all at once. They
-   are written into the sheet a moment later; a confirmed update is a
-   record and cannot be revised or deleted. A wrong reading is not
-   confirmed: correct the update's text or add a new update.
+   are written into the sheet a moment later. A wrong reading is not
+   confirmed: correct the update's text or add a new update. A written
+   update can still be revised or deleted: the sheet is rebuilt without
+   its old edits, and the updates after it are read again and need your
+   confirmation again.
 5. **Download** the edited sheet (the original is a download too, under
    the file name it was uploaded with). The Edits card lists every edit
    written; the changelog, folded below it, holds every cell changed, the

@@ -325,5 +325,5 @@ async def test_reports_are_the_inputs_of_the_status(voice):
     assert response.json() == {
         'job_id': 'job-0',
         'phase': 'interpreting',
-        'inputs': [{**report, 'confirmed_since': []}],
+        'inputs': [{**report, 'confirmed_since': [], 'confirm_again': False}],
     }

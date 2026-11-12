@@ -34,8 +34,9 @@ _LOGGED_FIELDS = {'value', 'computed value'}
 class Confirmation:
     by: str  # the user, as the workflow names them
     at: datetime.datetime  # timezone-aware; an audit time must not be ambiguous
-    # the input (entry id) whose words were confirmed: they are a record
-    # from then on, whatever the key becomes; None in records made before
+    # the input (entry id) whose words were confirmed, whatever the key
+    # becomes: revising or deleting it removes its confirmations; None in
+    # records made before
     input: str | None = None
 
     def __post_init__(self):
