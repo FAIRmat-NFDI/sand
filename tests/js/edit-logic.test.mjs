@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import {
   confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputApplied, inputState,
-  checkedKeys, inputsToRead, pendingKeys, previewNotes, readKey, reportsByEntry, unwrittenCount,
+  checkedKeys, decidableKeys, inputsToRead, openReport, pendingKeys, previewNotes, readKey, reportsByEntry, unwrittenCount,
   rewriteWarning, unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
 
@@ -62,6 +62,26 @@ test("pending keys are the ready edits nobody decided", () => {
   assert.deepEqual(pendingKeys([{ ...REPORT, confirmed: ["k1"] }]), []);
   assert.deepEqual(pendingKeys([{ ...REPORT, rejected: ["k1"] }]), []);
   assert.deepEqual(pendingKeys([{ ...REPORT, ready: [] }]), []);
+});
+
+test("the open report is the first with an edit to decide", () => {
+  const one = { ...REPORT, input: 1, entry_id: "n1" };
+  const two = { ...REPORT, input: 2, entry_id: "n2", ready: [{ ...REPORT.ready[0], key: "k2" }] };
+  assert.equal(openReport([two, one]), one);
+  assert.deepEqual(decidableKeys([two, one]), ["k1"]);
+  // decided: the next one's turn
+  assert.equal(openReport([{ ...one, rejected: ["k1"] }, two]).entry_id, "n2");
+  assert.equal(openReport([{ ...one, confirmed: ["k1"] }, two]).entry_id, "n2");
+  // confirmed but not written yet: the sheet below changes, nothing below opens
+  const writing = { ...one, confirmed: ["k1"], confirmed_since: ["k1"] };
+  assert.equal(openReport([writing, two]), writing);
+  assert.deepEqual(decidableKeys([writing, two]), []);
+  // an earlier reading is read again before it is decided
+  assert.deepEqual(decidableKeys([{ ...one, rejected: ["k1"] }, { ...two, waiting: true }]), []);
+  assert.equal(openReport([{ ...one, confirmed: ["k1"] }]), null);
+  // an earlier reading with no edit on today's sheet still opens: read again
+  const empty = { ...two, ready: [], waiting: true };
+  assert.equal(openReport([{ ...one, rejected: ["k1"] }, empty]), empty);
 });
 
 test("confirmed edits the last run did not write", () => {
@@ -171,11 +191,23 @@ test("the state chip of an input", () => {
   assert.equal(label(note, { ...REPORT, ready: [], unchanged: 2 }), "Nothing to change");
   assert.equal(label(note, { ...REPORT, ready: [], unresolved: 1, not_applied: 1 }), "Unclear");
   assert.equal(inputState(note, REPORT, false, true).state, "ready");
+  // after the update whose turn it is
+  const later = (report) => inputState(note, report, false, true, true).label;
+  assert.equal(later(REPORT), "Waiting for the updates above");
+  assert.equal(later({ ...REPORT, waiting: true }), "Waiting for the updates above");
+  assert.equal(later({ ...REPORT, confirmed: ["k1"] }), "Applied");
+  // its turn, an earlier reading: read again first
+  assert.equal(label(note, { ...REPORT, waiting: true }), "Waiting to be read");
+  assert.equal(label(note, { ...REPORT, waiting: true }, true), "Reading...");
+  assert.equal(label(note, { ...REPORT, ready: [], waiting: true }), "Waiting to be read");
+  // the writer refused a confirmed edit: said first, whatever is undecided
+  assert.equal(label(note, { ...REPORT, refused: "a formula error" }, false, true), "Not written");
 });
 
 test("the confirm-all button names the pending edits", () => {
   assert.equal(confirmAllLabel(1), "Confirm the edit");
   assert.equal(confirmAllLabel(3), "Confirm all 3 edits");
+  assert.equal(confirmAllLabel(3, 1, 2), "Confirm all 3 edits of update 2, 1 with a check");
 });
 
 test("the preview notes are what the ready edits do not show", () => {
@@ -206,6 +238,7 @@ test("the summary line of a completed job", () => {
     editSummary({ changes: 0, inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] }),
     "1 edit confirmed, being written");
   assert.equal(editSummary({ changes: 0, inputs: [{ ...REPORT, rejected: ["k1"] }] }), "1 edit rejected");
+  assert.equal(editSummary({ changes: 0, inputs: [{ ...REPORT, waiting: true }] }), "Nothing written yet.");
   assert.equal(
     editSummary({
       changes: 4,

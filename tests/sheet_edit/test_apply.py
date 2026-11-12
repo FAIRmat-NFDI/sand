@@ -227,6 +227,116 @@ def test_cached_only_stops_before_the_first_input_the_model_was_not_asked(
     assert apply_all(synthetic_xlsx, [], llm, set(), cache, cached_only=True) == []
 
 
+def in_turn(  # noqa: PLR0913
+    original, inputs, confirmed=(), *, rejected=(), cache=None, llm=None
+):
+    return apply_all(
+        original,
+        inputs,
+        llm or FakeLLM(),
+        set(confirmed),
+        {} if cache is None else cache,
+        in_turn=True,
+        rejected=frozenset(rejected),
+    )
+
+
+def test_in_turn_only_the_next_input_is_read_again(synthetic_xlsx):
+    inputs = [SOLVENT, SPEED_SAID, VARIATION_SAID]
+    llm, cache = FakeLLM(), {}
+    first = in_turn(synthetic_xlsx, inputs, cache=cache, llm=llm)
+    # the first round: each read once, on the sheet it was added to
+    assert llm.calls == inputs
+    assert [s.waiting for s in first] == [False, False, False]
+    # input 1 confirmed: input 2's turn, input 3 waits
+    one = keys(first[0])
+    steps = in_turn(synthetic_xlsx, inputs, one, cache=cache, llm=llm)
+    assert llm.calls[3:] == [SPEED_SAID]
+    assert [s.waiting for s in steps] == [False, False, True]
+    # a waiting input writes nothing and shows its earlier answer
+    assert steps[2].written == ()
+    assert steps[2].interpretation.proposal == PROPOSALS[VARIATION_SAID]
+    # input 2 confirmed too: input 3's turn
+    two = keys(steps[1])
+    steps = in_turn(synthetic_xlsx, inputs, one | two, cache=cache, llm=llm)
+    assert llm.calls[4:] == [VARIATION_SAID]
+    assert [s.waiting for s in steps] == [False, False, False]
+
+
+def test_in_turn_a_rejection_changes_no_sheet_and_costs_no_call(synthetic_xlsx):
+    inputs = [SOLVENT, SPEED_SAID, VARIATION_SAID]
+    llm, cache = FakeLLM(), {}
+    first = in_turn(synthetic_xlsx, inputs, cache=cache, llm=llm)
+    steps = in_turn(
+        synthetic_xlsx, inputs, rejected=keys(first[0]), cache=cache, llm=llm
+    )
+    assert llm.calls == inputs
+    assert [s.waiting for s in steps] == [False, False, False]
+    assert [keys(s) for s in steps] == [keys(s) for s in first]
+
+
+def test_in_turn_a_new_input_is_read_on_the_sheet_it_is_added_to(synthetic_xlsx):
+    llm, cache = FakeLLM(), {}
+    first = in_turn(synthetic_xlsx, [SOLVENT], cache=cache, llm=llm)
+    one = keys(first[0])
+    # input 1 confirmed, input 2 added: read, nothing above is undecided
+    steps = in_turn(synthetic_xlsx, [SOLVENT, SPEED_SAID], one, cache=cache, llm=llm)
+    assert llm.calls == [SOLVENT, SPEED_SAID]
+    assert not steps[1].waiting
+    # input 2 undecided, input 3 added: never read, so read once
+    steps = in_turn(
+        synthetic_xlsx, [SOLVENT, SPEED_SAID, VARIATION_SAID], one, cache=cache, llm=llm
+    )
+    assert llm.calls[2:] == [VARIATION_SAID]
+    assert not steps[2].waiting
+
+
+def test_in_turn_a_decided_input_keeps_its_edits_while_its_sheet_is_the_same(
+    synthetic_xlsx,
+):
+    inputs = [SOLVENT, SPEED_SAID]
+    cache = {}
+    first = in_turn(synthetic_xlsx, inputs, cache=cache)
+    # input 2 confirmed before the order gate, input 1 undecided and
+    # reworded: nothing above input 2 is written, its sheet is the same
+    steps = in_turn(
+        synthetic_xlsx,
+        ['solvent 2 to DMSO for samples 1 to 4', SPEED_SAID],
+        keys(first[1]),
+        cache=cache,
+    )
+    assert not steps[0].waiting
+    assert not steps[1].waiting  # cached on the original
+    assert len(steps[1].written) == ALL_ROWS
+    # input 1 confirmed: input 2's sheet changed; it is read, as input 1
+    # is decided
+    steps = in_turn(
+        synthetic_xlsx,
+        ['solvent 2 to DMSO for samples 1 to 4', SPEED_SAID],
+        keys(steps[0]) | keys(first[1]),
+        cache=cache,
+    )
+    assert not steps[1].waiting
+
+
+def test_in_turn_an_input_below_an_undecided_one_waits_and_writes_nothing(
+    synthetic_xlsx,
+):
+    cache = {}
+    first = in_turn(synthetic_xlsx, [SOLVENT, SPEED_SAID, TIME], cache=cache)
+    # input 1 confirmed: input 2 is read and undecided; input 3 (its
+    # anchor sees the DMSO now) waits, its earlier answer shown
+    steps = in_turn(
+        synthetic_xlsx,
+        [SOLVENT, SPEED_SAID, TIME],
+        keys(first[0]) | keys(first[2]),
+        cache=cache,
+    )
+    assert steps[2].waiting
+    assert steps[2].written == ()
+    assert steps[2].state == steps[1].state
+
+
 def test_a_confirmation_holds_only_for_the_identical_edit(synthetic_xlsx):
     confirmed = keys(run(synthetic_xlsx, [SOLVENT])[0])
     # the same words again: still confirmed

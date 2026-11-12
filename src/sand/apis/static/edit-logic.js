@@ -44,6 +44,26 @@ export function pendingKeys(reports) {
   return keys;
 }
 
+// The report whose turn it is: the first, in input order, with an
+// undecided edit, or with a confirmation not written yet (or taken
+// out), which changes the sheet the later ones are read on; or the
+// first showing an earlier reading, even with no edit in it (it is
+// read again first). As the server decides it (`_open_report`).
+export function openReport(reports) {
+  const ordered = [...reports].sort((a, b) => a.input - b.input);
+  return ordered.find((report) => report.waiting
+    || pendingKeys([report]).length
+    || (report.confirmed_since || []).length
+    || (report.unconfirmed_since || []).length) || null;
+}
+
+// what may be decided now: the open report's undecided edits, unless it
+// shows an earlier reading (it is read again first)
+export function decidableKeys(reports) {
+  const open = openReport(reports);
+  return open && !open.waiting ? pendingKeys([open]) : [];
+}
+
 // the pending edits a word check marked: confirm all takes them too,
 // its label says how many
 export function checkedKeys(reports) {
@@ -85,7 +105,8 @@ export function rewriteWarning(action, items, reports, entryId) {
 // what the job made of it, or where the job is with it. Null while it
 // has no text (the body says "transcribing...") and when no job is at
 // work on this page.
-export function inputState(item, report, jobRunning, canConfirm) {
+// `later`: the input comes after the one whose turn it is.
+export function inputState(item, report, jobRunning, canConfirm, later = false) {
   if (!item.text) return null;
   const reported = report && (report.text === undefined || report.text === item.text);
   if (!reported) {
@@ -97,6 +118,12 @@ export function inputState(item, report, jobRunning, canConfirm) {
   }
   if (report.refused) return { state: "refused", label: "Not written" };
   const pending = pendingKeys([report]).length;
+  if (later && (pending || report.waiting)) return { state: "later", label: "Waiting for the updates above" };
+  if (report.waiting) {
+    return jobRunning
+      ? { state: "reading", label: "Reading..." }
+      : { state: "waiting", label: "Waiting to be read" };
+  }
   if (pending) {
     const label = pending === 1 ? "1 edit to confirm" : pending + " edits to confirm";
     // which new edit a lost confirmation was is not known (other keys):
@@ -127,8 +154,10 @@ export function inputState(item, report, jobRunning, canConfirm) {
 
 // the label of the button that confirms every pending edit
 // `checked`: how many of them have a check
-export function confirmAllLabel(pending, checked = 0) {
-  const label = pending === 1 ? "Confirm the edit" : "Confirm all " + pending + " edits";
+// `update`: the number of the update they are of
+export function confirmAllLabel(pending, checked = 0, update = null) {
+  const label = (pending === 1 ? "Confirm the edit" : "Confirm all " + pending + " edits")
+    + (update ? " of update " + update : "");
   if (!checked) return label;
   if (pending === 1) return label + ", with a check";
   if (checked === pending) return label + ", all with a check";
@@ -253,7 +282,8 @@ function summaryParts(status) {
   const parts = [];
   const written = writtenCount(status);
   if (written) parts.push(count(written, "edit written", "edits written"));
-  const pending = pendingKeys(reports).length;
+  // an earlier reading's edits are not yet the ones to decide
+  const pending = pendingKeys(reports.filter((report) => !report.waiting)).length;
   if (pending) parts.push(count(pending, "edit waits", "edits wait") + " for your confirmation");
   const since = reports.reduce((n, report) => n + (report.confirmed_since || []).length, 0);
   if (since) parts.push(count(since, "edit confirmed", "edits confirmed") + ", being written");

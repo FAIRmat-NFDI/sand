@@ -1295,6 +1295,7 @@ body {
 }
 
 .input-meta .input-state.is-waiting,
+.input-meta .input-state.is-later,
 .input-meta .input-state.is-none {
   font-weight: 400;
 }
@@ -1571,6 +1572,11 @@ body {
 
 .report-rejected::before {
   content: "✕ ";
+}
+
+/* a waiting update's edits: an earlier reading, not to decide yet */
+.report-earlier {
+  font-style: italic;
 }
 
 /* a word check found something: shown on the edit */

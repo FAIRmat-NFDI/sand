@@ -20,6 +20,9 @@ class JobInput(BaseModel):
     llm_model_name: str
     texts: list[str]
     confirmations: dict[str, dict]  # the file's JSON, by confirmation key
+    # the edits decided without a confirmation (rejections.json's keys);
+    # a job started before rejections existed has none
+    rejections: list[str] = []
 
 
 class ReplayInput(JobInput):

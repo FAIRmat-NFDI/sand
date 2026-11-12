@@ -13,6 +13,12 @@ sees a DMSO an earlier input set, and only once that edit is confirmed.
 A confirmation is bound to the input's text, the state it was given and
 the edit itself; a rerun that produces the identical edit keeps it, any
 difference asks again.
+
+The inputs are decided in order. With `in_turn`, an input after the
+first one with an undecided edit is not read again on a sheet the model
+has not seen it on: its turn comes after the inputs above are decided,
+and they may change its sheet once more. It shows its last answer,
+checked against today's sheet, and writes nothing (`waiting`).
 """
 
 import json
@@ -59,6 +65,8 @@ class Step:
     written: tuple[CellChange, ...]  # recomputed formula results included
     refused: str | None  # the writer refused the confirmed edits: state unchanged
     state: bytes
+    # an earlier answer shown until its turn: nothing written, not decidable
+    waiting: bool = False
 
 
 def interpret_instruction(text: str, sheet: bytes, resolve: Resolve) -> Interpretation:
@@ -143,6 +151,8 @@ def apply_all(  # noqa: PLR0913
     cache: Cache,
     *,
     cached_only: bool = False,
+    in_turn: bool = False,
+    rejected: frozenset[str] = frozenset(),
 ) -> list[Step]:
     """Every input in order, each against the sheet the earlier ones
     left; the confirmed edits of each are written and verified. The last
@@ -151,11 +161,19 @@ def apply_all(  # noqa: PLR0913
     bug in the writer and raises, since the file must not be used.
     `cached_only` stops before the first input the model was not asked
     about on its sheet (the inputs after it would read a sheet it may
-    change)."""
-    steps = []
+    change). `in_turn`: see the module docstring; `rejected` are the
+    keys decided without a confirmation."""
+    steps: list[Step] = []
     state = original
     for text in inputs:
         digest = sha256(state)
+        if in_turn and waits(
+            steps, text, state, cache, confirmed=confirmed, rejected=rejected
+        ):
+            earlier = last_answer(cache, text)
+            interpretation = interpret_instruction(text, state, lambda _t, _c: earlier)
+            steps.append(Step(text, interpretation, (), None, state, waiting=True))
+            continue
         if cached_only and (sha256(text.encode()), digest) not in cache:
             break
         cached = _cached(resolve, cache, digest)
@@ -176,6 +194,38 @@ def apply_all(  # noqa: PLR0913
                 refused = str(why)
         steps.append(Step(text, interpretation, written, refused, state))
     return steps
+
+
+def waits(  # noqa: PLR0913
+    steps: list[Step],
+    text: str,
+    state: bytes,
+    cache: Cache,
+    *,
+    confirmed: set[str],
+    rejected: frozenset[str],
+) -> bool:
+    """Whether the next input waits for its turn: an input above has an
+    undecided edit, the model never read it on this sheet, and an
+    earlier answer can be shown. A new input is read once, on the sheet
+    it is added to."""
+    if (sha256(text.encode()), sha256(state)) in cache:
+        return False
+    if last_answer(cache, text) is None:
+        return False
+    return any(
+        step.waiting
+        or any(
+            k not in confirmed and k not in rejected for k in step.interpretation.ready
+        )
+        for step in steps
+    )
+
+
+def last_answer(cache: Cache, text: str) -> ProposedEdits | None:
+    """The answer to these words on the sheet last read, any sheet."""
+    words = sha256(text.encode())
+    return next((cache[k] for k in reversed(cache) if k[0] == words), None)
 
 
 def _cached(resolve: Resolve, cache: Cache, state: str) -> Resolve:
