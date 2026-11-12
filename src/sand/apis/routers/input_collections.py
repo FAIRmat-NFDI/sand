@@ -599,8 +599,13 @@ async def revise_input(
     try:
         async with _upload_lock(upload_id), voice.build_client(token) as client:
             # first: a revision saved with its old confirmations kept would
-            # count as confirmed again if its words were changed back
-            await _drop_confirmations(client, voice, upload_id, entry_id)
+            # count as confirmed again if its words were changed back; not
+            # for an input the revision is refused on (an empty note)
+            item = await _input_of(
+                client, voice, upload_id, collection_entry_id, entry_id
+            )
+            if item is not None and (body.text.strip() or item.kind == 'audio'):
+                await _drop_confirmations(client, voice, upload_id, entry_id)
             kind = await voice.revise_input(
                 client,
                 upload_id,
@@ -701,13 +706,18 @@ async def delete_input(
 
     try:
         async with _upload_lock(upload_id), voice.build_client(token) as client:
-            await _drop_confirmations(client, voice, upload_id, entry_id)
+            undeletable = _undeletable_entry_ids(upload_id)
+            item = await _input_of(
+                client, voice, upload_id, collection_entry_id, entry_id
+            )
+            if item is not None and entry_id not in undeletable:
+                await _drop_confirmations(client, voice, upload_id, entry_id)
             await voice.delete_input(
                 client,
                 upload_id,
                 entry_id,
                 collection_entry_id=collection_entry_id,
-                undeletable=_undeletable_entry_ids(upload_id),
+                undeletable=undeletable,
             )
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
@@ -997,26 +1007,43 @@ async def _applied_inputs(
 ) -> set[str]:
     """The inputs (entry ids) named by a confirmation that is still one
     of their edits: an earlier input revised or deleted leaves it
-    matching nothing once the job read it again. A damaged file is read
-    as none here (a listing); the confirm endpoint refuses on it."""
+    matching nothing once the job read it again. None without this
+    collection's status: the upload's sheet is not its. A damaged file
+    is read as none here (a listing); the confirm endpoint refuses on it."""
     raw = await voice.writer.read_raw_file(client, upload_id, CONFIRMATIONS_FILE)
     try:
         confirmed = load_confirmations(read_confirmations(raw))
     except ValueError:
         return set()
     status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
-    ready = {}
-    if status is not None and status.get('collection_entry_id') == collection_entry_id:
-        for report in status.get('inputs', []):
-            if isinstance(report, dict):
-                ready[report.get('entry_id')] = {
-                    edit['key'] for edit in report.get('ready', [])
-                }
+    if status is None or status.get('collection_entry_id') != collection_entry_id:
+        return set()
+    # an input a running job has not reported yet counts by its record
+    ready = {
+        report.get('entry_id'): {edit['key'] for edit in report.get('ready', [])}
+        for report in status.get('inputs', [])
+        if isinstance(report, dict)
+    }
     return {
         c.input
         for key, c in confirmed.items()
         if c.input not in ready or key in ready[c.input]
     }
+
+
+async def _input_of(
+    client,
+    voice: VoiceElnService,
+    upload_id: str,
+    collection_entry_id: str,
+    entry_id: str,
+):
+    """The collection's input of this entry id; None when it is not one
+    (the revise or delete that follows refuses it)."""
+    inputs = await voice.collect_inputs(
+        client, upload_id, collection_entry_id=collection_entry_id
+    )
+    return next((i for i in inputs if i.entry_id == entry_id), None)
 
 
 async def _drop_confirmations(
@@ -1052,24 +1079,28 @@ def _with_confirmations(status: dict, confirmed: dict | None) -> dict:
             continue
         written = report.get('confirmed', [])
         keys = [edit['key'] for edit in report.get('ready', [])]
-        if confirmed is None:
+        entry_id = report.get('entry_id')
+        if confirmed is None or not entry_id:
+            # a report from before reports named their input is read again
             report.update(confirmed_since=[], unconfirmed_since=[], confirm_again=0)
             continue
-        since = [key for key in keys if key in confirmed and key not in written]
-        report['unconfirmed_since'] = [key for key in written if key not in confirmed]
-        report['confirmed'] = [*(k for k in written if k in confirmed), *since]
+        # two inputs of the same words on the same sheet share a key: a
+        # confirmation is its own input's
+        mine = {
+            key
+            for key, c in confirmed.items()
+            if isinstance(c, dict) and c.get('input') == entry_id
+        }
+        since = [key for key in keys if key in mine and key not in written]
+        report['unconfirmed_since'] = [key for key in written if key not in mine]
+        report['confirmed'] = [*(k for k in written if k in mine), *since]
         report['confirmed_since'] = since
         # only with something to do: edits to confirm, or a part to
         # rephrase; an edit the sheet already holds needs nothing
-        todo = any(key not in confirmed for key in keys) or any(
+        todo = any(key not in mine for key in keys) or any(
             report.get(field) for field in ('unresolved', 'not_applied', 'refused')
         )
-        report['confirm_again'] = todo * sum(
-            isinstance(c, dict)
-            and c.get('input') == report.get('entry_id')
-            and key not in keys
-            for key, c in confirmed.items()
-        )
+        report['confirm_again'] = todo * len(mine - set(keys))
     return status
 
 
@@ -1175,11 +1206,12 @@ async def confirm_edits(
     try:
         async with _upload_lock(upload_id), voice.build_client(token) as client:
             status = await _edit_status(client, voice, upload_id, collection_entry_id)
-            reports = {
-                edit['key']: report
-                for report in status.get('inputs', [])
-                for edit in report.get('ready', [])
-            }
+            # a key two inputs share is the first one's: the job writes it
+            # there, and the later input's key changes with the sheet
+            reports = {}
+            for report in status.get('inputs', []):
+                for edit in report.get('ready', []):
+                    reports.setdefault(edit['key'], report)
             unknown = sorted(set(body.keys) - set(reports))
             if unknown and _job_running(status, None):
                 # the running job's reports replace the old ones as it goes
