@@ -122,6 +122,25 @@ async def test_two_confirms_at_once_both_survive(voice):
     assert sorted(confirmations(voice)) == ['k1', 'k2']
 
 
+async def test_confirming_an_input_again_drops_its_lost_confirmations(voice):
+    # k0 and k5 were n1's edits before an earlier input changed; n2's stay
+    put_status(
+        voice, inputs=[{'input': 1, 'entry_id': 'n1', 'ready': READY, 'confirmed': []}]
+    )
+    record = {'by': 'user', 'at': '2026-10-28T12:16:05+00:00'}
+    voice.writer.files[CONFIRMATIONS_FILE] = json.dumps(
+        {
+            'k0': {**record, 'input': 'n1'},
+            'k5': {**record, 'input': 'n1'},
+            'k9': {**record, 'input': 'n2'},
+            'k8': record,
+        }
+    ).encode()
+
+    assert (await confirm(voice, ['k1'])).status_code == HTTPStatus.OK
+    assert sorted(confirmations(voice)) == ['k1', 'k8', 'k9']
+
+
 async def test_by_falls_back_to_the_user_id(voice):
     put_status(voice, 'completed')
     voice.me = {'user_id': USER}
@@ -285,6 +304,21 @@ async def test_the_final_sheet_downloads_under_the_experiments_name(
     assert response.headers['content-disposition'] == (
         'attachment; filename="batch 7.xlsx"; filename*=UTF-8\'\'batch%207.xlsx'
     )
+
+
+async def test_no_download_after_a_written_update_was_withdrawn(voice, synthetic_xlsx):
+    # the job wrote k1; its update was revised since, k1 is gone
+    put_final(
+        voice,
+        synthetic_xlsx,
+        inputs=[{'input': 1, 'entry_id': 'n1', 'ready': READY, 'confirmed': ['k1']}],
+    )
+    voice.writer.files[CONFIRMATIONS_FILE] = b'{}'
+
+    for path in ('final-sheet', 'changelog'):
+        response = await get(voice, path)
+        assert response.status_code == HTTPStatus.CONFLICT, path
+        assert 'revised or deleted' in response.json()['detail']
 
 
 async def test_a_name_in_any_script_downloads(voice, synthetic_xlsx):

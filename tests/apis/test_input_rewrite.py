@@ -131,6 +131,10 @@ async def test_a_damaged_confirmations_file_is_not_rewritten(voice):
     assert response.status_code == HTTPStatus.CONFLICT
     assert response.json()['detail'].startswith('confirmations file damaged')
     assert voice.writer.files[CONFIRMATIONS_FILE] == b'not json'
+    # refused before anything changed
+    assert voice.revised == []
+    assert (await delete(voice)).status_code == HTTPStatus.CONFLICT
+    assert voice.removed == []
 
 
 async def test_an_update_after_a_changed_one_is_to_confirm_again(voice):
@@ -155,6 +159,29 @@ async def test_an_update_after_a_changed_one_is_to_confirm_again(voice):
     assert [r['confirm_again'] for r in reports] == [False, True]
 
 
+async def test_an_update_that_lost_its_edit_is_told_too(voice):
+    # n1 changed and n2 finds no edit now: refused, unclear or noted
+    put_status(voice, [{'input': 2, 'entry_id': 'n2', 'ready': [], 'confirmed': []}])
+    put_confirmations(voice, {'k5': 'n2'})
+
+    (report,) = (await status(voice))['inputs']
+
+    assert report['confirm_again'] is True
+
+
+async def test_a_withdrawn_confirmation_waits_for_the_next_run(voice):
+    put_status(
+        voice, [{'input': 1, 'entry_id': 'n1', 'ready': READY, 'confirmed': ['k1']}]
+    )
+    put_confirmations(voice, {'k1': 'n1'})
+
+    assert (await revise(voice)).status_code == HTTPStatus.OK
+    (report,) = (await status(voice))['inputs']
+
+    assert report['confirmed'] == []
+    assert report['unconfirmed_since'] == ['k1']
+
+
 async def test_a_partly_confirmed_update_is_not_to_confirm_again(voice):
     put_confirmations(voice, {'k1': 'n1'})
 
@@ -165,8 +192,20 @@ async def test_a_partly_confirmed_update_is_not_to_confirm_again(voice):
 
 
 async def test_the_inputs_list_says_which_are_applied(voice):
-    voice.inputs = [note('n1', 'time 1 is 1000'), note('n2', 'speed 4000')]
-    put_confirmations(voice, {'k1': 'n1'})
+    voice.inputs = [
+        note('n1', 'time 1 is 1000'),
+        note('n2', 'speed 4000'),
+        note('n3', 'speed 10 percent higher'),
+    ]
+    # n3's confirmation k5 matches none of its edits now
+    put_status(
+        voice,
+        [
+            {'input': 1, 'entry_id': 'n1', 'ready': READY, 'confirmed': ['k1']},
+            {'input': 3, 'entry_id': 'n3', 'ready': [{'key': 'k6'}], 'confirmed': []},
+        ],
+    )
+    put_confirmations(voice, {'k1': 'n1', 'k5': 'n3'})
 
     async with api(voice) as client:
         response = await client.get(
@@ -178,4 +217,5 @@ async def test_the_inputs_list_says_which_are_applied(voice):
     assert [(i['entry_id'], i['applied']) for i in response.json()['inputs']] == [
         ('n1', True),
         ('n2', False),
+        ('n3', False),
     ]

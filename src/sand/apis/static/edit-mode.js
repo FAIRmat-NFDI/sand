@@ -139,7 +139,8 @@ function gateDownload(unwritten) {
   unwrittenShown = unwritten;
   downloadFinalBtn.disabled = !editedReady || unwritten > 0 || downloading || running;
   downloadFinalBtn.title = unwritten > 0
-    ? unwritten + " confirmed edit" + (unwritten === 1 ? " is" : "s are") + " being written into the sheet"
+    ? "The sheet is being written again: " + unwritten + " edit" + (unwritten === 1 ? "" : "s")
+      + " confirmed or withdrawn since"
     : running ? "The updates are being read"
       : editedReady ? "" : "No edited sheet yet: the updates have not been read";
   // the original is there whatever the job does

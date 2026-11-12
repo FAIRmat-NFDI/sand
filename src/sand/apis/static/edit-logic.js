@@ -56,10 +56,13 @@ export function checkedKeys(reports) {
   return pendingKeys(reports).filter((key) => marked.has(key));
 }
 
-// an input one of whose edits was confirmed (the inputs list says so
-// too, as `applied`, from the file)
+// an input one of whose edits is confirmed: by the report of its
+// words, else by the inputs list (`applied`, from the file)
 export function inputApplied(item, report) {
-  return Boolean(item.applied || (report && (report.confirmed || []).length));
+  if (report && (report.text === undefined || report.text === item.text)) {
+    return (report.confirmed || []).length > 0;
+  }
+  return Boolean(item.applied);
 }
 
 // The warning before revising or deleting an applied input: the job
@@ -217,14 +220,19 @@ function writtenFromReports(status) {
   return rows;
 }
 
-// confirmed edits the last run did not write: the final sheet lacks them
+// edits confirmed, or withdrawn (their update revised or deleted),
+// since the last run: the final sheet is not up to date with them
+function sinceLastRun(report) {
+  return [...(report.confirmed_since || []), ...(report.unconfirmed_since || [])];
+}
+
 export function unwrittenCount(status) {
-  return (status.inputs || []).reduce((n, report) => n + (report.confirmed_since || []).length, 0);
+  return (status.inputs || []).reduce((n, report) => n + sinceLastRun(report).length, 0);
 }
 
 // those edits' keys, as one string: "" when the last run wrote everything
 export function unwrittenKey(status) {
-  return (status.inputs || []).flatMap((report) => report.confirmed_since || []).sort().join("\n");
+  return (status.inputs || []).flatMap(sinceLastRun).sort().join("\n");
 }
 
 function count(n, one, many) {
@@ -239,8 +247,10 @@ function summaryParts(status) {
   if (written) parts.push(count(written, "edit written", "edits written"));
   const pending = pendingKeys(reports).length;
   if (pending) parts.push(count(pending, "edit waits", "edits wait") + " for your confirmation");
-  const since = unwrittenCount(status);
+  const since = reports.reduce((n, report) => n + (report.confirmed_since || []).length, 0);
   if (since) parts.push(count(since, "edit confirmed", "edits confirmed") + ", being written");
+  const withdrawn = reports.reduce((n, report) => n + (report.unconfirmed_since || []).length, 0);
+  if (withdrawn) parts.push(count(withdrawn, "edit", "edits") + " of a changed update, being taken out");
   const refused = reports.filter((report) => report.refused).length;
   if (refused) parts.push(count(refused, "update could not", "updates could not") + " be written");
   // why confirmed edits wait again; other stale confirmations
