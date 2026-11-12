@@ -387,6 +387,7 @@ function renderReport(report) {
       state.append(mark, decideButton("Undo", "report-undo", "Take the rejection back",
         () => actions.undoReject(edit.key)));
     } else {
+      state.classList.add("report-decide");
       state.append(
         decideButton("Confirm", "report-confirm", "Confirm this edit", () => actions.confirm(edit.key)),
         decideButton("Reject", "report-reject", "Reject this edit: it is not written",

@@ -1911,6 +1911,13 @@ body {
   white-space: nowrap;
 }
 
+/* Confirm above Reject, the same width */
+.report-state.report-decide {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
 .report-wrong.btn-icon {
   padding: 2px;
   color: #9e9e9e;
