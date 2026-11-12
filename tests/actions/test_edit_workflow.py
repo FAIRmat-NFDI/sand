@@ -73,7 +73,11 @@ class Stubs:
                 'texts': stubs.texts,
                 'input_entry_ids': [f'e{i + 1}' for i in range(len(stubs.texts))],
                 'confirmations': {
-                    'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00'}
+                    'k1': {
+                        'by': 'tester',
+                        'at': '2026-10-28T12:16:05+00:00',
+                        'input': 'n1',
+                    }
                 },
                 'llm_model_name': MODEL,
             }
@@ -185,7 +189,7 @@ async def test_each_input_in_order_two_opinions_each_then_the_sheet():
     assert first.llm_model_name == MODEL
     assert first.job_id == result['job_id']
     assert first.confirmations == {
-        'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00'}
+        'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00', 'input': 'n1'}
     }
     (replay,) = stubs.of('replay')
     assert (replay.texts, replay.entry_ids) == (first.texts, ['e1', 'e2'])

@@ -553,7 +553,9 @@ async def list_inputs(
             inputs = await voice.collect_inputs(
                 client, upload_id, collection_entry_id=collection_entry_id
             )
-            locked = await _locked_inputs(client, voice, upload_id)
+            applied = await _applied_inputs(
+                client, voice, upload_id, collection_entry_id
+            )
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
@@ -570,7 +572,7 @@ async def list_inputs(
                 corrected=item.corrected,
                 status=item.status,
                 deletable=item.entry_id not in undeletable,
-                locked=item.entry_id in locked,
+                applied=item.entry_id in applied,
             )
             for item in inputs
         ]
@@ -599,14 +601,14 @@ async def revise_input(
 
     try:
         async with _upload_lock(upload_id), voice.build_client(token) as client:
-            if await _confirmed_input(
+            # first: a revision saved with its old confirmations kept would
+            # count as confirmed again if its words were changed back; not
+            # for an input the revision is refused on (an empty note)
+            item = await _input_of(
                 client, voice, upload_id, collection_entry_id, entry_id
-            ):
-                raise HTTPException(
-                    status_code=409,
-                    detail='a confirmed update is a record and cannot be changed; '
-                    'add a new update instead',
-                )
+            )
+            if item is not None and (body.text.strip() or item.kind == 'audio'):
+                await _drop_confirmations(client, voice, upload_id, entry_id)
             kind = await voice.revise_input(
                 client,
                 upload_id,
@@ -707,20 +709,18 @@ async def delete_input(
 
     try:
         async with _upload_lock(upload_id), voice.build_client(token) as client:
-            if await _confirmed_input(
+            undeletable = _undeletable_entry_ids(upload_id)
+            item = await _input_of(
                 client, voice, upload_id, collection_entry_id, entry_id
-            ):
-                raise HTTPException(
-                    status_code=409,
-                    detail='a confirmed update is a record and cannot be deleted; '
-                    'add a new update that sets the value back',
-                )
+            )
+            if item is not None and entry_id not in undeletable:
+                await _drop_confirmations(client, voice, upload_id, entry_id)
             await voice.delete_input(
                 client,
                 upload_id,
                 entry_id,
                 collection_entry_id=collection_entry_id,
-                undeletable=_undeletable_entry_ids(upload_id),
+                undeletable=undeletable,
             )
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
@@ -919,7 +919,14 @@ async def start_edit_async(
                 inputs = await voice.collect_inputs(
                     client, upload_id, collection_entry_id=collection_entry_id
                 )
-                if not inputs:
+                # with every update deleted, a job still writes the
+                # original back over the last job's sheet
+                read_before = (
+                    status is not None
+                    and status.get('collection_entry_id') == collection_entry_id
+                    and bool(status.get('inputs'))
+                )
+                if not inputs and not read_before:
                     raise HTTPException(
                         status_code=422, detail='nothing to apply: add an update first'
                     )
@@ -985,35 +992,70 @@ async def _edit_status(
             'error': 'the job stopped: no progress for '
             f'{STALE_JOB_S // 60} minutes; read the updates again',
         }
-    confirmed = await voice.writer.read_json(client, upload_id, CONFIRMATIONS_FILE)
-    return _with_confirmations(status, confirmed or {})
+    return _with_confirmations(status, await _confirmations(client, voice, upload_id))
 
 
-async def _locked_inputs(client, voice: VoiceElnService, upload_id: str) -> set[str]:
-    """The inputs (entry ids) named by a confirmation: their words are a
-    record. A damaged file is read as nothing locked here (a listing);
-    the endpoints that change an input refuse on it."""
+async def _confirmations(client, voice: VoiceElnService, upload_id: str) -> dict | None:
+    """The confirmations file as loaded (old records left out), as JSON;
+    None when it is damaged: the confirm endpoint says so."""
+    raw = await voice.writer.read_raw_file(client, upload_id, CONFIRMATIONS_FILE)
+    try:
+        return confirmations_json(load_confirmations(read_confirmations(raw)))
+    except ValueError:
+        return None
+
+
+async def _applied_inputs(
+    client, voice: VoiceElnService, upload_id: str, collection_entry_id: str
+) -> set[str]:
+    """The inputs (entry ids) named by a confirmation that is still one
+    of their edits: an earlier input revised or deleted leaves it
+    matching nothing once the job read it again. None without this
+    collection's status: the upload's sheet is not its. A damaged file
+    is read as none here (a listing); the confirm endpoint refuses on it."""
     raw = await voice.writer.read_raw_file(client, upload_id, CONFIRMATIONS_FILE)
     try:
         confirmed = load_confirmations(read_confirmations(raw))
     except ValueError:
         return set()
-    return {c.input for c in confirmed.values() if c.input is not None}
+    status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
+    if status is None or status.get('collection_entry_id') != collection_entry_id:
+        return set()
+    # an input a running job has not reported yet counts by its record
+    ready = {
+        report.get('entry_id'): {edit['key'] for edit in report.get('ready', [])}
+        for report in status.get('inputs', [])
+        if isinstance(report, dict)
+    }
+    return {
+        c.input
+        for key, c in confirmed.items()
+        if c.input not in ready or key in ready[c.input]
+    }
 
 
-async def _confirmed_input(
+async def _input_of(
     client,
     voice: VoiceElnService,
     upload_id: str,
     collection_entry_id: str,
     entry_id: str,
-) -> bool:
-    """Whether an edit of this input was ever confirmed. Its words are a
-    record then: the sheet's history is appended to, never rewritten.
-    The confirmations name their input, so the lock outlives the key
-    (which changes with the sheet state before the input) and the status
-    file (another collection's job may replace it). A damaged file locks
-    everything: it needs a look, like the confirm endpoint says."""
+):
+    """The collection's input of this entry id; None when it is not one
+    (the revise or delete that follows refuses it)."""
+    inputs = await voice.collect_inputs(
+        client, upload_id, collection_entry_id=collection_entry_id
+    )
+    return next((i for i in inputs if i.entry_id == entry_id), None)
+
+
+async def _drop_confirmations(
+    client, voice: VoiceElnService, upload_id: str, entry_id: str
+) -> None:
+    """Remove the confirmations of an input that was revised or deleted:
+    they were bound to its old words, and words changed back must not
+    count as confirmed again. The next job reads it (and every later
+    input, whose sheet before changed) anew."""
     raw = await voice.writer.read_raw_file(client, upload_id, CONFIRMATIONS_FILE)
     try:
         confirmed = load_confirmations(read_confirmations(raw))
@@ -1021,39 +1063,63 @@ async def _confirmed_input(
         raise HTTPException(
             status_code=409, detail=f'confirmations file damaged: {why}'
         ) from why
-    if any(c.input == entry_id for c in confirmed.values()):
-        return True
-    # records made before confirmations named their input: by key
-    status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
-    if status is None or status.get('collection_entry_id') != collection_entry_id:
-        return False
-    overlaid = _with_confirmations(status, confirmations_json(confirmed))
-    for report in overlaid.get('inputs', []):
-        if isinstance(report, dict) and report.get('entry_id') == entry_id:
-            return bool(report.get('confirmed'))
-    return False
-    confirmed = await voice.writer.read_json(client, upload_id, CONFIRMATIONS_FILE)
-    for report in _with_confirmations(status, confirmed or {}).get('inputs', []):
-        if isinstance(report, dict) and report.get('entry_id') == entry_id:
-            return bool(report.get('confirmed'))
-    return False
+    kept = {key: c for key, c in confirmed.items() if c.input != entry_id}
+    if len(kept) < len(confirmed):
+        await voice.writer.write_json(
+            client, upload_id, CONFIRMATIONS_FILE, confirmations_json(kept)
+        )
 
 
-def _with_confirmations(status: dict, confirmed: dict) -> dict:
+def _with_confirmations(status: dict, confirmed: dict | None) -> dict:
     """The reports say what the job knew when it ran; a confirmation made
-    since shows at once, as `confirmed_since`: it waits for the next run."""
+    since shows at once, as `confirmed_since`, one removed since (its
+    input revised or deleted) as `unconfirmed_since`: both wait for the
+    next run. `confirm_again`: how many confirmations of the input match
+    none of its edits, because an update before it was revised or
+    deleted. A damaged file (None) changes nothing the job reported."""
     for report in status.get('inputs', []):
         if not isinstance(report, dict):
             continue
-        known = set(report.get('confirmed', []))
-        since = [
-            edit['key']
-            for edit in report.get('ready', [])
-            if edit['key'] in confirmed and edit['key'] not in known
-        ]
-        report['confirmed'] = [*report.get('confirmed', []), *since]
+        written = report.get('confirmed', [])
+        keys = [edit['key'] for edit in report.get('ready', [])]
+        entry_id = report.get('entry_id')
+        if confirmed is None or not entry_id:
+            # a report from before reports named their input is read again
+            report.update(confirmed_since=[], unconfirmed_since=[], confirm_again=0)
+            continue
+        # two inputs of the same words on the same sheet share a key: a
+        # confirmation is its own input's
+        mine = {
+            key
+            for key, c in confirmed.items()
+            if isinstance(c, dict) and c.get('input') == entry_id
+        }
+        since = [key for key in keys if key in mine and key not in written]
+        report['unconfirmed_since'] = [key for key in written if key not in mine]
+        report['confirmed'] = [*(k for k in written if k in mine), *since]
         report['confirmed_since'] = since
+        # only with something to do: edits to confirm, or a part to
+        # rephrase; an edit the sheet already holds needs nothing
+        todo = any(key not in mine for key in keys) or any(
+            report.get(field) for field in ('unresolved', 'not_applied', 'refused')
+        )
+        report['confirm_again'] = todo * len(mine - set(keys))
     return status
+
+
+def _withdrawn(status: dict) -> bool:
+    """Whether a confirmation the stored sheet was written with is gone."""
+    return any(
+        report.get('unconfirmed_since')
+        for report in status.get('inputs', [])
+        if isinstance(report, dict)
+    )
+
+
+_WITHDRAWN = (
+    'an update written into the sheet was revised or deleted; '
+    'the sheet is being written again'
+)
 
 
 async def _completed_status(
@@ -1070,6 +1136,8 @@ async def _completed_status(
         raise HTTPException(
             status_code=409, detail='the last edit job did not complete; run it again'
         )
+    if _withdrawn(status):
+        raise HTTPException(status_code=409, detail=_WITHDRAWN)
     return status
 
 
@@ -1141,11 +1209,12 @@ async def confirm_edits(
     try:
         async with _upload_lock(upload_id), voice.build_client(token) as client:
             status = await _edit_status(client, voice, upload_id, collection_entry_id)
-            reports = {
-                edit['key']: report
-                for report in status.get('inputs', [])
-                for edit in report.get('ready', [])
-            }
+            # a key two inputs share is the first one's: the job writes it
+            # there, and the later input's key changes with the sheet
+            reports = {}
+            for report in status.get('inputs', []):
+                for edit in report.get('ready', []):
+                    reports.setdefault(edit['key'], report)
             unknown = sorted(set(body.keys) - set(reports))
             if unknown and _job_running(status, None):
                 # the running job's reports replace the old ones as it goes
@@ -1158,8 +1227,15 @@ async def confirm_edits(
                     status_code=422,
                     detail=f'not a ready edit of the last job: {", ".join(unknown)}',
                 )
-            # a confirmation locks the input's words for good: they must be
-            # the words the report read, not a revision made since
+            if any(not reports[key].get('entry_id') for key in body.keys):
+                # a report from before reports named their input
+                raise HTTPException(
+                    status_code=409,
+                    detail='the last run does not name its updates; '
+                    'read the updates again, then confirm',
+                )
+            # a confirmation is of the words the report read, not a
+            # revision made since
             inputs = await voice.collect_inputs(
                 client, upload_id, collection_entry_id=collection_entry_id
             )
@@ -1184,7 +1260,7 @@ async def confirm_edits(
             try:
                 confirmed = load_confirmations(read_confirmations(raw))
             except ValueError as why:
-                # an audit file is never overwritten; this needs a look
+                # a damaged audit file is never overwritten; this needs a look
                 raise HTTPException(
                     status_code=409, detail=f'confirmations file damaged: {why}'
                 ) from why
@@ -1196,6 +1272,19 @@ async def confirm_edits(
                     key,
                     Confirmation(by=by, at=now, input=reports[key].get('entry_id')),
                 )
+            # an input confirmed again: its confirmations that match none
+            # of its edits (an earlier input changed) are done with
+            ready = {
+                reports[key].get('entry_id'): {
+                    edit['key'] for edit in reports[key].get('ready', [])
+                }
+                for key in body.keys
+            }
+            confirmed = {
+                key: c
+                for key, c in confirmed.items()
+                if c.input not in ready or key in ready[c.input]
+            }
             await voice.writer.write_json(
                 client, upload_id, CONFIRMATIONS_FILE, confirmations_json(confirmed)
             )
@@ -1291,6 +1380,9 @@ async def download_final_sheet(
                         detail='the stored sheet is not the one the last job '
                         'recorded; run the job again',
                     )
+                confirmed = await _confirmations(client, voice, upload_id)
+                if _withdrawn(_with_confirmations(status, confirmed)):
+                    raise HTTPException(status_code=409, detail=_WITHDRAWN)
                 sheet = final
             elif final is not None:
                 # a failed job after one that wrote: the stored sheet is the

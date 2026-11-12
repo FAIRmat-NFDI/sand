@@ -94,16 +94,15 @@ def test_a_malformed_entry_does_not_take_the_others_down():
 
 
 def test_confirmations_round_trip():
-    confirmations = {
-        'k1': Confirmation(by='tester', at=WHEN),
-        'k2': Confirmation(by='tester', at=WHEN, input='n2'),
-    }
+    confirmations = {'k2': Confirmation(by='tester', at=WHEN, input='n2')}
     data = confirmations_json(confirmations)
     assert data == {
-        'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00'},
-        'k2': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00', 'input': 'n2'},
+        'k2': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00', 'input': 'n2'}
     }
     assert load_confirmations(data) == confirmations
+    # a record made before confirmations named their input is left out
+    old = {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00'}}
+    assert load_confirmations({**data, **old}) == confirmations
     assert read_confirmations(json.dumps(data).encode()) == data
     assert read_confirmations(None) == {}
 
@@ -123,7 +122,9 @@ def test_a_damaged_confirmations_file_is_refused_not_empty(raw):
         {'k1': {'by': 'tester'}},
         {'k1': {'by': '', 'at': '2026-10-28T12:16:05+00:00'}},
         {'k1': {'by': 'tester', 'at': 'yesterday'}},
-        {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05'}},  # no timezone
+        {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05', 'input': 'n1'}},  # no tz
+        {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00', 'input': 3}},
+        {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00', 'input': None}},
         {'k1': {'by': 3, 'at': '2026-10-28T12:16:05+00:00'}},
     ],
 )

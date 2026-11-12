@@ -9,7 +9,7 @@
 // and starts the job that reads a new or revised input.
 
 import { errorDetail, experimentUrl } from "./api.js";
-import { inputLocked, inputState, previewNotes } from "./edit-logic.js";
+import { inputState, previewNotes, rewriteWarning } from "./edit-logic.js";
 import { selectedExperiment } from "./experiments.js";
 import { clearError, confirmDialog, showEntryLink, showError } from "./ui.js";
 
@@ -128,13 +128,13 @@ async function beginRevision(item, experiment, tile, textNode) {
   }
   endRevision();
   // closing the other editor may have rendered the list anew: the
-  // tile clicked is then replaced (or gone, or locked meanwhile)
+  // tile clicked is then replaced (or gone meanwhile)
   let li = tile;
   let textEl = textNode;
   if (!li.isConnected) {
     li = inputsList.querySelector(`[data-entry-id="${CSS.escape(item.entry_id)}"]`);
     textEl = li?.querySelector(".input-text");
-    if (!li || !textEl || li.classList.contains("input-locked")) return;
+    if (!li || !textEl) return;
   }
 
   const box = document.createElement("div");
@@ -213,8 +213,14 @@ async function saveRevision() {
     endRevision(true);
     return;
   }
-  clearError();
+  // disabled while the warning is open too: no second save
   saveBtn.disabled = true;
+  const warning = rewriteWarning("revise", shown?.items || [], reports, item.entry_id);
+  if (warning && !await confirmDialog(warning, "Save")) {
+    saveBtn.disabled = false;
+    return;
+  }
+  clearError();
   try {
     const res = await fetch(inputUrl(experiment, item, "text"), {
       method: "POST",
@@ -243,7 +249,8 @@ async function deleteInput(item, experiment, button) {
   const what = item.kind === "audio"
     ? "Delete this " + inputDescription(item) + "? Its audio and transcript are deleted from NOMAD."
     : "Delete this " + inputDescription(item) + "? It is deleted from NOMAD.";
-  if (!await confirmDialog(what, "Delete")) return;
+  const warning = rewriteWarning("delete", shown?.items || [], reports, item.entry_id);
+  if (!await confirmDialog(warning ? what + " " + warning : what, "Delete")) return;
   // its open editor would hold off the list refresh and could still save
   if (revising?.item.entry_id === item.entry_id) endRevision();
   clearError();
@@ -413,10 +420,6 @@ function renderInputs(experiment, items) {
     const li = document.createElement("li");
     li.className = "input-tile";
     li.dataset.entryId = item.entry_id;
-    // a confirmed update is a record: no revising, no deleting (the
-    // server refuses both); a correction is a new update
-    const locked = item.locked || inputLocked(reports[item.entry_id]);
-    if (locked) li.classList.add("input-locked");
     // a report of other words (revised since) is not this update's
     const report = reports[item.entry_id];
     const reported = report && (report.text === undefined || report.text === item.text);
@@ -460,9 +463,6 @@ function renderInputs(experiment, items) {
       const chip = document.createElement("span");
       chip.className = "input-state is-" + state.state;
       chip.textContent = state.label;
-      if (state.state === "applied") {
-        chip.title = "A confirmed update is a record; a correction is a new update.";
-      }
       right.append(chip);
     }
     const nomadLink = document.createElement("a");
@@ -474,7 +474,7 @@ function renderInputs(experiment, items) {
     nomadLink.title = "View on NOMAD";
     nomadLink.addEventListener("click", (e) => e.stopPropagation());
     right.append(nomadLink);
-    if (item.deletable && !locked) {
+    if (item.deletable) {
       const deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
       deleteBtn.className = "btn btn-icon input-delete";
@@ -504,19 +504,15 @@ function renderInputs(experiment, items) {
     li.append(meta, text);
     if (reported) li.append(renderReport(report));
     li.tabIndex = 0;
-    if (locked) {
-      li.setAttribute("aria-label", "Confirmed " + inputDescription(item));
-    } else {
-      li.setAttribute("aria-label", "Revise the " + inputDescription(item));
-      li.addEventListener("click", () => beginRevision(item, experiment, li, text));
-      li.addEventListener("keydown", (e) => {
-        // only the tile itself: Enter/Space on its link or editor must
-        // keep their own action
-        if (e.target !== li || (e.key !== "Enter" && e.key !== " ")) return;
-        e.preventDefault();
-        beginRevision(item, experiment, li, text);
-      });
-    }
+    li.setAttribute("aria-label", "Revise the " + inputDescription(item));
+    li.addEventListener("click", () => beginRevision(item, experiment, li, text));
+    li.addEventListener("keydown", (e) => {
+      // only the tile itself: Enter/Space on its link or editor must
+      // keep their own action
+      if (e.target !== li || (e.key !== "Enter" && e.key !== " ")) return;
+      e.preventDefault();
+      beginRevision(item, experiment, li, text);
+    });
     inputsList.append(li);
     if (item.entry_id === focusedId) li.focus();
   }

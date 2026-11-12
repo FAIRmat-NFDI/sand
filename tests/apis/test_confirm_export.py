@@ -37,7 +37,7 @@ def put_status(voice, phase='completed', collection=COLLECTION, **fields):
             'phase': phase,
             'collection_entry_id': collection,
             'updated_at': datetime.now(timezone.utc).isoformat(),
-            'inputs': [{'input': 1, 'ready': READY, 'confirmed': []}],
+            'inputs': [{'input': 1, 'entry_id': 'n1', 'ready': READY, 'confirmed': []}],
             **fields,
         }
     ).encode()
@@ -93,20 +93,28 @@ async def test_confirm_records_who_and_when(voice):
 async def test_a_confirmed_key_keeps_its_first_record(voice):
     put_status(voice, 'completed')
     voice.writer.files[CONFIRMATIONS_FILE] = json.dumps(
-        {'k1': {'by': 'user', 'at': '2026-10-28T12:16:05+00:00'}}
+        {'k1': {'by': 'user', 'at': '2026-10-28T12:16:05+00:00', 'input': 'n1'}}
     ).encode()
 
     response = await confirm(voice, ['k1', 'k2'])
 
     assert response.json() == {'confirmed': ['k1', 'k2']}
     records = confirmations(voice)
-    assert records['k1'] == {'by': 'user', 'at': '2026-10-28T12:16:05+00:00'}
+    assert records['k1'] == {
+        'by': 'user',
+        'at': '2026-10-28T12:16:05+00:00',
+        'input': 'n1',
+    }
     assert records['k2']['by'] == USERNAME
 
 
 async def test_an_edit_with_a_check_is_confirmed_with_the_others(voice):
     marked = {'key': 'k3', 'line': '...', 'checks': ["'4400' is not in your words"]}
-    put_status(voice, 'completed', inputs=[{'input': 1, 'ready': [*READY, marked]}])
+    put_status(
+        voice,
+        'completed',
+        inputs=[{'input': 1, 'entry_id': 'n1', 'ready': [*READY, marked]}],
+    )
 
     response = await confirm(voice, ['k1', 'k3'])
     assert response.json() == {'confirmed': ['k1', 'k3']}
@@ -120,6 +128,36 @@ async def test_two_confirms_at_once_both_survive(voice):
 
     assert [r.status_code for r in responses] == [HTTPStatus.OK] * 2
     assert sorted(confirmations(voice)) == ['k1', 'k2']
+
+
+async def test_confirming_an_input_again_drops_its_lost_confirmations(voice):
+    # k0 and k5 were n1's edits before an earlier input changed; n2's
+    # stays; k8, made before confirmations named their input, is left out
+    put_status(
+        voice, inputs=[{'input': 1, 'entry_id': 'n1', 'ready': READY, 'confirmed': []}]
+    )
+    record = {'by': 'user', 'at': '2026-10-28T12:16:05+00:00'}
+    voice.writer.files[CONFIRMATIONS_FILE] = json.dumps(
+        {
+            'k0': {**record, 'input': 'n1'},
+            'k5': {**record, 'input': 'n1'},
+            'k9': {**record, 'input': 'n2'},
+            'k8': record,
+        }
+    ).encode()
+
+    assert (await confirm(voice, ['k1'])).status_code == HTTPStatus.OK
+    assert sorted(confirmations(voice)) == ['k1', 'k9']
+
+
+async def test_a_report_that_names_no_input_is_read_again_first(voice):
+    put_status(voice, inputs=[{'input': 1, 'ready': READY, 'confirmed': []}])
+
+    response = await confirm(voice, ['k1'])
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert 'read the updates again' in response.json()['detail']
+    assert CONFIRMATIONS_FILE not in voice.writer.files
 
 
 async def test_by_falls_back_to_the_user_id(voice):
@@ -248,8 +286,8 @@ async def test_a_confirmation_the_job_applied_is_not_since(voice):
     )
     voice.writer.files[CONFIRMATIONS_FILE] = json.dumps(
         {
-            'k1': {'by': 'user', 'at': '2026-10-28T12:16:05+00:00'},
-            'k9': {'by': 'user', 'at': '2026-10-28T12:16:05+00:00'},
+            'k1': {'by': 'user', 'at': '2026-10-28T12:16:05+00:00', 'input': 'n1'},
+            'k9': {'by': 'user', 'at': '2026-10-28T12:16:05+00:00', 'input': 'n1'},
         }
     ).encode()
 
@@ -285,6 +323,21 @@ async def test_the_final_sheet_downloads_under_the_experiments_name(
     assert response.headers['content-disposition'] == (
         'attachment; filename="batch 7.xlsx"; filename*=UTF-8\'\'batch%207.xlsx'
     )
+
+
+async def test_no_download_after_a_written_update_was_withdrawn(voice, synthetic_xlsx):
+    # the job wrote k1; its update was revised since, k1 is gone
+    put_final(
+        voice,
+        synthetic_xlsx,
+        inputs=[{'input': 1, 'entry_id': 'n1', 'ready': READY, 'confirmed': ['k1']}],
+    )
+    voice.writer.files[CONFIRMATIONS_FILE] = b'{}'
+
+    for path in ('final-sheet', 'changelog'):
+        response = await get(voice, path)
+        assert response.status_code == HTTPStatus.CONFLICT, path
+        assert 'revised or deleted' in response.json()['detail']
 
 
 async def test_a_name_in_any_script_downloads(voice, synthetic_xlsx):

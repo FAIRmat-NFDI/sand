@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputLocked, inputState,
+  confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputApplied, inputState,
   checkedKeys, inputsToRead, pendingKeys, previewNotes, readKey, reportsByEntry, unwrittenCount,
-  unwrittenKey, writtenCount, writtenEdits,
+  rewriteWarning, unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
 
 const REPORT = {
@@ -72,6 +72,10 @@ test("confirmed edits the last run did not write", () => {
   assert.equal(
     unwrittenKey({ inputs: [{ ...REPORT, confirmed_since: ["k2"] }, { ...REPORT, confirmed_since: ["k1"] }] }),
     "k1\nk2");
+  // withdrawn: its update was revised or deleted, the sheet still has it
+  const withdrawn = { inputs: [{ ...REPORT, ready: [], unconfirmed_since: ["k0"] }] };
+  assert.equal(unwrittenCount(withdrawn), 1);
+  assert.equal(unwrittenKey(withdrawn), "k0");
 });
 
 test("the inputs a job has to read", () => {
@@ -83,8 +87,9 @@ test("the inputs a job has to read", () => {
   assert.deepEqual(inputsToRead([{ ...note, text: "speed 4500" }], reports), ["n1"]);
   assert.deepEqual(inputsToRead([note, { entry_id: "n2", text: "b" }], { ...reports, n3: REPORT }), ["n2", "n3"]);
   assert.deepEqual(inputsToRead([note], {}), ["n1"]);
-  // the last input deleted: nothing to read (the job would refuse)
-  assert.deepEqual(inputsToRead([], reports), []);
+  // the last input deleted: the job writes the original back
+  assert.deepEqual(inputsToRead([], reports), ["n1"]);
+  assert.deepEqual(inputsToRead([], {}), []);
   // nothing while a recording is still transcribed: the job would refuse
   assert.deepEqual(inputsToRead([note, { entry_id: "a1", text: null }], {}), []);
 });
@@ -97,10 +102,32 @@ test("the read key tells the inputs and their words apart", () => {
   assert.notEqual(readKey(items), readKey([{ entry_id: "n1", text: "a\n\nn2\nb" }]));
 });
 
-test("an input is locked once one of its edits is confirmed", () => {
-  assert.equal(inputLocked(undefined), false);
-  assert.equal(inputLocked(REPORT), false);
-  assert.equal(inputLocked({ ...REPORT, confirmed: ["k1"] }), true);
+test("an input is applied once one of its edits is confirmed", () => {
+  const note = { entry_id: "n1", text: REPORT.text };
+  assert.equal(inputApplied(note, undefined), false);
+  assert.equal(inputApplied(note, REPORT), false);
+  assert.equal(inputApplied(note, { ...REPORT, confirmed: ["k1"] }), true);
+  assert.equal(inputApplied({ ...note, applied: true }, undefined), true);
+  // the report of its words knows better: its confirmation matched nothing
+  assert.equal(inputApplied({ ...note, applied: true }, REPORT), false);
+  // a report of other words does not
+  assert.equal(inputApplied({ ...note, applied: true, text: "speed 4500" }, REPORT), true);
+});
+
+test("revising or deleting a written update warns, naming the written ones after it", () => {
+  const items = ["n1", "n2", "n3", "n4"].map((id) => ({ entry_id: id, text: REPORT.text }));
+  const written = { ...REPORT, confirmed: ["k1"] };
+  const reports = { n2: written, n3: REPORT, n4: written };
+  assert.equal(rewriteWarning("delete", items, reports, "n1"), null);
+  assert.equal(rewriteWarning("delete", items, reports, "n2"),
+    "This update was written into the sheet. Deleting it takes its edits out of the sheet."
+    + " The 1 written update after it is read again and needs your confirmation again.");
+  assert.equal(rewriteWarning("revise", items, reports, "n4"),
+    "This update was written into the sheet. Changing its words reads it again;"
+    + " its edits need your confirmation again.");
+  const all = { ...reports, n3: written };
+  assert.match(rewriteWarning("revise", items, all, "n2"), / The 2 written updates after it are read again/);
+  assert.equal(rewriteWarning("delete", items, reports, "gone"), null);
 });
 
 test("the state chip of an input", () => {
@@ -113,12 +140,21 @@ test("the state chip of an input", () => {
   assert.equal(label(note, undefined, true), "Reading...");
   // a report of other words is not this update's
   assert.equal(label({ ...note, text: "speed 4500" }, REPORT, true), "Reading...");
-  assert.equal(label({ ...note, locked: true }, undefined), "Applied");
+  assert.equal(label({ ...note, applied: true }, undefined), "Applied");
   assert.equal(label(note, REPORT), "1 edit to confirm");
   assert.equal(label(note, { ...REPORT, ready: [...REPORT.ready, { ...REPORT.ready[0], key: "k2" }] }),
     "2 edits to confirm");
   assert.equal(label(note, { ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }), "Confirmed, writing...");
   assert.equal(label(note, { ...REPORT, confirmed: ["k1"] }), "Applied");
+  // partly applied: what is left to rephrase
+  assert.equal(label(note, { ...REPORT, confirmed: ["k1"], unresolved: 1 }), "Applied · 1 unclear");
+  assert.equal(label(note, { ...REPORT, confirmed: ["k1"], unresolved: 2, not_applied: 1 }),
+    "Applied · 2 unclear · 1 not applied");
+  // an earlier update changed: its confirmation matched nothing
+  assert.equal(label(note, { ...REPORT, confirm_again: 1 }), "1 edit to confirm again");
+  const two = { ...REPORT, ready: [...REPORT.ready, { ...REPORT.ready[0], key: "k2" }] };
+  assert.equal(label(note, { ...two, confirm_again: 1 }), "2 edits to confirm · 1 confirmed before");
+  assert.equal(label(note, { ...two, confirm_again: 3 }), "2 edits to confirm again");
   assert.equal(label(note, { ...REPORT, confirmed: ["k1"], refused: "a formula error" }), "Not written");
   assert.equal(label(note, { ...REPORT, ready: [] }), "No edit found");
   // two readings sand could not decide between: not "nothing found"
@@ -155,6 +191,10 @@ test("the preview notes are what the ready edits do not show", () => {
 test("the summary line of a completed job", () => {
   assert.equal(editSummary({ changes: 0, inputs: [] }), "Nothing written yet.");
   assert.equal(editSummary({ changes: 1, inputs: [REPORT] }), "1 edit waits for your confirmation");
+  assert.equal(editSummary({ changes: 1, inputs: [{ ...REPORT, ready: [], unconfirmed_since: ["k0"] }] }),
+    "1 edit of a changed update, being taken out");
+  assert.equal(editSummary({ changes: 1, inputs: [{ ...REPORT, confirm_again: 1 }] }),
+    "1 edit waits for your confirmation · 1 update was read again after an earlier update changed");
   assert.equal(
     editSummary({ changes: 0, inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] }),
     "1 edit confirmed, being written");

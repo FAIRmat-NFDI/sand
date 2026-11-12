@@ -56,10 +56,29 @@ export function checkedKeys(reports) {
   return pendingKeys(reports).filter((key) => marked.has(key));
 }
 
-// an input one of whose edits was just confirmed: its words are a
-// record (the inputs list says so too, as `locked`, from the file)
-export function inputLocked(report) {
-  return Boolean(report && (report.confirmed || []).length);
+// an input one of whose edits is confirmed: by the report of its
+// words, else by the inputs list (`applied`, from the file)
+export function inputApplied(item, report) {
+  if (report && (report.text === undefined || report.text === item.text)) {
+    return (report.confirmed || []).length > 0;
+  }
+  return Boolean(item.applied);
+}
+
+// The warning before revising or deleting an applied input: the job
+// rebuilds the sheet without its edits and reads the inputs after it
+// again. Null for an input with nothing written.
+export function rewriteWarning(action, items, reports, entryId) {
+  const at = items.findIndex((item) => item.entry_id === entryId);
+  if (at < 0 || !inputApplied(items[at], reports[entryId])) return null;
+  const later = items.slice(at + 1).filter((item) => inputApplied(item, reports[item.entry_id])).length;
+  const first = action === "delete"
+    ? "This update was written into the sheet. Deleting it takes its edits out of the sheet."
+    : "This update was written into the sheet. Changing its words reads it again; its edits need your confirmation again.";
+  if (!later) return first;
+  return first + " " + (later === 1
+    ? "The 1 written update after it is read again and needs your confirmation again."
+    : "The " + later + " written updates after it are read again and need your confirmation again.");
 }
 
 // The one-word state of an input, for the chip in its card header:
@@ -70,7 +89,7 @@ export function inputState(item, report, jobRunning, canConfirm) {
   if (!item.text) return null;
   const reported = report && (report.text === undefined || report.text === item.text);
   if (!reported) {
-    if (item.locked) return { state: "applied", label: "Applied" };
+    if (item.applied) return { state: "applied", label: "Applied" };
     if (!canConfirm) return null;
     return jobRunning
       ? { state: "reading", label: "Reading..." }
@@ -79,10 +98,22 @@ export function inputState(item, report, jobRunning, canConfirm) {
   if (report.refused) return { state: "refused", label: "Not written" };
   const pending = pendingKeys([report]).length;
   if (pending) {
-    return { state: "ready", label: pending === 1 ? "1 edit to confirm" : pending + " edits to confirm" };
+    const label = pending === 1 ? "1 edit to confirm" : pending + " edits to confirm";
+    // which new edit a lost confirmation was is not known (other keys):
+    // only how many there were
+    const before = report.confirm_again || 0;
+    if (!before) return { state: "ready", label };
+    if (before >= pending) return { state: "ready", label: label + " again" };
+    return { state: "ready", label: label + " · " + before + " confirmed before" };
   }
   if ((report.confirmed_since || []).length) return { state: "writing", label: "Confirmed, writing..." };
-  if ((report.confirmed || []).length) return { state: "applied", label: "Applied" };
+  if ((report.confirmed || []).length) {
+    // partly applied: the rest is told under the input, to rephrase
+    const parts = ["Applied"];
+    if (report.unresolved) parts.push(report.unresolved + " unclear");
+    if (report.not_applied) parts.push(report.not_applied + " not applied");
+    return { state: "applied", label: parts.join(" · ") };
+  }
   // found, but not settled, refused or already so: the reasons are
   // under the input
   if (report.unresolved) return { state: "unclear", label: "Unclear" };
@@ -103,10 +134,10 @@ export function confirmAllLabel(pending, checked = 0) {
 
 // The inputs no job has read in these words: without a report, with a
 // report of other words (revised), or a report without an input
-// (deleted). Empty while an input has no text yet, and with no inputs
-// at all: the job refuses to start then.
+// (deleted: with every input deleted, the job writes the original
+// back). Empty while an input has no text yet.
 export function inputsToRead(items, reports) {
-  if (!items.length || items.some((item) => !item.text)) return [];
+  if (items.some((item) => !item.text)) return [];
   const ids = items
     .filter((item) => !reports[item.entry_id] || reports[item.entry_id].text !== item.text)
     .map((item) => item.entry_id);
@@ -194,14 +225,19 @@ function writtenFromReports(status) {
   return rows;
 }
 
-// confirmed edits the last run did not write: the final sheet lacks them
+// edits confirmed, or withdrawn (their update revised or deleted),
+// since the last run: the final sheet is not up to date with them
+function sinceLastRun(report) {
+  return [...(report.confirmed_since || []), ...(report.unconfirmed_since || [])];
+}
+
 export function unwrittenCount(status) {
-  return (status.inputs || []).reduce((n, report) => n + (report.confirmed_since || []).length, 0);
+  return (status.inputs || []).reduce((n, report) => n + sinceLastRun(report).length, 0);
 }
 
 // those edits' keys, as one string: "" when the last run wrote everything
 export function unwrittenKey(status) {
-  return (status.inputs || []).flatMap((report) => report.confirmed_since || []).sort().join("\n");
+  return (status.inputs || []).flatMap(sinceLastRun).sort().join("\n");
 }
 
 function count(n, one, many) {
@@ -216,12 +252,18 @@ function summaryParts(status) {
   if (written) parts.push(count(written, "edit written", "edits written"));
   const pending = pendingKeys(reports).length;
   if (pending) parts.push(count(pending, "edit waits", "edits wait") + " for your confirmation");
-  const since = unwrittenCount(status);
+  const since = reports.reduce((n, report) => n + (report.confirmed_since || []).length, 0);
   if (since) parts.push(count(since, "edit confirmed", "edits confirmed") + ", being written");
+  const withdrawn = reports.reduce((n, report) => n + (report.unconfirmed_since || []).length, 0);
+  if (withdrawn) parts.push(count(withdrawn, "edit", "edits") + " of a changed update, being taken out");
   const refused = reports.filter((report) => report.refused).length;
   if (refused) parts.push(count(refused, "update could not", "updates could not") + " be written");
-  // stale confirmations (status.stale_confirmations) are not a line: an
-  // edit that lost its confirmation shows as waiting again
+  // why confirmed edits wait again; other stale confirmations
+  // (status.stale_confirmations) are not a line
+  const again = reports.filter((report) => report.confirm_again).length;
+  if (again) {
+    parts.push(count(again, "update was", "updates were") + " read again after an earlier update changed");
+  }
   return parts;
 }
 

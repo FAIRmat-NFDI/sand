@@ -186,6 +186,25 @@ async def test_no_inputs(voice, starter):
     assert starter.started == []
 
 
+async def test_every_input_deleted_after_a_job_still_runs(voice, starter):
+    # the last job's sheet holds the deleted inputs' edits: a job with no
+    # inputs writes the original back
+    voice.inputs = []
+    voice.writer.files[STATUS_FILE] = json.dumps(
+        {
+            'job_id': 'job-0',
+            'phase': 'completed',
+            'collection_entry_id': COLLECTION,
+            'inputs': [{'input': 1, 'entry_id': 'n1', 'ready': [], 'confirmed': []}],
+        }
+    ).encode()
+
+    response = await start(voice)
+
+    assert response.status_code == HTTPStatus.OK, response.text
+    assert len(starter.started) == 1
+
+
 async def test_an_input_still_transcribing(voice, starter):
     voice.inputs.append(note('a1', None))
 
@@ -325,5 +344,12 @@ async def test_reports_are_the_inputs_of_the_status(voice):
     assert response.json() == {
         'job_id': 'job-0',
         'phase': 'interpreting',
-        'inputs': [{**report, 'confirmed_since': []}],
+        'inputs': [
+            {
+                **report,
+                'confirmed_since': [],
+                'unconfirmed_since': [],
+                'confirm_again': False,
+            }
+        ],
     }

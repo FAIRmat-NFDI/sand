@@ -87,7 +87,7 @@ class InputItemModel(BaseModel):
     corrected: bool  # a human revision exists
     status: str | None  # audio transcription status; None for notes
     deletable: bool  # False for the experiment-info form: extraction needs it
-    locked: bool = False  # a confirmed update: its words are a record
+    applied: bool = False  # an edit of it was confirmed
 
 
 class InputListResponse(BaseModel):

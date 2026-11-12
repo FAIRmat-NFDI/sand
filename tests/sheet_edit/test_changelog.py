@@ -36,7 +36,7 @@ MODEL = 'claude-sonnet-5-5 / prompt v1'
 WHEN = datetime.datetime(
     2026, 10, 28, 12, 16, 5, tzinfo=datetime.timezone(datetime.timedelta(hours=2))
 )
-TESTER = Confirmation(by='tester', at=WHEN)
+TESTER = Confirmation(by='tester', at=WHEN, input='n1')
 
 SOLVENT = 'solvent 2 to DMSO for samples 1 to 3'
 SPEED_4000, SPEED_5000 = 'speed 4000', 'speed 5000'
@@ -436,7 +436,9 @@ def test_words_and_confirmation_go_together():
     with pytest.raises(ValueError, match='words and confirmation go together'):
         _entry(said='x', confirmed_by=None, confirmed_at=None)
     with pytest.raises(ValueError, match='needs a timezone'):
-        Confirmation(by='tester', at=datetime.datetime(2026, 10, 28, 10, 16))
+        Confirmation(
+            by='tester', at=datetime.datetime(2026, 10, 28, 10, 16), input='n1'
+        )
 
 
 @pytest.mark.parametrize(
