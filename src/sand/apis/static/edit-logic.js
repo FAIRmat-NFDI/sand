@@ -97,6 +97,7 @@ export function confirmAllLabel(pending, checked = 0) {
   const label = pending === 1 ? "Confirm the edit" : "Confirm all " + pending + " edits";
   if (!checked) return label;
   if (pending === 1) return label + ", with a check";
+  if (checked === pending) return label + ", all with a check";
   return label + ", " + checked + " with a check";
 }
 

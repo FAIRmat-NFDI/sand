@@ -245,5 +245,6 @@ test("confirm all takes the edits a word check marked, and counts them", () => {
 test("confirm all says how many of its edits have a check", () => {
   assert.equal(confirmAllLabel(3, 1), "Confirm all 3 edits, 1 with a check");
   assert.equal(confirmAllLabel(1, 1), "Confirm the edit, with a check");
+  assert.equal(confirmAllLabel(3, 3), "Confirm all 3 edits, all with a check");
   assert.equal(confirmAllLabel(2), "Confirm all 2 edits");
 });
