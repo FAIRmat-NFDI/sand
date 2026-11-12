@@ -157,9 +157,10 @@ def load_confirmations(data: dict) -> dict[str, Confirmation]:
             when = datetime.datetime.fromisoformat(at)
         except (KeyError, TypeError, ValueError) as why:
             raise ValueError(f'confirmation {key!r} is malformed: {entry!r}') from why
-        entry_id = entry.get('input')
-        if entry_id is None:
+        # absent, not null: an old writer left it out
+        if 'input' not in entry:
             continue
+        entry_id = entry['input']
         if not isinstance(entry_id, str):
             raise ValueError(f'confirmation {key!r} is malformed: {entry!r}')
         confirmations[key] = Confirmation(

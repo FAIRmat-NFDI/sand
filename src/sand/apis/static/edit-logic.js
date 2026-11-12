@@ -134,10 +134,10 @@ export function confirmAllLabel(pending, checked = 0) {
 
 // The inputs no job has read in these words: without a report, with a
 // report of other words (revised), or a report without an input
-// (deleted). Empty while an input has no text yet, and with no inputs
-// at all: the job refuses to start then.
+// (deleted: with every input deleted, the job writes the original
+// back). Empty while an input has no text yet.
 export function inputsToRead(items, reports) {
-  if (!items.length || items.some((item) => !item.text)) return [];
+  if (items.some((item) => !item.text)) return [];
   const ids = items
     .filter((item) => !reports[item.entry_id] || reports[item.entry_id].text !== item.text)
     .map((item) => item.entry_id);

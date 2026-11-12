@@ -87,8 +87,9 @@ test("the inputs a job has to read", () => {
   assert.deepEqual(inputsToRead([{ ...note, text: "speed 4500" }], reports), ["n1"]);
   assert.deepEqual(inputsToRead([note, { entry_id: "n2", text: "b" }], { ...reports, n3: REPORT }), ["n2", "n3"]);
   assert.deepEqual(inputsToRead([note], {}), ["n1"]);
-  // the last input deleted: nothing to read (the job would refuse)
-  assert.deepEqual(inputsToRead([], reports), []);
+  // the last input deleted: the job writes the original back
+  assert.deepEqual(inputsToRead([], reports), ["n1"]);
+  assert.deepEqual(inputsToRead([], {}), []);
   // nothing while a recording is still transcribed: the job would refuse
   assert.deepEqual(inputsToRead([note, { entry_id: "a1", text: null }], {}), []);
 });

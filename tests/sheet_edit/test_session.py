@@ -124,6 +124,7 @@ def test_a_damaged_confirmations_file_is_refused_not_empty(raw):
         {'k1': {'by': 'tester', 'at': 'yesterday'}},
         {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05', 'input': 'n1'}},  # no tz
         {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00', 'input': 3}},
+        {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00', 'input': None}},
         {'k1': {'by': 3, 'at': '2026-10-28T12:16:05+00:00'}},
     ],
 )
