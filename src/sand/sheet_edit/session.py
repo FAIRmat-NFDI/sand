@@ -145,7 +145,9 @@ def read_confirmations(raw: bytes | None) -> dict:
 
 def load_confirmations(data: dict) -> dict[str, Confirmation]:
     """By confirmation key, from the file's JSON (`read_confirmations`).
-    Raises ValueError on a malformed entry, for the same reason."""
+    Raises ValueError on a malformed entry, for the same reason. A record
+    made before confirmations named their input is left out: its edit
+    waits to be confirmed again."""
     confirmations = {}
     for key, entry in data.items():
         try:
@@ -156,7 +158,9 @@ def load_confirmations(data: dict) -> dict[str, Confirmation]:
         except (KeyError, TypeError, ValueError) as why:
             raise ValueError(f'confirmation {key!r} is malformed: {entry!r}') from why
         entry_id = entry.get('input')
-        if entry_id is not None and not isinstance(entry_id, str):
+        if entry_id is None:
+            continue
+        if not isinstance(entry_id, str):
             raise ValueError(f'confirmation {key!r} is malformed: {entry!r}')
         confirmations[key] = Confirmation(
             by=by, at=when, input=entry_id
@@ -169,7 +173,7 @@ def confirmations_json(confirmations: dict[str, Confirmation]) -> dict:
         key: {
             'by': c.by,
             'at': c.at.isoformat(timespec='seconds'),
-            **({'input': c.input} if c.input is not None else {}),
+            'input': c.input,
         }
         for key, c in confirmations.items()
     }

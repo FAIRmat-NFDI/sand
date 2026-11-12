@@ -414,7 +414,7 @@ async def test_replay_stops_at_a_lost_cache(upload):
 # --- the chain of inputs and the confirmations ---------------------------------
 
 
-CONFIRMED = {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00'}
+CONFIRMED = {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00', 'input': 'n1'}
 
 
 async def confirm(upload, key: str) -> None:

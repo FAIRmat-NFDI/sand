@@ -600,9 +600,7 @@ async def revise_input(
         async with _upload_lock(upload_id), voice.build_client(token) as client:
             # first: a revision saved with its old confirmations kept would
             # count as confirmed again if its words were changed back
-            await _drop_confirmations(
-                client, voice, upload_id, collection_entry_id, entry_id
-            )
+            await _drop_confirmations(client, voice, upload_id, entry_id)
             kind = await voice.revise_input(
                 client,
                 upload_id,
@@ -703,9 +701,7 @@ async def delete_input(
 
     try:
         async with _upload_lock(upload_id), voice.build_client(token) as client:
-            await _drop_confirmations(
-                client, voice, upload_id, collection_entry_id, entry_id
-            )
+            await _drop_confirmations(client, voice, upload_id, entry_id)
             await voice.delete_input(
                 client,
                 upload_id,
@@ -983,8 +979,17 @@ async def _edit_status(
             'error': 'the job stopped: no progress for '
             f'{STALE_JOB_S // 60} minutes; read the updates again',
         }
-    confirmed = await voice.writer.read_json(client, upload_id, CONFIRMATIONS_FILE)
-    return _with_confirmations(status, confirmed or {})
+    return _with_confirmations(status, await _confirmations(client, voice, upload_id))
+
+
+async def _confirmations(client, voice: VoiceElnService, upload_id: str) -> dict | None:
+    """The confirmations file as loaded (old records left out), as JSON;
+    None when it is damaged: the confirm endpoint says so."""
+    raw = await voice.writer.read_raw_file(client, upload_id, CONFIRMATIONS_FILE)
+    try:
+        return confirmations_json(load_confirmations(read_confirmations(raw)))
+    except ValueError:
+        return None
 
 
 async def _applied_inputs(
@@ -1010,16 +1015,12 @@ async def _applied_inputs(
     return {
         c.input
         for key, c in confirmed.items()
-        if c.input is not None and (c.input not in ready or key in ready[c.input])
+        if c.input not in ready or key in ready[c.input]
     }
 
 
 async def _drop_confirmations(
-    client,
-    voice: VoiceElnService,
-    upload_id: str,
-    collection_entry_id: str,
-    entry_id: str,
+    client, voice: VoiceElnService, upload_id: str, entry_id: str
 ) -> None:
     """Remove the confirmations of an input that was revised or deleted:
     they were bound to its old words, and words changed back must not
@@ -1032,41 +1033,33 @@ async def _drop_confirmations(
         raise HTTPException(
             status_code=409, detail=f'confirmations file damaged: {why}'
         ) from why
-    # records made before confirmations named their input: by the last
-    # job's report of it (none while a job runs: such a record stays)
-    keys = set()
-    status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
-    if status is not None and status.get('collection_entry_id') == collection_entry_id:
-        for report in status.get('inputs', []):
-            if isinstance(report, dict) and report.get('entry_id') == entry_id:
-                keys = {edit['key'] for edit in report.get('ready', [])}
-    kept = {
-        key: c
-        for key, c in confirmed.items()
-        if c.input != entry_id and not (c.input is None and key in keys)
-    }
+    kept = {key: c for key, c in confirmed.items() if c.input != entry_id}
     if len(kept) < len(confirmed):
         await voice.writer.write_json(
             client, upload_id, CONFIRMATIONS_FILE, confirmations_json(kept)
         )
 
 
-def _with_confirmations(status: dict, confirmed: dict) -> dict:
+def _with_confirmations(status: dict, confirmed: dict | None) -> dict:
     """The reports say what the job knew when it ran; a confirmation made
     since shows at once, as `confirmed_since`, one removed since (its
     input revised or deleted) as `unconfirmed_since`: both wait for the
-    next run. `confirm_again`: a confirmation of the input matches none
-    of its edits, because an update before it was revised or deleted."""
+    next run. `confirm_again`: how many confirmations of the input match
+    none of its edits, because an update before it was revised or
+    deleted. A damaged file (None) changes nothing the job reported."""
     for report in status.get('inputs', []):
         if not isinstance(report, dict):
             continue
         written = report.get('confirmed', [])
         keys = [edit['key'] for edit in report.get('ready', [])]
+        if confirmed is None:
+            report.update(confirmed_since=[], unconfirmed_since=[], confirm_again=0)
+            continue
         since = [key for key in keys if key in confirmed and key not in written]
         report['unconfirmed_since'] = [key for key in written if key not in confirmed]
         report['confirmed'] = [*(k for k in written if k in confirmed), *since]
         report['confirmed_since'] = since
-        report['confirm_again'] = any(
+        report['confirm_again'] = sum(
             isinstance(c, dict)
             and c.get('input') == report.get('entry_id')
             and key not in keys
@@ -1194,6 +1187,13 @@ async def confirm_edits(
                     status_code=422,
                     detail=f'not a ready edit of the last job: {", ".join(unknown)}',
                 )
+            if any(not reports[key].get('entry_id') for key in body.keys):
+                # a report from before reports named their input
+                raise HTTPException(
+                    status_code=409,
+                    detail='the last run does not name its updates; '
+                    'read the updates again, then confirm',
+                )
             # a confirmation is of the words the report read, not a
             # revision made since
             inputs = await voice.collect_inputs(
@@ -1243,7 +1243,7 @@ async def confirm_edits(
             confirmed = {
                 key: c
                 for key, c in confirmed.items()
-                if c.input is None or c.input not in ready or key in ready[c.input]
+                if c.input not in ready or key in ready[c.input]
             }
             await voice.writer.write_json(
                 client, upload_id, CONFIRMATIONS_FILE, confirmations_json(confirmed)
@@ -1340,10 +1340,8 @@ async def download_final_sheet(
                         detail='the stored sheet is not the one the last job '
                         'recorded; run the job again',
                     )
-                confirmed = await voice.writer.read_json(
-                    client, upload_id, CONFIRMATIONS_FILE
-                )
-                if _withdrawn(_with_confirmations(status, confirmed or {})):
+                confirmed = await _confirmations(client, voice, upload_id)
+                if _withdrawn(_with_confirmations(status, confirmed)):
                     raise HTTPException(status_code=409, detail=_WITHDRAWN)
                 sheet = final
             elif final is not None:

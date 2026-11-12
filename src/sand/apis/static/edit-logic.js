@@ -99,7 +99,12 @@ export function inputState(item, report, jobRunning, canConfirm) {
   const pending = pendingKeys([report]).length;
   if (pending) {
     const label = pending === 1 ? "1 edit to confirm" : pending + " edits to confirm";
-    return { state: "ready", label: report.confirm_again ? label + " again" : label };
+    // which new edit a lost confirmation was is not known (other keys):
+    // only how many there were
+    const before = report.confirm_again || 0;
+    if (!before) return { state: "ready", label };
+    if (before >= pending) return { state: "ready", label: label + " again" };
+    return { state: "ready", label: label + " · " + before + " confirmed before" };
   }
   if ((report.confirmed_since || []).length) return { state: "writing", label: "Confirmed, writing..." };
   if ((report.confirmed || []).length) {

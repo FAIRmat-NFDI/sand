@@ -27,14 +27,10 @@ def put_status(voice, reports, collection=COLLECTION):
 
 
 def put_confirmations(voice, records):
-    """records: key -> input entry id, None for a record without one"""
+    """records: key -> input entry id"""
     voice.writer.files[CONFIRMATIONS_FILE] = json.dumps(
         {
-            key: {
-                'by': 'user',
-                'at': '2026-10-28T12:16:05+00:00',
-                **({'input': entry_id} if entry_id is not None else {}),
-            }
+            key: {'by': 'user', 'at': '2026-10-28T12:16:05+00:00', 'input': entry_id}
             for key, entry_id in records.items()
         }
     ).encode()
@@ -98,26 +94,6 @@ async def test_a_written_update_can_be_deleted_and_loses_its_confirmations(voice
     assert list(confirmations(voice)) == ['k9']
 
 
-async def test_a_record_without_its_input_goes_by_the_last_report(voice):
-    put_confirmations(voice, {'k1': None, 'k9': None})
-
-    assert (await revise(voice)).status_code == HTTPStatus.OK
-    assert list(confirmations(voice)) == ['k9']
-
-
-async def test_another_collections_report_names_no_old_record():
-    voice = FakeVoice()
-    put_status(
-        voice,
-        [{'input': 1, 'entry_id': 'n1', 'ready': READY, 'confirmed': []}],
-        collection='collection-2',
-    )
-    put_confirmations(voice, {'k1': None})
-
-    assert (await revise(voice)).status_code == HTTPStatus.OK
-    assert list(confirmations(voice)) == ['k1']
-
-
 async def test_an_unconfirmed_update_leaves_the_file_alone(voice):
     assert (await revise(voice)).status_code == HTTPStatus.OK
     assert CONFIRMATIONS_FILE not in voice.writer.files
@@ -156,7 +132,7 @@ async def test_an_update_after_a_changed_one_is_to_confirm_again(voice):
 
     reports = (await status(voice))['inputs']
 
-    assert [r['confirm_again'] for r in reports] == [False, True]
+    assert [r['confirm_again'] for r in reports] == [0, 1]
 
 
 async def test_an_update_that_lost_its_edit_is_told_too(voice):
@@ -166,7 +142,7 @@ async def test_an_update_that_lost_its_edit_is_told_too(voice):
 
     (report,) = (await status(voice))['inputs']
 
-    assert report['confirm_again'] is True
+    assert report['confirm_again'] == 1
 
 
 async def test_a_withdrawn_confirmation_waits_for_the_next_run(voice):
@@ -188,7 +164,7 @@ async def test_a_partly_confirmed_update_is_not_to_confirm_again(voice):
     (report,) = (await status(voice))['inputs']
 
     assert report['confirmed'] == ['k1']
-    assert report['confirm_again'] is False
+    assert report['confirm_again'] == 0
 
 
 async def test_the_inputs_list_says_which_are_applied(voice):

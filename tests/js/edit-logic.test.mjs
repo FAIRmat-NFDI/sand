@@ -150,7 +150,10 @@ test("the state chip of an input", () => {
   assert.equal(label(note, { ...REPORT, confirmed: ["k1"], unresolved: 2, not_applied: 1 }),
     "Applied · 2 unclear · 1 not applied");
   // an earlier update changed: its confirmation matched nothing
-  assert.equal(label(note, { ...REPORT, confirm_again: true }), "1 edit to confirm again");
+  assert.equal(label(note, { ...REPORT, confirm_again: 1 }), "1 edit to confirm again");
+  const two = { ...REPORT, ready: [...REPORT.ready, { ...REPORT.ready[0], key: "k2" }] };
+  assert.equal(label(note, { ...two, confirm_again: 1 }), "2 edits to confirm · 1 confirmed before");
+  assert.equal(label(note, { ...two, confirm_again: 3 }), "2 edits to confirm again");
   assert.equal(label(note, { ...REPORT, confirmed: ["k1"], refused: "a formula error" }), "Not written");
   assert.equal(label(note, { ...REPORT, ready: [] }), "No edit found");
   // two readings sand could not decide between: not "nothing found"
@@ -189,7 +192,7 @@ test("the summary line of a completed job", () => {
   assert.equal(editSummary({ changes: 1, inputs: [REPORT] }), "1 edit waits for your confirmation");
   assert.equal(editSummary({ changes: 1, inputs: [{ ...REPORT, ready: [], unconfirmed_since: ["k0"] }] }),
     "1 edit of a changed update, being taken out");
-  assert.equal(editSummary({ changes: 1, inputs: [{ ...REPORT, confirm_again: true }] }),
+  assert.equal(editSummary({ changes: 1, inputs: [{ ...REPORT, confirm_again: 1 }] }),
     "1 edit waits for your confirmation · 1 update was read again after an earlier update changed");
   assert.equal(
     editSummary({ changes: 0, inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] }),

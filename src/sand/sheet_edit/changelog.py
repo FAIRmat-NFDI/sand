@@ -35,9 +35,8 @@ class Confirmation:
     by: str  # the user, as the workflow names them
     at: datetime.datetime  # timezone-aware; an audit time must not be ambiguous
     # the input (entry id) whose words were confirmed, whatever the key
-    # becomes: revising or deleting it removes its confirmations; None in
-    # records made before
-    input: str | None = None
+    # becomes: revising or deleting it removes its confirmations
+    input: str
 
     def __post_init__(self):
         if self.at.tzinfo is None:
