@@ -6,6 +6,7 @@ import { fetchSheetView, initEdit, showEdit } from "./edit-mode.js";
 import {
   initExperiments, loadExperiments, onExperimentSelected, showSheet,
 } from "./experiments.js";
+import { initFeedback, showFeedback } from "./feedback.js";
 import { initInputs, showInputs } from "./inputs.js";
 import { clearLiveTranscript, initLiveToggle } from "./live-transcript.js";
 import { initNotes } from "./notes.js";
@@ -62,6 +63,7 @@ function showSession(state) {
   el.style.display = "block";
 }
 
+initFeedback();
 initExperiments();
 initRecord();
 initNotes();
@@ -91,6 +93,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 onExperimentSelected(async (experiment) => {
   const generation = ++selectionGeneration;
   workspace.hidden = !experiment;
+  showFeedback(experiment);
   showInputs(experiment);
   clearLiveTranscript();
   if (!experiment) {

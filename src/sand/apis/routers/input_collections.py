@@ -7,6 +7,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Form, HTTPException, Request, Response, UploadFile
 from nomad.utils import generate_entry_id
 
+from sand import feedback
 from sand.apis.deps import get_bearer_token
 from sand.hysprint import EXPERIMENT_INFO_LABEL, EXPERIMENT_INFO_MAINFILE
 from sand.hysprint.sheet import DERIVED_SHEET_MAINFILE, EXTRACTION_STATUS_MAINFILE
@@ -16,6 +17,8 @@ from sand.models.input_collections import (
     ConfirmEditsResponse,
     CreateHysprintExperimentRequest,
     CreateNoteRequest,
+    FeedbackRequest,
+    FeedbackResponse,
     InputCollectionListResponse,
     InputCollectionResponse,
     InputCollectionSummaryModel,
@@ -1369,3 +1372,69 @@ async def read_changelog(
     if format == 'json':
         return Response(content=raw, media_type='application/json')
     return Response(content=changelog.render(log), media_type='text/plain')
+
+
+@router.post(
+    '/input-collections/{upload_id}/feedback',
+    status_code=201,
+    response_model=FeedbackResponse,
+)
+async def send_feedback(
+    upload_id: str,
+    request: Request,
+    collection_entry_id: str,
+    body: FeedbackRequest,
+) -> FeedbackResponse:
+    """Store a "Something's wrong" report in the sheet's upload, with a
+    snapshot of what the user saw."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    at = datetime.now(timezone.utc)
+    try:
+        async with voice.build_client(token) as client:
+            me = await _me(client)
+            name = inputs = status = confirmed = context_error = None
+            try:
+                name = await voice.input_collection_name(
+                    client, upload_id, collection_entry_id
+                )
+                inputs = await voice.collect_inputs(
+                    client, upload_id, collection_entry_id
+                )
+                status = await voice.writer.read_json(
+                    client, upload_id, STATUS_FILE, wait=False
+                )
+                # upload-level: it may hold another collection's job
+                if status and status.get('collection_entry_id') != collection_entry_id:
+                    status = None
+                confirmed = await voice.writer.read_json(
+                    client, upload_id, CONFIRMATIONS_FILE, wait=False
+                )
+            except NomadAPIError as exc:
+                context_error = str(exc)
+            report = feedback.report(
+                at=at,
+                by=me.get('username') or me.get('name') or me['user_id'],
+                what_wrong=body.what_wrong,
+                expected=body.expected,
+                page=body.page,
+                client={
+                    'user_agent': body.user_agent,
+                    'recent_errors': body.recent_errors,
+                },
+                sheet={
+                    'upload_id': upload_id,
+                    'collection_entry_id': collection_entry_id,
+                    'name': name,
+                },
+                inputs=inputs,
+                status=status,
+                confirmations=confirmed,
+                context_error=context_error,
+            )
+            file = feedback.report_file(at)
+            await voice.writer.write_json(client, upload_id, file, report)
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+    return FeedbackResponse(file=file)

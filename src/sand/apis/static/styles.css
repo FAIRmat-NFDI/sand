@@ -1852,3 +1852,42 @@ body {
   background: #f7f7f7;
   border-radius: 4px;
 }
+
+/* "Something's wrong": quiet on the app bar until clicked */
+.feedback-btn {
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.6);
+}
+
+.feedback-btn:hover {
+  background: rgba(255,255,255,0.12);
+}
+
+.feedback-dialog {
+  max-width: min(480px, calc(100vw - 32px));
+  width: 100%;
+}
+
+.feedback-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.feedback-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 8px 0 4px;
+}
+
+.feedback-expected {
+  min-height: 60px;
+}
+
+.feedback-version {
+  margin-right: auto;
+  font-size: 0.75rem;
+  color: #777;
+}
