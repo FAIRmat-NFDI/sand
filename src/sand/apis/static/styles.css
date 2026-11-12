@@ -1883,3 +1883,46 @@ body {
   font-size: 0.75rem;
   color: #777;
 }
+
+/* An edit's state cell: written or Confirm, then the "Wrong" flag */
+.report-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.report-wrong.btn-icon {
+  padding: 2px;
+  color: #9e9e9e;
+}
+
+.report-wrong .material-icons {
+  font-size: 18px;
+}
+
+.report-wrong.reported:disabled {
+  cursor: default;
+  color: #c62828;
+  opacity: 1;
+}
+
+.edit-wrong-line {
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: #f5f6f8;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.edit-wrong-reasons {
+  border: none;
+  padding: 0;
+  margin: 0 0 4px;
+}
+
+.edit-wrong-reason {
+  display: block;
+  padding: 2px 0;
+  font-size: 0.9rem;
+}

@@ -1,6 +1,6 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class HysprintExperimentInfoForm(BaseModel):
@@ -54,8 +54,15 @@ class CreateNoteRequest(BaseModel):
     label: str = ''  # optional free text for the user
 
 
+class WrongEdit(BaseModel):
+    """A proposed edit the user says is wrong, by its confirmation key."""
+
+    key: str = Field(min_length=1, max_length=200)
+    reason: Literal['column', 'samples', 'value', 'other']
+
+
 class FeedbackRequest(BaseModel):
-    what_wrong: str = Field(min_length=1, max_length=5000)
+    what_wrong: str = Field('', max_length=5000)
     expected: str = Field('', max_length=5000)
     page: str = Field('', max_length=200)
     user_agent: str = Field('', max_length=500)
@@ -63,6 +70,14 @@ class FeedbackRequest(BaseModel):
     recent_errors: list[Annotated[str, Field(max_length=1000)]] = Field(
         default_factory=list, max_length=20
     )
+    edit: WrongEdit | None = None
+
+    @model_validator(mode='after')
+    def _says_something(self):
+        # an edit report's reason is enough; a page report needs words
+        if self.edit is None and not self.what_wrong.strip():
+            raise ValueError("say what's not working")
+        return self
 
 
 class FeedbackResponse(BaseModel):

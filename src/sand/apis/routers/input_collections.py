@@ -1478,7 +1478,8 @@ async def send_feedback(
     body: FeedbackRequest,
 ) -> FeedbackResponse:
     """Store a "Something's wrong" report in the sheet's upload, with a
-    snapshot of what the user saw."""
+    snapshot of what the user saw. With `edit`, the report is about one
+    proposed edit; nothing is written to or withheld from the sheet."""
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
@@ -1505,6 +1506,14 @@ async def send_feedback(
                 )
             except NomadAPIError as exc:
                 context_error = str(exc)
+            edit = None
+            if body.edit is not None:
+                edit = {
+                    'key': body.edit.key,
+                    'reason': body.edit.reason,
+                    'confirmed': body.edit.key in (confirmed or {}),
+                    'proposed': feedback.proposed_edit(status, body.edit.key),
+                }
             report = feedback.report(
                 at=at,
                 by=me.get('username') or me.get('name') or me['user_id'],
@@ -1524,6 +1533,7 @@ async def send_feedback(
                 status=status,
                 confirmations=confirmed,
                 context_error=context_error,
+                edit=edit,
             )
             file = feedback.report_file(at)
             await voice.writer.write_json(client, upload_id, file, report)
