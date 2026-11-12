@@ -11,6 +11,7 @@
 import { errorDetail, experimentUrl } from "./api.js";
 import { inputState, previewNotes, rewriteWarning } from "./edit-logic.js";
 import { selectedExperiment } from "./experiments.js";
+import { editReported, reportEdit } from "./feedback.js";
 import { clearError, confirmDialog, showEntryLink, showError } from "./ui.js";
 
 const inputsList = document.getElementById("inputs-list");
@@ -303,6 +304,28 @@ function renderEditCells(edit) {
   return [column, change, samples];
 }
 
+// "This edit is wrong": a report for #172, the edit itself unchanged
+function wrongFlag(edit) {
+  const flag = document.createElement("button");
+  flag.type = "button";
+  flag.className = "btn btn-icon report-wrong";
+  const icon = document.createElement("span");
+  icon.className = "material-icons";
+  flag.append(icon);
+  const show = (reported) => {
+    icon.textContent = reported ? "flag" : "outlined_flag";
+    flag.classList.toggle("reported", reported);
+    flag.disabled = reported;
+    flag.title = reported ? "Reported as wrong" : "This edit is wrong";
+    flag.setAttribute("aria-label", flag.title + ": " + edit.line);
+  };
+  show(editReported(edit.key));
+  flag.addEventListener("click", async () => {
+    if (await reportEdit(edit)) show(true);
+  });
+  return flag;
+}
+
 // The edits of a report, grouped under their step as the Sheet table
 // groups them: a step heading, then one aligned row per edit with its
 // state (written, or the button that confirms it) at the right.
@@ -324,11 +347,15 @@ function renderReport(report) {
     const row = document.createElement("div");
     row.className = "report-edit";
     row.append(...renderEditCells(edit));
+    // one cell: the row's grid places its last child
+    const state = document.createElement("span");
+    state.className = "report-state";
+    row.append(state);
     if (confirmed.has(edit.key)) {
       const mark = document.createElement("span");
       mark.className = "report-confirmed" + (since.has(edit.key) ? " report-writing" : "");
       mark.textContent = since.has(edit.key) ? "writing..." : "written";
-      row.append(mark);
+      state.append(mark);
     } else {
       const btn = document.createElement("button");
       btn.type = "button";
@@ -343,8 +370,9 @@ function renderReport(report) {
         delete btn.dataset.busy;
         if (!done) btn.disabled = jobRunning || !onConfirm;
       });
-      row.append(btn);
+      state.append(btn);
     }
+    state.append(wrongFlag(edit));
     box.append(row);
     for (const check of edit.checks || []) {
       const p = document.createElement("p");

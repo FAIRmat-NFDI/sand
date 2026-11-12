@@ -113,3 +113,73 @@ async def test_a_failed_write_is_reported(voice):
     response = await send(voice)
 
     assert response.status_code == HTTPStatus.BAD_GATEWAY
+
+
+# --- a proposed edit reported wrong (#172) -----------------------------------------
+
+EDIT = {'key': 'k1', 'line': 'Spin Coating · Rotation speed [rpm]: 3000 → 4000'}
+
+
+def put_edit_status(voice):
+    status = {
+        'phase': 'completed',
+        'collection_entry_id': COLLECTION,
+        'inputs': [
+            {'input': 1, 'entry_id': 'n1', 'text': 'speed is 4000', 'ready': [EDIT]}
+        ],
+    }
+    voice.writer.files[STATUS_FILE] = json.dumps(status).encode()
+
+
+async def test_an_edit_report_holds_the_edit_as_proposed_and_its_words(voice):
+    put_edit_status(voice)
+
+    response = await send(
+        voice,
+        what_wrong='',
+        expected='step 3, not step 2',
+        edit={'key': 'k1', 'reason': 'column'},
+    )
+
+    assert response.status_code == HTTPStatus.CREATED, response.text
+    report = stored(voice, response)
+    assert report['kind'] == 'edit'
+    assert report['expected'] == 'step 3, not step 2'
+    assert report['edit'] == {
+        'key': 'k1',
+        'reason': 'column',
+        'confirmed': False,
+        'proposed': {'input': 1, 'entry_id': 'n1', 'text': 'speed is 4000', **EDIT},
+    }
+    # a report, not a decision: the sheet's files are as they were
+    assert set(voice.writer.files) == {STATUS_FILE, response.json()['file']}
+
+
+async def test_an_edit_report_says_whether_the_edit_was_written(voice):
+    put_edit_status(voice)
+    voice.writer.files[CONFIRMATIONS_FILE] = json.dumps({'k1': {}}).encode()
+
+    response = await send(voice, edit={'key': 'k1', 'reason': 'value'})
+
+    assert stored(voice, response)['edit']['confirmed'] is True
+
+
+async def test_an_edit_no_longer_in_the_status_is_still_reported(voice):
+    response = await send(voice, edit={'key': 'gone', 'reason': 'other'})
+
+    assert response.status_code == HTTPStatus.CREATED, response.text
+    assert stored(voice, response)['edit']['proposed'] is None
+
+
+async def test_a_page_report_is_of_kind_page(voice):
+    response = await send(voice)
+
+    report = stored(voice, response)
+    assert report['kind'] == 'page'
+    assert report['edit'] is None
+
+
+async def test_an_unknown_reason_is_refused(voice):
+    response = await send(voice, edit={'key': 'k1', 'reason': 'boring'})
+
+    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
