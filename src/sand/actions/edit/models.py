@@ -20,10 +20,13 @@ class JobInput(BaseModel):
     llm_model_name: str
     texts: list[str]
     confirmations: dict[str, dict]  # the file's JSON, by confirmation key
+    # one per text: whose confirmations carry (empty in a job started
+    # before: nothing carries)
+    entry_ids: list[str] = []
 
 
 class ReplayInput(JobInput):
-    entry_ids: list[str]  # one per text, for the reports
+    pass
 
 
 class PrepareInput(JobInput):

@@ -38,10 +38,10 @@ class Confirmation:
     # becomes: revising or deleting it removes its confirmations
     input: str
     # what was confirmed, to carry it to the same change on another sheet
-    # (apply.change_key) and the word checks the edit had; None in
-    # records made before
+    # (apply.change_key), and the warnings the edit showed (apply.warnings);
+    # None in records made before
     change: str | None = None
-    checks: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
 
     def __post_init__(self):
         if self.at.tzinfo is None:

@@ -1292,7 +1292,7 @@ async def confirm_edits(
                         at=now,
                         input=reports[key].get('entry_id'),
                         change=edits[key].get('change'),
-                        checks=tuple(edits[key].get('checks', [])),
+                        warnings=tuple(edits[key].get('warnings', [])),
                     ),
                 )
             # an input confirmed again: its confirmations that match none

@@ -124,6 +124,7 @@ def job(upload, job_id='job-1') -> JobInput:
         llm_model_name=MODEL,
         texts=[i.text for i in upload.inputs],
         confirmations={} if raw is None else json.loads(raw),
+        entry_ids=[i.entry_id for i in upload.inputs],
     )
 
 
@@ -143,10 +144,7 @@ def apply(upload, number, answers, job_id='job-1', snapshot=None) -> ApplyInput:
 
 
 def replay(upload, job_id='job-1') -> ReplayInput:
-    return ReplayInput(
-        **job(upload, job_id).model_dump(),
-        entry_ids=[i.entry_id for i in upload.inputs],
-    )
+    return ReplayInput(**job(upload, job_id).model_dump())
 
 
 JOB_CACHE = job_cache_file('job-1')

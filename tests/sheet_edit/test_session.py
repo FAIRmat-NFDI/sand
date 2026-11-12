@@ -104,13 +104,14 @@ def test_confirmations_round_trip():
     # what was confirmed, to carry it to another sheet
     carried = {
         'k3': Confirmation(
-            by='tester', at=WHEN, input='n3', change='c3', checks=("'x' is not",)
+            by='tester', at=WHEN, input='n3', change='c3', warnings=("'x' is not",)
         )
     }
     assert load_confirmations(confirmations_json(carried)) == carried
-    assert carry_of({**confirmations, **carried}) == {
-        'c3': ('k3', frozenset({"'x' is not"}))
-    }
+    assert carry_of({**confirmations, **carried}, ['n2', 'n3']) == [
+        {},
+        {'c3': ('k3', frozenset({"'x' is not"}))},
+    ]
     # a record made before confirmations named their input is left out
     old = {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00'}}
     assert load_confirmations({**data, **old}) == confirmations
@@ -149,7 +150,7 @@ def test_a_damaged_confirmations_file_is_refused_not_empty(raw):
                 'by': 'tester',
                 'at': '2026-10-28T12:16:05+00:00',
                 'input': 'n1',
-                'checks': 'x',
+                'warnings': 'x',
             }
         },
         {'k1': {'by': 3, 'at': '2026-10-28T12:16:05+00:00'}},

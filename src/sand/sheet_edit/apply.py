@@ -14,9 +14,9 @@ A confirmation is bound to the input's text, the state it was given and
 the edit itself; a rerun that produces the identical edit keeps it, any
 difference asks again. One exception: an input read again only because
 an earlier input changed its sheet, that proposes the same change (same
-words, column, samples, new value) with no new word check, keeps its
-confirmation: it is carried (the old value is not compared; a changed
-one that matters gets the said-old check).
+words, column, samples, new value) with no warning the user did not see
+when confirming, keeps its confirmation: it is carried (the old value is
+not compared; a changed one that matters gets the said-old check).
 """
 
 import json
@@ -39,9 +39,9 @@ Resolve = Callable[[str, Catalog], ProposedEdits]
 # an anchored edit once an earlier input set DMSO. Only the LLM call is
 # cached, the checks after it are cheap and always rerun.
 Cache = dict[tuple[str, str], ProposedEdits]
-# change key -> (the confirmation key it was confirmed under, the word
-# checks the edit had then)
-Carry = dict[str, tuple[str, frozenset[str]]]
+# per input, in order: change key -> (the confirmation key it was
+# confirmed under, the warnings the edit showed then)
+Carry = list[dict[str, tuple[str, frozenset[str]]]]
 
 
 @dataclass(frozen=True)
@@ -160,19 +160,21 @@ def apply_all(  # noqa: PLR0913
     step's state is the final sheet. `cache` is filled as it goes. A
     writer refusal is recorded on the step; a failed verification is a
     bug in the writer and raises, since the file must not be used.
-    `carry` takes confirmations over to the same change on another sheet.
+    `carry` takes each input's confirmations over to the same change on
+    another sheet.
     `cached_only` stops before the first input the model was not asked
     about on its sheet (the inputs after it would read a sheet it may
     change)."""
     steps = []
     state = original
-    for text in inputs:
+    for number, text in enumerate(inputs):
         digest = sha256(state)
         if cached_only and (sha256(text.encode()), digest) not in cache:
             break
         cached = _cached(resolve, cache, digest)
         interpretation = interpret_instruction(text, state, cached)
-        carried = _carried(text, interpretation, confirmed, carry or {})
+        own = carry[number] if carry and number < len(carry) else {}
+        carried = _carried(text, interpretation, confirmed, own)
         writes = [
             Write(row, interpretation.catalog.index(edit.edit.target), edit.value)
             for key, edit in interpretation.ready.items()
@@ -192,17 +194,26 @@ def apply_all(  # noqa: PLR0913
 
 
 def _carried(
-    text: str, interpretation: Interpretation, confirmed: set[str], carry: Carry
+    text: str,
+    interpretation: Interpretation,
+    confirmed: set[str],
+    carry: dict[str, tuple[str, frozenset[str]]],
 ) -> dict[str, str]:
     carried = {}
     for key, edit in interpretation.ready.items():
         source = carry.get(change_key(text, edit))
         if key in confirmed or source is None:
             continue
-        confirmed_under, checks = source
-        if confirmed_under in confirmed and set(edit.checks) <= checks:
+        confirmed_under, seen = source
+        if confirmed_under in confirmed and set(warnings(edit)) <= seen:
             carried[key] = confirmed_under
     return carried
+
+
+def warnings(edit: Grounded) -> tuple[str, ...]:
+    """What the user reads on an edit before confirming it: a carry needs
+    nothing new among them."""
+    return (*edit.checks, *edit.notes, *edit.doubts)
 
 
 def _cached(resolve: Resolve, cache: Cache, state: str) -> Resolve:

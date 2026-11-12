@@ -1,6 +1,15 @@
-from sand.sheet_edit.apply import apply_all, change_key, interpret_instruction
+import datetime
+
+from sand.sheet_edit.apply import (
+    apply_all,
+    change_key,
+    interpret_instruction,
+    warnings,
+)
+from sand.sheet_edit.changelog import Confirmation
 from sand.sheet_edit.edits import Anchor, Edit, NotFound, ProposedEdits, Range, Samples
 from sand.sheet_edit.ground import Refused
+from sand.sheet_edit.session import carry_of
 from sand.sheet_edit.write import verify
 
 CLEAN_SOLVENT_2, CLEAN_TIME_2, VARIATION, SPEED = 'C013', 'C014', 'C007', 'C025'
@@ -44,6 +53,15 @@ PROPOSALS = {
     'speed 5000': proposal(edit(SPEED, 'all', '3000', '5000', 'speed 5000')),
     # 4100 is not in the words: a check
     'spin speed 4000': proposal(edit(SPEED, 'all', '3000', '4100', 'spin speed 4000')),
+    'solvent 2 to ETH for samples 1 to 3': proposal(
+        edit(
+            CLEAN_SOLVENT_2,
+            FIRST_THREE,
+            'DMSO',
+            'ETH',
+            'solvent 2 to ETH for samples 1 to 3',
+        )
+    ),
     'solvent 2 to DMSO for samples 1 to 4': proposal(
         edit(
             CLEAN_SOLVENT_2,
@@ -309,12 +327,15 @@ def on_speed_4000(text, catalog):
 
 
 def confirm_all(steps):
-    """What "Confirm all" saves: every ready key, with what it confirmed."""
-    confirmed, carry = set(), {}
+    """What "Confirm all" saves: every ready key, with what it confirmed,
+    per input."""
+    confirmed, carry = set(), []
     for step in steps:
+        own = {}
         for key, edit in step.interpretation.ready.items():
             confirmed.add(key)
-            carry[change_key(step.text, edit)] = (key, frozenset(edit.checks))
+            own[change_key(step.text, edit)] = (key, frozenset(warnings(edit)))
+        carry.append(own)
     return confirmed, carry
 
 
@@ -378,7 +399,10 @@ def test_a_new_word_check_is_not_carried(synthetic_xlsx):
     )
     assert steps[1].carried
     # confirmed when it had no check: the check is new
-    carry = {change: (key, frozenset()) for change, (key, _) in carry.items()}
+    carry = [
+        {change: (key, frozenset()) for change, (key, _) in own.items()}
+        for own in carry
+    ]
 
     steps = apply_all(
         synthetic_xlsx, inputs, on_speed_4000, confirmed, dict(cache), carry=carry
@@ -397,3 +421,49 @@ def test_a_carry_needs_its_confirmation(synthetic_xlsx):
     )
 
     assert steps[1].carried == {}
+
+
+def reads_eth_later():
+    """The solvent note's answer: IPA as old on the original, ETH after."""
+    calls = []
+
+    def resolve(text, catalog):
+        if text != SOLVENT:
+            return PROPOSALS[text]
+        calls.append(text)
+        (edit,) = PROPOSALS[text].edits
+        return proposal(
+            edit.model_copy(update={'old': 'IPA' if len(calls) == 1 else 'ETH'})
+        )
+
+    return resolve
+
+
+def test_a_confirmation_is_never_carried_to_another_input(synthetic_xlsx):
+    # notes 1 and 3 say the same; only note 1 was confirmed. Note 2 puts
+    # ETH where note 1 put DMSO, so note 3 would change it back: not
+    # without its own confirmation
+    inputs = [SOLVENT, 'solvent 2 to ETH for samples 1 to 3', SOLVENT]
+    first = run(synthetic_xlsx, inputs)
+    confirmations = {}
+    for step, entry_id in zip(first[:2], ['n1', 'n2'], strict=True):
+        for key, ready in step.interpretation.ready.items():
+            confirmations[key] = Confirmation(
+                by='tester',
+                at=datetime.datetime(2026, 11, 12, tzinfo=datetime.UTC),
+                input=entry_id,
+                change=change_key(step.text, ready),
+            )
+    carry = carry_of(confirmations, ['n1', 'n2', 'n3'])
+
+    steps = apply_all(
+        synthetic_xlsx, inputs, reads_eth_later(), set(confirmations), {}, carry=carry
+    )
+
+    assert steps[1].carried  # note 2 read on note 1's DMSO, same change
+    # note 3 would change ETH back, the same change as note 1, no warning
+    (ready,) = steps[2].interpretation.ready.values()
+    assert change_key(SOLVENT, ready) in carry[0]
+    assert not warnings(ready)
+    assert steps[2].carried == {}
+    assert steps[2].written == ()

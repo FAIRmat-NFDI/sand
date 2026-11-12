@@ -549,7 +549,7 @@ def test_a_carried_edit_is_logged_with_who_confirmed_the_same_change(synthetic_x
     first = apply_all(synthetic_xlsx, inputs, resolve, set(), {})
     other = Confirmation(by='other tester', at=WHEN, input='n2')
     confirmations = {}
-    for step, who in zip(first, (TESTER, other), strict=True):
+    for step, who in zip(first, (TESTER, other), strict=True):  # n1, n2
         for key, ready in step.interpretation.ready.items():
             confirmations[key] = replace(who, change=change_key(step.text, ready))
 
@@ -559,7 +559,7 @@ def test_a_carried_edit_is_logged_with_who_confirmed_the_same_change(synthetic_x
         resolve,
         set(confirmations),
         {},
-        carry=carry_of(confirmations),
+        carry=carry_of(confirmations, ['n1', 'n2']),
     )
     log = changelog(synthetic_xlsx, steps, confirmations, MODEL)
 

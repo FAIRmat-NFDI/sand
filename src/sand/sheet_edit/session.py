@@ -162,28 +162,32 @@ def load_confirmations(data: dict) -> dict[str, Confirmation]:
             continue
         entry_id = entry['input']
         change = entry.get('change')
-        checks = entry.get('checks', [])
+        warnings = entry.get('warnings', [])
         if (
             not isinstance(entry_id, str)
             or not isinstance(change, str | None)
-            or not isinstance(checks, list)
-            or not all(isinstance(c, str) for c in checks)
+            or not isinstance(warnings, list)
+            or not all(isinstance(w, str) for w in warnings)
         ):
             raise ValueError(f'confirmation {key!r} is malformed: {entry!r}')
         confirmations[key] = Confirmation(
-            by=by, at=when, input=entry_id, change=change, checks=tuple(checks)
+            by=by, at=when, input=entry_id, change=change, warnings=tuple(warnings)
         )  # naive: ValueError
     return confirmations
 
 
-def carry_of(confirmations: dict[str, Confirmation]) -> Carry:
-    """What `apply_all` carries the confirmations over by. A change
-    confirmed twice (on two sheets) carries the first."""
-    carry: Carry = {}
+def carry_of(confirmations: dict[str, Confirmation], entry_ids: list[str]) -> Carry:
+    """What `apply_all` carries the confirmations over by, per input (by
+    entry id, in order): a confirmation is only ever its own input's, two
+    inputs of the same words included. A change an input confirmed twice
+    (on two sheets) carries the first."""
+    own: dict[str, dict[str, tuple[str, frozenset[str]]]] = {}
     for key, c in confirmations.items():
         if c.change is not None:
-            carry.setdefault(c.change, (key, frozenset(c.checks)))
-    return carry
+            own.setdefault(c.input, {}).setdefault(
+                c.change, (key, frozenset(c.warnings))
+            )
+    return [own.get(entry_id, {}) for entry_id in entry_ids]
 
 
 def confirmations_json(confirmations: dict[str, Confirmation]) -> dict:
@@ -193,7 +197,7 @@ def confirmations_json(confirmations: dict[str, Confirmation]) -> dict:
             'at': c.at.isoformat(timespec='seconds'),
             'input': c.input,
             **({'change': c.change} if c.change is not None else {}),
-            **({'checks': list(c.checks)} if c.checks else {}),
+            **({'warnings': list(c.warnings)} if c.warnings else {}),
         }
         for key, c in confirmations.items()
     }

@@ -18,7 +18,7 @@ from sand.actions.edit.models import (
     WriteStatusInput,
 )
 from sand.services.nomad_api import XLSX_CONTENT_TYPE
-from sand.sheet_edit.apply import Step, apply_all, change_key
+from sand.sheet_edit.apply import Step, apply_all, change_key, warnings
 from sand.sheet_edit.catalog import Catalog
 from sand.sheet_edit.changelog import Confirmation
 from sand.sheet_edit.edits import ProposedEdits
@@ -94,7 +94,7 @@ async def replay_cached_inputs(data: ReplayInput) -> dict:
         _never_asked,
         set(files.confirmations),
         files.cache.proposals,
-        carry=carry_of(files.confirmations),
+        carry=carry_of(files.confirmations, data.entry_ids),
         cached_only=True,
     )
     confirmed = set(files.confirmations)
@@ -157,7 +157,9 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
             f'input {data.number} has no answer and no cached proposal; run again',
             non_retryable=True,
         )
-    step = _apply_inputs_from_cache(files, data.texts[: data.number])[-1]
+    step = _apply_inputs_from_cache(files, data.texts[: data.number], data.entry_ids)[
+        -1
+    ]
     return _report(
         data.number, data.entry_id, step, set(files.confirmations), not data.answers
     )
@@ -179,7 +181,7 @@ async def store_final_sheet_and_changelog(data: JobInput) -> dict:
     from sand.sheet_edit.workbook import sha256
 
     files = await _read_files(data)
-    steps = _apply_inputs_from_cache(files, data.texts)
+    steps = _apply_inputs_from_cache(files, data.texts, data.entry_ids)
     final = steps[-1].state if steps else files.original
     log = changelog(files.original, steps, files.confirmations, data.llm_model_name)
     try:
@@ -308,7 +310,9 @@ def _text(data: PrepareInput) -> str:
     return data.texts[data.number - 1]
 
 
-def _apply_inputs_from_cache(files: _Files, texts: list[str]) -> list[Step]:
+def _apply_inputs_from_cache(
+    files: _Files, texts: list[str], entry_ids: list[str]
+) -> list[Step]:
     """The inputs applied in order, every proposal from the cache: the
     model is asked by the workflow, never from here."""
     return apply_all(
@@ -317,12 +321,14 @@ def _apply_inputs_from_cache(files: _Files, texts: list[str]) -> list[Step]:
         _never_asked,
         set(files.confirmations),
         files.cache.proposals,
-        carry=carry_of(files.confirmations),
+        carry=carry_of(files.confirmations, entry_ids),
     )
 
 
 def _state_before(files: _Files, data: PrepareInput) -> bytes:
-    steps = _apply_inputs_from_cache(files, data.texts[: data.number - 1])
+    steps = _apply_inputs_from_cache(
+        files, data.texts[: data.number - 1], data.entry_ids
+    )
     return steps[-1].state if steps else files.original
 
 
@@ -361,6 +367,7 @@ def _report(
                 'checks': list(edit.checks),
                 # what a confirmation stores, to carry it to another sheet
                 'change': change_key(step.text, edit),
+                'warnings': list(warnings(edit)),
             }
             for key, edit in step.interpretation.ready.items()
         ],

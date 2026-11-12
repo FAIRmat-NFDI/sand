@@ -102,6 +102,7 @@ class EditSheetWorkflow:
                 llm_model_name=collected['llm_model_name'],
                 texts=collected['texts'],
                 confirmations=collected['confirmations'],
+                entry_ids=collected['input_entry_ids'],
             )
             total = len(job.texts)
             if len(collected['input_entry_ids']) != total:
@@ -123,9 +124,7 @@ class EditSheetWorkflow:
                 )
                 replay = await workflow.execute_activity(
                     replay_cached_inputs,
-                    ReplayInput(
-                        **job.model_dump(), entry_ids=collected['input_entry_ids']
-                    ),
+                    ReplayInput(**job.model_dump()),
                     start_to_close_timeout=timedelta(minutes=5),
                     retry_policy=RetryPolicy(maximum_attempts=3),
                 )

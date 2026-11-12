@@ -166,6 +166,7 @@ async def test_a_confirmation_stores_what_it_confirmed(voice):
         'line': '...',
         'change': 'c3',
         'checks': ["'4400' is not in your words"],
+        'warnings': ["'4400' is not in your words"],
     }
     put_status(
         voice, inputs=[{'input': 1, 'entry_id': 'n1', 'ready': [*READY, marked]}]
@@ -175,7 +176,7 @@ async def test_a_confirmation_stores_what_it_confirmed(voice):
     records = confirmations(voice)
     assert 'change' not in records['k1']  # a report from before: nothing to carry
     assert records['k3']['change'] == 'c3'
-    assert records['k3']['checks'] == ["'4400' is not in your words"]
+    assert records['k3']['warnings'] == ["'4400' is not in your words"]
 
 
 async def test_by_falls_back_to_the_user_id(voice):
