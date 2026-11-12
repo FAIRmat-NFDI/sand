@@ -66,9 +66,8 @@ TARGETS = {'precision': 99, 'flagged': 100, 'proposed': 95, 'refusals': 100}
 class Expected:
     """One expected edit, resolved on the sheet: Excel rows and the value
     as said ('' clears). `check` True: the words contradict the sheet, so
-    the right edit must carry a check (confirmed on its own, #163), or be
-    flagged: either keeps it out of confirm-all. False: it must carry
-    none. None: either."""
+    the right edit must carry a check (a warning on the edit), or be
+    flagged. False: it must carry none. None: either."""
 
     target: str
     name: str  # "Rotation speed (2: Spin Coating)"
@@ -172,9 +171,9 @@ class Verdict:
     `written` is a flagged column that got a ready edit, the worst
     outcome; `failed` is set when the job itself would have failed.
     `checked` and `wrong_checked`: of the right and of the wrong ready
-    edits, those a word check marked, which the user confirms one by one.
+    edits, those a word check marked, which the user sees warned.
     `check_missed`: right edits the case wants marked that came unmarked,
-    which confirm-all would write; `held` of the flagged, those the case
+    written without a warning; `held` of the flagged, those the case
     wants marked, safe as well. `check_extra`: right edits marked that
     the case wants clean, one click too many."""
 
@@ -367,7 +366,7 @@ def summarize(verdicts: list[Verdict]) -> dict[str, object]:
         'check_asked': sum(bool(w.check) for v in verdicts for w in v.case.edits),
         'check_missed': sum(v.check_missed for v in verdicts),
         'check_extra': sum(v.check_extra for v in verdicts),
-        # what "confirm all" would write wrongly: the one number to keep at 0
+        # wrong edits shown without a warning: the one number to keep at 0
         'wrong_unchecked': wrong - sum(v.wrong_checked for v in verdicts),
     }
 
