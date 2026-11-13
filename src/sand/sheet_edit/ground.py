@@ -612,8 +612,10 @@ def anchor_problems(
     """ "The volume of the DMSO": the anchor column must hold DMSO in the
     targeted rows and sit in the target's step; a numbered anchor
     (Solvent 2 name) reaches only its own number (Solvent 2 volume).
-    Returns (problems, doubts); the doubt: the anchor value is not in the
-    words."""
+    Returns (problems, doubts). An anchor value not in the words is a
+    problem, shown on the edit: the model may have put the value the
+    table holds for the one the user said ("the volume of the DMF" read
+    as the Ethanol's), and the edit then points at a step never named."""
     assert edit.anchor is not None
     if anchor is None:
         return [f'{edit.anchor.column} is not a column of this sheet'], []
@@ -637,10 +639,11 @@ def anchor_problems(
             f'{column_name(anchor)} holds {_held(anchor, catalog, wrong)}, '
             f'not {edit.anchor.equals!r}'
         )
-    doubts = []
     if not in_words(edit.anchor.equals, edit.said):
-        doubts.append(f'{edit.anchor.equals!r}: not found in your words')
-    return problems, doubts
+        problems.append(
+            f'{column_name(anchor)}: you did not say {edit.anchor.equals!r}'
+        )
+    return problems, []
 
 
 # --- O old value ---------------------------------------------------------------
