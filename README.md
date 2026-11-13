@@ -184,19 +184,24 @@ same browser; sand warns when the login is about to end.
    on the right in the order they were made; a transcript can be
    corrected there.
 3. Each update is **read** as soon as it is saved. Under it the page
-   shows the edits it is ready to write, each with **Confirm** and
-   **Reject**, and the reason for anything it could not place. A revised update is
-   read again. Nothing is read while a recording is still being
-   transcribed; a recording whose transcription failed has to be deleted
-   first.
-4. **Confirm** the edits that are right, one by one or all at once. They
-   are written into the sheet a moment later. **Reject** a wrong one: it
-   is never written, and the edit as proposed is kept with the sheet,
-   with what was wrong if you say so (Undo takes it back). To get the
-   right edit, correct the update's text or add a new update. A written
-   update can still be revised or deleted: the sheet is rebuilt without
-   its old edits, and the updates after it are read again and need your
-   confirmation again.
+   shows the edits it is ready to write, and the reason for anything it
+   could not place. A revised update is read again. Nothing is read
+   while a recording is still being transcribed; a recording whose
+   transcription failed has to be deleted first.
+4. The updates are decided **in order**, top to bottom: only the first
+   one with an undecided edit has **Confirm** and **Reject** (and
+   Confirm all for its edits); the ones after it wait. **Confirm** the
+   edits that are right: they are written into the sheet a moment
+   later, and the next update is read again on the sheet they made.
+   **Reject** a wrong one: it is never written, the next update's turn
+   comes at once, and the edit as proposed is kept with the sheet, with
+   what was wrong if you say so (Undo takes it back). To get the right
+   edit, correct the update's text or add a new update. An update that
+   waits shows its earlier reading and is read again only in its turn,
+   so a confirmation costs one reading, not one per update below it.
+   A written update can still be revised or deleted: the sheet is
+   rebuilt without its old edits, and the updates after it are read
+   again in their turn and need deciding again.
 5. **Download** the edited sheet (the original is a download too, under
    the file name it was uploaded with). The Edits card lists every edit
    written; the changelog, folded below it, holds every cell changed, the

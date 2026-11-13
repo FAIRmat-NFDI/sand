@@ -168,6 +168,7 @@ async def test_collect_gives_the_inputs_in_order_the_confirmations_and_the_model
         'texts': [SAID, 'clear solvent 2 of sample 1'],
         'input_entry_ids': ['e1', 'e2'],
         'confirmations': {},
+        'rejections': [],
         'llm_model_name': MODEL,
     }
     await confirm(upload, 'k1')
@@ -348,6 +349,72 @@ async def test_two_jobs_on_one_upload_cannot_lose_each_others_answers(upload):
     assert (await activities.prepare_input(prepare(upload, 2, job_id='job-c')))[
         'cached'
     ] is True
+
+
+def speed_edit(first, last, new):
+    said = f'speed {new} for samples {first} to {last}'
+    edit = {
+        **SPEED_EDIT,
+        'rows': {'first': first, 'last': last, 'subbatch': None},
+        'new': new,
+        'said': said,
+    }
+    return said, edit
+
+
+async def test_an_input_below_an_undecided_one_waits_without_a_model_call(upload):
+    said_2, edit_2 = speed_edit('4', '5', '5000')
+    said_3, edit_3 = speed_edit('8', '9', '6000')
+    upload.inputs = [
+        collected('e1', SAID),
+        collected('e2', said_2),
+        collected('e3', said_3),
+    ]
+    # the first round: every input read once
+    first = [
+        await activities.agree_cache_and_apply_input(apply(upload, n, [answer(e)] * 2))
+        for n, e in ((1, SPEED_EDIT), (2, edit_2), (3, edit_3))
+    ]
+    await activities.store_final_sheet_and_changelog(job(upload))
+    [key_1] = [edit['key'] for edit in first[0]['ready']]
+    upload.writer.files[CONFIRMATIONS_FILE] = json.dumps(
+        {key_1: {'by': 'user', 'at': '2026-11-13T10:00:00+00:00', 'input': 'e1'}}
+    ).encode()
+
+    # input 1 confirmed: input 2 is asked on the new sheet, input 3 waits
+    prepared = await activities.prepare_input(prepare(upload, 2, 'job-2'))
+    assert len(prepared['prompts']) == 2  # noqa: PLR2004
+    two = await activities.agree_cache_and_apply_input(
+        apply(upload, 2, [answer(edit_2)] * 2, 'job-2')
+    )
+    assert two['waiting'] is False
+    prepared = await activities.prepare_input(prepare(upload, 3, 'job-2'))
+    assert prepared == {'cached': True, 'prompts': []}
+    three = await activities.agree_cache_and_apply_input(apply(upload, 3, [], 'job-2'))
+    assert three['waiting'] is True
+    assert three['confirmed'] == []
+    assert three['cells_written'] == 0
+    assert [e['line'] for e in three['ready']] == [e['line'] for e in first[2]['ready']]
+    await activities.store_final_sheet_and_changelog(job(upload, 'job-2'))
+
+    # the next job replays all three: no input needs the model
+    replayed = await activities.replay_cached_inputs(replay(upload, 'job-3'))
+    assert replayed['replayed'] == 3  # noqa: PLR2004
+    assert [r['waiting'] for r in replayed['reports']] == [False, False, True]
+
+    # input 2 rejected: input 3's turn, on a sheet (input 1 written) it
+    # was never read on: the replay stops there, the model is asked
+    rejected = job(upload, 'job-4').model_copy(
+        update={'rejections': [e['key'] for e in two['ready']]}
+    )
+    replayed = await activities.replay_cached_inputs(
+        ReplayInput(**rejected.model_dump(), entry_ids=['e1', 'e2', 'e3'])
+    )
+    assert replayed['replayed'] == 2  # noqa: PLR2004
+    prepared = await activities.prepare_input(
+        PrepareInput(**rejected.model_dump(), number=3)
+    )
+    assert len(prepared['prompts']) == 2  # noqa: PLR2004
 
 
 async def test_applying_without_answers_needs_the_cache(upload):

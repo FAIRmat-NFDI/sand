@@ -102,6 +102,8 @@ class EditSheetWorkflow:
                 llm_model_name=collected['llm_model_name'],
                 texts=collected['texts'],
                 confirmations=collected['confirmations'],
+                # absent from a job collected before rejections existed
+                rejections=collected.get('rejections', []),
             )
             total = len(job.texts)
             if len(collected['input_entry_ids']) != total:

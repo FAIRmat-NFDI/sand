@@ -1125,10 +1125,14 @@ def _with_confirmations(
         written = report.get('confirmed', [])
         keys = [edit['key'] for edit in report.get('ready', [])]
         entry_id = report.get('entry_id')
-        if confirmed is None or not entry_id:
-            # a report from before reports named their input is read again
+        if confirmed is None or not entry_id or report.get('waiting'):
+            # a report from before reports named their input is read
+            # again; a waiting one wrote nothing and is read in its turn
             report.update(
-                confirmed_since=[], unconfirmed_since=[], confirm_again=0, rejected=[]
+                confirmed_since=[],
+                unconfirmed_since=[],
+                confirm_again=0,
+                rejected=[k for k in keys if k in (rejected or {})] if entry_id else [],
             )
             continue
         # two inputs of the same words on the same sheet share a key: a
@@ -1157,6 +1161,30 @@ def _with_confirmations(
         )
         report['confirm_again'] = todo * len(mine - set(keys))
     return status
+
+
+def _undecided(report: dict) -> list[str]:
+    decided = {*report.get('confirmed', []), *report.get('rejected', [])}
+    return [e['key'] for e in report.get('ready', []) if e['key'] not in decided]
+
+
+def _open_report(status: dict) -> dict | None:
+    """The input whose turn it is: the first with an undecided edit, or
+    with a confirmation not written yet (or taken out), which changes the
+    sheet every input after it is read on; or the first showing an
+    earlier reading, even with no edit in it: it is read again first.
+    Of a status with the overlay."""
+    for report in status.get('inputs', []):
+        if not isinstance(report, dict):
+            continue
+        if (
+            report.get('waiting')
+            or _undecided(report)
+            or report.get('confirmed_since')
+            or report.get('unconfirmed_since')
+        ):
+            return report
+    return None
 
 
 def _withdrawn(status: dict) -> bool:
@@ -1277,6 +1305,27 @@ async def _decidable(  # noqa: PLR0913
             status_code=409,
             detail='the last run does not name its updates; '
             f'read the updates again, then {verb}',
+        )
+    # in order: only the open input's undecided edits. A decided key may
+    # be sent again (the endpoints keep its first record, or refuse a
+    # confirmation of a rejected edit and the other way round)
+    turn = _open_report(status)
+    allowed = {
+        key
+        for report in status.get('inputs', [])
+        if isinstance(report, dict)
+        for key in (*report.get('confirmed', []), *report.get('rejected', []))
+    }
+    if turn is not None and not turn.get('waiting'):
+        allowed.update(_undecided(turn))
+    if set(keys) - allowed:
+        raise HTTPException(
+            status_code=409,
+            detail='this update is read again first; decide it when it is ready'
+            if turn is not None
+            and turn.get('waiting')
+            and set(keys) & {e['key'] for e in turn.get('ready', [])}
+            else 'decide the updates above first',
         )
     # a decision is on the words the report read, not a revision made since
     inputs = await voice.collect_inputs(

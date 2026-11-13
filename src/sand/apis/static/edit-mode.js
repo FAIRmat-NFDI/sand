@@ -10,8 +10,8 @@
 
 import { errorDetail, experimentUrl } from "./api.js";
 import {
-  checkedKeys, confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputsToRead, pendingKeys,
-  readKey, reportsByEntry, unwrittenCount, unwrittenKey, writtenEdits,
+  checkedKeys, confirmAllLabel, decidableKeys, describeEditPhase, downloadFilename, editSummary, inputsToRead,
+  openReport, readKey, reportsByEntry, unwrittenCount, unwrittenKey, writtenEdits,
 } from "./edit-logic.js";
 import { requireExperiment, showSheet } from "./experiments.js";
 import { rejectEdit } from "./feedback.js";
@@ -58,6 +58,9 @@ let headerFor = null;
 let reportsShown = {}; // the last status's reports, by entry id
 let readFor = null; // readKey of the inputs the last job was started for
 let wroteFor = null; // unwrittenKey the last write was started for
+// the open update showing an earlier reading the last job was started
+// for: read once (a decision above made it the open one)
+let turnFor = null;
 let writeTimer = null; // {timer, experiment}: the write about to start
 // a job found failed before the inputs list arrived: its readKey is the
 // list's, whatever it turns out to be (no restart on a reload)
@@ -123,13 +126,13 @@ function updateProgress() {
 }
 
 // `checked`: how many pending edits have a check
-function showPending(keys, checked = 0) {
+function showPending(keys, checked = 0, update = null) {
   pending = keys;
   // this experiment's own confirm-all brings the button back itself
   if (current && confirming === current.entry_id) return;
   confirmAllBtn.hidden = keys.length === 0;
   confirmAllBtn.disabled = false;
-  confirmAllLabelEl.textContent = confirmAllLabel(keys.length, checked);
+  confirmAllLabelEl.textContent = confirmAllLabel(keys.length, checked, update);
 }
 
 // the sheet to download is the last run's: not while a job runs, not
@@ -231,8 +234,11 @@ async function poll(experiment, generation) {
     : reportsByEntry(status);
   setReports(reportsShown, running, editActions(experiment));
   if (status.phase === "completed") {
+    // confirm all: the edits of the update whose turn it is
     const all = status.inputs || [];
-    showPending(pendingKeys(all), checkedKeys(all).length);
+    const keys = decidableKeys(all);
+    const open = keys.length ? openReport(all) : null;
+    showPending(keys, open ? checkedKeys([open]).length : 0, open && open.input);
   } else {
     showPending([]);
   }
@@ -280,6 +286,15 @@ function settle(experiment, status) {
       if (stillShown(experiment) && !running) startJob(experiment);
     }, WRITE_DELAY_MS);
     writeTimer = { timer, experiment };
+    return;
+  }
+  // a job that did not start for it (a recording being transcribed)
+  // leaves the reading of new words below to start the next one
+  const turn = status ? openReport(status.inputs || []) : null;
+  const why = turn && turn.waiting ? status.job_id + ":" + turn.entry_id : null;
+  if (why && why !== turnFor) {
+    turnFor = why;
+    startJob(experiment);
     return;
   }
   if (!inputsSeen || inputsSeen.entryId !== experiment.entry_id) return;
@@ -420,6 +435,7 @@ export function showEdit(experiment, view) {
   reportsShown = {};
   readFor = null;
   wroteFor = null;
+  turnFor = null;
   idle();
   showPending([]);
   updateProgress();

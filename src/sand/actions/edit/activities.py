@@ -18,7 +18,7 @@ from sand.actions.edit.models import (
     WriteStatusInput,
 )
 from sand.services.nomad_api import XLSX_CONTENT_TYPE
-from sand.sheet_edit.apply import Step, apply_all
+from sand.sheet_edit.apply import Step, apply_all, waits
 from sand.sheet_edit.catalog import Catalog
 from sand.sheet_edit.changelog import Confirmation
 from sand.sheet_edit.edits import ProposedEdits
@@ -28,6 +28,7 @@ from sand.sheet_edit.session import (
     CONFIRMATIONS_FILE,
     FINAL_FILE,
     ORIGINAL_FILE,
+    REJECTIONS_FILE,
     STATUS_FILE,
     LlmCache,
     cache_key,
@@ -36,6 +37,7 @@ from sand.sheet_edit.session import (
     load_confirmations,
     load_llm_cache,
     read_confirmations,
+    read_rejections,
 )
 
 JSON_TYPE = 'application/json'
@@ -56,6 +58,9 @@ async def collect_edit_inputs(data: EditInput) -> dict:
         confirmations = await voice.writer.read_raw_file(
             client, data.upload_id, CONFIRMATIONS_FILE
         )
+        rejections = await voice.writer.read_raw_file(
+            client, data.upload_id, REJECTIONS_FILE
+        )
     if original is None:
         raise ApplicationError(
             'no sheet was uploaded for editing in this collection', non_retryable=True
@@ -70,12 +75,15 @@ async def collect_edit_inputs(data: EditInput) -> dict:
     try:
         confirmed = read_confirmations(confirmations)
         load_confirmations(confirmed)  # malformed entries stop the job here
+        # which input waits for its turn depends on them
+        rejected = sorted(read_rejections(rejections))
     except ValueError as why:
         raise ApplicationError(str(why), non_retryable=True) from why
     return {
         'texts': [i.text for i in inputs],
         'input_entry_ids': [i.entry_id for i in inputs],
         'confirmations': confirmed,
+        'rejections': rejected,
         'llm_model_name': common.llm_model_name(),
     }
 
@@ -94,6 +102,8 @@ async def replay_cached_inputs(data: ReplayInput) -> dict:
         set(files.confirmations),
         files.cache.proposals,
         cached_only=True,
+        in_turn=True,
+        rejected=frozenset(data.rejections),
     )
     confirmed = set(files.confirmations)
     return {
@@ -109,14 +119,15 @@ async def replay_cached_inputs(data: ReplayInput) -> dict:
 async def prepare_input(data: PrepareInput) -> dict:
     """The two prompts for one input, against the sheet the earlier inputs
     left; or nothing to ask, when the model already answered these words
-    on this sheet."""
+    on this sheet, or the input waits for its turn (apply.py)."""
     from sand.sheet_edit.catalog import build
     from sand.sheet_edit.resolve import prompts
 
     files = await _read_files(data)
     text = _text(data)
-    state = _state_before(files, data)
-    if cache_key(text, state) in files.cache.proposals:
+    steps = _apply_inputs_from_cache(files, data.texts[: data.number - 1], data)
+    state = steps[-1].state if steps else files.original
+    if cache_key(text, state) in files.cache.proposals or _waits(files, data, steps):
         return {'cached': True, 'prompts': []}
     return {
         'cached': False,
@@ -137,7 +148,8 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
 
     files = await _read_files(data)
     text = _text(data)
-    state = _state_before(files, data)
+    before = _apply_inputs_from_cache(files, data.texts[: data.number - 1], data)
+    state = before[-1].state if before else files.original
     key = cache_key(text, state)
     if data.answers:
         catalog = build(state)
@@ -149,13 +161,13 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
         ]
         files.cache.add(key, agree(opinions, catalog), data.job_id)
         await _write_cache(files, data)
-    elif key not in files.cache.proposals:
+    elif key not in files.cache.proposals and not _waits(files, data, before):
         # the cache file was lost between prepare and apply
         raise ApplicationError(
             f'input {data.number} has no answer and no cached proposal; run again',
             non_retryable=True,
         )
-    step = _apply_inputs_from_cache(files, data.texts[: data.number])[-1]
+    step = _apply_inputs_from_cache(files, data.texts[: data.number], data)[-1]
     return _report(
         data.number, data.entry_id, step, set(files.confirmations), not data.answers
     )
@@ -177,7 +189,7 @@ async def store_final_sheet_and_changelog(data: JobInput) -> dict:
     from sand.sheet_edit.workbook import sha256
 
     files = await _read_files(data)
-    steps = _apply_inputs_from_cache(files, data.texts)
+    steps = _apply_inputs_from_cache(files, data.texts, data)
     final = steps[-1].state if steps else files.original
     log = changelog(files.original, steps, files.confirmations, data.llm_model_name)
     try:
@@ -305,7 +317,9 @@ def _text(data: PrepareInput) -> str:
     return data.texts[data.number - 1]
 
 
-def _apply_inputs_from_cache(files: _Files, texts: list[str]) -> list[Step]:
+def _apply_inputs_from_cache(
+    files: _Files, texts: list[str], data: JobInput
+) -> list[Step]:
     """The inputs applied in order, every proposal from the cache: the
     model is asked by the workflow, never from here."""
     return apply_all(
@@ -314,12 +328,21 @@ def _apply_inputs_from_cache(files: _Files, texts: list[str]) -> list[Step]:
         _never_asked,
         set(files.confirmations),
         files.cache.proposals,
+        in_turn=True,
+        rejected=frozenset(data.rejections),
     )
 
 
-def _state_before(files: _Files, data: PrepareInput) -> bytes:
-    steps = _apply_inputs_from_cache(files, data.texts[: data.number - 1])
-    return steps[-1].state if steps else files.original
+def _waits(files: _Files, data: PrepareInput, before: list[Step]) -> bool:
+    state = before[-1].state if before else files.original
+    return waits(
+        before,
+        _text(data),
+        state,
+        files.cache.proposals,
+        confirmed=set(files.confirmations),
+        rejected=frozenset(data.rejections),
+    )
 
 
 def _never_asked(text: str, catalog: Catalog) -> ProposedEdits:
@@ -347,6 +370,8 @@ def _report(
         'entry_id': entry_id,
         'text': step.text,
         'from_cache': from_cache,
+        # an earlier answer until its turn: read again then (apply.py)
+        'waiting': step.waiting,
         'preview': step.interpretation.preview,
         'ready': [
             {
@@ -358,7 +383,11 @@ def _report(
             }
             for key, edit in step.interpretation.ready.items()
         ],
-        'confirmed': [key for key in step.interpretation.ready if key in confirmed],
+        'confirmed': [
+            key
+            for key in step.interpretation.ready
+            if key in confirmed and not step.waiting
+        ],
         # what the job could not settle (uncertain, ambiguous, not found)
         'unresolved': len(step.interpretation.proposal.unresolved),
         # edits a check refused, and edits the sheet already holds
