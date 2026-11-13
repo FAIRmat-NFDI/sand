@@ -641,7 +641,7 @@ def anchor_problems(
         )
     if not in_words(edit.anchor.equals, edit.said):
         problems.append(
-            f'{column_name(anchor)} {edit.anchor.equals!r}: not in your words'
+            f'{column_name(anchor)}: you did not say {edit.anchor.equals!r}'
         )
     return problems, []
 

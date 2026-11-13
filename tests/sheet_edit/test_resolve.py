@@ -164,8 +164,9 @@ def test_two_steps_with_the_same_label_stay_two_steps_when_reversed(catalog):
 
 def test_both_passes_keep_the_anchor_to_the_users_value():
     for second in (False, True):
-        prompt = system_prompt(second_opinion=second)
-        assert '"not_found"' in prompt.split('anchor')[-1]
+        prompt = ' '.join(system_prompt(second_opinion=second).split())
+        assert 'the value the user named' in prompt
+        assert 'never a' in prompt.split('the value the user named')[1]
 
 
 def test_the_schema_cannot_express_what_only_code_produces(catalog):

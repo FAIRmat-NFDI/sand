@@ -34,7 +34,7 @@
       "id": "anchor-not-held",
       "why": "the anchor names a solvent step 3 does not hold (it holds ethanol): said as not found, never answered with the table's ethanol",
       "text": "the volume of the DMF in step 3 to 80 for all samples",
-      "expect": {"edits": [], "unresolved": ["not_found"]}
+      "expect": {"edits": [], "flagged": [{"step": 3, "column": "Solvent 1 volume"}], "unresolved": ["not_found"]}
     },
     {
       "id": "where-rows",
