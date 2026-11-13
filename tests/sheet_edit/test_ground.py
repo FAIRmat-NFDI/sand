@@ -895,9 +895,22 @@ def test_an_anchor_stays_in_its_step(catalog):
     )
 
 
-def test_an_anchor_value_missing_from_the_words_is_a_doubt(catalog):
+def test_an_anchor_value_missing_from_the_words_is_checked(catalog):
     result = ground(ipa(CLEAN_TIME_2, said='second cleaning time 300'), catalog)
-    assert result.doubts == ("'IPA': not found in your words",)
+    assert (
+        checked(result) == "Solvent 2 (1: Cleaning UV-Ozone) 'IPA': not in your words"
+    )
+    assert result.doubts == ()
+
+
+def test_an_anchor_the_table_holds_for_the_one_said_is_checked(catalog):
+    # the user said DMSO, the column holds IPA: the model put the table's
+    # value in, and the edit would be the IPA step's
+    result = ground(ipa(CLEAN_TIME_2, said='time of the DMSO 300'), catalog)
+    assert (
+        checked(result) == "Solvent 2 (1: Cleaning UV-Ozone) 'IPA': not in your words"
+    )
+    assert result.confidence == 'low'
 
 
 # --- V value in the words ---------------------------------------------------------
