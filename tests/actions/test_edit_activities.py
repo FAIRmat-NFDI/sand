@@ -366,10 +366,12 @@ async def test_two_jobs_on_one_upload_cannot_lose_each_others_answers(upload):
 
 
 def speed_edit(first, last, new):
-    said = f'speed {new} for samples {first} to {last}'
+    """Named by its old value: input 1 writing 4000 moves the 3000s."""
+    said = f'speed {new} for samples {first} to {last} from 3000'
     edit = {
         **SPEED_EDIT,
         'rows': {'first': first, 'last': last, 'subbatch': None},
+        'said_old': '3000',
         'new': new,
         'said': said,
     }
@@ -406,6 +408,7 @@ async def test_an_input_below_an_undecided_one_waits_without_a_model_call(upload
     assert prepared == {'cached': True, 'prompts': []}
     three = await activities.agree_cache_and_apply_input(apply(upload, 3, [], 'job-2'))
     assert three['waiting'] is True
+    assert "no longer holds '3000' on samples 1–3" in three['why_waiting']
     assert three['confirmed'] == []
     assert three['cells_written'] == 0
     assert [e['line'] for e in three['ready']] == [e['line'] for e in first[2]['ready']]
@@ -429,6 +432,35 @@ async def test_an_input_below_an_undecided_one_waits_without_a_model_call(upload
         PrepareInput(**rejected.model_dump(), number=3)
     )
     assert len(prepared['prompts']) == 2  # noqa: PLR2004
+
+
+async def test_an_answer_that_still_holds_is_not_asked_again(upload):
+    said = 'time 2 to 300 for samples 4 to 5'
+    time_edit = {
+        **SPEED_EDIT,
+        'target': 'C014',
+        'rows': {'first': '4', 'last': '5', 'subbatch': None},
+        'old': '600',
+        'new': '300',
+        'said': said,
+    }
+    upload.inputs = [collected('e1', SAID), collected('e2', said)]
+    first = await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2)
+    )
+    await activities.agree_cache_and_apply_input(
+        apply(upload, 2, [answer(time_edit)] * 2)
+    )
+    await confirm(upload, first['ready'][0]['key'])
+
+    assert await activities.prepare_input(prepare(upload, 2)) == {
+        'cached': True,
+        'prompts': [],
+    }
+    report = await activities.agree_cache_and_apply_input(apply(upload, 2, []))
+    assert report['waiting'] is False
+    assert len(report['ready']) == 1
+    assert len(cache_file(upload)['proposals']) == 2  # noqa: PLR2004
 
 
 async def test_applying_without_answers_needs_the_cache(upload):

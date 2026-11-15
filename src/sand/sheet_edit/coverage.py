@@ -89,7 +89,7 @@ def coverage(instruction: str, proposal: ProposedEdits, catalog: Catalog) -> Cov
     for n in numbers(instruction):
         region = _number_region(n, quoted, runs)
         _record((n.start, n.end), region, quoted, flagged, used)
-    for pattern in _sheet_values(catalog).values():
+    for pattern in sheet_values(catalog).values():
         for m in pattern.finditer(instruction):
             region = _value_region(pattern, m.span(), quoted, runs)
             _record(m.span(), region, quoted, flagged, used)
@@ -230,7 +230,7 @@ def _value_region(
     return _run_at(*span, runs)
 
 
-def _sheet_values(catalog: Catalog) -> dict[str, re.Pattern]:
+def sheet_values(catalog: Catalog) -> dict[str, re.Pattern]:
     """The texts the cells hold ('DMSO', 'Ethanol wash', a label, a Nomad
     ID), each with the pattern that finds it written in any case. Numbers
     are left to the number check."""
@@ -251,7 +251,7 @@ def _vocabulary(catalog: Catalog) -> set[str]:
     'coating', 'speed', 'rpm', 'ethanol', 'hot'."""
     texts = [c.column.header for c in catalog.columns]
     texts += [c.column.section.label for c in catalog.columns]
-    texts += list(_sheet_values(catalog))
+    texts += list(sheet_values(catalog))
     words = {w.lower() for w in _WORD_RE.findall(' '.join(texts))}
     return words - _GENERIC - set(_JOINING)
 

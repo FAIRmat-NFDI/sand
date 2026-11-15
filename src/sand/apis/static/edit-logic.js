@@ -201,6 +201,15 @@ export function previewNotes(report) {
       && !line.startsWith("⚠ no update in:"));
 }
 
+// the line under a waiting input: its answer is an earlier reading, and
+// why it does not hold on this sheet when the job could tell
+export function earlierNote(report) {
+  const why = report.why_waiting;
+  return why
+    ? "An earlier reading: " + why + ". The update is read again when its turn comes."
+    : "An earlier reading: the update is read again when its turn comes.";
+}
+
 // the confirmed edits the last run wrote
 export function writtenCount(status) {
   let count = 0;

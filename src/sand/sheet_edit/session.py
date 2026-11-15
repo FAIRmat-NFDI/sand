@@ -25,9 +25,10 @@ import datetime
 import json
 from dataclasses import dataclass, field
 
-from sand.sheet_edit.apply import Cache, OldRead
+from sand.sheet_edit.apply import Answer, Cache, CacheKey
 from sand.sheet_edit.changelog import Confirmation
 from sand.sheet_edit.edits import ProposedEdits, Unreadable
+from sand.sheet_edit.reads import from_json, to_json
 from sand.sheet_edit.workbook import sha256
 
 ORIGINAL_FILE = 'sheet_edit/uploaded.xlsx.origin'
@@ -38,7 +39,7 @@ CONFIRMATIONS_FILE = 'sheet_edit/confirmations.json'
 REJECTIONS_FILE = 'sheet_edit/rejections.json'
 STATUS_FILE = 'sheet_edit/status.json'
 
-CacheKey = tuple[str, str]
+KEEP_PER_WORDS = 8  # answers kept per words in the shared cache
 
 
 def job_cache_file(job_id: str) -> str:
@@ -57,43 +58,48 @@ class LlmCache:
     """The model's answers so far, as `apply_all` reads them, plus which
     job got each one."""
 
-    proposals: Cache = field(default_factory=dict)
+    answers: Cache = field(default_factory=dict)
     jobs: dict[CacheKey, str] = field(default_factory=dict)
-    # the check of each edit's `old` on the sheet it was read on
-    # (`ground.read_old`); absent for an answer stored before it existed
-    old_read: OldRead = field(default_factory=dict)
 
-    def add(
-        self,
-        key: CacheKey,
-        proposal: ProposedEdits,
-        job: str,
-        old_read: list[list[str]] | None = None,
-    ) -> None:
-        self.proposals[key] = proposal
+    def add(self, key: CacheKey, answer: Answer, job: str) -> None:
+        self.answers[key] = answer
         self.jobs[key] = job
-        if old_read is None:
-            self.old_read.pop(key, None)
-        else:
-            self.old_read[key] = old_read
 
     def update(self, other: 'LlmCache') -> None:
         """`other`'s entries win."""
-        for key, proposal in other.proposals.items():
-            self.add(key, proposal, other.jobs[key], other.old_read.get(key))
+        for key, answer in other.answers.items():
+            self.add(key, answer, other.jobs[key])
 
     def of_job(self, job: str, readable_only: bool = False) -> 'LlmCache':
         """The entries one job got; without its unreadable answers when
         they are published for later jobs, which should ask again."""
         cache = LlmCache()
-        for key, proposal in self.proposals.items():
+        for key, answer in self.answers.items():
             if self.jobs[key] != job:
                 continue
             if readable_only and any(
-                isinstance(u, Unreadable) for u in proposal.unresolved
+                isinstance(u, Unreadable) for u in answer.proposal.unresolved
             ):
                 continue
-            cache.add(key, proposal, job, self.old_read.get(key))
+            cache.add(key, answer, job)
+        return cache
+
+    def trimmed(
+        self, keep: set[CacheKey], per_words: int = KEEP_PER_WORDS
+    ) -> 'LlmCache':
+        """The newest answers of each words, and every one in `keep` (the
+        job's own chain). An older answer is what putting things back
+        finds again; past a few the sheet has moved on."""
+        newest: dict[str, list[CacheKey]] = {}
+        # an answer saved before `seq` goes by its place, as in `lookup`
+        order = {k: (a.seq, i) for i, (k, a) in enumerate(self.answers.items())}
+        for key in sorted(self.answers, key=order.__getitem__, reverse=True):
+            newest.setdefault(key[0], []).append(key)
+        kept = {k for keys in newest.values() for k in keys[:per_words]} | keep
+        cache = LlmCache()
+        for key, answer in self.answers.items():
+            if key in kept:
+                cache.add(key, answer, self.jobs[key])
         return cache
 
 
@@ -123,7 +129,14 @@ def load_llm_cache(
         unreadable = any(isinstance(u, Unreadable) for u in proposal.unresolved)
         if not isinstance(got_by, str) or (unreadable and got_by != job):
             continue
-        cache.add((text_hash, state_hash), proposal, got_by, _old_read(entry, proposal))
+        seq = entry.get('seq', 0)
+        answer = Answer(
+            proposal,
+            _old_read(entry, proposal),
+            from_json(entry['reads']) if 'reads' in entry else None,
+            seq if isinstance(seq, int) and not isinstance(seq, bool) else 0,
+        )
+        cache.add((text_hash, state_hash), answer, got_by)
     return cache
 
 
@@ -132,21 +145,26 @@ def llm_cache_json(cache: LlmCache, model: str, prompt_version: str) -> dict:
         'model': model,
         'prompt_version': prompt_version,
         'proposals': {
-            f'{text}:{state}': {
-                'proposal': proposal.model_dump(mode='json'),
-                'job': cache.jobs[(text, state)],
-                **(
-                    {'old_read': cache.old_read[(text, state)]}
-                    if (text, state) in cache.old_read
-                    else {}
-                ),
-            }
-            for (text, state), proposal in cache.proposals.items()
+            f'{text}:{state}': _entry_json(answer, cache.jobs[(text, state)])
+            for (text, state), answer in cache.answers.items()
         },
     }
 
 
-def _old_read(entry: dict, proposal: ProposedEdits) -> list[list[str]] | None:
+def _entry_json(answer: Answer, job: str) -> dict:
+    entry = {'proposal': answer.proposal.model_dump(mode='json'), 'job': job}
+    if answer.old_read is not None:
+        entry['old_read'] = [list(found) for found in answer.old_read]
+    if answer.reads is not None:
+        entry['reads'] = to_json(answer.reads)
+    if answer.seq:
+        entry['seq'] = answer.seq
+    return entry
+
+
+def _old_read(
+    entry: dict, proposal: ProposedEdits
+) -> tuple[tuple[str, ...], ...] | None:
     """One list of messages per edit, or None (not stored, or malformed:
     the answer is then used without an `old` check off its own sheet)."""
     found = entry.get('old_read')
@@ -157,7 +175,7 @@ def _old_read(entry: dict, proposal: ProposedEdits) -> list[list[str]] | None:
             isinstance(f, list) and all(isinstance(m, str) for m in f) for f in found
         )
     ):
-        return found
+        return tuple(tuple(f) for f in found)
     return None
 
 

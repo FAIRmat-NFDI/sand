@@ -9,7 +9,7 @@
 // and starts the job that reads a new or revised input.
 
 import { errorDetail, experimentUrl } from "./api.js";
-import { inputState, openReport, previewNotes, rewriteWarning } from "./edit-logic.js";
+import { earlierNote, inputState, openReport, previewNotes, rewriteWarning } from "./edit-logic.js";
 import { selectedExperiment } from "./experiments.js";
 import { editReported, reportEdit } from "./feedback.js";
 import { clearError, confirmDialog, showEntryLink, showError } from "./ui.js";
@@ -406,7 +406,7 @@ function renderReport(report, decide) {
   if (report.waiting) {
     const p = document.createElement("p");
     p.className = "report-note report-earlier";
-    p.textContent = "An earlier reading: the update is read again when its turn comes.";
+    p.textContent = earlierNote(report);
     box.append(p);
   }
   for (const note of previewNotes(report)) {

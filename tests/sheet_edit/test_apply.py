@@ -1,4 +1,4 @@
-from sand.sheet_edit.apply import apply_all, interpret_instruction
+from sand.sheet_edit.apply import Answer, apply_all, interpret_instruction
 from sand.sheet_edit.catalog import build
 from sand.sheet_edit.edits import Anchor, Edit, NotFound, ProposedEdits, Range, Samples
 from sand.sheet_edit.ground import Refused, read_old
@@ -192,19 +192,21 @@ def test_each_step_is_verified_and_the_final_file_is_original_plus_changes(
     }
 
 
-def test_only_the_llm_call_is_cached_and_only_for_the_same_state(synthetic_xlsx):
+def test_an_answer_is_reused_while_what_it_named_is_where_it_was(synthetic_xlsx):
     llm, cache = FakeLLM(), {}
     first = run(synthetic_xlsx, [SOLVENT, TIME, SPEED_SAID], cache=cache, llm=llm)
     assert llm.calls == [SOLVENT, TIME, SPEED_SAID]
     # the same inputs again: nothing changed, nothing asked
     run(synthetic_xlsx, [SOLVENT, TIME, SPEED_SAID], cache=cache, llm=llm)
     assert llm.calls == [SOLVENT, TIME, SPEED_SAID]
-    # input 1 confirmed: inputs 2 and 3 see a new sheet and are asked again
-    run(synthetic_xlsx, [SOLVENT, TIME, SPEED_SAID], keys(first[0]), cache, llm)
-    assert llm.calls[3:] == [TIME, SPEED_SAID]
-    # input 2 reworded: only input 2 is asked; input 3's sheet is the same
+    # input 1 confirmed: input 2's DMSO is new in the sheet, it is asked
+    # again; input 3 names nothing that moved
+    steps = run(synthetic_xlsx, [SOLVENT, TIME, SPEED_SAID], keys(first[0]), cache, llm)
+    assert llm.calls[3:] == [TIME]
+    assert len(steps[2].interpretation.ready) == 1
+    # input 2 reworded: only input 2 is asked
     run(synthetic_xlsx, [SOLVENT, 'speed 3000', SPEED_SAID], keys(first[0]), cache, llm)
-    assert llm.calls[5:] == ['speed 3000']
+    assert llm.calls[4:] == ['speed 3000']
 
 
 def test_cached_only_stops_before_the_first_input_the_model_was_not_asked(
@@ -242,25 +244,29 @@ def in_turn(  # noqa: PLR0913
     )
 
 
-def test_in_turn_only_the_next_input_is_read_again(synthetic_xlsx):
-    inputs = [SOLVENT, SPEED_SAID, VARIATION_SAID]
+def test_in_turn_an_input_whose_answer_broke_is_read_in_its_turn(synthetic_xlsx):
+    inputs = [SOLVENT, SPEED_SAID, TIME]
     llm, cache = FakeLLM(), {}
     first = in_turn(synthetic_xlsx, inputs, cache=cache, llm=llm)
     # the first round: each read once, on the sheet it was added to
     assert llm.calls == inputs
     assert [s.waiting for s in first] == [False, False, False]
-    # input 1 confirmed: input 2's turn, input 3 waits
+    # input 1 confirmed: input 2's answer holds, it is open; input 3's
+    # DMSO is new in the sheet, it waits
     one = keys(first[0])
     steps = in_turn(synthetic_xlsx, inputs, one, cache=cache, llm=llm)
-    assert llm.calls[3:] == [SPEED_SAID]
+    assert llm.calls[3:] == []
     assert [s.waiting for s in steps] == [False, False, True]
-    # a waiting input writes nothing and shows its earlier answer
+    # a waiting input writes nothing, shows its earlier answer and why
     assert steps[2].written == ()
-    assert steps[2].interpretation.proposal == PROPOSALS[VARIATION_SAID]
+    assert steps[2].interpretation.proposal == PROPOSALS[TIME]
+    assert steps[2].why == (
+        "Solvent 2 (1: Cleaning UV-Ozone) now holds 'DMSO' on samples 1–3"
+    )
     # input 2 confirmed too: input 3's turn
     two = keys(steps[1])
     steps = in_turn(synthetic_xlsx, inputs, one | two, cache=cache, llm=llm)
-    assert llm.calls[4:] == [VARIATION_SAID]
+    assert llm.calls[3:] == [TIME]
     assert [s.waiting for s in steps] == [False, False, False]
 
 
@@ -338,11 +344,69 @@ def test_in_turn_an_input_below_an_undecided_one_waits_and_writes_nothing(
     assert steps[2].state == steps[1].state
 
 
-def test_a_waiting_answer_is_not_checked_against_a_value_written_above(
+def test_reject_delete_and_put_back_above_cost_no_reading(synthetic_xlsx):
+    inputs = [SOLVENT, SPEED_SAID, VARIATION_SAID]
+    llm, cache = FakeLLM(), {}
+    first = in_turn(synthetic_xlsx, inputs, cache=cache, llm=llm)
+    one = keys(first[0])
+    confirmed = in_turn(synthetic_xlsx, inputs, one, cache=cache, llm=llm)
+    # input 1 deleted: the inputs below name nothing it wrote
+    in_turn(synthetic_xlsx, inputs[1:], cache=cache, llm=llm)
+    # input 1 confirmed again: the answers read with it come back
+    again = in_turn(synthetic_xlsx, inputs, one, cache=cache, llm=llm)
+    assert llm.calls == inputs
+    assert [keys(s) for s in again] == [keys(s) for s in confirmed]
+
+
+def test_a_note_whose_anchor_went_is_read_in_its_turn_and_comes_back(
     synthetic_xlsx,
 ):
-    """Finding A: "speed 5000" read while the speed was 3000 waits after
-    "speed 4000" is written; its `old` 3000 is not a misreading."""
+    """'the time of the DMSO' after the DMSO note is rejected, then the
+    rejection undone."""
+    inputs = [SOLVENT, SPEED_SAID, TIME]
+    llm, cache = FakeLLM(), {}
+    first = in_turn(synthetic_xlsx, inputs, cache=cache, llm=llm)
+    one = keys(first[0])
+    steps = in_turn(synthetic_xlsx, inputs, one, cache=cache, llm=llm)
+    assert steps[2].waiting  # DMSO moved; input 2 is open
+    read = in_turn(synthetic_xlsx, inputs, one | keys(steps[1]), cache=cache, llm=llm)
+    assert llm.calls[3:] == [TIME]
+    # input 1 rejected: TIME's first answer holds again, nothing is read
+    steps = in_turn(
+        synthetic_xlsx, inputs, keys(read[1]), rejected=one, cache=cache, llm=llm
+    )
+    assert llm.calls[3:] == [TIME]
+    assert not steps[2].waiting
+    assert steps[2].interpretation.proposal == first[2].interpretation.proposal
+    # undone: the reading made with the DMSO holds again
+    steps = in_turn(synthetic_xlsx, inputs, one | keys(read[1]), cache=cache, llm=llm)
+    assert llm.calls[3:] == [TIME]
+    assert keys(steps[2]) == keys(read[2])
+
+
+def test_a_worked_out_value_is_never_reused(synthetic_xlsx):
+    higher = 'speed 10 percent higher'
+    proposals = {
+        **PROPOSALS,
+        higher: proposal(edit(SPEED, 'all', '3000', '3300', higher)),
+    }
+    calls = []
+
+    def resolve(text, catalog):
+        calls.append(text)
+        return proposals[text]
+
+    inputs, cache = [SOLVENT, higher], {}
+    first = run(synthetic_xlsx, inputs, cache=cache, llm=resolve)
+    run(synthetic_xlsx, inputs, keys(first[0]), cache, resolve)
+    assert calls == [SOLVENT, higher, higher]
+
+
+def test_a_reused_answer_is_not_checked_against_a_value_written_above(
+    synthetic_xlsx,
+):
+    """Finding A: "speed 5000" read while the speed was 3000, after "speed
+    4000" is written; its `old` 3000 is not a misreading."""
     faster = 'speed 5000'
     llm = FakeLLM()
     proposals = {
@@ -356,29 +420,21 @@ def test_a_waiting_answer_is_not_checked_against_a_value_written_above(
         return proposals[text]
 
     first = in_turn(synthetic_xlsx, inputs, cache=cache, llm=resolve)
-    stored = {key: read_old(p, build(synthetic_xlsx)) for key, p in cache.items()}
-
-    def run_waiting(old_read):
-        return apply_all(
-            synthetic_xlsx,
-            inputs,
-            resolve,
-            keys(first[0]),
-            cache,
-            in_turn=True,
-            old_read=old_read,
-        )
-
-    steps = run_waiting(stored)
-    assert steps[2].waiting
+    steps = in_turn(synthetic_xlsx, inputs, keys(first[0]), cache=cache, llm=resolve)
+    assert llm.calls == inputs
+    assert not steps[2].waiting  # names nothing: reused
     [ready] = steps[2].interpretation.ready.values()
     assert ready.checks == ()
     # compared live on that sheet, as before: the false check
     live = interpret_instruction(faster, steps[1].state, resolve)
     [ready] = live.ready.values()
     assert "holds '4000'" in ready.checks[0]
-    # an answer stored before the check was: no `old` comparison off its sheet
-    [ready] = run_waiting({}).__getitem__(2).interpretation.ready.values()
+    # an answer saved before reuse: it waits, with no `old` check off its sheet
+    old = {key: Answer(answer.proposal) for key, answer in cache.items()}
+    steps = in_turn(synthetic_xlsx, inputs, keys(first[0]), cache=old, llm=resolve)
+    assert steps[2].waiting
+    assert steps[2].why is None
+    [ready] = steps[2].interpretation.ready.values()
     assert ready.checks == ()
 
 
