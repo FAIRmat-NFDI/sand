@@ -114,10 +114,11 @@ async def replay_cached_inputs(data: ReplayInput) -> dict:
         rejected=frozenset(data.rejections),
     )
     confirmed = set(files.confirmations)
+    rejected = set(data.rejections)
     return {
         'replayed': len(steps),
         'reports': [
-            _report(number, entry_id, step, confirmed, from_cache=True)
+            _report(number, entry_id, step, confirmed, rejected, from_cache=True)
             for number, (entry_id, step) in enumerate(zip(data.entry_ids, steps), 1)
         ],
     }
@@ -133,8 +134,7 @@ async def prepare_input(data: PrepareInput) -> dict:
 
     files = await _read_files(data)
     steps = _apply_inputs_from_cache(files, data.texts[: data.number - 1], data)
-    state = steps[-1].state if steps else files.original
-    catalog = build(state)
+    catalog = build(_sheet_before(files, steps))
     if not _to_read(files, data, steps, catalog):
         return {'cached': True, 'prompts': []}
     return {
@@ -157,7 +157,7 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
     files = await _read_files(data)
     text = _text(data)
     before = _apply_inputs_from_cache(files, data.texts[: data.number - 1], data)
-    state = before[-1].state if before else files.original
+    state = _sheet_before(files, before)
     catalog = build(state)
     if data.answers:
         opinions = [
@@ -182,7 +182,12 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
         )
     step = _apply_inputs_from_cache(files, data.texts[: data.number], data)[-1]
     return _report(
-        data.number, data.entry_id, step, set(files.confirmations), not data.answers
+        data.number,
+        data.entry_id,
+        step,
+        set(files.confirmations),
+        set(data.rejections),
+        from_cache=not data.answers,
     )
 
 
@@ -352,7 +357,7 @@ def _to_read(
     files: _Files, data: PrepareInput, before: list[Step], catalog: Catalog
 ) -> bool:
     """No answer holds on the input's sheet, and it does not wait."""
-    state = before[-1].state if before else files.original
+    state = _sheet_before(files, before)
     text = _text(data)
     if lookup(files.cache.answers, text, sha256(state), catalog) is not None:
         return False
@@ -365,6 +370,11 @@ def _to_read(
     )
 
 
+def _sheet_before(files: _Files, before: list[Step]) -> bytes:
+    """The preview the next input is read on."""
+    return before[-1].preview if before else files.original
+
+
 def _never_asked(text: str, catalog: Catalog) -> ProposedEdits:
     # inputs run in order and each is cached before the next starts, so a
     # miss means the cache file was lost under a running job
@@ -374,8 +384,14 @@ def _never_asked(text: str, catalog: Catalog) -> ProposedEdits:
     )
 
 
-def _report(
-    number: int, entry_id: str, step: Step, confirmed: set[str], from_cache: bool
+def _report(  # noqa: PLR0913
+    number: int,
+    entry_id: str,
+    step: Step,
+    confirmed: set[str],
+    rejected: set[str],
+    *,
+    from_cache: bool,
 ) -> dict:
     """One input as the GUI shows it: the preview, and each edit that may
     be confirmed with its key."""
@@ -404,11 +420,16 @@ def _report(
             }
             for key, edit in step.interpretation.ready.items()
         ],
+        # written; `held` waits for the inputs above (apply.py)
         'confirmed': [
             key
             for key in step.interpretation.ready
-            if key in confirmed and not step.waiting
+            if key in confirmed and not step.waiting and key not in step.held
         ],
+        'held': list(step.held),
+        # as this run knew them: one rejected or taken back since changes
+        # the preview of every input after it
+        'rejected': [key for key in step.interpretation.ready if key in rejected],
         # what the job could not settle (uncertain, ambiguous, not found)
         'unresolved': len(step.interpretation.proposal.unresolved),
         # edits a check refused, and edits the sheet already holds

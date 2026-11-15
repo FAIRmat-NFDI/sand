@@ -161,3 +161,72 @@ async def test_a_waiting_update_without_edits_still_holds_the_ones_after(voice):
 
     assert response.status_code == HTTPStatus.CONFLICT
     assert response.json()['detail'] == 'decide the updates above first'
+
+
+async def edits(voice) -> list[dict]:
+    async with api(voice) as client:
+        response = await client.get(
+            f'/api/input-collections/{UPLOAD}/edits',
+            params={'collection_entry_id': COLLECTION},
+        )
+    return response.json()['inputs']
+
+
+async def test_a_held_edit_is_decided_and_waits_for_no_write(voice):
+    # update 2 was confirmed, then update 1 reworded: read on a preview
+    # with update 1's edit, it is held until update 1 is decided
+    put_status(
+        voice,
+        report(1, 'n1', 'a1', rejected=[]),
+        report(2, 'n2', 'b1', held=['b1'], rejected=[]),
+    )
+    put_confirmed(voice, b1='n2')
+
+    first, second = await edits(voice)
+    assert (second['confirmed'], second['held']) == (['b1'], ['b1'])
+    assert second['confirmed_since'] == []  # no job is started for it
+    assert (await post(voice, 'confirm', ['a1'])).status_code == HTTPStatus.OK
+    assert (await edits(voice))[0]['confirmed_since'] == ['a1']
+
+
+async def test_a_rejection_waits_for_the_run_before_the_next_update(voice):
+    """The update after it was read with the edit: its proposal changes."""
+    put_status(
+        voice,
+        report(1, 'n1', 'a1', rejected=[]),
+        report(2, 'n2', 'b1', rejected=[]),
+    )
+    assert (await post(voice, 'reject', ['a1'])).status_code == HTTPStatus.OK
+
+    first, _ = await edits(voice)
+    assert first['rejected_since'] == ['a1']
+    response = await post(voice, 'confirm', ['b1'])
+    assert response.status_code == HTTPStatus.CONFLICT
+    # the run knows it: update 2 is open
+    put_status(
+        voice,
+        report(1, 'n1', 'a1', rejected=['a1']),
+        report(2, 'n2', 'b2', rejected=[]),
+    )
+    assert (await post(voice, 'confirm', ['b2'])).status_code == HTTPStatus.OK
+
+
+async def test_a_rejection_taken_back_reopens_its_update(voice):
+    put_status(voice, report(1, 'n1', 'a1', rejected=[]), report(2, 'n2', 'b1'))
+    await post(voice, 'reject', ['a1'])
+    # the next run knew it, and update 2 was confirmed and written
+    put_status(
+        voice,
+        report(1, 'n1', 'a1', rejected=['a1']),
+        report(2, 'n2', 'b1', confirmed=['b1'], rejected=[]),
+    )
+    put_confirmed(voice, b1='n2')
+
+    assert (await post(voice, 'undo-reject', ['a1'])).status_code == HTTPStatus.OK
+
+    first, second = await edits(voice)
+    assert (first['rejected'], first['unrejected_since']) == ([], ['a1'])
+    # update 2 was read without a1: it leaves the sheet with the next run
+    assert second['confirmed'] == ['b1']
+    response = await post(voice, 'confirm', ['a1'])
+    assert response.status_code == HTTPStatus.OK, response.text

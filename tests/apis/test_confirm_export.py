@@ -340,6 +340,29 @@ async def test_no_download_after_a_written_update_was_withdrawn(voice, synthetic
         assert 'revised or deleted' in response.json()['detail']
 
 
+async def test_no_download_after_a_rejection_was_taken_back(voice, synthetic_xlsx):
+    """Finding R: the updates after it were confirmed on a sheet without
+    the edit; the next run takes them out."""
+    put_final(
+        voice,
+        synthetic_xlsx,
+        inputs=[
+            {
+                'input': 1,
+                'entry_id': 'n1',
+                'ready': READY,
+                'confirmed': [],
+                'rejected': ['k1'],
+            }
+        ],
+    )
+
+    for path in ('final-sheet', 'changelog'):
+        response = await get(voice, path)
+        assert response.status_code == HTTPStatus.CONFLICT, path
+        assert 'rejection taken back' in response.json()['detail']
+
+
 async def test_a_name_in_any_script_downloads(voice, synthetic_xlsx):
     put_final(voice, synthetic_xlsx)
     voice.name = 'Batch 7 – 测试 "x"'

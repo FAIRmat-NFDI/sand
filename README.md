@@ -191,23 +191,26 @@ same browser; sand warns when the login is about to end.
    transcription failed has to be deleted first.
 4. The updates are decided **in order**, top to bottom: only the first
    one with an undecided edit has **Confirm** and **Reject** (and
-   Confirm all for its edits); the ones after it wait. **Confirm** the
-   edits that are right: they are written into the sheet a moment
-   later. The next update keeps its reading unless it names a value
-   they moved ("the volume of the DMF" after the DMF note); then it is
-   read again on the sheet they made.
-   **Reject** a wrong one: it is never written, the next update's turn
-   comes at once, and the edit as proposed is kept with the sheet, with
-   what was wrong if you say so (Undo takes it back). To get the right
-   edit, correct the update's text or add a new update. An update that
-   has to be read again waits: it shows its earlier reading, says what
-   changed, and is read only in its turn, so a decision costs at most
-   one reading, not one per update below it. A rejected, deleted or
-   undone update above costs no reading for an update that names
-   nothing it wrote.
-   A written update can still be revised or deleted: the sheet is
-   rebuilt without its old edits, and the updates after it are read
-   again in their turn and need deciding again.
+   Confirm all for its edits); the ones after it wait. Each update shows
+   what it does on the sheet the updates above would leave if their
+   edits are confirmed: with the time at 10 s, "time 1 s" then "time
+   2 s" shows 1 → 2.
+   **Confirm** the edits that are right: they are written into the sheet
+   a moment later, and the next update's turn comes with nothing to read
+   again.
+   **Reject** a wrong one: it is never written, and the edit as proposed
+   is kept with the sheet, with what was wrong if you say so (Undo takes
+   it back). The updates after it are worked out again without it, by
+   code ("time 2 s" becomes 10 → 2); one that names a value the rejected
+   edit set ("the volume of the DMF" after the DMF note) is read again.
+   An update that has to be read again waits: it shows its earlier
+   reading, says what changed, and is read only in its turn, so a
+   decision costs at most one reading, not one per update below it. To
+   get the right edit, correct the update's text or add a new update.
+   A written update can still be revised or deleted, and a rejection
+   taken back; the page warns first. The updates after it need deciding
+   again. A confirmed update whose edit did not change waits, "Confirmed,
+   waiting for the updates above", and is written once they are decided.
 5. **Download** the edited sheet (the original is a download too, under
    the file name it was uploaded with). The Edits card lists every edit
    written; the changelog, folded below it, holds every cell changed, the

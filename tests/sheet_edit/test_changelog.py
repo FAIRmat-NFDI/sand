@@ -247,6 +247,20 @@ def test_an_unconfirmed_input_between_two_confirmed_ones(synthetic_xlsx):
     steps = apply_all(synthetic_xlsx, inputs, resolve, set(confirmations), {})
     confirmations |= dict.fromkeys(steps[2].interpretation.ready, TESTER)
     steps = apply_all(synthetic_xlsx, inputs, resolve, set(confirmations), {})
+    # input 3 was read with input 2's edit: held, not in the log
+    assert steps[2].held
+    log = changelog(synthetic_xlsx, steps, confirmations, MODEL)
+    assert sorted({e.input for e in log.entries}) == [1]
+    check(synthetic_xlsx, steps[-1].state, log)
+    # input 2 rejected: input 3 is read on the written sheet again
+    rejected = frozenset(steps[1].interpretation.ready)
+    steps = apply_all(
+        synthetic_xlsx, inputs, resolve, set(confirmations), {}, rejected=rejected
+    )
+    confirmations |= dict.fromkeys(steps[2].interpretation.ready, TESTER)
+    steps = apply_all(
+        synthetic_xlsx, inputs, resolve, set(confirmations), {}, rejected=rejected
+    )
     log = changelog(synthetic_xlsx, steps, confirmations, MODEL)
     assert sorted({e.input for e in log.entries}) == [1, 3]
     y3 = [(e.input, e.old, e.new) for e in log.entries if e.cell == 'Y3']

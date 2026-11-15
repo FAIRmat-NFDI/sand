@@ -2,16 +2,23 @@
 order with the confirmed edits written.
 
 The working file is never patched in place. It is rebuilt from the
-untouched original every time:
+untouched original every time, as two sheets:
 
-    state_0 = original
-    state_k = the confirmed edits of input k written into state_{k-1}
-    final   = state_n
+    preview_0 = written_0 = original
+    input k is read on preview_{k-1}
+    written_k = written_{k-1} + the confirmed edits of input k, when
+                preview_{k-1} == written_{k-1}; else unchanged (held)
+    preview_k = preview_{k-1} + its confirmed and undecided edits
+    final     = written_n
 
-Input k is interpreted against state_{k-1}, so "the volume of the DMSO"
-sees a DMSO an earlier input set, and only once that edit is confirmed.
-A confirmation is bound to the input's text, the state it was given and
-the edit itself; a rerun that produces the identical edit keeps it, any
+So input k sees what the inputs above would leave if every edit still
+waiting there is confirmed: "the volume of the DMSO" sees a DMSO an
+earlier input proposes, and confirming that input leaves nothing to
+redo below it. A confirmed edit is written only onto the sheet it was
+read on: after an input above is reworded, or a rejection there taken
+back, it is held until the inputs above are decided. A confirmation is
+bound to the input's text, the sheet it was read on and the edit
+itself; a rerun that produces the identical edit keeps it, any
 difference asks again.
 
 An answer read on one sheet is reused on another while what it looked
@@ -21,8 +28,8 @@ input again.
 The inputs are decided in order. With `in_turn`, an input after the
 first one with an undecided edit is not read again: its turn comes
 after the inputs above are decided, and they may change its sheet once
-more. It shows its last answer, checked against today's sheet, and
-writes nothing (`waiting`).
+more. It shows its last answer, checked against today's sheet, writes
+nothing and adds nothing to the preview (`waiting`).
 """
 
 import json
@@ -109,17 +116,22 @@ class Interpretation:
 @dataclass(frozen=True)
 class Step:
     """One input of `apply_all`: what it meant, what was written, the
-    sheet after it."""
+    two sheets after it."""
 
     text: str
-    interpretation: Interpretation
+    interpretation: Interpretation  # read on the preview before it
     written: tuple[CellChange, ...]  # recomputed formula results included
     refused: str | None  # the writer refused the confirmed edits: state unchanged
-    state: bytes
+    state: bytes  # the written sheet: original plus confirmed edits
+    # the sheet the next input is read on: `state` plus the edits waiting
+    # for a decision
+    preview: bytes
     # an earlier answer shown until its turn: nothing written, not decidable
     waiting: bool = False
     why: str | None = None  # why that answer does not hold here (reads.py)
     answer: CacheKey | None = None  # the cache entry it used
+    # confirmed, not written: read on a preview the written sheet is not
+    held: tuple[str, ...] = ()
 
 
 def interpret_instruction(
@@ -228,10 +240,10 @@ def apply_all(  # noqa: PLR0913
     the module docstring; `rejected` are the keys decided without a
     confirmation."""
     steps: list[Step] = []
-    state = original
+    preview = written = original
     for text in inputs:
-        digest = sha256(state)
-        catalog = build(state)
+        digest = sha256(preview)
+        catalog = build(preview)
         found = lookup(cache, text, digest, catalog)
         if (
             found is None
@@ -241,7 +253,7 @@ def apply_all(  # noqa: PLR0913
             last = _newest_first(cache, sha256(text.encode()))[0]
             earlier = cache[last]
             interpretation = interpret_instruction(
-                text, state, _answering(earlier), _off_sheet(earlier), catalog
+                text, preview, _answering(earlier), _off_sheet(earlier), catalog
             )
             why = why_not(earlier.reads, text, earlier.proposal, catalog)
             steps.append(
@@ -250,7 +262,8 @@ def apply_all(  # noqa: PLR0913
                     interpretation,
                     (),
                     None,
-                    state,
+                    written,
+                    preview,
                     waiting=True,
                     why=why,
                     answer=last,
@@ -268,24 +281,81 @@ def apply_all(  # noqa: PLR0913
         # read on this sheet: `old` is checked live
         old = None if key[1] == digest else _off_sheet(answer)
         interpretation = interpret_instruction(
-            text, state, _answering(answer), old, catalog
+            text, preview, _answering(answer), old, catalog
         )
-        writes = [
-            Write(row, interpretation.catalog.index(edit.edit.target), edit.value)
-            for k, edit in interpretation.ready.items()
-            if k in confirmed
-            for row in edit.rows
-        ]
-        written: tuple[CellChange, ...] = ()
+        ready = interpretation.ready
+        mine = [k for k in ready if k in confirmed]
+        kept = [k for k in ready if k in confirmed or k not in rejected]
+        changes: tuple[CellChange, ...] = ()
         refused = None
-        if writes:
+        held: tuple[str, ...] = ()
+        on_written = preview == written
+        if mine and on_written:
             try:
-                result = write_cells(state, writes)
-                written, state = tuple(result.changes), result.xlsx
+                result = write_cells(written, _writes(interpretation, mine))
+                changes, written = tuple(result.changes), result.xlsx
             except WriteRefused as why:
                 refused = str(why)
-        steps.append(Step(text, interpretation, written, refused, state, answer=key))
+        elif mine:
+            # finding D: written here, the edit would land on a sheet the
+            # user did not see it on
+            held = tuple(mine)
+        if on_written and len(kept) == len(mine):
+            preview = written
+        elif kept:
+            preview = _previewed(
+                preview, written, on_written, interpretation, kept, mine
+            )
+        steps.append(
+            Step(
+                text,
+                interpretation,
+                changes,
+                refused,
+                written,
+                preview,
+                answer=key,
+                held=held,
+            )
+        )
     return steps
+
+
+def _writes(interpretation: Interpretation, keys: list[str]) -> list[Write]:
+    writes = []
+    for k in keys:
+        edit = interpretation.ready[k]
+        column = interpretation.catalog.index(edit.edit.target)
+        writes += [Write(row, column, edit.value) for row in edit.rows]
+    return writes
+
+
+def _previewed(  # noqa: PLR0913, PLR0917
+    preview: bytes,
+    written: bytes,
+    on_written: bool,
+    interpretation: Interpretation,
+    kept: list[str],
+    mine: list[str],
+) -> bytes:
+    """The preview after a step with edits waiting for a decision. A
+    write the writer refuses falls back to the confirmed edits alone
+    (finding N): else a confirmed edit could be in the written sheet and
+    not in the preview."""
+    # never downloaded: not read back. The bytes are the same as a
+    # verified write's, so a preview and the written sheet stay comparable
+    try:
+        return write_cells(preview, _writes(interpretation, kept), verified=False).xlsx
+    except WriteRefused:
+        pass
+    if on_written:
+        return written  # its confirmed write is done, or was refused too
+    if not mine:
+        return preview
+    try:
+        return write_cells(preview, _writes(interpretation, mine), verified=False).xlsx
+    except WriteRefused:
+        return preview
 
 
 def waits(

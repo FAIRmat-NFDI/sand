@@ -1273,7 +1273,8 @@ body {
   color: #1e5e24;
 }
 
-.input-meta .input-state.is-writing {
+.input-meta .input-state.is-writing,
+.input-meta .input-state.is-held {
   background: #dcefdc;
   color: #1e5e24;
   font-weight: 400;

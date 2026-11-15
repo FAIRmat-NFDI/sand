@@ -164,19 +164,23 @@ def test_nothing_confirmed_writes_nothing(synthetic_xlsx):
     assert steps[-1].state == synthetic_xlsx
 
 
-def test_a_later_input_sees_an_earlier_edit_once_it_is_confirmed(synthetic_xlsx):
-    steps = run(synthetic_xlsx, [SOLVENT, TIME])
-    # no DMSO yet: the anchor check finds it, the edit waits for its own check
+def test_a_later_input_is_read_on_the_edits_waiting_above(synthetic_xlsx):
+    """Section 4.1: input 2 sees the DMSO input 1 proposes, before
+    anything is decided; confirming input 1 leaves nothing to redo."""
+    llm, cache = FakeLLM(), {}
+    steps = run(synthetic_xlsx, [SOLVENT, TIME], cache=cache, llm=llm)
     (ready,) = steps[1].interpretation.ready.values()
-    assert "holds 'IPA' on samples 1–3, not 'DMSO'" in ready.checks[0]
-    assert '⚠ check:' in steps[1].interpretation.preview
-
-    steps = run(synthetic_xlsx, [SOLVENT, TIME], confirmed=keys(steps[0]))
-    assert len(steps[0].written) == THREE_ROWS
+    assert ready.checks == ()
     assert steps[1].interpretation.preview.startswith(
         '1: Cleaning UV-Ozone · Time 2 [s]: 600 → 300, samples 1–3'
     )
-    assert steps[1].written == ()  # not confirmed yet
+    assert steps[1].state == synthetic_xlsx  # nothing written
+
+    confirmed = run(synthetic_xlsx, [SOLVENT, TIME], keys(steps[0]), cache, llm)
+    assert len(confirmed[0].written) == THREE_ROWS
+    assert keys(confirmed[1]) == keys(steps[1])
+    assert confirmed[1].written == ()  # not confirmed yet
+    assert llm.calls == [SOLVENT, TIME]
 
 
 def test_each_step_is_verified_and_the_final_file_is_original_plus_changes(
@@ -193,17 +197,22 @@ def test_each_step_is_verified_and_the_final_file_is_original_plus_changes(
 
 
 def test_an_answer_is_reused_while_what_it_named_is_where_it_was(synthetic_xlsx):
+    inputs = [SOLVENT, TIME, SPEED_SAID]
     llm, cache = FakeLLM(), {}
-    first = run(synthetic_xlsx, [SOLVENT, TIME, SPEED_SAID], cache=cache, llm=llm)
-    assert llm.calls == [SOLVENT, TIME, SPEED_SAID]
-    # the same inputs again: nothing changed, nothing asked
-    run(synthetic_xlsx, [SOLVENT, TIME, SPEED_SAID], cache=cache, llm=llm)
-    assert llm.calls == [SOLVENT, TIME, SPEED_SAID]
-    # input 1 confirmed: input 2's DMSO is new in the sheet, it is asked
-    # again; input 3 names nothing that moved
-    steps = run(synthetic_xlsx, [SOLVENT, TIME, SPEED_SAID], keys(first[0]), cache, llm)
-    assert llm.calls[3:] == [TIME]
+    first = run(synthetic_xlsx, inputs, cache=cache, llm=llm)
+    assert llm.calls == inputs
+    # the same inputs again, and input 1 confirmed: its sheet is the one
+    # the inputs below were read on
+    run(synthetic_xlsx, inputs, cache=cache, llm=llm)
+    steps = run(synthetic_xlsx, inputs, keys(first[0]), cache, llm)
+    assert llm.calls == inputs
     assert len(steps[2].interpretation.ready) == 1
+    # input 1 rejected: input 2's DMSO is gone, it is asked again; input 3
+    # names nothing that moved
+    apply_all(
+        synthetic_xlsx, inputs, llm, set(), cache, rejected=frozenset(keys(first[0]))
+    )
+    assert llm.calls[3:] == [TIME]
     # input 2 reworded: only input 2 is asked
     run(synthetic_xlsx, [SOLVENT, 'speed 3000', SPEED_SAID], keys(first[0]), cache, llm)
     assert llm.calls[4:] == ['speed 3000']
@@ -220,13 +229,24 @@ def test_cached_only_stops_before_the_first_input_the_model_was_not_asked(
     assert [s.text for s in replayed] == [SOLVENT, TIME]
     assert [keys(s) for s in replayed] == [keys(first[0]), keys(first[1])]
     assert llm.calls == [SOLVENT, TIME]  # nothing asked
-    # input 1 confirmed: input 2's sheet is new, so the replay ends after 1
-    confirmed = keys(first[0])
+    # input 1 confirmed: input 2 was read on that sheet already
+    one = keys(first[0])
     written = apply_all(
-        synthetic_xlsx, [SOLVENT, TIME], llm, confirmed, cache, cached_only=True
+        synthetic_xlsx, [SOLVENT, TIME], llm, one, cache, cached_only=True
     )
-    assert [s.text for s in written] == [SOLVENT]
+    assert [s.text for s in written] == [SOLVENT, TIME]
     assert len(written[0].written) == THREE_ROWS
+    # input 1 rejected: input 2's DMSO is gone, so the replay ends after 1
+    rejected = apply_all(
+        synthetic_xlsx,
+        [SOLVENT, TIME],
+        llm,
+        set(),
+        cache,
+        cached_only=True,
+        rejected=frozenset(one),
+    )
+    assert [s.text for s in rejected] == [SOLVENT]
     assert apply_all(synthetic_xlsx, [], llm, set(), cache, cached_only=True) == []
 
 
@@ -248,29 +268,29 @@ def test_in_turn_an_input_whose_answer_broke_is_read_in_its_turn(synthetic_xlsx)
     inputs = [SOLVENT, SPEED_SAID, TIME]
     llm, cache = FakeLLM(), {}
     first = in_turn(synthetic_xlsx, inputs, cache=cache, llm=llm)
-    # the first round: each read once, on the sheet it was added to
+    # the first round: each read once, on the preview it was added to
     assert llm.calls == inputs
     assert [s.waiting for s in first] == [False, False, False]
-    # input 1 confirmed: input 2's answer holds, it is open; input 3's
-    # DMSO is new in the sheet, it waits
+    # input 1 rejected: input 2's answer holds, it is open; input 3's
+    # DMSO is gone, it waits
     one = keys(first[0])
-    steps = in_turn(synthetic_xlsx, inputs, one, cache=cache, llm=llm)
+    steps = in_turn(synthetic_xlsx, inputs, rejected=one, cache=cache, llm=llm)
     assert llm.calls[3:] == []
     assert [s.waiting for s in steps] == [False, False, True]
     # a waiting input writes nothing, shows its earlier answer and why
     assert steps[2].written == ()
     assert steps[2].interpretation.proposal == PROPOSALS[TIME]
     assert steps[2].why == (
-        "Solvent 2 (1: Cleaning UV-Ozone) now holds 'DMSO' on samples 1–3"
+        "Solvent 2 (1: Cleaning UV-Ozone) no longer holds 'DMSO' on samples 1–3"
     )
-    # input 2 confirmed too: input 3's turn
+    # input 2 confirmed: input 3's turn
     two = keys(steps[1])
-    steps = in_turn(synthetic_xlsx, inputs, one | two, cache=cache, llm=llm)
+    steps = in_turn(synthetic_xlsx, inputs, two, rejected=one, cache=cache, llm=llm)
     assert llm.calls[3:] == [TIME]
     assert [s.waiting for s in steps] == [False, False, False]
 
 
-def test_in_turn_a_rejection_changes_no_sheet_and_costs_no_call(synthetic_xlsx):
+def test_in_turn_a_rejection_costs_no_call(synthetic_xlsx):
     inputs = [SOLVENT, SPEED_SAID, VARIATION_SAID]
     llm, cache = FakeLLM(), {}
     first = in_turn(synthetic_xlsx, inputs, cache=cache, llm=llm)
@@ -279,7 +299,11 @@ def test_in_turn_a_rejection_changes_no_sheet_and_costs_no_call(synthetic_xlsx):
     )
     assert llm.calls == inputs
     assert [s.waiting for s in steps] == [False, False, False]
-    assert [keys(s) for s in steps] == [keys(s) for s in first]
+    # the inputs below are on another preview: new keys, the same answers
+    assert keys(steps[0]) == keys(first[0])
+    assert not keys(steps[1]) & keys(first[1])
+    assert steps[2].interpretation.proposal == first[2].interpretation.proposal
+    assert steps[2].state == synthetic_xlsx
 
 
 def test_in_turn_a_new_input_is_read_on_the_sheet_it_is_added_to(synthetic_xlsx):
@@ -298,50 +322,68 @@ def test_in_turn_a_new_input_is_read_on_the_sheet_it_is_added_to(synthetic_xlsx)
     assert not steps[2].waiting
 
 
-def test_in_turn_a_decided_input_keeps_its_edits_while_its_sheet_is_the_same(
-    synthetic_xlsx,
-):
-    inputs = [SOLVENT, SPEED_SAID]
+def test_a_confirmed_input_under_a_reworded_one_is_held(synthetic_xlsx):
+    """Finding D, section 4.1: "speed 4000" and "speed 5000" both
+    confirmed, then input 1 is reworded. Input 2 is still the edit
+    confirmed, 4000 -> 5000, and must not land on the 3000."""
+    faster, reworded = 'speed 5000', 'set speed 4000'
+    proposals = {
+        **PROPOSALS,
+        faster: proposal(edit(SPEED, 'all', '4000', '5000', faster)),
+        reworded: proposal(edit(SPEED, 'all', '3000', '4000', SPEED_SAID)),
+    }
+
+    def resolve(text, catalog):
+        return proposals[text]
+
     cache = {}
-    first = in_turn(synthetic_xlsx, inputs, cache=cache)
-    # input 2 confirmed before the order gate, input 1 undecided and
-    # reworded: nothing above input 2 is written, its sheet is the same
+    first = in_turn(synthetic_xlsx, [SPEED_SAID, faster], cache=cache, llm=resolve)
+    both = keys(first[0]) | keys(first[1])
+    done = in_turn(synthetic_xlsx, [SPEED_SAID, faster], both, cache=cache, llm=resolve)
+    assert len(done[1].written) == ALL_ROWS
+
+    steps = in_turn(synthetic_xlsx, [reworded, faster], both, cache=cache, llm=resolve)
+    assert keys(steps[1]) == keys(first[1])
+    assert steps[1].held == tuple(keys(first[1]))
+    assert steps[1].written == ()
+    assert steps[1].state == synthetic_xlsx
+    one = keys(steps[0])
+    # input 1 confirmed: input 2 is written with no further click
     steps = in_turn(
-        synthetic_xlsx,
-        ['solvent 2 to DMSO for samples 1 to 4', SPEED_SAID],
-        keys(first[1]),
-        cache=cache,
+        synthetic_xlsx, [reworded, faster], one | both, cache=cache, llm=resolve
     )
-    assert not steps[0].waiting
-    assert not steps[1].waiting  # cached on the original
+    assert steps[1].held == ()
     assert len(steps[1].written) == ALL_ROWS
-    # input 1 confirmed: input 2's sheet changed; it is read, as input 1
-    # is decided
+    # input 1 rejected instead: input 2 is on another sheet and asks again
     steps = in_turn(
         synthetic_xlsx,
-        ['solvent 2 to DMSO for samples 1 to 4', SPEED_SAID],
-        keys(steps[0]) | keys(first[1]),
+        [reworded, faster],
+        both,
+        rejected=one,
         cache=cache,
+        llm=resolve,
     )
-    assert not steps[1].waiting
+    assert not keys(steps[1]) & both
+    assert (steps[1].written, steps[1].held) == ((), ())
 
 
-def test_in_turn_an_input_below_an_undecided_one_waits_and_writes_nothing(
+def test_in_turn_an_input_below_an_undecided_one_waits_and_adds_nothing(
     synthetic_xlsx,
 ):
     cache = {}
     first = in_turn(synthetic_xlsx, [SOLVENT, SPEED_SAID, TIME], cache=cache)
-    # input 1 confirmed: input 2 is read and undecided; input 3 (its
-    # anchor sees the DMSO now) waits, its earlier answer shown
+    # input 1 rejected, input 2 undecided: input 3's DMSO is gone, it
+    # waits with its earlier answer, out of the sheets below it
     steps = in_turn(
         synthetic_xlsx,
-        [SOLVENT, SPEED_SAID, TIME],
-        keys(first[0]) | keys(first[2]),
+        [SOLVENT, SPEED_SAID, TIME, VARIATION_SAID],
+        rejected=keys(first[0]),
         cache=cache,
     )
     assert steps[2].waiting
     assert steps[2].written == ()
-    assert steps[2].state == steps[1].state
+    assert (steps[2].state, steps[2].preview) == (steps[1].state, steps[1].preview)
+    assert steps[3].interpretation.catalog == build(steps[1].preview)
 
 
 def test_reject_delete_and_put_back_above_cost_no_reading(synthetic_xlsx):
@@ -367,21 +409,18 @@ def test_a_note_whose_anchor_went_is_read_in_its_turn_and_comes_back(
     llm, cache = FakeLLM(), {}
     first = in_turn(synthetic_xlsx, inputs, cache=cache, llm=llm)
     one = keys(first[0])
-    steps = in_turn(synthetic_xlsx, inputs, one, cache=cache, llm=llm)
-    assert steps[2].waiting  # DMSO moved; input 2 is open
-    read = in_turn(synthetic_xlsx, inputs, one | keys(steps[1]), cache=cache, llm=llm)
-    assert llm.calls[3:] == [TIME]
-    # input 1 rejected: TIME's first answer holds again, nothing is read
-    steps = in_turn(
-        synthetic_xlsx, inputs, keys(read[1]), rejected=one, cache=cache, llm=llm
+    steps = in_turn(synthetic_xlsx, inputs, rejected=one, cache=cache, llm=llm)
+    assert steps[2].waiting  # DMSO gone; input 2 is open
+    read = in_turn(
+        synthetic_xlsx, inputs, keys(steps[1]), rejected=one, cache=cache, llm=llm
     )
     assert llm.calls[3:] == [TIME]
-    assert not steps[2].waiting
-    assert steps[2].interpretation.proposal == first[2].interpretation.proposal
-    # undone: the reading made with the DMSO holds again
-    steps = in_turn(synthetic_xlsx, inputs, one | keys(read[1]), cache=cache, llm=llm)
+    assert not read[2].waiting
+    # undone: the first answer, read with the DMSO, holds again
+    steps = in_turn(synthetic_xlsx, inputs, keys(read[1]), cache=cache, llm=llm)
     assert llm.calls[3:] == [TIME]
-    assert keys(steps[2]) == keys(read[2])
+    assert not steps[2].waiting
+    assert keys(steps[2]) == keys(first[2])
 
 
 def test_a_worked_out_value_is_never_reused(synthetic_xlsx):
@@ -399,14 +438,24 @@ def test_a_worked_out_value_is_never_reused(synthetic_xlsx):
     inputs, cache = [SOLVENT, higher], {}
     first = run(synthetic_xlsx, inputs, cache=cache, llm=resolve)
     run(synthetic_xlsx, inputs, keys(first[0]), cache, resolve)
+    assert calls == [SOLVENT, higher]  # the same sheet
+    apply_all(
+        synthetic_xlsx,
+        inputs,
+        resolve,
+        set(),
+        cache,
+        rejected=frozenset(keys(first[0])),
+    )
     assert calls == [SOLVENT, higher, higher]
 
 
 def test_a_reused_answer_is_not_checked_against_a_value_written_above(
     synthetic_xlsx,
 ):
-    """Finding A: "speed 5000" read while the speed was 3000, after "speed
-    4000" is written; its `old` 3000 is not a misreading."""
+    """Finding A: "speed 5000" read while the speed was 3000 ("speed
+    4000" rejected); the rejection is undone and "speed 4000" confirmed.
+    Its `old` 3000 is not a misreading."""
     faster = 'speed 5000'
     llm = FakeLLM()
     proposals = {
@@ -419,19 +468,20 @@ def test_a_reused_answer_is_not_checked_against_a_value_written_above(
         llm.calls.append(text)
         return proposals[text]
 
-    first = in_turn(synthetic_xlsx, inputs, cache=cache, llm=resolve)
-    steps = in_turn(synthetic_xlsx, inputs, keys(first[0]), cache=cache, llm=resolve)
+    speed = keys(run(synthetic_xlsx, [SPEED_SAID])[0])
+    in_turn(synthetic_xlsx, inputs, rejected=speed, cache=cache, llm=resolve)
+    steps = in_turn(synthetic_xlsx, inputs, speed, cache=cache, llm=resolve)
     assert llm.calls == inputs
     assert not steps[2].waiting  # names nothing: reused
     [ready] = steps[2].interpretation.ready.values()
     assert ready.checks == ()
     # compared live on that sheet, as before: the false check
-    live = interpret_instruction(faster, steps[1].state, resolve)
+    live = interpret_instruction(faster, steps[1].preview, resolve)
     [ready] = live.ready.values()
     assert "holds '4000'" in ready.checks[0]
     # an answer saved before reuse: it waits, with no `old` check off its sheet
     old = {key: Answer(answer.proposal) for key, answer in cache.items()}
-    steps = in_turn(synthetic_xlsx, inputs, keys(first[0]), cache=old, llm=resolve)
+    steps = in_turn(synthetic_xlsx, inputs, speed, cache=old, llm=resolve)
     assert steps[2].waiting
     assert steps[2].why is None
     [ready] = steps[2].interpretation.ready.values()
@@ -511,3 +561,45 @@ def test_a_marked_edit_never_blocks_a_clean_one_of_the_same_cell(synthetic_xlsx)
     marked, clean = result.results
     assert isinstance(marked, Refused) and 'already changed' in marked.reasons[0]
     assert list(result.ready.values()) == [clean] and clean.checks == ()
+
+
+def test_the_old_value_is_the_one_the_edit_above_leaves(synthetic_xlsx):
+    """Section 1, time 600: "time 100" then "time 200" shows 100 -> 200;
+    rejecting the first makes it 600 -> 200, with no call."""
+    one, two = 'time 100 for samples 1 to 3', 'time 200 for samples 1 to 3'
+    proposals = {
+        one: proposal(edit(CLEAN_TIME_2, FIRST_THREE, '600', '100', one)),
+        two: proposal(edit(CLEAN_TIME_2, FIRST_THREE, '100', '200', two)),
+    }
+    calls = []
+
+    def resolve(text, catalog):
+        calls.append(text)
+        return proposals[text]
+
+    cache = {}
+    first = in_turn(synthetic_xlsx, [one, two], cache=cache, llm=resolve)
+    assert first[1].interpretation.preview.startswith(
+        '1: Cleaning UV-Ozone · Time 2 [s]: 100 → 200, samples 1–3'
+    )
+    rejected = in_turn(
+        synthetic_xlsx, [one, two], rejected=keys(first[0]), cache=cache, llm=resolve
+    )
+    assert rejected[1].interpretation.preview.startswith(
+        '1: Cleaning UV-Ozone · Time 2 [s]: 600 → 200, samples 1–3'
+    )
+    assert calls == [one, two]
+
+
+def test_confirming_every_input_in_order_asks_nothing_more(synthetic_xlsx):
+    inputs = [SOLVENT, TIME, SPEED_SAID]
+    llm, cache = FakeLLM(), {}
+    steps = in_turn(synthetic_xlsx, inputs, cache=cache, llm=llm)
+    confirmed = set()
+    for n in range(len(inputs)):
+        confirmed |= keys(steps[n])
+        steps = in_turn(synthetic_xlsx, inputs, confirmed, cache=cache, llm=llm)
+        assert not any(s.waiting or s.held for s in steps)
+    assert llm.calls == inputs
+    assert steps[-1].state == steps[-1].preview
+    assert sum(len(s.written) > 0 for s in steps) == len(inputs)
