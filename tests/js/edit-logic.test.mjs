@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  confirmAllLabel, describeEditPhase, downloadFilename, editSummary, inputApplied, inputState,
+  confirmAllLabel, describeEditPhase, earlierNote, downloadFilename, editSummary, inputApplied, inputState,
   checkedKeys, decidableKeys, inputsToRead, openReport, pendingKeys, previewNotes, readKey, reportsByEntry, unwrittenCount,
   rewriteWarning, unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
@@ -328,4 +328,18 @@ test("confirm all says how many of its edits have a check", () => {
   assert.equal(confirmAllLabel(1, 1), "Confirm the edit, with a check");
   assert.equal(confirmAllLabel(3, 3), "Confirm all 3 edits, all with a check");
   assert.equal(confirmAllLabel(2), "Confirm all 2 edits");
+});
+
+test("a waiting input says why its earlier reading does not hold", () => {
+  assert.equal(
+    earlierNote({ ...REPORT, waiting: true, why_waiting: "Solvent 2 (1: Cleaning UV-Ozone) no longer holds 'DMF' on samples 1–3" }),
+    "An earlier reading: Solvent 2 (1: Cleaning UV-Ozone) no longer holds 'DMF' on samples 1–3. "
+      + "The update is read again when its turn comes.",
+  );
+  // a job that could not tell, or one from before the reason existed
+  assert.equal(
+    earlierNote({ ...REPORT, waiting: true, why_waiting: null }),
+    "An earlier reading: the update is read again when its turn comes.",
+  );
+  assert.equal(earlierNote({ ...REPORT, waiting: true }), earlierNote({ ...REPORT, why_waiting: null }));
 });

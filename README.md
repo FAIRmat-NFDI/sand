@@ -51,10 +51,11 @@ flowchart LR
   LLM only proposes; deterministic checks decide whether a proposed edit
   fits the sheet, and nothing is written without a confirmation. The
   final sheet is rebuilt from the original every time, then verified
-  cell by cell. An update the model already answered on the same sheet
-  is replayed from its saved answer, not sent to the model again, so a
-  run costs model calls only for updates that are new, reworded, or read
-  a sheet an earlier confirmation changed.
+  cell by cell. An update the model already answered is replayed from
+  its saved answer, not sent to the model again, while the values it
+  names ("the DMSO", "from 3000") sit in the same cells; so a run costs
+  model calls only for updates that are new, reworded, or that point at
+  something an earlier update changed.
 - The time of an update is the time it was made and cannot be changed:
   the order of updates is the order they were made.
 
@@ -192,13 +193,18 @@ same browser; sand warns when the login is about to end.
    one with an undecided edit has **Confirm** and **Reject** (and
    Confirm all for its edits); the ones after it wait. **Confirm** the
    edits that are right: they are written into the sheet a moment
-   later, and the next update is read again on the sheet they made.
+   later. The next update keeps its reading unless it names a value
+   they moved ("the volume of the DMF" after the DMF note); then it is
+   read again on the sheet they made.
    **Reject** a wrong one: it is never written, the next update's turn
    comes at once, and the edit as proposed is kept with the sheet, with
    what was wrong if you say so (Undo takes it back). To get the right
    edit, correct the update's text or add a new update. An update that
-   waits shows its earlier reading and is read again only in its turn,
-   so a confirmation costs one reading, not one per update below it.
+   has to be read again waits: it shows its earlier reading, says what
+   changed, and is read only in its turn, so a decision costs at most
+   one reading, not one per update below it. A rejected, deleted or
+   undone update above costs no reading for an update that names
+   nothing it wrote.
    A written update can still be revised or deleted: the sheet is
    rebuilt without its old edits, and the updates after it are read
    again in their turn and need deciding again.

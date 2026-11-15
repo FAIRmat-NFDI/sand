@@ -3,8 +3,10 @@ import json
 
 import pytest
 
+from sand.sheet_edit.apply import Answer
 from sand.sheet_edit.changelog import Confirmation
 from sand.sheet_edit.edits import Edit, ProposedEdits, Unreadable
+from sand.sheet_edit.reads import Reads, to_json
 from sand.sheet_edit.session import (
     LlmCache,
     cache_key,
@@ -20,61 +22,108 @@ EDIT = Edit(
     target='C025', rows='all', anchor=None, old='3000', new='4000', said='speed 4000'
 )
 PROPOSAL = ProposedEdits(edits=[EDIT], unresolved=[])
-UNREADABLE = ProposedEdits(
-    edits=[],
-    unresolved=[Unreadable(reason='unreadable', detail='no answer', said='speed 4000')],
+ANSWER = Answer(PROPOSAL)
+UNREADABLE = Answer(
+    ProposedEdits(
+        edits=[],
+        unresolved=[
+            Unreadable(reason='unreadable', detail='no answer', said='speed 4000')
+        ],
+    )
 )
 KEY = cache_key('speed 4000', b'sheet')
+READS = Reads(
+    None, 'columns', (('DMF', (('C013', 3), ('C013', 4))),), (), (('C014', 5),)
+)
 WHEN = datetime.datetime(2026, 10, 28, 12, 16, 5, tzinfo=datetime.UTC)
 
 
 def test_cache_round_trip_keeps_proposals_and_their_jobs():
     cache = LlmCache()
-    cache.add(KEY, PROPOSAL, 'job-1')
+    cache.add(KEY, ANSWER, 'job-1')
     cache.add(cache_key('other', b'sheet'), UNREADABLE, 'job-1')
     data = llm_cache_json(cache, MODEL, 'v1')
     assert set(data) == {'model', 'prompt_version', 'proposals'}
-    assert set(data['proposals']) == {f'{k[0]}:{k[1]}' for k in cache.proposals}
+    assert set(data['proposals']) == {f'{k[0]}:{k[1]}' for k in cache.answers}
 
     loaded = load_llm_cache(data, MODEL, 'v1', job='job-1')
-    assert loaded.proposals == cache.proposals
+    assert loaded.answers == cache.answers
     assert loaded.jobs == cache.jobs
 
 
-def test_the_old_check_travels_with_its_answer():
+def test_what_was_saved_on_its_sheet_travels_with_its_answer():
+    saved = Answer(PROPOSAL, (('holds 2000, not 3000',),), READS, 7)
     cache = LlmCache()
-    cache.add(KEY, PROPOSAL, 'job-1', [['holds 2000, not 3000']])
-    cache.add(cache_key('other', b'sheet'), PROPOSAL, 'job-1')
+    cache.add(KEY, saved, 'job-1')
+    cache.add(cache_key('other', b'sheet'), ANSWER, 'job-1')
     data = llm_cache_json(cache, MODEL, 'v1')
+    # an answer saved without them stays as small as before
+    other = data['proposals'][':'.join(cache_key('other', b'sheet'))]
+    assert set(other) == {'proposal', 'job'}
 
-    loaded = load_llm_cache(data, MODEL, 'v1', job='job-1')
-    assert loaded.old_read == {KEY: [['holds 2000, not 3000']]}
+    loaded = load_llm_cache(json.loads(json.dumps(data)), MODEL, 'v1', job='job-1')
+    assert loaded.answers[KEY] == saved
     # merged and published with the job's entries
     merged = LlmCache()
     merged.update(loaded.of_job('job-1'))
-    assert merged.old_read == loaded.old_read
+    assert merged.answers == loaded.answers
 
 
 @pytest.mark.parametrize('stored', [None, 'x', [], [['a'], ['b']], [[1]]])
 def test_an_answer_without_a_usable_old_check_still_loads(stored):
     cache = LlmCache()
-    cache.add(KEY, PROPOSAL, 'job-1')
+    cache.add(KEY, ANSWER, 'job-1')
     data = llm_cache_json(cache, MODEL, 'v1')
     if stored is not None:
         data['proposals'][f'{KEY[0]}:{KEY[1]}']['old_read'] = stored
 
     loaded = load_llm_cache(data, MODEL, 'v1', job='job-1')
-    assert loaded.proposals == {KEY: PROPOSAL}
-    assert loaded.old_read == {}
+    assert loaded.answers == {KEY: ANSWER}
+
+
+@pytest.mark.parametrize(
+    'reads',
+    [
+        None,
+        'x',
+        {},
+        {**to_json(READS), 'held': {'DMF': [['C013', 'three']]}},
+        {**to_json(READS), 'empty': [[3, 'C014']]},
+        {**to_json(READS), 'structure': 5},
+    ],
+)
+def test_a_malformed_read_set_makes_an_answer_for_its_own_sheet_only(reads):
+    cache = LlmCache()
+    cache.add(KEY, Answer(PROPOSAL, seq='x'), 'job-1')
+    data = llm_cache_json(cache, MODEL, 'v1')
+    data['proposals'][f'{KEY[0]}:{KEY[1]}']['reads'] = reads
+
+    loaded = load_llm_cache(data, MODEL, 'v1', job='job-1')
+    assert loaded.answers == {KEY: ANSWER}
+
+
+def test_the_shared_cache_keeps_the_newest_answers_and_the_jobs_chain():
+    cache = LlmCache()
+    keys = [cache_key('speed 4000', f'sheet {n}'.encode()) for n in range(12)]
+    for seq, key in enumerate(keys, 1):
+        cache.add(key, Answer(PROPOSAL, seq=seq), 'job-1')
+    cache.add(cache_key('other', b'sheet'), ANSWER, 'job-1')
+
+    kept = cache.trimmed({keys[0]}, per_words=3)
+    assert set(kept.answers) == {
+        keys[0],
+        *keys[-3:],
+        cache_key('other', b'sheet'),
+    }
 
 
 def test_an_unreadable_answer_is_kept_only_for_its_job():
     cache = LlmCache()
-    cache.add(KEY, PROPOSAL, 'job-1')
+    cache.add(KEY, ANSWER, 'job-1')
     cache.add(cache_key('other', b'sheet'), UNREADABLE, 'job-1')
     data = llm_cache_json(cache, MODEL, 'v1')
     loaded = load_llm_cache(data, MODEL, 'v1', job='job-2')
-    assert loaded.proposals == {KEY: PROPOSAL}
+    assert loaded.answers == {KEY: ANSWER}
 
 
 @pytest.mark.parametrize(
@@ -82,9 +131,9 @@ def test_an_unreadable_answer_is_kept_only_for_its_job():
 )
 def test_another_models_or_prompts_answers_are_dropped(model, prompt_version):
     cache = LlmCache()
-    cache.add(KEY, PROPOSAL, 'job-1')
+    cache.add(KEY, ANSWER, 'job-1')
     data = llm_cache_json(cache, MODEL, 'v1')
-    assert load_llm_cache(data, model, prompt_version, 'job-1').proposals == {}
+    assert load_llm_cache(data, model, prompt_version, 'job-1').answers == {}
 
 
 @pytest.mark.parametrize(
@@ -109,15 +158,15 @@ def test_another_models_or_prompts_answers_are_dropped(model, prompt_version):
     ],
 )
 def test_a_malformed_cache_is_an_empty_cache(data):
-    assert load_llm_cache(data, MODEL, 'v1', 'job-1').proposals == {}
+    assert load_llm_cache(data, MODEL, 'v1', 'job-1').answers == {}
 
 
 def test_a_malformed_entry_does_not_take_the_others_down():
     cache = LlmCache()
-    cache.add(KEY, PROPOSAL, 'job-1')
+    cache.add(KEY, ANSWER, 'job-1')
     data = llm_cache_json(cache, MODEL, 'v1')
     data['proposals']['bad'] = {'proposal': 'x', 'job': 'job-1'}
-    assert load_llm_cache(data, MODEL, 'v1', 'job-1').proposals == {KEY: PROPOSAL}
+    assert load_llm_cache(data, MODEL, 'v1', 'job-1').answers == {KEY: ANSWER}
 
 
 def test_confirmations_round_trip():

@@ -18,7 +18,14 @@ from sand.actions.edit.models import (
     WriteStatusInput,
 )
 from sand.services.nomad_api import XLSX_CONTENT_TYPE
-from sand.sheet_edit.apply import Step, apply_all, waits
+from sand.sheet_edit.apply import (
+    Step,
+    apply_all,
+    lookup,
+    next_seq,
+    saved_answer,
+    waits,
+)
 from sand.sheet_edit.catalog import Catalog
 from sand.sheet_edit.changelog import Confirmation
 from sand.sheet_edit.edits import ProposedEdits
@@ -39,6 +46,7 @@ from sand.sheet_edit.session import (
     read_confirmations,
     read_rejections,
 )
+from sand.sheet_edit.workbook import sha256
 
 JSON_TYPE = 'application/json'
 
@@ -100,11 +108,10 @@ async def replay_cached_inputs(data: ReplayInput) -> dict:
         data.texts,
         _never_asked,
         set(files.confirmations),
-        files.cache.proposals,
+        files.cache.answers,
         cached_only=True,
         in_turn=True,
         rejected=frozenset(data.rejections),
-        old_read=files.cache.old_read,
     )
     confirmed = set(files.confirmations)
     return {
@@ -119,22 +126,22 @@ async def replay_cached_inputs(data: ReplayInput) -> dict:
 @activity.defn
 async def prepare_input(data: PrepareInput) -> dict:
     """The two prompts for one input, against the sheet the earlier inputs
-    left; or nothing to ask, when the model already answered these words
-    on this sheet, or the input waits for its turn (apply.py)."""
+    left; or nothing to ask, when an answer to these words holds on this
+    sheet, or the input waits for its turn (apply.py)."""
     from sand.sheet_edit.catalog import build
     from sand.sheet_edit.resolve import prompts
 
     files = await _read_files(data)
-    text = _text(data)
     steps = _apply_inputs_from_cache(files, data.texts[: data.number - 1], data)
     state = steps[-1].state if steps else files.original
-    if cache_key(text, state) in files.cache.proposals or _waits(files, data, steps):
+    catalog = build(state)
+    if not _to_read(files, data, steps, catalog):
         return {'cached': True, 'prompts': []}
     return {
         'cached': False,
         'prompts': [
             {'system': p.system, 'text': p.text, 'schema': p.schema}
-            for p in prompts(text, build(state))
+            for p in prompts(_text(data), catalog)
         ],
     }
 
@@ -145,16 +152,14 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
     confirmed edits are written) and report what the user sees."""
     from sand.sheet_edit.catalog import build
     from sand.sheet_edit.edits import Unreadable
-    from sand.sheet_edit.ground import read_old
     from sand.sheet_edit.resolve import agree, read_answer
 
     files = await _read_files(data)
     text = _text(data)
     before = _apply_inputs_from_cache(files, data.texts[: data.number - 1], data)
     state = before[-1].state if before else files.original
-    key = cache_key(text, state)
+    catalog = build(state)
     if data.answers:
-        catalog = build(state)
         opinions = [
             Unreadable(reason='unreadable', detail=a.error, said=text)
             if a.error is not None
@@ -162,11 +167,14 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
             for a in data.answers
         ]
         agreed = agree(opinions, catalog)
-        # `old` is checked here, on the sheet the model read: off it (an
-        # input waiting for its turn) the cell may hold a note above's value
-        files.cache.add(key, agreed, data.job_id, read_old(agreed, catalog))
+        # what holds only on the sheet the model read is saved here: the
+        # `old` check and where the named values sit
+        answer = saved_answer(
+            text, agreed, catalog, sha256(state), next_seq(files.cache.answers)
+        )
+        files.cache.add(cache_key(text, state), answer, data.job_id)
         await _write_cache(files, data)
-    elif key not in files.cache.proposals and not _waits(files, data, before):
+    elif _to_read(files, data, before, catalog):
         # the cache file was lost between prepare and apply
         raise ApplicationError(
             f'input {data.number} has no answer and no cached proposal; run again',
@@ -191,7 +199,6 @@ async def store_final_sheet_and_changelog(data: JobInput) -> dict:
         to_json,
         written_now,
     )
-    from sand.sheet_edit.workbook import sha256
 
     files = await _read_files(data)
     steps = _apply_inputs_from_cache(files, data.texts, data)
@@ -211,7 +218,7 @@ async def store_final_sheet_and_changelog(data: JobInput) -> dict:
         await voice.writer.upload_raw_file(
             client, data.upload_id, CHANGELOG_FILE, to_json(log).encode(), JSON_TYPE
         )
-        await _publish_cache(voice.writer, client, files, data)
+        await _publish_cache(voice.writer, client, files, data, steps)
     # a confirmation is bound to the words, the sheet and the change: an
     # input reworded or an earlier edit confirmed since leaves it matching
     # nothing, and the user should be told to look again
@@ -292,7 +299,9 @@ async def _write_cache(files: _Files, data: JobInput) -> None:
         )
 
 
-async def _publish_cache(writer, client, files: _Files, data: JobInput) -> None:
+async def _publish_cache(  # noqa: PLR0913, PLR0917
+    writer, client, files: _Files, data: JobInput, steps: list[Step]
+) -> None:
     """The job's readable answers into the shared cache, for later jobs;
     its own file goes. Two jobs publishing at once can lose each other's
     entries here, which costs a later job model calls, not a result."""
@@ -301,6 +310,7 @@ async def _publish_cache(writer, client, files: _Files, data: JobInput) -> None:
     shared = await writer.read_json(client, data.upload_id, CACHE_FILE)
     merged = load_llm_cache(shared, data.llm_model_name, CACHE_VERSION, data.job_id)
     merged.update(files.cache.of_job(data.job_id, readable_only=True))
+    merged = merged.trimmed({step.answer for step in steps})
     await writer.write_json(
         client,
         data.upload_id,
@@ -332,20 +342,24 @@ def _apply_inputs_from_cache(
         texts,
         _never_asked,
         set(files.confirmations),
-        files.cache.proposals,
+        files.cache.answers,
         in_turn=True,
         rejected=frozenset(data.rejections),
-        old_read=files.cache.old_read,
     )
 
 
-def _waits(files: _Files, data: PrepareInput, before: list[Step]) -> bool:
+def _to_read(
+    files: _Files, data: PrepareInput, before: list[Step], catalog: Catalog
+) -> bool:
+    """No answer holds on the input's sheet, and it does not wait."""
     state = before[-1].state if before else files.original
-    return waits(
+    text = _text(data)
+    if lookup(files.cache.answers, text, sha256(state), catalog) is not None:
+        return False
+    return not waits(
         before,
-        _text(data),
-        state,
-        files.cache.proposals,
+        text,
+        files.cache.answers,
         confirmed=set(files.confirmations),
         rejected=frozenset(data.rejections),
     )
@@ -378,6 +392,7 @@ def _report(
         'from_cache': from_cache,
         # an earlier answer until its turn: read again then (apply.py)
         'waiting': step.waiting,
+        'why_waiting': step.why,
         'preview': step.interpretation.preview,
         'ready': [
             {
