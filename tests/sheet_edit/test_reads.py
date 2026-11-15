@@ -246,3 +246,34 @@ def test_two_samples_named_by_label_stay_named(synthetic_xlsx):
     )
     now = written(synthetic_xlsx, (SPEED, (4,), 5000))
     assert check(synthetic_xlsx, said, proposal, now) == (True, None)
+
+
+def test_a_number_like_text_value_of_the_words_is_named(with_results):
+    """'20min' is a text cell; the coverage check reads it as a number."""
+    said = 'change the 20min samples to 25min'
+    proposal = one(
+        edit(
+            VARIATION,
+            Samples(samples=['4', '5', '7'], subbatch=None),
+            '20min',
+            '25min',
+            said,
+        )
+    )
+    now = written(with_results, (VARIATION, (3,), '20min'))
+    assert check(with_results, said, proposal, now) == (
+        False,
+        "Variation (Experiment Info) now holds '20min' on samples 1",
+    )
+
+
+def test_a_column_chosen_because_its_sibling_was_empty(synthetic_xlsx):
+    """'the solvent time' is Time 1 while Solvent 2 is empty."""
+    said = 'the solvent time to 300 for all samples'
+    proposal = one(edit('C011', 'all', '600', '300', said))
+    read_on = written(synthetic_xlsx, (SOLVENT_2, range(3, 15), None))
+    now = written(read_on, (SOLVENT_2, (3,), 'IPA'))
+    assert check(read_on, said, proposal, now) == (
+        False,
+        'Solvent 2 (1: Cleaning UV-Ozone) on samples 1 is no longer empty',
+    )

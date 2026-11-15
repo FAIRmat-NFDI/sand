@@ -207,3 +207,11 @@ def test_a_damaged_confirmations_file_is_refused_not_empty(raw):
 def test_a_malformed_confirmation_is_refused(data):
     with pytest.raises(ValueError):
         load_confirmations(data)
+
+
+def test_answers_saved_before_seq_keep_the_newest_by_their_place():
+    cache = LlmCache()
+    keys = [cache_key('speed 4000', f'sheet {n}'.encode()) for n in range(5)]
+    for key in keys:
+        cache.add(key, ANSWER, 'job-1')
+    assert set(cache.trimmed(set(), per_words=2).answers) == set(keys[-2:])

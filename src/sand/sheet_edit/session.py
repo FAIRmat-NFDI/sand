@@ -91,9 +91,9 @@ class LlmCache:
         job's own chain). An older answer is what putting things back
         finds again; past a few the sheet has moved on."""
         newest: dict[str, list[CacheKey]] = {}
-        for key in sorted(
-            self.answers, key=lambda k: self.answers[k].seq, reverse=True
-        ):
+        # an answer saved before `seq` goes by its place, as in `lookup`
+        order = {k: (a.seq, i) for i, (k, a) in enumerate(self.answers.items())}
+        for key in sorted(self.answers, key=order.__getitem__, reverse=True):
             newest.setdefault(key[0], []).append(key)
         kept = {k for keys in newest.values() for k in keys[:per_words]} | keep
         cache = LlmCache()

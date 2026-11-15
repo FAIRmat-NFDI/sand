@@ -3,13 +3,15 @@ the cells holding them. An answer read on one sheet holds on another
 while these are the same there; the model is then not asked again.
 
 Named values: the anchor, `where` and `said_old` values of the edits,
-every text value of the sheet found in the words, and the numbers of
-the words that are not an edit's new value (the 120 of "the anneal at
-120 °C"). They are looked for in every column: "the DMSO" read while
-one column holds DMSO is ambiguous once a second does. The cells an
-edit writes that were empty must still be empty: the model may have
-picked that column because it was empty ("add DMSO as another
-solvent").
+an `old` the user said, every text value of the sheet found in the
+words ('20min' too), and the numbers of the words that are not an
+edit's new value (the 120 of "the anneal at 120 °C"). They are looked
+for in every column: "the DMSO" read while one column holds DMSO is
+ambiguous once a second does. Which cells of the edits' rows are empty,
+in the target and in the other numbered columns of its step, must stay
+the same: the model may have picked a column for being empty ("add
+DMSO as another solvent") or its sibling for being empty ("the solvent
+time" while only Solvent 1 is filled).
 
 Some answers hold only on the sheet they were read on (`whole`): a part
 the model could not place or left out, a new value not in the words
@@ -17,9 +19,10 @@ the model could not place or left out, a new value not in the words
 """
 
 import json
+import re
 from dataclasses import dataclass
 
-from sand.sheet_edit.catalog import Catalog
+from sand.sheet_edit.catalog import Catalog, ColumnInfo
 from sand.sheet_edit.coverage import coverage, sheet_values
 from sand.sheet_edit.edits import ProposedEdits, Where
 from sand.sheet_edit.ground import (
@@ -30,11 +33,13 @@ from sand.sheet_edit.ground import (
     same_value,
     value_numbers,
     value_problems,
+    word_pattern,
 )
 from sand.sheet_edit.numbers import value
 from sand.sheet_edit.workbook import sha256
 
 Cell = tuple[str, int]  # (column id, row)
+_MIN_LENGTH = 2  # 'A' is a letter, not the value A
 
 
 @dataclass(frozen=True)
@@ -173,9 +178,9 @@ def _seen(text: str, proposal: ProposedEdits, catalog: Catalog) -> Reads:
             rows, _ = resolve_rows(edit.rows, catalog)
         except Refusal:
             rows = ()
-        if target is not None:
-            held_by = {r: g.value for g in target.groups for r in g.rows}
-            empty += [(target.id, r) for r in rows if same_value('', held_by.get(r))]
+        for column in _picked_among(target, catalog):
+            held_by = {r: g.value for g in column.groups for r in g.rows}
+            empty += [(column.id, r) for r in rows if same_value('', held_by.get(r))]
     return Reads(
         None,
         _structure(catalog),
@@ -185,8 +190,42 @@ def _seen(text: str, proposal: ProposedEdits, catalog: Catalog) -> Reads:
     )
 
 
+def _picked_among(target: ColumnInfo | None, catalog: Catalog) -> list[ColumnInfo]:
+    """The target and the other numbered columns of its step: "the
+    solvent time" is Time 1 while only Solvent 1 is filled, and may be
+    either once Solvent 2 is."""
+    if target is None:
+        return []
+    if target.family is None:
+        return [target]
+    return [
+        c
+        for c in catalog.columns
+        if c is target
+        or (
+            c.family is not None
+            and c.column.section == target.column.section
+            and c.family.group == target.family.group
+            and c.family.index != target.family.index
+        )
+    ]
+
+
+def _texts_in(text: str, catalog: Catalog) -> dict[str, re.Pattern]:
+    """The text cells whose value is in `text`, number-like ones too
+    ('20min': the coverage check leaves those to its number check)."""
+    texts = {
+        group.value.strip()
+        for column in catalog.columns
+        for group in column.groups
+        if isinstance(group.value, str) and len(group.value.strip()) >= _MIN_LENGTH
+    }
+    patterns = {t: word_pattern(t) for t in texts}
+    return {t: p for t, p in patterns.items() if p is not None and p.search(text)}
+
+
 def _names(text: str, proposal: ProposedEdits, catalog: Catalog) -> set[str]:
-    patterns = sheet_values(catalog)
+    patterns = {**_texts_in(text, catalog), **sheet_values(catalog)}
     names = {t for t, p in patterns.items() if p.search(text)}
     news = {n.value for e in proposal.edits if (n := value(e.new)) is not None}
     for edit in proposal.edits:
@@ -195,6 +234,9 @@ def _names(text: str, proposal: ProposedEdits, catalog: Catalog) -> set[str]:
             names.add(edit.rows.equals)
         if edit.said_old and edit.said_old.strip():
             names.add(edit.said_old.strip())
+        # the value the model read, when the user said it ("the 20min ones")
+        if edit.old and in_words(edit.old, edit.said):
+            names.add(edit.old.strip())
         target = catalog.column(edit.target)
         if target is None:
             continue
