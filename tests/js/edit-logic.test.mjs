@@ -90,14 +90,14 @@ test("confirmed edits the last run did not write", () => {
   assert.equal(unwrittenKey({ inputs: [REPORT] }), "");
   const since = { inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] };
   assert.equal(unwrittenCount(since), 1);
-  assert.equal(unwrittenKey(since), "k1");
+  assert.equal(unwrittenKey(since), "confirmed k1");
   assert.equal(
     unwrittenKey({ inputs: [{ ...REPORT, confirmed_since: ["k2"] }, { ...REPORT, confirmed_since: ["k1"] }] }),
-    "k1\nk2");
+    "confirmed k1\nconfirmed k2");
   // withdrawn: its update was revised or deleted, the sheet still has it
   const withdrawn = { inputs: [{ ...REPORT, ready: [], unconfirmed_since: ["k0"] }] };
   assert.equal(unwrittenCount(withdrawn), 1);
-  assert.equal(unwrittenKey(withdrawn), "k0");
+  assert.equal(unwrittenKey(withdrawn), "withdrawn k0");
 });
 
 test("the inputs a job has to read", () => {
@@ -361,7 +361,9 @@ test("a rejection made or taken back since the last run is written by the next",
   const rejected = { ...REPORT, rejected: ["k1"], rejected_since: ["k1"] };
   assert.equal(openReport([rejected, two]), rejected);
   assert.deepEqual(decidableKeys([rejected, two]), []);
-  assert.equal(unwrittenKey({ inputs: [rejected] }), "k1");
+  assert.equal(unwrittenKey({ inputs: [rejected] }), "rejected k1");
+  // rejected again after the rejection was taken back: another key
+  assert.notEqual(unwrittenKey({ inputs: [rejected] }), unwrittenKey({ inputs: [{ ...REPORT, unrejected_since: ["k1"] }] }));
   assert.equal(unwrittenCount({ inputs: [rejected] }), 0);
   const undone = { ...REPORT, unrejected_since: ["k1"] };
   assert.equal(openReport([undone, two]), undone);

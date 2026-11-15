@@ -315,9 +315,19 @@ export function unwrittenCount(status) {
     (n, report) => n + sinceLastRun(report).length - (report.rejected_since || []).length, 0);
 }
 
-// those edits' keys, as one string: "" when the last run wrote everything
+// those edits' keys, as one string: "" when the last run wrote everything.
+// Each key says what happened to it: rejecting an edit again after
+// taking the rejection back is a new decision, not the one written
+const SINCE = {
+  confirmed_since: "confirmed", unconfirmed_since: "withdrawn",
+  rejected_since: "rejected", unrejected_since: "unrejected",
+};
+
 export function unwrittenKey(status) {
-  return (status.inputs || []).flatMap(sinceLastRun).sort().join("\n");
+  return (status.inputs || [])
+    .flatMap((report) => Object.entries(SINCE)
+      .flatMap(([field, what]) => (report[field] || []).map((key) => what + " " + key)))
+    .sort().join("\n");
 }
 
 function count(n, one, many) {
