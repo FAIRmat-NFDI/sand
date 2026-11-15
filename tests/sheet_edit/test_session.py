@@ -41,6 +41,33 @@ def test_cache_round_trip_keeps_proposals_and_their_jobs():
     assert loaded.jobs == cache.jobs
 
 
+def test_the_old_check_travels_with_its_answer():
+    cache = LlmCache()
+    cache.add(KEY, PROPOSAL, 'job-1', [['holds 2000, not 3000']])
+    cache.add(cache_key('other', b'sheet'), PROPOSAL, 'job-1')
+    data = llm_cache_json(cache, MODEL, 'v1')
+
+    loaded = load_llm_cache(data, MODEL, 'v1', job='job-1')
+    assert loaded.old_read == {KEY: [['holds 2000, not 3000']]}
+    # merged and published with the job's entries
+    merged = LlmCache()
+    merged.update(loaded.of_job('job-1'))
+    assert merged.old_read == loaded.old_read
+
+
+@pytest.mark.parametrize('stored', [None, 'x', [], [['a'], ['b']], [[1]]])
+def test_an_answer_without_a_usable_old_check_still_loads(stored):
+    cache = LlmCache()
+    cache.add(KEY, PROPOSAL, 'job-1')
+    data = llm_cache_json(cache, MODEL, 'v1')
+    if stored is not None:
+        data['proposals'][f'{KEY[0]}:{KEY[1]}']['old_read'] = stored
+
+    loaded = load_llm_cache(data, MODEL, 'v1', job='job-1')
+    assert loaded.proposals == {KEY: PROPOSAL}
+    assert loaded.old_read == {}
+
+
 def test_an_unreadable_answer_is_kept_only_for_its_job():
     cache = LlmCache()
     cache.add(KEY, PROPOSAL, 'job-1')

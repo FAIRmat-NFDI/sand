@@ -1,6 +1,7 @@
 from sand.sheet_edit.apply import apply_all, interpret_instruction
+from sand.sheet_edit.catalog import build
 from sand.sheet_edit.edits import Anchor, Edit, NotFound, ProposedEdits, Range, Samples
-from sand.sheet_edit.ground import Refused
+from sand.sheet_edit.ground import Refused, read_old
 from sand.sheet_edit.write import verify
 
 CLEAN_SOLVENT_2, CLEAN_TIME_2, VARIATION, SPEED = 'C013', 'C014', 'C007', 'C025'
@@ -335,6 +336,56 @@ def test_in_turn_an_input_below_an_undecided_one_waits_and_writes_nothing(
     assert steps[2].waiting
     assert steps[2].written == ()
     assert steps[2].state == steps[1].state
+
+
+def test_a_waiting_answer_is_not_checked_against_a_value_written_above(
+    synthetic_xlsx,
+):
+    """Finding A: "speed 5000" read while the speed was 3000 waits after
+    "speed 4000" is written; its `old` 3000 is not a misreading."""
+    faster = 'speed 5000'
+    llm = FakeLLM()
+    proposals = {
+        **PROPOSALS,
+        faster: proposal(edit(SPEED, 'all', '3000', '5000', faster)),
+    }
+    inputs, cache = [SPEED_SAID, SOLVENT, faster], {}
+
+    def resolve(text, catalog):
+        llm.calls.append(text)
+        return proposals[text]
+
+    first = in_turn(synthetic_xlsx, inputs, cache=cache, llm=resolve)
+    stored = {key: read_old(p, build(synthetic_xlsx)) for key, p in cache.items()}
+
+    def run_waiting(old_read):
+        return apply_all(
+            synthetic_xlsx,
+            inputs,
+            resolve,
+            keys(first[0]),
+            cache,
+            in_turn=True,
+            old_read=old_read,
+        )
+
+    steps = run_waiting(stored)
+    assert steps[2].waiting
+    [ready] = steps[2].interpretation.ready.values()
+    assert ready.checks == ()
+    # compared live on that sheet, as before: the false check
+    live = interpret_instruction(faster, steps[1].state, resolve)
+    [ready] = live.ready.values()
+    assert "holds '4000'" in ready.checks[0]
+    # an answer stored before the check was: no `old` comparison off its sheet
+    [ready] = run_waiting({}).__getitem__(2).interpretation.ready.values()
+    assert ready.checks == ()
+
+
+def test_a_misreading_stays_checked_off_its_sheet(synthetic_xlsx):
+    wrong = proposal(edit(SPEED, 'all', '2000', '5000', 'speed 5000'))
+    [found] = read_old(wrong, build(synthetic_xlsx))
+    assert found and "not '2000'" in found[0]
 
 
 def test_a_confirmation_holds_only_for_the_identical_edit(synthetic_xlsx):
