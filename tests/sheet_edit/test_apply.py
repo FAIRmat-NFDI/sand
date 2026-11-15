@@ -627,3 +627,23 @@ def test_a_refused_preview_write_keeps_the_confirmed_edit_in_it(
     assert len(steps[0].written) == THREE_ROWS
     assert steps[0].preview == steps[0].state
     assert steps[1].interpretation.catalog == build(steps[0].state)
+
+
+def test_a_key_two_inputs_share_is_confirmed_for_the_first_only(
+    synthetic_xlsx, monkeypatch
+):
+    """The same words on the same preview share a key (here: the writer
+    refuses every write, so the preview stays the original). The server
+    records the confirmation as the first input's."""
+    from sand.sheet_edit import apply as pipeline
+    from sand.sheet_edit.write import WriteRefused
+
+    def refuse(xlsx, writes, **options):
+        raise WriteRefused('the cell is locked')
+
+    monkeypatch.setattr(pipeline, 'write_cells', refuse)
+    first = run(synthetic_xlsx, [SPEED_SAID, SPEED_SAID])
+    assert keys(first[0]) == keys(first[1])
+    steps = run(synthetic_xlsx, [SPEED_SAID, SPEED_SAID], keys(first[0]))
+    assert steps[0].confirmed == tuple(keys(first[0]))
+    assert steps[1].confirmed == ()

@@ -97,11 +97,15 @@ async def test_a_confirmation_opens_the_next_update_at_once(voice):
     assert (await post(voice, 'confirm', ['b1'])).status_code == HTTPStatus.OK
 
 
-async def test_a_rejection_opens_the_next_update_at_once_in_an_older_run(voice):
-    # a run from before reports carried its rejections: not known since
+async def test_a_rejection_in_a_run_from_before_reports_knew_them_waits(voice):
+    """Such a report knew no rejections: a new one is since the run, and
+    the next update is decided after the run."""
     await post(voice, 'reject', ['a1', 'a2'])
 
-    assert (await post(voice, 'confirm', ['b1'])).status_code == HTTPStatus.OK
+    response = await post(voice, 'confirm', ['b1'])
+    assert response.status_code == HTTPStatus.CONFLICT
+    first = (await edits(voice))[0]
+    assert sorted(first['rejected_since']) == ['a1', 'a2']
 
 
 async def test_the_next_update_opens_once_the_sheet_is_written(voice):

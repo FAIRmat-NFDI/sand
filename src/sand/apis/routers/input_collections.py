@@ -1164,11 +1164,13 @@ def _with_confirmations(
         # the server refuses
         now = [key for key in keys if key not in mine and key in (rejected or {})]
         # a rejection made or taken back since the run changes the preview
-        # the inputs after it were read on: they wait for the next run.
-        # Not known for a report from before reports carried it, nor
-        # without the rejections
+        # the inputs after it were read on: they wait for the next run. A
+        # report from before reports carried it knew none; a damaged
+        # rejections file changes nothing
         known = report.get('rejected')
-        if rejected is None or not isinstance(known, list):
+        if not isinstance(known, list):
+            known = []
+        if rejected is None:
             known = now
         # a key this input confirmed is not its rejection, whoever holds one
         known = [key for key in known if key not in mine]

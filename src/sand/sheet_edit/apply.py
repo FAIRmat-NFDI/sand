@@ -130,6 +130,8 @@ class Step:
     waiting: bool = False
     why: str | None = None  # why that answer does not hold here (reads.py)
     answer: CacheKey | None = None  # the cache entry it used
+    # its confirmed keys: a key two inputs share is the first one's
+    confirmed: tuple[str, ...] = ()
     # confirmed, not written: read on a preview the written sheet is not
     held: tuple[str, ...] = ()
 
@@ -241,6 +243,7 @@ def apply_all(  # noqa: PLR0913
     confirmation."""
     steps: list[Step] = []
     preview = written = original
+    taken: set[str] = set()  # confirmed keys an earlier input holds
     for text in inputs:
         digest = sha256(preview)
         catalog = build(preview)
@@ -284,8 +287,11 @@ def apply_all(  # noqa: PLR0913
             text, preview, _answering(answer), old, catalog
         )
         ready = interpretation.ready
-        mine = [k for k in ready if k in confirmed]
-        kept = [k for k in ready if k in confirmed or k not in rejected]
+        # a key two inputs share is the first one's, as the server records
+        # its confirmation; a rejection holds for every input with it
+        mine = [k for k in ready if k in confirmed and k not in taken]
+        taken.update(mine)
+        kept = [k for k in ready if k in mine or k not in rejected]
         changes: tuple[CellChange, ...] = ()
         refused = None
         held: tuple[str, ...] = ()
@@ -315,6 +321,7 @@ def apply_all(  # noqa: PLR0913
                 written,
                 preview,
                 answer=key,
+                confirmed=tuple(mine),
                 held=held,
             )
         )

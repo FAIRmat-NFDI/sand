@@ -421,11 +421,7 @@ def _report(  # noqa: PLR0913
             for key, edit in step.interpretation.ready.items()
         ],
         # written; `held` waits for the inputs above (apply.py)
-        'confirmed': [
-            key
-            for key in step.interpretation.ready
-            if key in confirmed and not step.waiting and key not in step.held
-        ],
+        'confirmed': [key for key in step.confirmed if key not in step.held],
         'held': list(step.held),
         # as this run knew them: one rejected or taken back since changes
         # the preview of every input after it
