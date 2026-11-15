@@ -1140,7 +1140,7 @@ def _with_confirmations(
                 rejected_since=[],
                 unrejected_since=[],
                 confirm_again=0,
-                rejected=[k for k in keys if k in (rejected or {})] if entry_id else [],
+                rejected=_rejected(report, keys, rejected) if entry_id else [],
             )
             continue
         # two inputs of the same words on the same sheet share a key: a
@@ -1162,18 +1162,21 @@ def _with_confirmations(
         # its key: nothing is written, so two inputs of the same words
         # keep sharing it, and the second would wait for a decision
         # the server refuses
-        now = [key for key in keys if key not in mine and key in (rejected or {})]
         # a rejection made or taken back since the run changes the preview
         # the inputs after it were read on: they wait for the next run. A
-        # report from before reports carried it knew none; a damaged
-        # rejections file changes nothing
+        # report from before reports carried it knew none
         known = report.get('rejected')
         if not isinstance(known, list):
             known = []
-        if rejected is None:
-            known = now
         # a key this input confirmed is not its rejection, whoever holds one
         known = [key for key in known if key not in mine]
+        now = (
+            # a damaged rejections file is unknown, not undone: what the
+            # run knew stands
+            known
+            if rejected is None
+            else [key for key in keys if key not in mine and key in rejected]
+        )
         report['rejected_since'] = [key for key in now if key not in known]
         report['unrejected_since'] = [key for key in known if key not in now]
         report['rejected'] = now
@@ -1185,6 +1188,15 @@ def _with_confirmations(
         )
         report['confirm_again'] = todo * len(mine - set(keys))
     return status
+
+
+def _rejected(report: dict, keys: list[str], rejected: dict | None) -> list[str]:
+    """The report's rejected keys; the run's own list while the file is
+    damaged."""
+    if rejected is None:
+        known = report.get('rejected')
+        return [k for k in known if k in keys] if isinstance(known, list) else []
+    return [k for k in keys if k in rejected]
 
 
 def _undecided(report: dict) -> list[str]:

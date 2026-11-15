@@ -272,3 +272,17 @@ async def test_a_shared_key_confirmed_by_one_input_is_not_its_rejection(voice):
     first, second = await edits(voice)
     assert first['unrejected_since'] == []
     assert (second['rejected'], second['rejected_since']) == (['k1'], [])
+
+
+async def test_a_damaged_rejections_file_keeps_the_runs_rejections(voice):
+    put_status(
+        voice,
+        report(1, 'n1', 'a1', rejected=['a1']),
+        report(2, 'n2', 'b1', rejected=[]),
+    )
+    voice.writer.files[REJECTIONS_FILE] = b'not json'
+
+    first, second = await edits(voice)
+    assert first['rejected'] == ['a1']
+    assert (first['rejected_since'], first['unrejected_since']) == ([], [])
+    assert second['rejected'] == []
