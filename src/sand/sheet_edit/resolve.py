@@ -41,7 +41,7 @@ from sand.sheet_edit.render import table
 
 # recorded with every proposal (changelog, status); bump on any change to
 # the prompts below or to the table in render.py, which the model reads
-PROMPT_VERSION = 'v4'
+PROMPT_VERSION = 'v5'
 # the job's cache keeps proposals after `agree`: bump the second part on
 # a change to how two opinions agree, so agreed answers are asked again
 CACHE_VERSION = f'{PROMPT_VERSION}+agree-2'
@@ -81,7 +81,10 @@ rows by it ("the samples with variation 20min": where = that column, \
 equals = "20min").
 - "anchor": when the user names a value in a neighbouring column of the \
 same step to say which cell they mean ("the volume of the DMSO": the \
-volume column is the target, anchor = the solvent column, equals = "DMSO").
+volume column is the target, anchor = the solvent column, equals = "DMSO"). \
+"equals" is the value the user named, spelled as the table spells it \
+(their "ethanol" is the table's "Ethanol"), never another value of that \
+column: if no row holds it, answer "not_found".
 - A value the user mentions as current ("the 3000") is a clue to the cell \
 and goes into "said_old"; "old" stays what the table shows.
 - If the words fit more than one column, do not pick one: answer \
@@ -110,7 +113,10 @@ say none.
 rows by what another column holds ("the samples with variation 20min").
 - Use "anchor" when the user identifies the cell by a value next to it in \
 the same step ("the volume of the DMSO" edits the volume column; the \
-anchor is the solvent column with equals "DMSO").
+anchor is the solvent column with equals "DMSO"). The anchor's "equals" \
+is the value the user named, in the table's spelling ("ethanol" said, \
+"Ethanol" shown: "Ethanol"), never a different value the table shows \
+instead: when no row of that column holds it, it is "not_found".
 - When the user quotes a current value ("the 3000"), it identifies the \
 cell and is the "said_old"; "old" is still the table's value.
 - Several columns could be meant? Then "ambiguous" with all of them, never \

@@ -162,13 +162,20 @@ def test_two_steps_with_the_same_label_stay_two_steps_when_reversed(catalog):
     assert ids[ids.index(of_third[0]) : ids.index(of_third[-1]) + 1] == of_third
 
 
+def test_both_passes_keep_the_anchor_to_the_users_value():
+    for second in (False, True):
+        prompt = ' '.join(system_prompt(second_opinion=second).split())
+        assert 'the value the user named' in prompt
+        assert 'never a' in prompt.split('the value the user named')[1]
+
+
 def test_the_schema_cannot_express_what_only_code_produces(catalog):
     schema = json.dumps(proposed_edits_schema(catalog))
     assert 'uncertain' not in schema
     assert 'unreadable' not in schema
     assert user_text(SAID, catalog, second_opinion=False).startswith('| ID | Step |')
     assert (
-        PROMPT_VERSION == 'v4'
+        PROMPT_VERSION == 'v5'
     )  # bumped with the rules: cached answers are asked again
 
 
