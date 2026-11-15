@@ -79,15 +79,26 @@ async def test_a_later_updates_edit_waits_for_the_ones_above(voice, action):
 
 
 async def test_the_open_update_is_decided_edit_by_edit(voice):
+    put_status(voice, report(1, 'n1', 'a1', 'a2', rejected=[]), report(2, 'n2', 'b1'))
     assert (await post(voice, 'confirm', ['a1'])).status_code == HTTPStatus.OK
-    # a1 is waiting to be written: update 1 stays open, a2 is its
+    # a2 is still to decide: update 1 stays open
+    assert (await post(voice, 'confirm', ['b1'])).status_code == HTTPStatus.CONFLICT
     assert (await post(voice, 'reject', ['a2'])).status_code == HTTPStatus.OK
-    # update 1's confirmation changes the sheet update 2 is read on
+    # update 2 was read with a2: its proposal changes with the next run
     response = await post(voice, 'confirm', ['b1'])
     assert response.status_code == HTTPStatus.CONFLICT
 
 
-async def test_a_rejection_opens_the_next_update_at_once(voice):
+async def test_a_confirmation_opens_the_next_update_at_once(voice):
+    """Update 2 was read with update 1's edit: confirming it before the
+    write keeps its key."""
+    put_status(voice, report(1, 'n1', 'a1', rejected=[]), report(2, 'n2', 'b1'))
+    assert (await post(voice, 'confirm', ['a1'])).status_code == HTTPStatus.OK
+    assert (await post(voice, 'confirm', ['b1'])).status_code == HTTPStatus.OK
+
+
+async def test_a_rejection_opens_the_next_update_at_once_in_an_older_run(voice):
+    # a run from before reports carried its rejections: not known since
     await post(voice, 'reject', ['a1', 'a2'])
 
     assert (await post(voice, 'confirm', ['b1'])).status_code == HTTPStatus.OK
@@ -230,3 +241,30 @@ async def test_a_rejection_taken_back_reopens_its_update(voice):
     assert second['confirmed'] == ['b1']
     response = await post(voice, 'confirm', ['a1'])
     assert response.status_code == HTTPStatus.OK, response.text
+
+
+async def test_a_shared_key_confirmed_by_one_input_is_not_its_rejection(voice):
+    """Two updates of the same words share a key: one confirmed it, the
+    other rejected it. The run lists the key as rejected for both."""
+    put_status(
+        voice,
+        report(1, 'n1', 'k1', confirmed=['k1'], rejected=['k1']),
+        report(2, 'n2', 'k1', rejected=['k1']),
+    )
+    put_confirmed(voice, k1='n1')
+    voice.writer.files[REJECTIONS_FILE] = json.dumps(
+        {
+            'k1': {
+                'by': 'user',
+                'at': '2026-11-13T10:00:00+00:00',
+                'input': 'n2',
+                'reason': None,
+                'meant': '',
+                'proposed': None,
+            }
+        }
+    ).encode()
+
+    first, second = await edits(voice)
+    assert first['unrejected_since'] == []
+    assert (second['rejected'], second['rejected_since']) == (['k1'], [])

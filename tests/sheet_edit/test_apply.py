@@ -603,3 +603,27 @@ def test_confirming_every_input_in_order_asks_nothing_more(synthetic_xlsx):
     assert llm.calls == inputs
     assert steps[-1].state == steps[-1].preview
     assert sum(len(s.written) > 0 for s in steps) == len(inputs)
+
+
+def test_a_refused_preview_write_keeps_the_confirmed_edit_in_it(
+    synthetic_xlsx, monkeypatch
+):
+    """Finding N: input 1's confirmed edit is written, its undecided one
+    the writer refuses; input 2 is still read on the written sheet."""
+    from sand.sheet_edit import apply as pipeline
+    from sand.sheet_edit.write import WriteRefused, write_cells
+
+    first = run(synthetic_xlsx, [TWO, VARIATION_SAID])
+    solvent, _ = first[0].interpretation.ready
+    speed_column = build(synthetic_xlsx).index(SPEED)
+
+    def refuse_speed(xlsx, writes, **options):
+        if any(w.column == speed_column for w in writes):
+            raise WriteRefused('the speed cell is locked')
+        return write_cells(xlsx, writes, **options)
+
+    monkeypatch.setattr(pipeline, 'write_cells', refuse_speed)
+    steps = run(synthetic_xlsx, [TWO, VARIATION_SAID], {solvent})
+    assert len(steps[0].written) == THREE_ROWS
+    assert steps[0].preview == steps[0].state
+    assert steps[1].interpretation.catalog == build(steps[0].state)

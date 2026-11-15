@@ -72,10 +72,11 @@ test("the open report is the first with an edit to decide", () => {
   // decided: the next one's turn
   assert.equal(openReport([{ ...one, rejected: ["k1"] }, two]).entry_id, "n2");
   assert.equal(openReport([{ ...one, confirmed: ["k1"] }, two]).entry_id, "n2");
-  // confirmed but not written yet: the sheet below changes, nothing below opens
+  // confirmed but not written yet: the one below was read with the edit,
+  // it opens at once
   const writing = { ...one, confirmed: ["k1"], confirmed_since: ["k1"] };
-  assert.equal(openReport([writing, two]), writing);
-  assert.deepEqual(decidableKeys([writing, two]), []);
+  assert.equal(openReport([writing, two]), two);
+  assert.deepEqual(decidableKeys([writing, two]), ["k2"]);
   // an earlier reading is read again before it is decided
   assert.deepEqual(decidableKeys([{ ...one, rejected: ["k1"] }, { ...two, waiting: true }]), []);
   assert.equal(openReport([{ ...one, confirmed: ["k1"] }]), null);
@@ -361,6 +362,7 @@ test("a rejection made or taken back since the last run is written by the next",
   assert.equal(openReport([rejected, two]), rejected);
   assert.deepEqual(decidableKeys([rejected, two]), []);
   assert.equal(unwrittenKey({ inputs: [rejected] }), "k1");
+  assert.equal(unwrittenCount({ inputs: [rejected] }), 0);
   const undone = { ...REPORT, unrejected_since: ["k1"] };
   assert.equal(openReport([undone, two]), undone);
   assert.equal(unwrittenCount({ inputs: [undone] }), 1);

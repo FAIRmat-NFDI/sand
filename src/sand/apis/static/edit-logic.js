@@ -45,15 +45,18 @@ export function pendingKeys(reports) {
 }
 
 // The report whose turn it is: the first, in input order, with an
-// undecided edit, or with a decision the last run did not know, which
-// changes the sheet the later ones are read on; or the first showing an
-// earlier reading, even with no edit in it (it is read again first). As
-// the server decides it (`_open_report`).
+// undecided edit, or with a decision the last run did not know that
+// changes the sheet the later ones are read on (not a confirmation: they
+// were read with the edit); or the first showing an earlier reading,
+// even with no edit in it (it is read again first). As the server
+// decides it (`_open_report`).
 export function openReport(reports) {
   const ordered = [...reports].sort((a, b) => a.input - b.input);
   return ordered.find((report) => report.waiting
     || pendingKeys([report]).length
-    || sinceLastRun(report).length) || null;
+    || (report.unconfirmed_since || []).length
+    || (report.rejected_since || []).length
+    || (report.unrejected_since || []).length) || null;
 }
 
 // what may be decided now: the open report's undecided edits, unless it
@@ -306,8 +309,10 @@ function sinceLastRun(report) {
   ];
 }
 
+// a new rejection changes no written cell: the download stays
 export function unwrittenCount(status) {
-  return (status.inputs || []).reduce((n, report) => n + sinceLastRun(report).length, 0);
+  return (status.inputs || []).reduce(
+    (n, report) => n + sinceLastRun(report).length - (report.rejected_since || []).length, 0);
 }
 
 // those edits' keys, as one string: "" when the last run wrote everything

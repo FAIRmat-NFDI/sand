@@ -1170,6 +1170,8 @@ def _with_confirmations(
         known = report.get('rejected')
         if rejected is None or not isinstance(known, list):
             known = now
+        # a key this input confirmed is not its rejection, whoever holds one
+        known = [key for key in known if key not in mine]
         report['rejected_since'] = [key for key in now if key not in known]
         report['unrejected_since'] = [key for key in known if key not in now]
         report['rejected'] = now
@@ -1190,8 +1192,9 @@ def _undecided(report: dict) -> list[str]:
 
 def _open_report(status: dict) -> dict | None:
     """The input whose turn it is: the first with an undecided edit, or
-    with a decision the last run did not know, which changes the sheet
-    every input after it is read on; or the first showing an
+    with a decision the last run did not know that changes the sheet
+    every input after it is read on (`_since_last_run`); or the first
+    showing an
     earlier reading, even with no edit in it: it is read again first.
     Of a status with the overlay."""
     for report in status.get('inputs', []):
@@ -1203,16 +1206,12 @@ def _open_report(status: dict) -> dict | None:
 
 
 def _since_last_run(report: dict) -> bool:
-    """A decision the last run did not know: the inputs after this one
-    were read on a preview it changes."""
+    """A decision the last run did not know that changes the preview the
+    inputs after this one were read on. Not a confirmation: the preview
+    already counted the edit."""
     return any(
         report.get(field)
-        for field in (
-            'confirmed_since',
-            'unconfirmed_since',
-            'rejected_since',
-            'unrejected_since',
-        )
+        for field in ('unconfirmed_since', 'rejected_since', 'unrejected_since')
     )
 
 
