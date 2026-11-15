@@ -636,6 +636,26 @@ def test_old_must_be_what_the_cell_holds(catalog):
     assert why.endswith('not empty')
 
 
+def test_old_checked_where_it_was_read_is_not_checked_again(catalog):
+    # off its own sheet: the stored result, not the cell today
+    assert ground(edit(old='2000'), catalog, old_read=()).checks == ()
+    stored = ('Rotation speed [rpm] (2: Spin Coating) holds ... not 2000',)
+    assert ground(edit(old='3000'), catalog, old_read=stored).checks == stored
+
+
+def test_the_old_value_said_is_checked_on_every_sheet(catalog):
+    # "speed from 2000 to 4000" on a sheet holding 3000: the user's own
+    # words, checked live whatever was stored
+    said = 'step 2 rotation speed from 2000 to 4000'
+    result = ground(
+        edit(old='2000', new='4000', said=said, said_old='2000'), catalog, old_read=()
+    )
+    assert checked(result) == (
+        "Rotation speed [rpm] (2: Spin Coating): you said it was '2000'; "
+        "it holds '3000' on samples 1–5, 7–13"
+    )
+
+
 def test_old_describes_the_rows_still_to_change(catalog):
     # samples 1-5, 7 already hold 120: `old` is 115, the value on the others
     result = ground(

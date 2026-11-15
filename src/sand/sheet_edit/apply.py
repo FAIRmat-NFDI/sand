@@ -41,6 +41,9 @@ Resolve = Callable[[str, Catalog], ProposedEdits]
 # an anchored edit once an earlier input set DMSO. Only the LLM call is
 # cached, the checks after it are cheap and always rerun.
 Cache = dict[tuple[str, str], ProposedEdits]
+# the same keys -> the check of each edit's `old` on the sheet it was
+# read on (`ground.read_old`), one list per edit
+OldRead = dict[tuple[str, str], list[list[str]]]
 
 
 @dataclass(frozen=True)
@@ -69,8 +72,14 @@ class Step:
     waiting: bool = False
 
 
-def interpret_instruction(text: str, sheet: bytes, resolve: Resolve) -> Interpretation:
+def interpret_instruction(
+    text: str,
+    sheet: bytes,
+    resolve: Resolve,
+    old_read: list[list[str]] | None = None,
+) -> Interpretation:
     """One instruction against one version of the sheet. Nothing is written.
+    `old_read`: for an answer read on another sheet (`ground`).
 
     1. Build the catalog from the sheet bytes.
     2. Ask the LLM what the instruction means. It answers with edits.
@@ -81,7 +90,10 @@ def interpret_instruction(text: str, sheet: bytes, resolve: Resolve) -> Interpre
     """
     catalog = build(sheet)
     proposal = resolve(text, catalog)
-    results = [ground(edit, catalog) for edit in proposal.edits]
+    results = [
+        ground(edit, catalog, None if old_read is None else tuple(old_read[i]))
+        for i, edit in enumerate(proposal.edits)
+    ]
     found = coverage(text, proposal, catalog)
     # ground sees one edit alone; what needs the whole instruction is
     # refused here: an edit quoting words the user did not say, and an
@@ -153,6 +165,7 @@ def apply_all(  # noqa: PLR0913
     cached_only: bool = False,
     in_turn: bool = False,
     rejected: frozenset[str] = frozenset(),
+    old_read: OldRead | None = None,
 ) -> list[Step]:
     """Every input in order, each against the sheet the earlier ones
     left; the confirmed edits of each are written and verified. The last
@@ -162,7 +175,9 @@ def apply_all(  # noqa: PLR0913
     `cached_only` stops before the first input the model was not asked
     about on its sheet (the inputs after it would read a sheet it may
     change). `in_turn`: see the module docstring; `rejected` are the
-    keys decided without a confirmation."""
+    keys decided without a confirmation; `old_read`, the check of `old`
+    stored with each answer, for a waiting input's earlier answer (none
+    stored: no `old` check there)."""
     steps: list[Step] = []
     state = original
     for text in inputs:
@@ -170,8 +185,12 @@ def apply_all(  # noqa: PLR0913
         if in_turn and waits(
             steps, text, state, cache, confirmed=confirmed, rejected=rejected
         ):
-            earlier = last_answer(cache, text)
-            interpretation = interpret_instruction(text, state, lambda _t, _c: earlier)
+            key = _last_key(cache, text)
+            earlier = cache[key]
+            stored = (old_read or {}).get(key) or [[] for _ in earlier.edits]
+            interpretation = interpret_instruction(
+                text, state, lambda _t, _c: earlier, stored
+            )
             steps.append(Step(text, interpretation, (), None, state, waiting=True))
             continue
         if cached_only and (sha256(text.encode()), digest) not in cache:
@@ -224,8 +243,13 @@ def waits(  # noqa: PLR0913
 
 def last_answer(cache: Cache, text: str) -> ProposedEdits | None:
     """The answer to these words on the sheet last read, any sheet."""
+    key = _last_key(cache, text)
+    return None if key is None else cache[key]
+
+
+def _last_key(cache: Cache, text: str) -> tuple[str, str] | None:
     words = sha256(text.encode())
-    return next((cache[k] for k in reversed(cache) if k[0] == words), None)
+    return next((k for k in reversed(cache) if k[0] == words), None)
 
 
 def _cached(resolve: Resolve, cache: Cache, state: str) -> Resolve:

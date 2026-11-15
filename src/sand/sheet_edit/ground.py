@@ -31,7 +31,14 @@ from sand.sheet_edit.catalog import (
     numbered,
     sample_ranges,
 )
-from sand.sheet_edit.edits import Confidence, Edit, Range, Samples, Where
+from sand.sheet_edit.edits import (
+    Confidence,
+    Edit,
+    ProposedEdits,
+    Range,
+    Samples,
+    Where,
+)
 from sand.sheet_edit.numbers import (
     RANGE_WORDS,
     Number,
@@ -103,12 +110,16 @@ class Refusal(Exception):
     """Raised inside a check when it fails; ground() turns it into Refused."""
 
 
-def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
+def ground(
+    edit: Edit, catalog: Catalog, old_read: tuple[str, ...] | None = None
+) -> Grounded | Refused:
     """Check one proposal against the sheet: the target can be written
     (W), the rows exist (R), the samples the user named are the rows used
     (S), the anchor holds (A), `old` is what the cell holds (O), `new` is
     in the words (V), fits the column (T) and its unit (U); rows already
-    holding the value are set aside (N)."""
+    holding the value are set aside (N). `old_read`: the model's `old`
+    as checked on the sheet it was read on (`read_old`), for an answer
+    applied to another sheet: there `old` is out of date."""
     target = catalog.column(edit.target)
     if target is None:
         return Refused(edit, (f'{edit.target} is not a column of this sheet',))
@@ -126,7 +137,11 @@ def ground(edit: Edit, catalog: Catalog) -> Grounded | Refused:
         anchor = catalog.column(edit.anchor.column)
         found = anchor_problems(edit, target, anchor, catalog, rows)
         checks, doubts = checks + found[0], doubts + found[1]
-    checks += old_problems(edit, target, catalog, rows)  # O
+    if old_read is None:  # O
+        checks += old_problems(edit, target, catalog, rows)
+    else:
+        to_change = _rows_not_holding(target, edit.new, rows)
+        checks += old_read or _old_said_problems(edit, target, catalog, to_change)
     found = value_problems(edit, target, anchor, catalog)  # V
     checks, doubts = checks + found[0], doubts + found[2]
     notes = (*notes, *found[1])
@@ -652,21 +667,48 @@ def anchor_problems(
 def old_problems(
     edit: Edit, target: ColumnInfo, catalog: Catalog, rows: tuple[int, ...]
 ) -> list[str]:
+    """The model's `old` (`_model_old_problems`), else the old value the
+    user said (`_old_said_problems`)."""
+    to_change = _rows_not_holding(target, edit.new, rows)
+    return _model_old_problems(edit, target, catalog, to_change) or _old_said_problems(
+        edit, target, catalog, to_change
+    )
+
+
+def read_old(proposal: ProposedEdits, catalog: Catalog) -> list[list[str]]:
+    """The check of each edit's `old` on the sheet the model read it on,
+    one list per edit: stored with the answer, for `ground` on another
+    sheet, where the cell may hold what a note above wrote."""
+    found = []
+    for edit in proposal.edits:
+        target = catalog.column(edit.target)
+        try:
+            rows, _ = resolve_rows(edit.rows, catalog)
+        except Refusal:
+            rows = ()
+        if target is None or target.formula or not rows:
+            found.append([])
+            continue
+        to_change = _rows_not_holding(target, edit.new, rows)
+        found.append(_model_old_problems(edit, target, catalog, to_change))
+    return found
+
+
+def _model_old_problems(
+    edit: Edit, target: ColumnInfo, catalog: Catalog, to_change: list[int]
+) -> list[str]:
     """`old` must be what the target holds in every targeted row that
     does not already hold `new`; otherwise the LLM read another line of
     the table. Rows that hold different values cannot share one `old`
     ("PbBr2 for all samples" over a column that counts up): there an
     `old` that is empty or one of those values passes; the preview says
     "various" for them."""
-    to_change = _rows_not_holding(target, edit.new, rows)
-    wrong = [
-        r for r in _rows_not_holding(target, edit.old or '', rows) if r in to_change
-    ]
+    wrong = _rows_not_holding(target, edit.old or '', to_change)
     if not wrong:
-        return _old_said_problems(edit, target, catalog, to_change)
+        return []
     held = _values(target, to_change)
     if len(held) > 1 and (not edit.old or any(same_value(edit.old, v) for v in held)):
-        return _old_said_problems(edit, target, catalog, to_change)
+        return []
     claimed = 'empty' if not edit.old else repr(edit.old)
     return [
         f'{column_name(target)} holds {_held(target, catalog, wrong)}, not {claimed}'

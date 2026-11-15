@@ -305,6 +305,20 @@ async def test_an_answer_the_child_could_not_get_is_this_inputs_problem(upload):
     ] is False
 
 
+async def test_the_old_value_is_checked_where_the_model_read_it(upload):
+    misread = {**SPEED_EDIT, 'old': '2000'}
+    await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2)
+    )
+    await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(misread)] * 2, 'job-2')
+    )
+    assert [e['old_read'] for e in cache_file(upload)['proposals'].values()] == [[[]]]
+    [entry] = cache_file(upload, job_cache_file('job-2'))['proposals'].values()
+    [[found]] = entry['old_read']
+    assert "not '2000'" in found
+
+
 async def test_applying_twice_with_the_same_answers_is_one_entry(upload):
     answers = [answer(SPEED_EDIT)] * 2
     first = await activities.agree_cache_and_apply_input(apply(upload, 1, answers))

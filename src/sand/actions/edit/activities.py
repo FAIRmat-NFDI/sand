@@ -104,6 +104,7 @@ async def replay_cached_inputs(data: ReplayInput) -> dict:
         cached_only=True,
         in_turn=True,
         rejected=frozenset(data.rejections),
+        old_read=files.cache.old_read,
     )
     confirmed = set(files.confirmations)
     return {
@@ -144,6 +145,7 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
     confirmed edits are written) and report what the user sees."""
     from sand.sheet_edit.catalog import build
     from sand.sheet_edit.edits import Unreadable
+    from sand.sheet_edit.ground import read_old
     from sand.sheet_edit.resolve import agree, read_answer
 
     files = await _read_files(data)
@@ -159,7 +161,10 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
             else read_answer(a.text, text, catalog)
             for a in data.answers
         ]
-        files.cache.add(key, agree(opinions, catalog), data.job_id)
+        agreed = agree(opinions, catalog)
+        # `old` is checked here, on the sheet the model read: off it (an
+        # input waiting for its turn) the cell may hold a note above's value
+        files.cache.add(key, agreed, data.job_id, read_old(agreed, catalog))
         await _write_cache(files, data)
     elif key not in files.cache.proposals and not _waits(files, data, before):
         # the cache file was lost between prepare and apply
@@ -330,6 +335,7 @@ def _apply_inputs_from_cache(
         files.cache.proposals,
         in_turn=True,
         rejected=frozenset(data.rejections),
+        old_read=files.cache.old_read,
     )
 
 

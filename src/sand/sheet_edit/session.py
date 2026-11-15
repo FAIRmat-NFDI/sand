@@ -25,7 +25,7 @@ import datetime
 import json
 from dataclasses import dataclass, field
 
-from sand.sheet_edit.apply import Cache
+from sand.sheet_edit.apply import Cache, OldRead
 from sand.sheet_edit.changelog import Confirmation
 from sand.sheet_edit.edits import ProposedEdits, Unreadable
 from sand.sheet_edit.workbook import sha256
@@ -59,15 +59,28 @@ class LlmCache:
 
     proposals: Cache = field(default_factory=dict)
     jobs: dict[CacheKey, str] = field(default_factory=dict)
+    # the check of each edit's `old` on the sheet it was read on
+    # (`ground.read_old`); absent for an answer stored before it existed
+    old_read: OldRead = field(default_factory=dict)
 
-    def add(self, key: CacheKey, proposal: ProposedEdits, job: str) -> None:
+    def add(
+        self,
+        key: CacheKey,
+        proposal: ProposedEdits,
+        job: str,
+        old_read: list[list[str]] | None = None,
+    ) -> None:
         self.proposals[key] = proposal
         self.jobs[key] = job
+        if old_read is None:
+            self.old_read.pop(key, None)
+        else:
+            self.old_read[key] = old_read
 
     def update(self, other: 'LlmCache') -> None:
         """`other`'s entries win."""
         for key, proposal in other.proposals.items():
-            self.add(key, proposal, other.jobs[key])
+            self.add(key, proposal, other.jobs[key], other.old_read.get(key))
 
     def of_job(self, job: str, readable_only: bool = False) -> 'LlmCache':
         """The entries one job got; without its unreadable answers when
@@ -80,7 +93,7 @@ class LlmCache:
                 isinstance(u, Unreadable) for u in proposal.unresolved
             ):
                 continue
-            cache.add(key, proposal, job)
+            cache.add(key, proposal, job, self.old_read.get(key))
         return cache
 
 
@@ -110,7 +123,7 @@ def load_llm_cache(
         unreadable = any(isinstance(u, Unreadable) for u in proposal.unresolved)
         if not isinstance(got_by, str) or (unreadable and got_by != job):
             continue
-        cache.add((text_hash, state_hash), proposal, got_by)
+        cache.add((text_hash, state_hash), proposal, got_by, _old_read(entry, proposal))
     return cache
 
 
@@ -122,10 +135,30 @@ def llm_cache_json(cache: LlmCache, model: str, prompt_version: str) -> dict:
             f'{text}:{state}': {
                 'proposal': proposal.model_dump(mode='json'),
                 'job': cache.jobs[(text, state)],
+                **(
+                    {'old_read': cache.old_read[(text, state)]}
+                    if (text, state) in cache.old_read
+                    else {}
+                ),
             }
             for (text, state), proposal in cache.proposals.items()
         },
     }
+
+
+def _old_read(entry: dict, proposal: ProposedEdits) -> list[list[str]] | None:
+    """One list of messages per edit, or None (not stored, or malformed:
+    the answer is then used without an `old` check off its own sheet)."""
+    found = entry.get('old_read')
+    if (
+        isinstance(found, list)
+        and len(found) == len(proposal.edits)
+        and all(
+            isinstance(f, list) and all(isinstance(m, str) for m in f) for f in found
+        )
+    ):
+        return found
+    return None
 
 
 def read_confirmations(raw: bytes | None) -> dict:
