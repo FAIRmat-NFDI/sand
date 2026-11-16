@@ -2,6 +2,7 @@ import asyncio
 import json
 import posixpath
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
@@ -746,4 +747,6 @@ def _utc_now_iso() -> str:
 
 
 def _utc_now_stamp() -> str:
-    return datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')
+    # the random part: two files made in one microsecond must not share a name
+    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')
+    return f'{stamp}_{uuid.uuid4().hex[:8]}'

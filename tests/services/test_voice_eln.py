@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import datetime
 from http import HTTPStatus
 
 import httpx
@@ -726,9 +727,14 @@ async def test_concurrent_deletes_of_two_inputs_drop_both_references():
 @pytest.mark.asyncio
 async def test_concurrent_adds_keep_both_references(monkeypatch):
     fake = _FakeNomad()
-    # distinct note files even when both stamps fall in one microsecond
-    stamps = iter(['first', 'second'])
-    monkeypatch.setattr(voice_eln, '_utc_now_stamp', lambda: next(stamps))
+
+    # both notes made in one microsecond
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 11, 16, 10, 0, tzinfo=tz)
+
+    monkeypatch.setattr(voice_eln, 'datetime', Frozen)
 
     async def interleaving(request: httpx.Request) -> httpx.Response:
         await asyncio.sleep(0)
@@ -746,6 +752,7 @@ async def test_concurrent_adds_keep_both_references(monkeypatch):
             )
         )
 
+    assert first.entry_id != second.entry_id
     notes = fake.archive(EXPERIMENT_MAINFILE)['data']['notes']
     assert sorted(notes) == sorted(
         entry_ref(UPLOAD_ID, handle.entry_id) for handle in (first, second)
