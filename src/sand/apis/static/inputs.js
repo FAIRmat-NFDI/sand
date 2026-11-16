@@ -566,10 +566,10 @@ function renderInputs(experiment, items) {
     deleteBtn.className = "btn btn-icon input-delete";
     deleteBtn.title = "Delete";
     deleteBtn.setAttribute("aria-label", "Delete the " + inputDescription(item));
-    const icon = document.createElement("span");
-    icon.className = "material-icons";
-    icon.textContent = "close";
-    deleteBtn.append(icon);
+    const deleteIcon = document.createElement("span");
+    deleteIcon.className = "material-icons";
+    deleteIcon.textContent = "close";
+    deleteBtn.append(deleteIcon);
     deleteBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       deleteInput(item, experiment, deleteBtn);
