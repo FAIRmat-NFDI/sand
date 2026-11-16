@@ -637,3 +637,28 @@ def test_one_subbatchs_samples_are_not_all(two_subbatches):
     labels = [s.label for s in two_subbatches.samples if s.subbatch == one]
     a = answer(edit(rows={'samples': labels, 'subbatch': one}))
     assert isinstance(ask(two_subbatches, a, answer(edit())).unresolved[0], Uncertain)
+
+
+def test_all_with_an_anchor_keeps_the_samples_the_other_pass_named(synthetic_xlsx):
+    said = 'time of the IPA to 300 for samples 1 to 13'
+    every = edit(
+        target=TIME_2,
+        old='600',
+        new='300',
+        rows={'first': '1', 'last': '13', 'subbatch': None},
+        said=said,
+    )
+    anchored = {
+        **every,
+        'rows': 'all',
+        'anchor': {'column': SOLVENT_2, 'equals': 'IPA'},
+    }
+
+    def passes(text, catalog):
+        return resolve(text, catalog, FakeCall(answer(anchored), answer(every)))
+
+    result = interpret_instruction(said, synthetic_xlsx, passes)
+    assert len(result.ready) == 1, result.preview
+    assert 'you named samples' not in result.preview
+    (kept,) = result.ready.values()
+    assert kept.edit.anchor is not None  # pass A's anchor, still checked

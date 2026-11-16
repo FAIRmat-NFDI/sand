@@ -248,7 +248,8 @@ def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdi
             # hedge on any of these quotes counts
             doubt(edit, _HEDGED)
         else:
-            edits.append(_kept(_named(edit, both), pointed, olds))
+            # after _kept, which may take another pass's edit for its anchor
+            edits.append(_named(_kept(edit, pointed, olds), both))
     for key, group in by_b.items():
         if key not in by_a:
             for reading in _readings(group):
