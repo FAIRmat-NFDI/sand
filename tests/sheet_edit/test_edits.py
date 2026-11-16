@@ -35,6 +35,7 @@ def edit(target, rows='all', anchor=None, old='3000', new='4000') -> dict:
         'rows': rows,
         'anchor': anchor,
         'old': old,
+        'unit': None,
         'said_old': None,
         'new': new,
         'said': 'speed 4000',
@@ -94,7 +95,7 @@ def test_an_anchor_and_an_unresolved_are_accepted(catalog, ids):
         (edit('C025', {'where': 'C999', 'equals': 'x'}), 'unknown where column'),
         (edit('C025', anchor={'column': 'C999', 'equals': 'x'}), 'unknown anchor'),
         (edit('C025', 'some'), 'not a row form'),
-        ({**edit('C025'), 'unit': 'rpm'}, 'an extra field'),
+        ({**edit('C025'), 'confidence': 'high'}, 'an extra field'),
         ({k: v for k, v in edit('C025').items() if k != 'anchor'}, 'anchor missing'),
     ],
 )

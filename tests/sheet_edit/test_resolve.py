@@ -67,6 +67,7 @@ def edit(**fields):
         'rows': 'all',
         'anchor': None,
         'old': '3000',
+        'unit': None,
         'said_old': None,
         'new': '4000',
         'said': SAID,
@@ -174,7 +175,7 @@ def test_the_schema_cannot_express_what_only_code_produces(catalog):
     assert 'unreadable' not in schema
     assert user_text(SAID, catalog, second_opinion=False).startswith('| ID | Step |')
     assert (
-        PROMPT_VERSION == 'v5'
+        PROMPT_VERSION == 'v6'
     )  # bumped with the rules: cached answers are asked again
 
 
@@ -267,18 +268,20 @@ def test_what_is_no_disagreement(catalog):
 
 
 def test_the_value_is_compared_as_it_would_be_written(catalog):
-    # "time 2 is 200 second": both write 200 into the [s] column
-    a = answer(edit(target=TIME_2, old='600', new='200', said='time 2 is 200 second'))
-    b = answer(
-        edit(target=TIME_2, old='600', new='200 second', said='time 2 is 200 second')
+    def time(new, unit=None):
+        return answer(
+            edit(target=TIME_2, old='600', new=new, unit=unit, said='time 2 is 2 min')
+        )
+
+    # the column's unit or none: 200 either way
+    assert len(ask(catalog, time('200'), time('200', 'second')).edits) == 1
+    # converted: 2 min and 120 s both write 120
+    assert len(ask(catalog, time('2', 'min'), time('120', 's')).edits) == 1
+    assert len(ask(catalog, time('120'), time('2', 'min')).edits) == 1
+    # 2 min is not 2 s
+    assert isinstance(
+        ask(catalog, time('2'), time('2', 'min')).unresolved[0], Uncertain
     )
-    assert len(ask(catalog, a, b).edits) == 1
-    assert len(ask(catalog, b, a).edits) == 1
-    # 200 min is not 200 s: refused by ground, so compared as said
-    c = answer(
-        edit(target=TIME_2, old='600', new='200 min', said='time 2 is 200 second')
-    )
-    assert isinstance(ask(catalog, a, c).unresolved[0], Uncertain)
 
 
 def test_numbers_agree_by_amount_and_empty_only_with_empty(catalog):
@@ -294,18 +297,24 @@ def test_numbers_agree_by_amount_and_empty_only_with_empty(catalog):
     assert isinstance(ask(catalog, cleared, answer(edit())).unresolved[0], Uncertain)
 
 
-def test_a_note_with_the_columns_unit_shows_the_value_written(synthetic_xlsx):
-    said = 'uv ozone clean, time1 is 200 second'
-    time = edit(target='C011', old='600', new='200', said=said)
+@pytest.mark.parametrize(
+    ('said', 'new', 'unit', 'shown'),
+    [
+        ('uv ozone clean, time1 is 200 second', '200', 'second', '600 → 200, '),
+        ('uv ozone clean, time1 is 200', '200', None, '600 → 200, '),
+        ('uv ozone clean, time1 is 2 min', '2', 'min', '600 → 2 min (120 s), '),
+    ],
+)
+def test_the_preview_shows_a_conversion_only(synthetic_xlsx, said, new, unit, shown):
+    time = edit(target='C011', old='600', new=new, unit=unit, said=said)
 
     def passes(text, catalog):
-        unit = {**time, 'new': '200 second'}
-        return resolve(text, catalog, FakeCall(answer(unit), answer(time)))
+        return resolve(text, catalog, FakeCall(answer(time)))
 
     result = interpret_instruction(said, synthetic_xlsx, passes)
-    assert len(result.ready) == 1, result.preview
-    assert '600 → 200, ' in result.preview
-    assert 'second' not in result.preview.split('\n')[0]
+    (written,) = result.ready.values()
+    assert shown in result.preview, result.preview
+    assert written.value == (120 if unit == 'min' else 200)
 
 
 def test_the_value_is_compared_as_written(catalog):
@@ -400,6 +409,7 @@ def test_an_anchor_is_no_disagreement_and_is_kept(catalog, synthetic_xlsx):
         'said': said,
         'new': '300',
         'old': '600',
+        'unit': None,
         'said_old': None,
     }
     dmso = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'DMSO'})
@@ -472,6 +482,7 @@ def test_repeats_of_one_write_in_a_pass_are_all_compared(catalog):
         'said': said,
         'new': '300',
         'old': '600',
+        'unit': None,
         'said_old': None,
     }
     dmso = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'DMSO'})

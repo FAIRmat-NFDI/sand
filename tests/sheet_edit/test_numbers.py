@@ -4,8 +4,8 @@ import pytest
 
 from sand.sheet_edit.numbers import (
     UnitMismatch,
-    check_unit,
     comparable,
+    convert,
     numbers,
     ranges,
     same_unit,
@@ -437,22 +437,25 @@ def test_comparable(said, header, same_kind):
 
 
 @pytest.mark.parametrize(
-    ('text', 'header'),
-    [('30 sec', 's'), ('4000', 'rpm'), ('4000', None), ('100 degrees', '°C')],
+    ('amount', 'unit', 'header', 'expected'),
+    [
+        ('2', 'min', 's', '120'),
+        ('1.5', 'min', 's', '90'),
+        ('2', 'hours', 'min', '120'),
+        ('4', 'krpm', 'rpm', '4000'),
+        ('0.05', 'mL', 'uL', '50'),
+        ('5', 'Å', 'nm', '0.5'),
+        ('20', '°C', 'K', '293.15'),
+        ('300', 'K', '°C', '26.85'),
+    ],
 )
-def test_check_unit_accepts_no_unit_or_the_same_unit(text, header):
-    check_unit(value(text), header)
+def test_convert_is_exact(amount, unit, header, expected):
+    assert convert(Decimal(amount), unit, header) == Decimal(expected)
 
 
 @pytest.mark.parametrize(
-    ('text', 'header', 'message'),
-    [
-        ('2 min', 's', "'2 min' is in min, not a [s] column"),
-        ('4 krpm', 'rpm', "'4 krpm' is in krpm, not a [rpm] column"),
-        ('5 rpm', None, "'5 rpm' is in rpm, not a column without a unit"),
-        ('300 K', '°C', "'300 K' is in K, not a [°C] column"),
-    ],
+    ('unit', 'header'),
+    [('min', '°C'), ('rpm/s', 'rpm'), ('blorp', 's'), ('min', 'blorp')],
 )
-def test_check_unit_refuses_a_different_unit(text, header, message):
-    with pytest.raises(UnitMismatch, match=message.replace('[', r'\[')):
-        check_unit(value(text), header)
+def test_convert_refuses_another_quantity_or_an_unknown_unit(unit, header):
+    assert convert(Decimal(2), unit, header) is None

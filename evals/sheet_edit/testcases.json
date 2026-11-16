@@ -143,9 +143,33 @@
     },
     {
       "id": "other-unit",
-      "why": "hours into a [min] column, never converted (#108): the model keeps the unit and the unit check refuses it; a dropped unit gets a word check (#165), a warning on the edit",
+      "why": "hours into a [min] column: the model gives the unit apart, code converts it (#108); the preview shows 2 hours (120 min)",
       "text": "annealing time of step 2 to 2 hours for all samples",
-      "expect": {"edits": [], "flagged": [{"step": 2, "column": "Annealing time"}]}
+      "expect": {"edits": [{"step": 2, "column": "Annealing time", "rows": "all", "new": "120", "check": false}]}
+    },
+    {
+      "id": "unit-fraction",
+      "why": "1.5 min into a [s] column is exactly 90, never 89.99",
+      "text": "step 2 rotation time 1.5 min for all samples",
+      "expect": {"edits": [{"step": 2, "column": "Rotation time", "rows": "all", "new": "90", "check": false}]}
+    },
+    {
+      "id": "unit-offset",
+      "why": "kelvin into a [°C] column: pint converts with the offset, 400 K is 126.85 °C",
+      "text": "step 6 annealing temperature 400 K for all samples",
+      "expect": {"edits": [{"step": 6, "column": "Annealing temperature", "rows": "all", "new": "126.85", "check": false}]}
+    },
+    {
+      "id": "unit-same",
+      "why": "the column's unit said: nothing converted, the preview shows the value alone",
+      "text": "1. uv ozone clean, time1 is 200 second",
+      "expect": {"edits": [{"step": 1, "column": "Time 1", "rows": "all", "new": "200", "check": false}]}
+    },
+    {
+      "id": "unit-other-quantity",
+      "why": "a temperature into a time column: refused, never converted",
+      "text": "step 2 rotation time 20 °C for all samples",
+      "expect": {"edits": [], "flagged": [{"step": 2, "column": "Rotation time"}]}
     },
     {
       "id": "and-then",
@@ -185,7 +209,7 @@
     },
     {
       "id": "unit-kept",
-      "why": "rpm/s into an [rpm] column: the model keeps the unit (#165), the unit check refuses it. The synthetic sheet has no rpm/s column, so a dropped unit is written unmarked: what this case watches",
+      "why": "rpm/s into an [rpm] column: another quantity, refused; a unit the model drops gets a word check (#165). The synthetic sheet has no rpm/s column, so a dropped unit is written unmarked: what this case watches",
       "text": "step 2 rotation speed 500 rpm/s for all samples",
       "expect": {"edits": [], "flagged": [{"step": 2, "column": "Rotation speed"}]}
     },

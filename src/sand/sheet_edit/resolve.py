@@ -40,7 +40,7 @@ from sand.sheet_edit.render import table
 
 # recorded with every proposal (changelog, status); bump on any change to
 # the prompts below or to the table in render.py, which the model reads
-PROMPT_VERSION = 'v5'
+PROMPT_VERSION = 'v6'
 # the job's cache keeps proposals after `agree`: bump the second part on
 # a change to how two opinions agree, so agreed answers are asked again
 CACHE_VERSION = f'{PROMPT_VERSION}+agree-2'
@@ -65,10 +65,13 @@ Rules:
 user did not mention.
 - "said": the exact words of the instruction this edit comes from, copied \
 verbatim, nothing else.
-- "new": the value as the user said it. Never convert units, scale or round. \
-Keep the unit the user said with the number ("500 rpm/s", "2 hours"), \
-even when it differs from the column's unit. To clear a cell, "new" is "" \
-(the user said to clear, empty or remove it); (empty) is never a value.
+- "new": the value as the user said it, without its unit. Never convert \
+units, scale or round. To clear a cell, "new" is "" (the user said to \
+clear, empty or remove it); (empty) is never a value.
+- "unit": the unit the user said with the number, as said ("2 hours": \
+"new" "2", "unit" "hours"; "500 rpm/s": "500" and "rpm/s"), even when it \
+differs from the column's unit; null when the user said no unit. Text \
+values have no unit.
 - "old": the current value the table shows for the cell, without the quotes; \
 null when the cell is empty or when the samples hold different values.
 - "said_old": the current value as the user said it, even when the table \
@@ -97,9 +100,10 @@ How to answer:
 - Every edit must come from the user's words and nothing else. Never invent \
 a value, a sample or a column the user did not say.
 - Copy the user's exact words for this edit into "said", unchanged.
-- Put the value in "new" exactly as spoken: no unit conversion, no \
-rounding, no rescaling. A unit the user said stays with the number \
-("2 hours", "500 rpm/s"), whatever unit the column has. Clearing a cell \
+- Put the value in "new" exactly as spoken, without its unit: no unit \
+conversion, no rounding, no rescaling. The unit the user said with it goes \
+in "unit" as spoken ("2 hours": "2" and "hours"), whatever unit the column \
+has; "unit" is null if the user said none, and for text values. Clearing a cell \
 (the user says clear, empty, remove) is "new": ""; the marker (empty) is \
 not a value.
 - "old" is the current value shown in the table for that cell, quotes \
@@ -302,10 +306,10 @@ def _value_agreement_key(edit: Edit, catalog: Catalog) -> tuple:
     new = edit.new.strip()
     column = catalog.column(edit.target)
     if column is None:
-        return ('said', new)
-    written, problems = typed_value(new, column)
+        return ('said', new, (edit.unit or '').strip())
+    written, problems = typed_value(edit, column)
     if problems:  # ground refuses it: the words are all there is
-        return ('said', new)
+        return ('said', new, (edit.unit or '').strip())
     return ('written', type(written).__name__, written)
 
 

@@ -68,7 +68,10 @@ class Edit(_Model):
     rows: RowSpec  # 'all' | {samples} | {first, last} | {where, equals}
     anchor: Anchor | None
     old: str | None  # what the LLM believes is in the cell; None: empty
-    new: str  # as the user said it, not converted
+    new: str  # the number or text as the user said it, without its unit
+    # the unit said with the number ("2 min": "min"); None: none said. Code
+    # converts it to the column's
+    unit: str | None = None
     # the current value as the user said it ("from 2000 to 4000"); None:
     # not said. Ground compares it with the sheet: `old` is the table's
     said_old: str | None = None
@@ -172,6 +175,7 @@ def proposed_edits_model(catalog: Catalog) -> type[ProposedEdits]:
         target=(writable, ...),
         rows=(Literal['all'] | samples | range_ | where, ...),
         anchor=(anchor | None, ...),
+        unit=(str | None, ...),
         said_old=(str | None, ...),
     )
     ambiguous = create_model(

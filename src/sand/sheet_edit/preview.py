@@ -33,8 +33,11 @@ from sand.sheet_edit.ground import (
     Grounded,
     Refusal,
     Refused,
+    as_written,
     column_name,
+    converted,
     resolve_rows,
+    said_unit,
     samples_text,
 )
 from sand.sheet_edit.render import EMPTY, value_text
@@ -84,14 +87,14 @@ def edit_summary(result: Grounded, catalog: Catalog) -> dict[str, str]:
     samples. A no-op (no rows to write) has old == new."""
     target = catalog.column(result.edit.target)
     assert target is not None  # ground refused it otherwise
-    new = value_text(result.value)
+    new = _new_text(result, target)
     old = _old_text(result, target) if result.rows else new
     # the samples left out because they hold the value already: said at
     # the edit, so nobody wonders why sample 1 is not in the list
     unchanged = ''
     if result.rows and result.unchanged:
         kept = samples_text(result.unchanged, catalog)
-        unchanged = f'{kept} already {result.edit.new or "empty"}'
+        unchanged = f'{kept} already {as_written(result.edit, target) or "empty"}'
     return {
         'step': target.column.section.label,
         'column': target.column.header,
@@ -106,7 +109,16 @@ def _change(result: Grounded, target: ColumnInfo, catalog: Catalog) -> str:
     """'3000 → 4000, all 12 samples'; 'various → 4000, …' when the rows
     written hold different values (the note under it says which)."""
     old = _old_text(result, target)
-    return f'{old} → {value_text(result.value)}, {samples_text(result.rows, catalog)}'
+    return f'{old} → {_new_text(result, target)}, {samples_text(result.rows, catalog)}'
+
+
+def _new_text(result: Grounded, target: ColumnInfo) -> str:
+    """The value written; with what the user said when it was converted:
+    '2 min (120 s)'."""
+    written = value_text(result.value)
+    if not converted(result.edit, target):
+        return written
+    return f'{result.edit.new} {said_unit(result.edit)} ({written} {target.unit})'
 
 
 def _old_text(result: Grounded, target: ColumnInfo) -> str:
@@ -174,7 +186,8 @@ def _reading(edit: Edit, catalog: Catalog) -> str:
             'is empty' if rows.equals is None else f'= {rows.equals}'
         )
         samples += f' ({_written(rows, catalog)})'
-    text = f'{where} → {edit.new or EMPTY}, {samples}'
+    said = f'{edit.new} {said_unit(edit)}' if said_unit(edit) else edit.new
+    text = f'{where} → {said or EMPTY}, {samples}'
     if subbatch is not None:
         text += f' of subbatch {subbatch}'
     if edit.anchor:
