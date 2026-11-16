@@ -84,7 +84,6 @@ class FakeVoice:
     created: list[str] = field(default_factory=list)
     descriptions: list[str] = field(default_factory=list)
     deleted: list[str] = field(default_factory=list)
-    moved: list[tuple[str, str]] = field(default_factory=list)
     revised: list[tuple[str, str]] = field(default_factory=list)
     removed: list[str] = field(default_factory=list)
     renamed: list[str] = field(default_factory=list)
@@ -119,21 +118,13 @@ class FakeVoice:
         assert (upload_id, collection_entry_id) == (UPLOAD, COLLECTION)
         return self.inputs
 
-    async def revise_input_datetime(
-        self, client, upload_id, entry_id, datetime_value, collection_entry_id
-    ):
-        self.moved.append((entry_id, datetime_value))
-        return 'note'
-
     async def revise_input(
         self, client, upload_id, entry_id, text, collection_entry_id
     ):
         self.revised.append((entry_id, text))
         return 'note'
 
-    async def delete_input(
-        self, client, upload_id, entry_id, collection_entry_id, undeletable
-    ):
+    async def delete_input(self, client, upload_id, entry_id, collection_entry_id):
         self.removed.append(entry_id)
 
     async def rename_input_collection(

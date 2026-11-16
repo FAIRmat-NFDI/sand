@@ -7,7 +7,6 @@ from http import HTTPStatus
 import pytest
 from nomad_fakes import COLLECTION, UPLOAD, FakeVoice, api, note
 
-from sand.apis.routers import input_collections
 from sand.sheet_edit.session import CONFIRMATIONS_FILE, STATUS_FILE
 
 pytestmark = pytest.mark.asyncio
@@ -96,16 +95,14 @@ async def test_a_written_update_can_be_deleted_and_loses_its_confirmations(voice
     assert list(confirmations(voice)) == ['k9']
 
 
-async def test_confirmations_stay_when_the_change_is_refused(voice, monkeypatch):
+async def test_confirmations_stay_when_the_change_is_refused(voice):
     # not this collection's input, an empty note (the fake does not refuse,
-    # the service does), an input the experiment needs
+    # the service does)
     put_confirmations(voice, {'k1': 'n1', 'k7': 'n7'})
 
     await revise(voice, 'n7')
     await revise(voice, 'n1', text='  ')
     await delete(voice, 'n7')
-    monkeypatch.setattr(input_collections, '_undeletable_entry_ids', lambda _: ('n1',))
-    await delete(voice, 'n1')
 
     assert sorted(confirmations(voice)) == ['k1', 'k7']
 

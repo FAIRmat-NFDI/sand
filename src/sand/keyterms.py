@@ -1,7 +1,7 @@
 # Terms the live transcript (Deepgram keyterm) is biased towards. Only names
 # that are said this way and that a general model gets wrong: plain words
 # ("acetone", "annealing") need no help, and short ones ("Cu", "IPA") would
-# show up where nobody said them. Spelled as the extraction expects.
+# show up where nobody said them. Spelled as the sheets write them.
 KEYTERMS = [
     # materials, precursors
     'perovskite',
@@ -46,7 +46,6 @@ KEYTERMS = [
     'ALD',
     'glovebox',
     # tools
-    'HySprint',
     'Pero2',
     'Pero5',
     'Ossila',

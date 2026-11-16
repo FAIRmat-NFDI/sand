@@ -1,4 +1,4 @@
-"""Read the layout of a hysprint-style sheet from the file itself.
+"""Read the layout of a lab sheet from the file itself.
 
 There is no fixed template: row 1 names the step groups, row 2 the
 columns, rows 3+ are samples. Groups are found the way NOMAD's batch

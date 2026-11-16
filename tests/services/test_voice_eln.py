@@ -1,12 +1,13 @@
 import asyncio
 import json
+from datetime import datetime
 from http import HTTPStatus
 
 import httpx
 import pytest
 from nomad.utils import generate_entry_id
 
-from sand.hysprint import EXPERIMENT_INFO_LABEL, EXPERIMENT_INFO_MAINFILE
+from sand.services import voice_eln
 from sand.services.nomad_api import NomadAPIError, NomadAuthError, entry_ref
 from sand.services.voice_eln import (
     AUDIO_INPUT_M_DEF,
@@ -153,47 +154,8 @@ class _FakeNomad:
         return json.loads(self.raw_files[mainfile])
 
 
-INFO = {
-    'project_name': 'perov',
-    'batch': 'B1',
-    'subbatch': 'a',
-    'first_sample': '1',
-    'n_samples': 4,
-}
-
-
 @pytest.mark.asyncio
-async def test_create_experiment_writes_collection_and_info_note():
-    fake = _FakeNomad()
-
-    async with _client(fake) as client:
-        service = _service()
-        result = await service.create_input_collection(client, 'perov_B1_a')
-        await service.add_written_note(
-            client,
-            UPLOAD_ID,
-            json.dumps(INFO),
-            collection_entry_id=SAND_COLLECTION_ID,
-            label=EXPERIMENT_INFO_LABEL,
-            mainfile=EXPERIMENT_INFO_MAINFILE,
-        )
-
-    assert result.upload_id == UPLOAD_ID
-    assert result.entry_id == generate_entry_id(UPLOAD_ID, EXPERIMENT_MAINFILE)
-
-    info_note = fake.archive('experiment_info.archive.json')['data']
-    assert info_note['label'] == 'experiment_info'
-    assert json.loads(info_note['text']) == INFO
-    assert info_note['datetime']
-
-    collection = fake.archive(EXPERIMENT_MAINFILE)['data']
-    assert collection['name'] == 'perov_B1_a'
-    info_entry_id = generate_entry_id(UPLOAD_ID, 'experiment_info.archive.json')
-    assert collection['notes'] == [entry_ref(UPLOAD_ID, info_entry_id)]
-
-
-@pytest.mark.asyncio
-async def test_create_experiment_without_info_has_no_notes():
+async def test_create_writes_only_the_collection():
     fake = _FakeNomad()
 
     async with _client(fake) as client:
@@ -332,18 +294,13 @@ async def test_write_waits_for_processing_and_sends_body_once():
     async with _client(fake) as client:
         service = _service()
         result = await service.create_input_collection(client, 'perov_B1_a')
-        await service.add_written_note(
-            client,
-            UPLOAD_ID,
-            json.dumps(INFO),
-            collection_entry_id=SAND_COLLECTION_ID,
-            label=EXPERIMENT_INFO_LABEL,
-            mainfile=EXPERIMENT_INFO_MAINFILE,
+        note = await service.add_written_note(
+            client, UPLOAD_ID, 'a step', collection_entry_id=SAND_COLLECTION_ID
         )
 
     assert result.upload_id == UPLOAD_ID
-    assert 'experiment_info.archive.json' in fake.raw_files
     assert EXPERIMENT_MAINFILE in fake.raw_files
+    assert note.entry_id
     files_written = 3  # collection, note, collection append
     assert fake.put_attempts == files_written
 
@@ -649,27 +606,6 @@ async def test_revise_label_rejects_an_entry_outside_the_collection():
 
 
 @pytest.mark.asyncio
-async def test_revise_datetime_reorders_the_inputs():
-    fake = _fake_with_inputs(
-        audio={'datetime': '2026-09-22T10:00:00+00:00'},
-        note={'text': 'n', 'datetime': '2026-09-22T09:00:00+00:00'},
-    )
-
-    async with _client(fake) as client:
-        service = _service()
-        await service.revise_input_datetime(
-            client,
-            UPLOAD_ID,
-            'n1',
-            '2026-09-22T11:00:00Z',
-            collection_entry_id=SAND_COLLECTION_ID,
-        )
-        inputs = await service.collect_inputs(client, UPLOAD_ID, SAND_COLLECTION_ID)
-
-    assert [i.entry_id for i in inputs] == ['a1', 'n1']
-
-
-@pytest.mark.asyncio
 async def test_concurrent_revisions_of_one_input_keep_both_changes():
     fake = _fake_with_inputs(audio={'transcript': 'machine'}, note={'text': 'n'})
 
@@ -684,18 +620,18 @@ async def test_concurrent_revisions_of_one_input_keep_both_changes():
             service.revise_input(
                 client, UPLOAD_ID, 'a1', 'fixed', collection_entry_id=SAND_COLLECTION_ID
             ),
-            service.revise_input_datetime(
+            service.revise_input_label(
                 client,
                 UPLOAD_ID,
                 'a1',
-                '2026-09-22T11:00:00Z',
+                'anneal',
                 collection_entry_id=SAND_COLLECTION_ID,
             ),
         )
 
     audio = fake.archive('a1.archive.json')['data']
     assert audio['corrected_transcript'] == 'fixed'
-    assert audio['datetime'] == '2026-09-22T11:00:00+00:00'
+    assert audio['label'] == 'anneal'
 
 
 @pytest.mark.asyncio
@@ -789,8 +725,16 @@ async def test_concurrent_deletes_of_two_inputs_drop_both_references():
 
 
 @pytest.mark.asyncio
-async def test_concurrent_adds_keep_both_references():
+async def test_concurrent_adds_keep_both_references(monkeypatch):
     fake = _FakeNomad()
+
+    # both notes made in one microsecond
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 11, 16, 10, 0, tzinfo=tz)
+
+    monkeypatch.setattr(voice_eln, 'datetime', Frozen)
 
     async def interleaving(request: httpx.Request) -> httpx.Response:
         await asyncio.sleep(0)
@@ -802,16 +746,13 @@ async def test_concurrent_adds_keep_both_references():
         first, second = await asyncio.gather(
             *(
                 service.add_written_note(
-                    client,
-                    UPLOAD_ID,
-                    'a step',
-                    collection_entry_id=SAND_COLLECTION_ID,
-                    mainfile=mainfile,
+                    client, UPLOAD_ID, 'a step', collection_entry_id=SAND_COLLECTION_ID
                 )
-                for mainfile in ('first.archive.json', 'second.archive.json')
+                for _ in range(2)
             )
         )
 
+    assert first.entry_id != second.entry_id
     notes = fake.archive(EXPERIMENT_MAINFILE)['data']['notes']
     assert sorted(notes) == sorted(
         entry_ref(UPLOAD_ID, handle.entry_id) for handle in (first, second)

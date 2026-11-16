@@ -561,22 +561,20 @@ function renderInputs(experiment, items) {
     nomadLink.title = "View on NOMAD";
     nomadLink.addEventListener("click", (e) => e.stopPropagation());
     right.append(nomadLink);
-    if (item.deletable) {
-      const deleteBtn = document.createElement("button");
-      deleteBtn.type = "button";
-      deleteBtn.className = "btn btn-icon input-delete";
-      deleteBtn.title = "Delete";
-      deleteBtn.setAttribute("aria-label", "Delete the " + inputDescription(item));
-      const icon = document.createElement("span");
-      icon.className = "material-icons";
-      icon.textContent = "close";
-      deleteBtn.append(icon);
-      deleteBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        deleteInput(item, experiment, deleteBtn);
-      });
-      right.append(deleteBtn);
-    }
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "btn btn-icon input-delete";
+    deleteBtn.title = "Delete";
+    deleteBtn.setAttribute("aria-label", "Delete the " + inputDescription(item));
+    const icon = document.createElement("span");
+    icon.className = "material-icons";
+    icon.textContent = "close";
+    deleteBtn.append(icon);
+    deleteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteInput(item, experiment, deleteBtn);
+    });
+    right.append(deleteBtn);
 
     const text = document.createElement("div");
     text.className = "input-text";

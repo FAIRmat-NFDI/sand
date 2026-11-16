@@ -5,17 +5,12 @@ from pathlib import PurePath
 from urllib.parse import quote
 
 from fastapi import APIRouter, Form, HTTPException, Request, Response, UploadFile
-from nomad.utils import generate_entry_id
 
 from sand import feedback
 from sand.apis.deps import get_bearer_token
-from sand.hysprint import EXPERIMENT_INFO_LABEL, EXPERIMENT_INFO_MAINFILE
-from sand.hysprint.sheet import DERIVED_SHEET_MAINFILE, EXTRACTION_STATUS_MAINFILE
-from sand.hysprint.sheet_store import SheetStore
 from sand.models.input_collections import (
     ConfirmEditsRequest,
     ConfirmEditsResponse,
-    CreateHysprintExperimentRequest,
     CreateNoteRequest,
     FeedbackRequest,
     FeedbackResponse,
@@ -28,11 +23,9 @@ from sand.models.input_collections import (
     RejectEditsRequest,
     RejectEditsResponse,
     RenameRequest,
-    ReviseDatetimeRequest,
     ReviseInputRequest,
     ReviseInputResponse,
     ReviseLabelRequest,
-    SheetUploadResponse,
     UndoRejectRequest,
 )
 from sand.services.nomad_api import (
@@ -69,11 +62,6 @@ router = APIRouter()
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 CLIENT_ERROR_STATUSES = (400, 404, 409)
-
-
-def _undeletable_entry_ids(upload_id: str) -> tuple[str, ...]:
-    # the experiment-info form: the hysprint extraction reads it
-    return (generate_entry_id(upload_id, EXPERIMENT_INFO_MAINFILE),)
 
 
 def _voice_service(request: Request) -> VoiceElnService:
@@ -132,13 +120,11 @@ def _upload_lock(upload_id: str) -> asyncio.Lock:
     return lock
 
 
-def _job_running(status: dict | None, collection_entry_id: str | None) -> bool:
+def _job_running(status: dict | None) -> bool:
     """NOMAD picks the workflow id, so a duplicate cannot be rejected
-    there: the status file is the guard. None: any collection's job
-    counts (the edit job's files are the upload's, not a collection's)."""
+    there: the status file is the guard. Any collection's job counts: the
+    edit job's files are the upload's, not a collection's."""
     if not status:
-        return False
-    if collection_entry_id and status.get('collection_entry_id') != collection_entry_id:
         return False
     if status.get('phase') in ('completed', 'failed'):
         return False
@@ -223,46 +209,6 @@ async def list_input_collections(request: Request) -> InputCollectionListRespons
             )
             for e in input_collections
         ]
-    )
-
-
-@router.post('/input-collections', response_model=InputCollectionSummaryModel)
-async def create_hysprint_input_collection(
-    body: CreateHysprintExperimentRequest,
-    request: Request,
-) -> InputCollectionSummaryModel:
-    """Create an experiment: a NOMAD upload with an InputCollection entry.
-
-    With `info`, the experiment-info form is stored alongside as a
-    WrittenNote labeled 'experiment_info' and referenced by the collection.
-    """
-    voice = _voice_service(request)
-    token = get_bearer_token(request)
-
-    info = body.info.model_dump(exclude_none=True) if body.info else None
-    name = body.name or (body.info.default_name() if body.info else None)
-    if not name:
-        raise HTTPException(
-            status_code=400, detail='Provide a name or the experiment info'
-        )
-
-    try:
-        async with voice.build_client(token) as client:
-            result = await voice.create_input_collection(client, name)
-            if info:
-                await voice.add_written_note(
-                    client,
-                    result.upload_id,
-                    json.dumps(info),
-                    collection_entry_id=result.entry_id,
-                    label=EXPERIMENT_INFO_LABEL,
-                    mainfile=EXPERIMENT_INFO_MAINFILE,
-                )
-    except NomadAPIError as exc:
-        raise _http_error(exc) from exc
-
-    return InputCollectionSummaryModel(
-        name=name, **_entry_response(voice, result.upload_id, result.entry_id)
     )
 
 
@@ -409,7 +355,7 @@ async def sheet_view(
     if final is not None and log is None:
         warning = (
             'an edit job is writing the sheet; this is the uploaded sheet'
-            if _job_running(status, None)
+            if _job_running(status)
             else 'the edited sheet stored with this upload does not match '
             'its changelog; this is the uploaded sheet'
         )
@@ -548,8 +494,7 @@ async def list_inputs(
     request: Request,
     collection_entry_id: str,
 ) -> InputListResponse:
-    """All of the experiment's inputs in extraction order, including the
-    experiment_info form note."""
+    """All of the experiment's inputs, in order."""
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
@@ -564,7 +509,6 @@ async def list_inputs(
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
-    undeletable = _undeletable_entry_ids(upload_id)
     return InputListResponse(
         inputs=[
             InputItemModel(
@@ -576,7 +520,6 @@ async def list_inputs(
                 text=item.text,
                 corrected=item.corrected,
                 status=item.status,
-                deletable=item.entry_id not in undeletable,
                 applied=item.entry_id in applied,
             )
             for item in inputs
@@ -619,47 +562,6 @@ async def revise_input(
                 upload_id,
                 entry_id,
                 body.text,
-                collection_entry_id=collection_entry_id,
-            )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except NomadAPIError as exc:
-        raise _http_error(exc) from exc
-
-    return ReviseInputResponse(kind=kind)
-
-
-@router.post(
-    '/input-collections/{upload_id}/inputs/{entry_id}/datetime',
-    response_model=ReviseInputResponse,
-)
-async def revise_input_datetime(
-    upload_id: str,
-    entry_id: str,
-    body: ReviseDatetimeRequest,
-    request: Request,
-    collection_entry_id: str,
-) -> ReviseInputResponse:
-    """Set the datetime of one input, reordering it on the timeline.
-
-    Not for an experiment that started from a sheet: there the time is
-    when the update was made, and the order of updates is the record."""
-    voice = _voice_service(request)
-    token = get_bearer_token(request)
-
-    try:
-        async with voice.build_client(token) as client:
-            if await voice.writer.read_raw_file(client, upload_id, ORIGINAL_FILE):
-                raise HTTPException(
-                    status_code=409,
-                    detail='the time of an update is when it was made; '
-                    'it cannot be changed',
-                )
-            kind = await voice.revise_input_datetime(
-                client,
-                upload_id,
-                entry_id,
-                body.datetime,
                 collection_entry_id=collection_entry_id,
             )
     except ValueError as exc:
@@ -714,182 +616,21 @@ async def delete_input(
 
     try:
         async with _upload_lock(upload_id), voice.build_client(token) as client:
-            undeletable = _undeletable_entry_ids(upload_id)
             item = await _input_of(
                 client, voice, upload_id, collection_entry_id, entry_id
             )
-            if item is not None and entry_id not in undeletable:
+            if item is not None:
                 await _drop_decisions(client, voice, upload_id, entry_id)
             await voice.delete_input(
                 client,
                 upload_id,
                 entry_id,
                 collection_entry_id=collection_entry_id,
-                undeletable=undeletable,
             )
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
     return Response(status_code=204)
-
-
-@router.get('/input-collections/{upload_id}/sheet')
-async def download_sheet(
-    upload_id: str,
-    request: Request,
-    collection_entry_id: str,
-) -> Response:
-    """The derived experiment sheet, as an xlsx download."""
-    voice = _voice_service(request)
-    token = get_bearer_token(request)
-
-    try:
-        async with voice.build_client(token) as client:
-            xlsx = await SheetStore(voice).read(client, upload_id, collection_entry_id)
-    except NomadAPIError as exc:
-        raise _http_error(exc) from exc
-
-    if xlsx is None:
-        raise HTTPException(
-            status_code=404,
-            detail='No sheet in this experiment yet; extract first',
-        )
-    return Response(
-        content=xlsx,
-        media_type=XLSX_CONTENT_TYPE,
-        headers={
-            'Content-Disposition': f'attachment; filename="{DERIVED_SHEET_MAINFILE}"'
-        },
-    )
-
-
-@router.put('/input-collections/{upload_id}/sheet', response_model=SheetUploadResponse)
-async def upload_sheet(
-    upload_id: str,
-    file: UploadFile,
-    request: Request,
-    collection_entry_id: str,
-) -> SheetUploadResponse:
-    """Replace the derived sheet with a user-uploaded one.
-
-    Stored under the fixed sheet name.
-    The extraction json is never touched by user replace the xlsx.
-    By comparing the hash in extraction json and the current xlsx,
-    we know if the xlsx is user edited or directly converted from
-    extracted json.
-    """
-    voice = _voice_service(request)
-    token = get_bearer_token(request)
-
-    if not (file.filename or '').lower().endswith('.xlsx'):
-        raise HTTPException(status_code=415, detail='Upload an .xlsx file')
-    xlsx = await _read_upload(file)
-
-    try:
-        async with voice.build_client(token) as client:
-            handle, changed = await SheetStore(voice).store_uploaded(
-                client, upload_id, xlsx, collection_entry_id
-            )
-    except NomadAPIError as exc:
-        raise _http_error(exc) from exc
-
-    return SheetUploadResponse(
-        changed=changed,
-        derived_entry=InputCollectionResponse(
-            **_entry_response(voice, handle.upload_id, handle.entry_id)
-        ),
-    )
-
-
-@router.post(
-    '/input-collections/{upload_id}/extract-async',
-    response_model=JobResponse,
-)
-async def start_extract_async(
-    upload_id: str,
-    request: Request,
-    collection_entry_id: str,
-) -> JobResponse:
-    """Start the extraction action; poll /extract-status for progress."""
-    voice = _voice_service(request)
-    token = get_bearer_token(request)
-
-    async with _upload_lock(upload_id):
-        try:
-            async with voice.build_client(token) as client:
-                status = await voice.writer.read_json(
-                    client, upload_id, EXTRACTION_STATUS_MAINFILE
-                )
-                if _job_running(status, collection_entry_id):
-                    raise HTTPException(
-                        status_code=409,
-                        detail='an extraction is already running for this '
-                        'experiment; wait for it to finish',
-                    )
-                # validates the collection (and the token) before starting
-                await voice.collect_inputs(
-                    client, upload_id, collection_entry_id=collection_entry_id
-                )
-                user_id = await _user_id(client)
-                await voice.writer.write_json(
-                    client,
-                    upload_id,
-                    EXTRACTION_STATUS_MAINFILE,
-                    _reservation(collection_entry_id, 'starting', steps=[]),
-                )
-        except NomadAPIError as exc:
-            raise _http_error(exc) from exc
-
-        from sand.actions.extract.models import ExtractInput
-
-        try:
-            job_id = await _start_action(
-                'sand.actions.extract:extract_action_entry_point',
-                ExtractInput(
-                    upload_id=upload_id,
-                    user_id=user_id,
-                    collection_entry_id=collection_entry_id,
-                ),
-            )
-        except Exception as exc:
-            error = f'could not start the extraction: {exc}'
-            await _release_reservation(
-                voice,
-                token,
-                upload_id,
-                EXTRACTION_STATUS_MAINFILE,
-                _reservation(collection_entry_id, 'failed', error=error, steps=[]),
-            )
-            raise HTTPException(status_code=502, detail=error) from exc
-    return JobResponse(job_id=job_id)
-
-
-@router.get('/input-collections/{upload_id}/extract-status')
-async def extract_status(
-    upload_id: str,
-    request: Request,
-    collection_entry_id: str,
-) -> dict:
-    """The asynchronous extraction's progress, read from the status file
-    the workflow writes into the upload."""
-    voice = _voice_service(request)
-    token = get_bearer_token(request)
-
-    try:
-        async with voice.build_client(token) as client:
-            status = await voice.writer.read_json(
-                client, upload_id, EXTRACTION_STATUS_MAINFILE
-            )
-    except NomadAPIError as exc:
-        raise _http_error(exc) from exc
-
-    # the status file is upload-level and an upload can hold several
-    # collections: only report a status belonging to the requested one
-    if status is None or status.get('collection_entry_id') != collection_entry_id:
-        raise HTTPException(
-            status_code=404, detail='no extraction status for this collection yet'
-        )
-    return status
 
 
 @router.post('/input-collections/{upload_id}/edit-async', response_model=JobResponse)
@@ -907,7 +648,7 @@ async def start_edit_async(
         try:
             async with voice.build_client(token) as client:
                 status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
-                if _job_running(status, None):
+                if _job_running(status):
                     raise HTTPException(
                         status_code=409,
                         detail='an edit job is already running on this sheet; '
@@ -984,9 +725,7 @@ async def _edit_status(
     # collections: only report a status belonging to the requested one
     if status is None or status.get('collection_entry_id') != collection_entry_id:
         raise HTTPException(status_code=404, detail='no edit job for this sheet yet')
-    if status.get('phase') not in ('completed', 'failed') and not _job_running(
-        status, collection_entry_id
-    ):
+    if status.get('phase') not in ('completed', 'failed') and not _job_running(status):
         # a job that stopped answering (a crashed worker, a reservation
         # whose start never reached Temporal): the page would wait on
         # it forever, so it is reported as the failure it is
@@ -1252,7 +991,7 @@ async def _completed_status(
     """The status of the last job, which must have completed: what the
     final sheet and the changelog are checked against."""
     status = await _edit_status(client, voice, upload_id, collection_entry_id)
-    if _job_running(status, None):
+    if _job_running(status):
         raise HTTPException(
             status_code=409, detail='an edit job is running; wait for it'
         )
@@ -1332,7 +1071,7 @@ async def _decidable(  # noqa: PLR0913
         for edit in report.get('ready', []):
             reports.setdefault(edit['key'], report)
     unknown = sorted(set(keys) - set(reports))
-    if unknown and _job_running(status, None):
+    if unknown and _job_running(status):
         # the running job's reports replace the old ones as it goes
         raise HTTPException(
             status_code=409,
@@ -1650,7 +1389,7 @@ async def download_final_sheet(
                     detail="another sheet's job wrote this upload's sheet; "
                     'run the job again',
                 )
-            if status is not None and _job_running(status, None):
+            if status is not None and _job_running(status):
                 raise HTTPException(
                     status_code=409, detail='an edit job is running; wait for it'
                 )

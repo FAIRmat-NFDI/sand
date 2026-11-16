@@ -15,7 +15,7 @@ class SandDashboardEntryPoint(DashboardEntryPoint):
     deepgram_api_key: str = ''
     deepgram_model: str = 'nova-3'
     # Lab terms the live transcript is biased towards (Nova-3 only).
-    # None = the hysprint lab's (sand.hysprint.keyterms); [] = none.
+    # None = sand's own list (sand.keyterms); [] = none.
     deepgram_keyterms: list[str] | None = None
     # Default state of the GUI's "save live transcript" toggle: on = the
     # live text is stored and whisper is skipped; off = the live text is
@@ -35,7 +35,7 @@ class SandDashboardEntryPoint(DashboardEntryPoint):
 sand_api = SandDashboardEntryPoint(
     id_url_safe='sand',
     name='SAND',
-    description='Structured Audio NOMAD Data - voice/text AI assistant for extracting lab process data.',
+    description='Structured Audio NOMAD Data - voice/text AI assistant for editing lab sheets.',
     # Not 'embedded': the GUI's iframe blocks downloads (the sheet).
     launch_modes=['tab'],
 )

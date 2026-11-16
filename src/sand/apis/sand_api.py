@@ -13,7 +13,7 @@ from sand.apis.deps import get_bearer_token
 from sand.apis.routers.input_collections import router as input_collections_router
 from sand.apis.routers.live_transcript import router as live_transcript_router
 from sand.feedback import sand_version
-from sand.hysprint.keyterms import KEYTERMS
+from sand.keyterms import KEYTERMS
 from sand.services.voice_eln import VoiceElnService
 
 # TODO: this need to be updated maybe to uplaod access when the api scope is supprted.
