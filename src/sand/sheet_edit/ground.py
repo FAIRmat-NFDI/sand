@@ -855,15 +855,38 @@ def value_problems(
         unit = said_unit(edit)
         if unit and target.unit and same_unit(unit, target.unit):
             unit = None  # the column's unit: nothing to convert, as if none said
-        if unit and any(_unit_follows(said, m, unit) for m in matches):
-            unit = None  # a unit code does not read ('r/min'), or a range's
-        return _unit_said(unit, matches, target, catalog), notes, []
+        return _unit_said(unit, matches, target, catalog, said), notes, []
     if candidates:
         said_numbers = ', '.join(c.text for c in candidates)
         return [f'{where} is not in your words; you said {said_numbers}'], [], []
     # nothing to compare: no number said, or a date said in words ('2nd of
     # February 2025'), which code does not read yet
     return [], [], doubt
+
+
+def _unit_given(
+    unit: str, matches: list[Number], target: ColumnInfo, said: str
+) -> list[str]:
+    """Every mention of the amount was said with `unit`: "rotation time 2
+    °C and annealing time 2 min" does not tell which 2 is the edit's."""
+    with_it = [m for m in matches if _carries(said, m, unit)]
+    if len(with_it) == len(matches):
+        return []
+    if with_it:
+        mentions = ', '.join(m.text for m in matches)
+        return [
+            f'{column_name(target)}: you said {mentions}; '
+            f"not sure {unit!r} is this value's"
+        ]
+    return [f'{column_name(target)}: you did not say {unit!r} with the value']
+
+
+def _carries(said: str, number: Number, unit: str) -> bool:
+    """The number was said with `unit`: read with it, or written right
+    after it in a form code does not read ('r/min')."""
+    if number.unit:
+        return same_unit(number.unit, unit)
+    return _unit_follows(said, number, unit)
 
 
 def _unit_follows(said: str, number: Number, unit: str) -> bool:
@@ -879,7 +902,11 @@ def _unit_follows(said: str, number: Number, unit: str) -> bool:
 
 
 def _unit_said(
-    unit: str | None, matches: list[Number], target: ColumnInfo, catalog: Catalog
+    unit: str | None,
+    matches: list[Number],
+    target: ColumnInfo,
+    catalog: Catalog,
+    said: str,
 ) -> list[str]:
     """The edit's unit must be said with the value. With none, the unit
     said must be the column's: "rotation speed 500 rpm/s" answered 500
@@ -887,9 +914,7 @@ def _unit_said(
     quantity or of another column of the sheet count: 'uh' and 'um' after
     a spoken number are words, not units."""
     if unit:
-        if any(m.unit and same_unit(m.unit, unit) for m in matches):
-            return []
-        return [f'{column_name(target)}: you did not say {unit!r} with the value']
+        return _unit_given(unit, matches, target, said)
     if not target.unit:
         return []
     if any(m.unit is None or same_unit(m.unit, target.unit) for m in matches):

@@ -1497,3 +1497,17 @@ def test_an_old_value_said_in_another_unit_is_converted(catalog):
         )
         assert bool(result.checks) == wrong, (said_old, result.checks)
         assert result.value == 60  # noqa: PLR2004
+
+
+def test_the_unit_must_be_with_every_mention_of_the_amount(catalog):
+    said = 'rotation time 2 °C and annealing time 2 min'
+    result = ground(edit(TIME, old='30', new='2', unit='min', said=said), catalog)
+    assert "not sure 'min' is this value's" in checked(result)
+
+
+def test_a_fraction_a_conversion_makes_is_written_and_shown(catalog):
+    # the column's type comes from what it holds now (30): a fraction is a
+    # value like 3500.5 typed into it; the preview shows "0.01 min (0.6 s)"
+    said = 'rotation time 0.01 min'
+    result = ground(edit(TIME, old='30', new='0.01', unit='min', said=said), catalog)
+    assert (result.value, result.checks) == (0.6, ())
