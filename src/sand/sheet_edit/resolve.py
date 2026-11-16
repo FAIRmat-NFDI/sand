@@ -19,7 +19,6 @@ ground.py are the safety net.
 import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Literal
 
 from sand.sheet_edit.catalog import Catalog
 from sand.sheet_edit.coverage import quote_words
@@ -249,7 +248,8 @@ def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdi
             # hedge on any of these quotes counts
             doubt(edit, _HEDGED)
         else:
-            edits.append(_kept(edit, pointed, olds))
+            # after _kept, which may take another pass's edit for its anchor
+            edits.append(_named(_kept(edit, pointed, olds), both))
     for key, group in by_b.items():
         if key not in by_a:
             for reading in _readings(group):
@@ -275,7 +275,7 @@ _HEDGED = 'a pass also left these words unresolved'
 
 # the rows of an edit, as compared between the two opinions: the sheet
 # rows when the sample words resolve, else the spec as given
-RowsAgreementKey = Literal['all'] | frozenset[int] | tuple
+RowsAgreementKey = frozenset[int] | tuple
 # (target, rows, new): what two opinions must agree on
 AgreementKey = tuple[str, RowsAgreementKey, str]
 
@@ -316,6 +316,16 @@ def _kept(edit: Edit, pointed: dict, olds: dict) -> Edit:
     return kept
 
 
+def _named(edit: Edit, both: list[Edit]) -> Edit:
+    """Samples named agree with 'all' when they are every sample; the
+    named ones are kept, else ground finds 'all' against the samples the
+    user named."""
+    if edit.rows != 'all':
+        return edit
+    named = next((e for e in both if e.rows != 'all'), None)
+    return edit if named is None else edit.model_copy(update={'rows': named.rows})
+
+
 def _first_per_said_old(edits: list[Edit]) -> dict[str, Edit]:
     said: dict[str, Edit] = {}
     for edit in edits:
@@ -342,9 +352,11 @@ def _first_per_anchor(edits: list[Edit]) -> dict[tuple[str, str], Edit]:
 
 
 def _rows_agreement_key(rows: RowSpec, catalog: Catalog) -> RowsAgreementKey:
-    """Samples listed and the range of the same samples are the same rows;
-    the sheet decides, through the one row resolver. 'all' and 'where'
-    stay what they are: named samples and 'every sample' are two readings."""
+    """Samples listed, a range and 'all' are the same rows when they name
+    the same samples ("samples 1 to 13" is every sample when there is no
+    6); the sheet decides, through the one row resolver. 'where' stays
+    what it is: the rows holding a value are another reading than the
+    samples that hold it now."""
     if isinstance(rows, Samples):
         try:
             return frozenset(resolve_rows(rows, catalog)[0])
@@ -356,7 +368,7 @@ def _rows_agreement_key(rows: RowSpec, catalog: Catalog) -> RowsAgreementKey:
         except Refusal:  # "samples 3 to 1", or the same repeated label
             return ('range', rows.first, rows.last, rows.subbatch)
     if rows == 'all':
-        return 'all'
+        return frozenset(resolve_rows(rows, catalog)[0])
     return ('where', rows.where, None if rows.equals is None else rows.equals.strip())
 
 
