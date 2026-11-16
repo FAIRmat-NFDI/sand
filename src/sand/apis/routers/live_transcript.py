@@ -2,7 +2,8 @@
 
 Protocol (client side):
   1. connect: the browser sends NOMAD's Authorization cookie with the
-     handshake, which authenticates the socket;
+     handshake, which authenticates the socket, and the open sheet's key
+     terms as `keyterm` query parameters;
   2. wait for {"type": "relay-ready"};
   3. send audio chunks as binary frames;
   4. send {"type": "relay-stop"} (or just close) - sand tells Deepgram to
@@ -31,6 +32,21 @@ router = APIRouter()
 
 # How long to wait for Deepgram's remaining finals after CloseStream.
 DRAIN_TIMEOUT_S = 10.0
+
+# The browser sends these: kept within what a sheet can give.
+MAX_SHEET_KEYTERMS = 100
+MAX_KEYTERM_LENGTH = 60
+
+
+def keyterms(sheet_terms: list[str], lab_terms: list[str]) -> list[str]:
+    """The sheet's terms first, then the lab's. No lab terms configured
+    ([] in nomad.yaml): key terms are off, the sheet's too."""
+    if not lab_terms:
+        return []
+    sheet = [' '.join(t.split()) for t in sheet_terms[:MAX_SHEET_KEYTERMS]]
+    sheet = [t for t in sheet if 0 < len(t) <= MAX_KEYTERM_LENGTH]
+    seen = {t.lower() for t in sheet}
+    return [*sheet, *(t for t in lab_terms if t.lower() not in seen)]
 
 
 async def _token_is_valid(app, token: str) -> bool:
@@ -92,7 +108,10 @@ async def live_transcript(browser_ws: WebSocket) -> None:
         await browser_ws.close(code=4401, reason='invalid NOMAD token')
         return
 
-    url = deepgram_url(app.state.deepgram_model, app.state.deepgram_keyterms)
+    terms = keyterms(
+        browser_ws.query_params.getlist('keyterm'), app.state.deepgram_keyterms
+    )
+    url = deepgram_url(app.state.deepgram_model, terms)
     try:
         deepgram_ws = await websockets.connect(
             url, additional_headers={'Authorization': f'Token {api_key}'}
