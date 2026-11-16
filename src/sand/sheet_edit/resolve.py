@@ -19,7 +19,6 @@ ground.py are the safety net.
 import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Literal
 
 from sand.sheet_edit.catalog import Catalog
 from sand.sheet_edit.coverage import quote_words
@@ -249,7 +248,7 @@ def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdi
             # hedge on any of these quotes counts
             doubt(edit, _HEDGED)
         else:
-            edits.append(_kept(edit, pointed, olds))
+            edits.append(_kept(_named(edit, both), pointed, olds))
     for key, group in by_b.items():
         if key not in by_a:
             for reading in _readings(group):
@@ -275,7 +274,7 @@ _HEDGED = 'a pass also left these words unresolved'
 
 # the rows of an edit, as compared between the two opinions: the sheet
 # rows when the sample words resolve, else the spec as given
-RowsAgreementKey = Literal['all'] | frozenset[int] | tuple
+RowsAgreementKey = frozenset[int] | tuple
 # (target, rows, new): what two opinions must agree on
 AgreementKey = tuple[str, RowsAgreementKey, str]
 
@@ -314,6 +313,16 @@ def _kept(edit: Edit, pointed: dict, olds: dict) -> Edit:
     if olds and not (kept.said_old or '').strip():
         kept = kept.model_copy(update={'said_old': next(iter(olds.values())).said_old})
     return kept
+
+
+def _named(edit: Edit, both: list[Edit]) -> Edit:
+    """Samples named agree with 'all' when they are every sample; the
+    named ones are kept, else ground finds 'all' against the samples the
+    user named."""
+    if edit.rows != 'all':
+        return edit
+    named = next((e for e in both if e.rows != 'all'), None)
+    return edit if named is None else edit.model_copy(update={'rows': named.rows})
 
 
 def _first_per_said_old(edits: list[Edit]) -> dict[str, Edit]:

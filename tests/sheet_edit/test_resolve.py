@@ -297,6 +297,10 @@ def test_every_sample_named_as_a_range_agrees_with_all(catalog):
     everyone = [s.label for s in catalog.samples]
     listed = answer(edit(rows={'samples': everyone, 'subbatch': None}))
     assert len(ask(catalog, answer(edit()), listed).edits) == 1
+    # either order; the named samples are the ones kept
+    proposal = ask(catalog, answer(edit(rows='all')), every)
+    assert len(proposal.edits) == 1
+    assert isinstance(proposal.edits[0].rows, Range)
     # fewer samples than all is still a disagreement
     some = answer(edit(rows={'first': '1', 'last': '5', 'subbatch': None}))
     assert isinstance(ask(catalog, some, answer(edit())).unresolved[0], Uncertain)
@@ -612,3 +616,24 @@ def test_read_answer_then_agree_is_resolve(catalog):
         catalog, a, None
     )
     assert isinstance(read_answer(None, SAID, catalog), Unreadable)
+
+
+def test_all_agreed_with_the_samples_said_has_no_contradiction(synthetic_xlsx):
+    said = 'speed 4000 for samples 1 to 13'
+    every = edit(rows={'first': '1', 'last': '13', 'subbatch': None}, said=said)
+
+    def passes(text, catalog):
+        return resolve(
+            text, catalog, FakeCall(answer({**every, 'rows': 'all'}), answer(every))
+        )
+
+    result = interpret_instruction(said, synthetic_xlsx, passes)
+    assert len(result.ready) == 1
+    assert 'you named samples' not in result.preview
+
+
+def test_one_subbatchs_samples_are_not_all(two_subbatches):
+    one = next(s.subbatch for s in two_subbatches.samples if s.row == 9)  # noqa: PLR2004
+    labels = [s.label for s in two_subbatches.samples if s.subbatch == one]
+    a = answer(edit(rows={'samples': labels, 'subbatch': one}))
+    assert isinstance(ask(two_subbatches, a, answer(edit())).unresolved[0], Uncertain)
