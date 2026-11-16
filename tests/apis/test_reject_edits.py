@@ -242,7 +242,7 @@ async def test_rejecting_an_input_again_drops_its_lost_rejections(voice):
     assert sorted(rejections(voice)) == ['k2', 'other']
 
 
-async def test_an_input_with_every_edit_decided_has_nothing_to_confirm_again(voice):
+async def test_an_input_with_every_edit_decided_has_nothing_to_decide_again(voice):
     # one confirmation lost to an earlier update's change, the edits now
     # all decided: nothing is waiting
     voice.writer.files[CONFIRMATIONS_FILE] = json.dumps(
@@ -250,7 +250,7 @@ async def test_an_input_with_every_edit_decided_has_nothing_to_confirm_again(voi
     ).encode()
     await post(voice, 'reject', {'keys': ['k1', 'k2']})
 
-    assert (await report(voice))['confirm_again'] == 0
+    assert (await report(voice))['decide_again'] == 0
 
 
 async def test_deciding_an_input_again_drops_its_lost_decisions_of_both_kinds(voice):

@@ -250,7 +250,7 @@ def test_cached_only_stops_before_the_first_input_the_model_was_not_asked(
     assert apply_all(synthetic_xlsx, [], llm, set(), cache, cached_only=True) == []
 
 
-def in_turn(  # noqa: PLR0913
+def decide(  # noqa: PLR0913
     original, inputs, confirmed=(), *, rejected=(), cache=None, llm=None
 ):
     return apply_all(
@@ -259,67 +259,48 @@ def in_turn(  # noqa: PLR0913
         llm or FakeLLM(),
         set(confirmed),
         {} if cache is None else cache,
-        in_turn=True,
         rejected=frozenset(rejected),
     )
 
 
-def test_in_turn_an_input_whose_answer_broke_is_read_in_its_turn(synthetic_xlsx):
+def test_a_rejection_reads_again_only_the_note_that_named_its_value(
+    synthetic_xlsx,
+):
     inputs = [SOLVENT, SPEED_SAID, TIME]
     llm, cache = FakeLLM(), {}
-    first = in_turn(synthetic_xlsx, inputs, cache=cache, llm=llm)
-    # the first round: each read once, on the preview it was added to
+    first = decide(synthetic_xlsx, inputs, cache=cache, llm=llm)
     assert llm.calls == inputs
-    assert [s.waiting for s in first] == [False, False, False]
-    # input 1 rejected: input 2's answer holds, it is open; input 3's
-    # DMSO is gone, it waits
-    one = keys(first[0])
-    steps = in_turn(synthetic_xlsx, inputs, rejected=one, cache=cache, llm=llm)
-    assert llm.calls[3:] == []
-    assert [s.waiting for s in steps] == [False, False, True]
-    # a waiting input writes nothing, shows its earlier answer and why
-    assert steps[2].written == ()
-    assert steps[2].interpretation.proposal == PROPOSALS[TIME]
-    assert steps[2].why == (
-        "Solvent 2 (1: Cleaning UV-Ozone) no longer holds 'DMSO' on samples 1–3"
-    )
-    # input 2 confirmed: input 3's turn
-    two = keys(steps[1])
-    steps = in_turn(synthetic_xlsx, inputs, two, rejected=one, cache=cache, llm=llm)
-    assert llm.calls[3:] == [TIME]
-    assert [s.waiting for s in steps] == [False, False, False]
-
-
-def test_in_turn_a_rejection_costs_no_call(synthetic_xlsx):
-    inputs = [SOLVENT, SPEED_SAID, VARIATION_SAID]
-    llm, cache = FakeLLM(), {}
-    first = in_turn(synthetic_xlsx, inputs, cache=cache, llm=llm)
-    steps = in_turn(
+    # input 1 rejected: input 2 names nothing it wrote, input 3's DMSO is
+    # gone and it is read again at once, whatever is undecided above
+    steps = decide(
         synthetic_xlsx, inputs, rejected=keys(first[0]), cache=cache, llm=llm
     )
-    assert llm.calls == inputs
-    assert [s.waiting for s in steps] == [False, False, False]
-    # the inputs below are on another preview: new keys, the same answers
-    assert keys(steps[0]) == keys(first[0])
-    assert not keys(steps[1]) & keys(first[1])
-    assert steps[2].interpretation.proposal == first[2].interpretation.proposal
-    assert steps[2].state == synthetic_xlsx
+    assert llm.calls[3:] == [TIME]
+    assert keys(steps[1]) == keys(first[1])
 
 
-def test_in_turn_a_new_input_is_read_on_the_sheet_it_is_added_to(synthetic_xlsx):
+def test_a_note_below_an_undecided_one_is_confirmed_held_then_written(
+    synthetic_xlsx,
+):
+    inputs = [SOLVENT, SPEED_SAID]
     llm, cache = FakeLLM(), {}
-    first = in_turn(synthetic_xlsx, [SOLVENT], cache=cache, llm=llm)
-    one = keys(first[0])
-    # input 1 confirmed, input 2 added: read, nothing above is undecided
-    steps = in_turn(synthetic_xlsx, [SOLVENT, SPEED_SAID], one, cache=cache, llm=llm)
-    assert llm.calls == [SOLVENT, SPEED_SAID]
-    assert not steps[1].waiting
-    # input 2 undecided, input 3 added: never read, so read once
-    steps = in_turn(
-        synthetic_xlsx, [SOLVENT, SPEED_SAID, VARIATION_SAID], one, cache=cache, llm=llm
-    )
-    assert llm.calls[2:] == [VARIATION_SAID]
-    assert not steps[2].waiting
+    first = decide(synthetic_xlsx, inputs, cache=cache, llm=llm)
+    two = keys(first[1])
+    steps = decide(synthetic_xlsx, inputs, two, cache=cache, llm=llm)
+    # read with input 1's edit: not written on a sheet without it
+    assert steps[1].held == tuple(two)
+    assert steps[1].written == ()
+    # input 1 confirmed: written, no call; rejected: written too, since
+    # input 2 shows the same there
+    for decided in ({'confirmed': two | keys(first[0])}, {'rejected': keys(first[0])}):
+        confirmed = decided.get('confirmed', two)
+        rejected = decided.get('rejected', ())
+        steps = decide(
+            synthetic_xlsx, inputs, confirmed, rejected=rejected, cache=cache, llm=llm
+        )
+        assert steps[1].held == ()
+        assert len(steps[1].written) == ALL_ROWS
+    assert llm.calls == inputs
 
 
 def test_a_confirmed_input_under_a_reworded_one_is_held(synthetic_xlsx):
@@ -337,25 +318,25 @@ def test_a_confirmed_input_under_a_reworded_one_is_held(synthetic_xlsx):
         return proposals[text]
 
     cache = {}
-    first = in_turn(synthetic_xlsx, [SPEED_SAID, faster], cache=cache, llm=resolve)
+    first = decide(synthetic_xlsx, [SPEED_SAID, faster], cache=cache, llm=resolve)
     both = keys(first[0]) | keys(first[1])
-    done = in_turn(synthetic_xlsx, [SPEED_SAID, faster], both, cache=cache, llm=resolve)
+    done = decide(synthetic_xlsx, [SPEED_SAID, faster], both, cache=cache, llm=resolve)
     assert len(done[1].written) == ALL_ROWS
 
-    steps = in_turn(synthetic_xlsx, [reworded, faster], both, cache=cache, llm=resolve)
+    steps = decide(synthetic_xlsx, [reworded, faster], both, cache=cache, llm=resolve)
     assert keys(steps[1]) == keys(first[1])
     assert steps[1].held == tuple(keys(first[1]))
     assert steps[1].written == ()
     assert steps[1].state == synthetic_xlsx
     one = keys(steps[0])
     # input 1 confirmed: input 2 is written with no further click
-    steps = in_turn(
+    steps = decide(
         synthetic_xlsx, [reworded, faster], one | both, cache=cache, llm=resolve
     )
     assert steps[1].held == ()
     assert len(steps[1].written) == ALL_ROWS
-    # input 1 rejected instead: input 2 is on another sheet and asks again
-    steps = in_turn(
+    # input 1 rejected instead: input 2 shows 3000 -> 5000, to decide again
+    steps = decide(
         synthetic_xlsx,
         [reworded, faster],
         both,
@@ -367,60 +348,34 @@ def test_a_confirmed_input_under_a_reworded_one_is_held(synthetic_xlsx):
     assert (steps[1].written, steps[1].held) == ((), ())
 
 
-def test_in_turn_an_input_below_an_undecided_one_waits_and_adds_nothing(
-    synthetic_xlsx,
-):
-    cache = {}
-    first = in_turn(synthetic_xlsx, [SOLVENT, SPEED_SAID, TIME], cache=cache)
-    # input 1 rejected, input 2 undecided: input 3's DMSO is gone, it
-    # waits with its earlier answer, out of the sheets below it
-    steps = in_turn(
-        synthetic_xlsx,
-        [SOLVENT, SPEED_SAID, TIME, VARIATION_SAID],
-        rejected=keys(first[0]),
-        cache=cache,
-    )
-    assert steps[2].waiting
-    assert steps[2].written == ()
-    assert (steps[2].state, steps[2].preview) == (steps[1].state, steps[1].preview)
-    assert steps[3].interpretation.catalog == build(steps[1].preview)
-
-
 def test_reject_delete_and_put_back_above_cost_no_reading(synthetic_xlsx):
     inputs = [SOLVENT, SPEED_SAID, VARIATION_SAID]
     llm, cache = FakeLLM(), {}
-    first = in_turn(synthetic_xlsx, inputs, cache=cache, llm=llm)
+    first = decide(synthetic_xlsx, inputs, cache=cache, llm=llm)
     one = keys(first[0])
-    confirmed = in_turn(synthetic_xlsx, inputs, one, cache=cache, llm=llm)
+    confirmed = decide(synthetic_xlsx, inputs, one, cache=cache, llm=llm)
     # input 1 deleted: the inputs below name nothing it wrote
-    in_turn(synthetic_xlsx, inputs[1:], cache=cache, llm=llm)
+    decide(synthetic_xlsx, inputs[1:], cache=cache, llm=llm)
     # input 1 confirmed again: the answers read with it come back
-    again = in_turn(synthetic_xlsx, inputs, one, cache=cache, llm=llm)
+    again = decide(synthetic_xlsx, inputs, one, cache=cache, llm=llm)
     assert llm.calls == inputs
     assert [keys(s) for s in again] == [keys(s) for s in confirmed]
 
 
-def test_a_note_whose_anchor_went_is_read_in_its_turn_and_comes_back(
-    synthetic_xlsx,
-):
+def test_a_note_whose_anchor_went_is_read_again_and_comes_back(synthetic_xlsx):
     """'the time of the DMSO' after the DMSO note is rejected, then the
-    rejection undone."""
+    rejection undone: its first answer, and decision, hold again."""
     inputs = [SOLVENT, SPEED_SAID, TIME]
     llm, cache = FakeLLM(), {}
-    first = in_turn(synthetic_xlsx, inputs, cache=cache, llm=llm)
-    one = keys(first[0])
-    steps = in_turn(synthetic_xlsx, inputs, rejected=one, cache=cache, llm=llm)
-    assert steps[2].waiting  # DMSO gone; input 2 is open
-    read = in_turn(
-        synthetic_xlsx, inputs, keys(steps[1]), rejected=one, cache=cache, llm=llm
-    )
+    first = decide(synthetic_xlsx, inputs, cache=cache, llm=llm)
+    one, three = keys(first[0]), keys(first[2])
+    decide(synthetic_xlsx, inputs, three, rejected=one, cache=cache, llm=llm)
     assert llm.calls[3:] == [TIME]
-    assert not read[2].waiting
-    # undone: the first answer, read with the DMSO, holds again
-    steps = in_turn(synthetic_xlsx, inputs, keys(read[1]), cache=cache, llm=llm)
+    two = keys(first[1])
+    steps = decide(synthetic_xlsx, inputs, one | two | three, cache=cache, llm=llm)
     assert llm.calls[3:] == [TIME]
-    assert not steps[2].waiting
-    assert keys(steps[2]) == keys(first[2])
+    assert keys(steps[2]) == three
+    assert len(steps[2].written) == THREE_ROWS
 
 
 def test_a_worked_out_value_is_never_reused(synthetic_xlsx):
@@ -469,23 +424,19 @@ def test_a_reused_answer_is_not_checked_against_a_value_written_above(
         return proposals[text]
 
     speed = keys(run(synthetic_xlsx, [SPEED_SAID])[0])
-    in_turn(synthetic_xlsx, inputs, rejected=speed, cache=cache, llm=resolve)
-    steps = in_turn(synthetic_xlsx, inputs, speed, cache=cache, llm=resolve)
-    assert llm.calls == inputs
-    assert not steps[2].waiting  # names nothing: reused
+    decide(synthetic_xlsx, inputs, rejected=speed, cache=cache, llm=resolve)
+    steps = decide(synthetic_xlsx, inputs, speed, cache=cache, llm=resolve)
+    assert llm.calls == inputs  # names nothing: reused
     [ready] = steps[2].interpretation.ready.values()
     assert ready.checks == ()
     # compared live on that sheet, as before: the false check
     live = interpret_instruction(faster, steps[1].preview, resolve)
     [ready] = live.ready.values()
     assert "holds '4000'" in ready.checks[0]
-    # an answer saved before reuse: it waits, with no `old` check off its sheet
+    # an answer saved without its reads holds on its own sheet only
     old = {key: Answer(answer.proposal) for key, answer in cache.items()}
-    steps = in_turn(synthetic_xlsx, inputs, speed, cache=old, llm=resolve)
-    assert steps[2].waiting
-    assert steps[2].why is None
-    [ready] = steps[2].interpretation.ready.values()
-    assert ready.checks == ()
+    decide(synthetic_xlsx, inputs, speed, cache=old, llm=resolve)
+    assert faster in llm.calls[3:]
 
 
 def test_a_misreading_stays_checked_off_its_sheet(synthetic_xlsx):
@@ -505,19 +456,17 @@ def test_a_confirmation_holds_only_for_the_identical_edit(synthetic_xlsx):
     assert len(steps[0].interpretation.ready) == 1
 
 
-def test_a_confirmation_is_bound_to_the_sheet_the_input_was_given(synthetic_xlsx):
+def test_a_confirmation_holds_while_the_edit_shows_the_same(synthetic_xlsx):
     inputs = [SOLVENT, SPEED_SAID]
     confirmed = keys(run(synthetic_xlsx, inputs)[0])
     # input 2 confirmed on the sheet after input 1
     confirmed |= keys(run(synthetic_xlsx, inputs, confirmed)[1])
     steps = run(synthetic_xlsx, inputs, confirmed)
     assert [len(s.written) for s in steps] == [THREE_ROWS, ALL_ROWS]
-    # input 1 deleted: its edit is gone, and input 2 now sees another
-    # sheet, so its edit is to confirm again even though it is the same
+    # input 1 deleted: input 2 still shows 3000 -> 4000 on all samples,
+    # so it stays confirmed on the other sheet
     (step,) = run(synthetic_xlsx, [SPEED_SAID], confirmed)
-    assert step.written == ()
-    assert len(step.interpretation.ready) == 1
-    assert step.state == synthetic_xlsx
+    assert len(step.written) == ALL_ROWS
 
 
 def test_edits_of_one_input_are_confirmed_one_by_one(synthetic_xlsx):
@@ -578,28 +527,36 @@ def test_the_old_value_is_the_one_the_edit_above_leaves(synthetic_xlsx):
         return proposals[text]
 
     cache = {}
-    first = in_turn(synthetic_xlsx, [one, two], cache=cache, llm=resolve)
+    first = decide(synthetic_xlsx, [one, two], cache=cache, llm=resolve)
     assert first[1].interpretation.preview.startswith(
         '1: Cleaning UV-Ozone · Time 2 [s]: 100 → 200, samples 1–3'
     )
-    rejected = in_turn(
-        synthetic_xlsx, [one, two], rejected=keys(first[0]), cache=cache, llm=resolve
+    # input 2 confirmed as 100 -> 200: shown 600 -> 200 now, to decide again
+    rejected = decide(
+        synthetic_xlsx,
+        [one, two],
+        keys(first[1]),
+        rejected=keys(first[0]),
+        cache=cache,
+        llm=resolve,
     )
     assert rejected[1].interpretation.preview.startswith(
         '1: Cleaning UV-Ozone · Time 2 [s]: 600 → 200, samples 1–3'
     )
+    assert not keys(rejected[1]) & keys(first[1])
+    assert rejected[1].written == ()
     assert calls == [one, two]
 
 
-def test_confirming_every_input_in_order_asks_nothing_more(synthetic_xlsx):
+def test_confirming_every_input_in_any_order_asks_nothing_more(synthetic_xlsx):
     inputs = [SOLVENT, TIME, SPEED_SAID]
     llm, cache = FakeLLM(), {}
-    steps = in_turn(synthetic_xlsx, inputs, cache=cache, llm=llm)
+    steps = decide(synthetic_xlsx, inputs, cache=cache, llm=llm)
     confirmed = set()
-    for n in range(len(inputs)):
+    for n in reversed(range(len(inputs))):
         confirmed |= keys(steps[n])
-        steps = in_turn(synthetic_xlsx, inputs, confirmed, cache=cache, llm=llm)
-        assert not any(s.waiting or s.held for s in steps)
+        steps = decide(synthetic_xlsx, inputs, confirmed, cache=cache, llm=llm)
+        assert keys(steps[n]) <= confirmed
     assert llm.calls == inputs
     assert steps[-1].state == steps[-1].preview
     assert sum(len(s.written) > 0 for s in steps) == len(inputs)

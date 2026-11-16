@@ -1296,7 +1296,6 @@ body {
 }
 
 .input-meta .input-state.is-waiting,
-.input-meta .input-state.is-later,
 .input-meta .input-state.is-none {
   font-weight: 400;
 }

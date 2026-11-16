@@ -384,7 +384,7 @@ def speed_edit(first, last, new):
     return said, edit
 
 
-async def test_an_input_below_an_undecided_one_waits_without_a_model_call(upload):
+async def test_a_rejection_reads_again_the_inputs_that_named_its_value(upload):
     said_2, edit_2 = speed_edit('4', '5', '5000')
     said_3, edit_3 = speed_edit('8', '9', '6000')
     upload.inputs = [
@@ -407,25 +407,17 @@ async def test_an_input_below_an_undecided_one_waits_without_a_model_call(upload
         assert prepared == {'cached': True, 'prompts': []}
     del upload.writer.files[CONFIRMATIONS_FILE]
 
-    # input 1 rejected: input 2's 3000 now sits on samples 1-3 too, it is
-    # asked again; input 3 waits
+    # input 1 rejected: the 3000 inputs 2 and 3 named now sits on samples
+    # 1-3 too; each is asked again, whatever is undecided above it
     rejected = rejecting(job(upload, 'job-3'), [key_1])
-    prepared = await activities.prepare_input(prepare(upload, 2, snapshot=rejected))
-    assert len(prepared['prompts']) == 2  # noqa: PLR2004
-    two = await activities.agree_cache_and_apply_input(
-        apply(upload, 2, [answer(edit_2)] * 2, snapshot=rejected)
-    )
-    assert two['waiting'] is False
-    prepared = await activities.prepare_input(prepare(upload, 3, snapshot=rejected))
-    assert prepared == {'cached': True, 'prompts': []}
-    three = await activities.agree_cache_and_apply_input(
-        apply(upload, 3, [], snapshot=rejected)
-    )
-    assert three['waiting'] is True
-    assert "now holds '3000' on samples 1–3" in three['why_waiting']
-    assert three['confirmed'] == []
-    assert three['cells_written'] == 0
-    assert [e['line'] for e in three['ready']] == [e['line'] for e in first[2]['ready']]
+    for number, edit in ((2, edit_2), (3, edit_3)):
+        prepared = await activities.prepare_input(
+            prepare(upload, number, snapshot=rejected)
+        )
+        assert len(prepared['prompts']) == 2  # noqa: PLR2004
+        await activities.agree_cache_and_apply_input(
+            apply(upload, number, [answer(edit)] * 2, snapshot=rejected)
+        )
     await activities.store_final_sheet_and_changelog(rejected)
 
     # the next job replays all three: no input needs the model
@@ -434,20 +426,7 @@ async def test_an_input_below_an_undecided_one_waits_without_a_model_call(upload
         ReplayInput(**again.model_dump(), entry_ids=['e1', 'e2', 'e3'])
     )
     assert replayed['replayed'] == 3  # noqa: PLR2004
-    assert [r['waiting'] for r in replayed['reports']] == [False, False, True]
     assert replayed['reports'][0]['rejected'] == [key_1]
-
-    # input 2 rejected too: input 3's turn, on a sheet it was never read
-    # on: the replay stops there, the model is asked
-    both = rejecting(job(upload, 'job-5'), [key_1, *(e['key'] for e in two['ready'])])
-    replayed = await activities.replay_cached_inputs(
-        ReplayInput(**both.model_dump(), entry_ids=['e1', 'e2', 'e3'])
-    )
-    assert replayed['replayed'] == 2  # noqa: PLR2004
-    prepared = await activities.prepare_input(
-        PrepareInput(**both.model_dump(), number=3)
-    )
-    assert len(prepared['prompts']) == 2  # noqa: PLR2004
 
 
 async def test_an_answer_that_still_holds_is_not_asked_again(upload):
@@ -474,7 +453,6 @@ async def test_an_answer_that_still_holds_is_not_asked_again(upload):
         'prompts': [],
     }
     report = await activities.agree_cache_and_apply_input(apply(upload, 2, []))
-    assert report['waiting'] is False
     assert len(report['ready']) == 1
     assert len(cache_file(upload)['proposals']) == 2  # noqa: PLR2004
 

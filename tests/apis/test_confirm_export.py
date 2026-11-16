@@ -43,12 +43,29 @@ def put_status(voice, phase='completed', collection=COLLECTION, **fields):
     ).encode()
 
 
+DECIDED = {
+    'input': 1,
+    'entry_id': 'n1',
+    'text': 'speed 4000',
+    'ready': READY,
+    'confirmed': ['k1', 'k2'],
+}
+
+
 def put_final(voice, xlsx: bytes, **status):
-    """A completed job whose final sheet is the original: an empty log."""
+    """A completed job whose final sheet is the original (an empty log),
+    with every edit of its one update confirmed."""
     log = changelog.changelog(xlsx, [], {}, 'gemini/test v1')
     voice.writer.files[CHANGELOG_FILE] = changelog.to_json(log).encode()
     voice.writer.files[FINAL_FILE] = xlsx
-    put_status(voice, final=sha256(xlsx), **status)
+    voice.writer.files[CONFIRMATIONS_FILE] = json.dumps(
+        {
+            key: {'by': 'user', 'at': '2026-10-28T12:16:05+00:00', 'input': 'n1'}
+            for key in ('k1', 'k2')
+        }
+    ).encode()
+    voice.inputs = [note('n1', 'speed 4000')]
+    put_status(voice, final=sha256(xlsx), **{'inputs': [DECIDED], **status})
 
 
 def confirmations(voice) -> dict:
@@ -326,41 +343,68 @@ async def test_the_final_sheet_downloads_under_the_experiments_name(
 
 
 async def test_no_download_after_a_written_update_was_withdrawn(voice, synthetic_xlsx):
-    # the job wrote k1; its update was revised since, k1 is gone
-    put_final(
-        voice,
-        synthetic_xlsx,
-        inputs=[{'input': 1, 'entry_id': 'n1', 'ready': READY, 'confirmed': ['k1']}],
-    )
+    # the job wrote k1 and k2; their update was revised since, both gone
+    put_final(voice, synthetic_xlsx)
     voice.writer.files[CONFIRMATIONS_FILE] = b'{}'
 
-    for path in ('final-sheet', 'changelog'):
+    for path, said in (
+        ('final-sheet', 'being written again'),
+        ('changelog', 'revised or deleted'),
+    ):
         response = await get(voice, path)
         assert response.status_code == HTTPStatus.CONFLICT, path
-        assert 'revised or deleted' in response.json()['detail']
+        assert said in response.json()['detail']
 
 
 async def test_no_download_after_a_rejection_was_taken_back(voice, synthetic_xlsx):
     """Finding R: the updates after it were confirmed on a sheet without
     the edit; the next run takes them out."""
-    put_final(
-        voice,
-        synthetic_xlsx,
-        inputs=[
-            {
-                'input': 1,
-                'entry_id': 'n1',
-                'ready': READY,
-                'confirmed': [],
-                'rejected': ['k1'],
-            }
-        ],
-    )
+    put_final(voice, synthetic_xlsx, inputs=[{**DECIDED, 'rejected': ['k1']}])
+    voice.writer.files[CONFIRMATIONS_FILE] = json.dumps(
+        {'k2': {'by': 'user', 'at': '2026-10-28T12:16:05+00:00', 'input': 'n1'}}
+    ).encode()
 
-    for path in ('final-sheet', 'changelog'):
+    for path, said in (
+        ('final-sheet', 'being written again'),
+        ('changelog', 'rejection taken back'),
+    ):
         response = await get(voice, path)
         assert response.status_code == HTTPStatus.CONFLICT, path
-        assert 'rejection taken back' in response.json()['detail']
+        assert said in response.json()['detail']
+
+
+async def test_no_download_while_an_edit_waits_for_a_decision(voice, synthetic_xlsx):
+    put_final(voice, synthetic_xlsx, inputs=[{**DECIDED, 'confirmed': ['k1']}])
+    voice.writer.files[CONFIRMATIONS_FILE] = json.dumps(
+        {'k1': {'by': 'user', 'at': '2026-10-28T12:16:05+00:00', 'input': 'n1'}}
+    ).encode()
+
+    response = await get(voice, 'final-sheet')
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert response.json()['detail'] == (
+        'decide every edit first: 1 waiting for a decision'
+    )
+
+
+async def test_no_download_while_an_update_is_not_read(voice, synthetic_xlsx):
+    put_final(voice, synthetic_xlsx)
+    voice.inputs = [note('n1', 'speed 4000'), note('n2', 'speed 5000')]
+
+    response = await get(voice, 'final-sheet')
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert 'not read yet' in response.json()['detail']
+
+
+async def test_no_download_after_an_update_was_deleted(voice, synthetic_xlsx):
+    put_final(voice, synthetic_xlsx)
+    voice.inputs = []
+
+    response = await get(voice, 'final-sheet')
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert 'deleted' in response.json()['detail']
 
 
 async def test_a_name_in_any_script_downloads(voice, synthetic_xlsx):

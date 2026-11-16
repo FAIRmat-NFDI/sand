@@ -860,25 +860,24 @@ def _with_confirmations(
     next run. `held`: confirmed, not written until the inputs above are
     decided (apply.py). `rejected`: the ready edits rejected, never
     written; `rejected_since`, `unrejected_since` as for confirmations.
-    `confirm_again`: how many confirmations of the input match none of
-    its edits, because an update before it was revised or deleted. A
-    damaged confirmations file (None) changes nothing the job reported."""
+    `decide_again`: how many decisions of the input match none of its
+    edits, because an update above changed what it shows. A damaged
+    confirmations file (None) changes nothing the job reported."""
     for report in status.get('inputs', []):
         if not isinstance(report, dict):
             continue
         written = report.get('confirmed', [])
         keys = [edit['key'] for edit in report.get('ready', [])]
         entry_id = report.get('entry_id')
-        if confirmed is None or not entry_id or report.get('waiting'):
-            # a report from before reports named their input is read
-            # again; a waiting one wrote nothing and is read in its turn
+        if confirmed is None or not entry_id:
+            # a report from before reports named their input is read again
             report.update(
                 confirmed_since=[],
                 unconfirmed_since=[],
                 held=[],
                 rejected_since=[],
                 unrejected_since=[],
-                confirm_again=0,
+                decide_again=0,
                 rejected=_rejected(report, keys, rejected) if entry_id else [],
             )
             continue
@@ -907,6 +906,9 @@ def _with_confirmations(
         known = report.get('rejected')
         if not isinstance(known, list):
             known = []
+        # a key the run knew as rejected and confirmed since: the inputs
+        # after it were read without the edit
+        flipped = [key for key in known if key in since]
         # a key this input confirmed is not its rejection, whoever holds one
         known = [key for key in known if key not in mine]
         now = (
@@ -917,7 +919,10 @@ def _with_confirmations(
             else [key for key in keys if key not in mine and key in rejected]
         )
         report['rejected_since'] = [key for key in now if key not in known]
-        report['unrejected_since'] = [key for key in known if key not in now]
+        report['unrejected_since'] = [
+            *(key for key in known if key not in now),
+            *flipped,
+        ]
         report['rejected'] = now
         # only with something to do: edits to decide, or a part to
         # rephrase; an edit the sheet already holds needs nothing
@@ -925,7 +930,14 @@ def _with_confirmations(
         todo = any(key not in decided for key in keys) or any(
             report.get(field) for field in ('unresolved', 'not_applied', 'refused')
         )
-        report['confirm_again'] = todo * len(mine - set(keys))
+        lost = mine - set(keys)
+        if rejected is not None:
+            lost |= {
+                key
+                for key, r in rejected.items()
+                if isinstance(r, dict) and r.get('input') == entry_id
+            } - set(keys)
+        report['decide_again'] = todo * len(lost)
     return status
 
 
@@ -943,19 +955,25 @@ def _undecided(report: dict) -> list[str]:
     return [e['key'] for e in report.get('ready', []) if e['key'] not in decided]
 
 
-def _open_report(status: dict) -> dict | None:
-    """The input whose turn it is: the first with an undecided edit, or
-    with a decision the last run did not know that changes the sheet
-    every input after it is read on (`_since_last_run`); or the first
-    showing an
-    earlier reading, even with no edit in it: it is read again first.
-    Of a status with the overlay."""
+def _outdated(status: dict, texts: dict[str, str]) -> set[str]:
+    """The inputs (entry ids) whose report is not what the next run will
+    read: one whose words changed or that is gone, and every one after it
+    or after a decision above the last run did not know that changes the
+    sheet they are read on (`_since_last_run`). Of a status with the
+    overlay; `texts`: the inputs' words now, by entry id."""
+    outdated: set[str] = set()
+    stale = False
     for report in status.get('inputs', []):
         if not isinstance(report, dict):
             continue
-        if report.get('waiting') or _undecided(report) or _since_last_run(report):
-            return report
-    return None
+        entry_id = report.get('entry_id')
+        if texts.get(entry_id) != report.get('text'):
+            stale = True
+        if stale:
+            outdated.add(entry_id)
+        if _since_last_run(report):
+            stale = True
+    return outdated
 
 
 def _since_last_run(report: dict) -> bool:
@@ -977,6 +995,26 @@ def _withdrawn(status: dict) -> bool:
         for report in status.get('inputs', [])
         if isinstance(report, dict)
     )
+
+
+def _not_final(status: dict, texts: dict[str, str]) -> str | None:
+    """Why the stored sheet is not the one to download, or None: every
+    edit decided, every input read in its words, and nothing decided or
+    changed since the last run. Of a status with the overlay."""
+    reports = [r for r in status.get('inputs', []) if isinstance(r, dict)]
+    if any(_since_last_run(r) or r.get('confirmed_since') for r in reports):
+        return (
+            'decisions were made since the sheet was written; it is being written again'
+        )
+    read = {r.get('entry_id'): r.get('text') for r in reports}
+    if read.keys() - texts.keys():
+        return 'an update was deleted since the sheet was written; it is being written again'
+    if any(read.get(entry_id) != text for entry_id, text in texts.items()):
+        return 'an update is not read yet; wait for it'
+    undecided = sum(len(_undecided(r)) for r in reports)
+    if undecided:
+        return f'decide every edit first: {undecided} waiting for a decision'
+    return None
 
 
 _WITHDRAWN = (
@@ -1089,28 +1127,8 @@ async def _decidable(  # noqa: PLR0913
             detail='the last run does not name its updates; '
             f'read the updates again, then {verb}',
         )
-    # in order: only the open input's undecided edits. A decided key may
-    # be sent again (the endpoints keep its first record, or refuse a
-    # confirmation of a rejected edit and the other way round)
-    turn = _open_report(status)
-    allowed = {
-        key
-        for report in status.get('inputs', [])
-        if isinstance(report, dict)
-        for key in (*report.get('confirmed', []), *report.get('rejected', []))
-    }
-    if turn is not None and not turn.get('waiting'):
-        allowed.update(_undecided(turn))
-    if set(keys) - allowed:
-        raise HTTPException(
-            status_code=409,
-            detail='this update is read again first; decide it when it is ready'
-            if turn is not None
-            and turn.get('waiting')
-            and set(keys) & {e['key'] for e in turn.get('ready', [])}
-            else 'decide the updates above first',
-        )
-    # a decision is on the words the report read, not a revision made since
+    # a decision is on the words the report read, and on the sheet the
+    # inputs above leave: not on a report the next run reads anew
     inputs = await voice.collect_inputs(
         client, upload_id, collection_entry_id=collection_entry_id
     )
@@ -1123,6 +1141,13 @@ async def _decidable(  # noqa: PLR0913
             status_code=409,
             detail='the words of an input changed since the last run; '
             f'apply the updates again, then {verb}',
+        )
+    outdated = _outdated(status, texts)
+    if any(reports[key].get('entry_id') in outdated for key in keys):
+        raise HTTPException(
+            status_code=409,
+            detail='an update above changed: this one is read again first; '
+            f'{verb} it when it is ready',
         )
     return status, reports
 
@@ -1370,10 +1395,10 @@ async def download_final_sheet(
     request: Request,
     collection_entry_id: str,
 ) -> Response:
-    """The sheet as it stands, as an xlsx download under the sheet's
-    name: the one the last completed job left (the original plus
-    the confirmed edits), or the uploaded one while no job has written
-    a sheet."""
+    """The sheet as an xlsx download under the sheet's name: the one the
+    last completed job left (the original plus the confirmed edits), once
+    every edit is decided; or the uploaded one while no job has written a
+    sheet."""
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
@@ -1410,8 +1435,15 @@ async def download_final_sheet(
                     )
                 confirmed = await _confirmations(client, voice, upload_id)
                 rejected = await _rejections(client, voice, upload_id)
-                if _withdrawn(_with_confirmations(status, confirmed, rejected)):
-                    raise HTTPException(status_code=409, detail=_WITHDRAWN)
+                inputs = await voice.collect_inputs(
+                    client, upload_id, collection_entry_id=collection_entry_id
+                )
+                why = _not_final(
+                    _with_confirmations(status, confirmed, rejected),
+                    {i.entry_id: i.text for i in inputs},
+                )
+                if why is not None:
+                    raise HTTPException(status_code=409, detail=why)
                 sheet = final
             elif final is not None:
                 # a failed job after one that wrote: the stored sheet is the

@@ -10,7 +10,7 @@
 
 import { errorDetail, experimentUrl } from "./api.js";
 import {
-  earlierNote, inputState, laterNote, openReport, previewNotes, rewriteWarning, undoWarning,
+  inputState, outdatedEntries, previewNotes, resetNote, rewriteWarning, undoWarning,
 } from "./edit-logic.js";
 import { selectedExperiment } from "./experiments.js";
 import { editReported, reportEdit } from "./feedback.js";
@@ -22,10 +22,12 @@ const refreshInputsBtn = document.getElementById("refresh-inputs-btn");
 const editsOnlyBtn = document.getElementById("edits-only-btn");
 const EDITS_ONLY_KEY = "sand.inputs.editsOnly";
 
-// the job's reports by entry id, whether a job runs (no deciding
-// meanwhile), and the Sheet card's handlers that decide an edit
+// the job's reports by entry id, whether a job runs, the updates the
+// running job reported already (null: no job runs), and the Sheet
+// card's handlers that decide an edit
 let reports = {};
 let jobRunning = false;
+let fresh = null;
 let actions = null;
 let onInputsLoaded = null; // (experiment, items) after every load
 // the last rendered list, re-rendered when the reports change; a change
@@ -198,7 +200,7 @@ function endRevision(refocus = false) {
   for (const btn of li.querySelectorAll(".input-report button")) {
     btn.disabled = btn.classList.contains("report-wrong")
       ? editReported(btn.dataset.key)
-      : jobRunning || !actions || btn.dataset.busy === "1";
+      : !btn.dataset.open || !actions || btn.dataset.busy === "1";
   }
   if (renderPending) {
     renderIfIdle(); // replaces the tiles
@@ -332,20 +334,22 @@ function wrongFlag(edit) {
 }
 
 // A button of an edit row; `act()` resolves false when it did not go
-// through, and the button is offered again.
-function decideButton(label, className, title, act) {
+// through, and the button is offered again. `open`: the update may be
+// decided now (not read again first).
+function decideButton(label, className, title, act, open) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "btn btn-outlined btn-small " + className;
   btn.textContent = label;
-  btn.disabled = jobRunning || !actions;
-  btn.title = jobRunning ? "Wait: the updates are being read" : title;
+  btn.dataset.open = open ? "1" : "";
+  btn.disabled = !open || !actions;
+  btn.title = open ? title : "Wait: the update is read again first";
   btn.addEventListener("click", async () => {
     btn.disabled = true;
     btn.dataset.busy = "1";
     const done = await act();
     delete btn.dataset.busy;
-    if (!done) btn.disabled = jobRunning || !actions;
+    if (!done) btn.disabled = !btn.dataset.open || !actions;
   });
   return btn;
 }
@@ -353,9 +357,9 @@ function decideButton(label, className, title, act) {
 // The edits of a report, grouped under their step as the Sheet table
 // groups them: a step heading, then one aligned row per edit with its
 // state at the right: written (with the "Wrong" flag), rejected (with
-// Undo), or, on the update whose turn it is (`decide`), the buttons
-// that decide it. `later`: the update comes after the open one.
-function renderReport(report, decide, later) {
+// Undo), or the buttons that decide it; `decide`: they may be used now,
+// else the update is read again first.
+function renderReport(report, decide) {
   const box = document.createElement("div");
   box.className = "input-report";
   box.addEventListener("click", (e) => e.stopPropagation());
@@ -395,13 +399,14 @@ function renderReport(report, decide, later) {
       mark.className = "report-rejected";
       mark.textContent = "rejected";
       state.append(mark, decideButton("Undo", "report-undo", "Take the rejection back",
-        () => undoRejection(report, edit.key)));
-    } else if (decide) {
+        () => undoRejection(report, edit.key), decide));
+    } else {
       state.classList.add("report-decide");
       state.append(
-        decideButton("Confirm", "report-confirm", "Confirm this edit", () => actions.confirm(edit.key)),
+        decideButton("Confirm", "report-confirm", "Confirm this edit",
+          () => actions.confirm(edit.key), decide),
         decideButton("Reject", "report-reject", "Reject this edit: it is not written",
-          () => actions.reject(edit)),
+          () => actions.reject(edit), decide),
       );
     }
     box.append(row);
@@ -412,17 +417,11 @@ function renderReport(report, decide, later) {
       box.append(p);
     }
   }
-  if (report.waiting) {
+  const reset = resetNote(report);
+  if (reset) {
     const p = document.createElement("p");
     p.className = "report-note report-earlier";
-    p.textContent = earlierNote(report);
-    box.append(p);
-  }
-  const assumed = laterNote(report, later);
-  if (assumed) {
-    const p = document.createElement("p");
-    p.className = "report-note";
-    p.textContent = assumed;
+    p.textContent = reset;
     box.append(p);
   }
   for (const note of previewNotes(report)) {
@@ -451,9 +450,11 @@ async function undoRejection(report, key) {
 // The job's reports (by entry id), from the Sheet card's polling.
 // `handlers`: {confirm(key), reject(edit), undoReject(key)}, each
 // resolving false when it did not go through; null: nothing to decide.
-export function setReports(byEntry, running, handlers) {
+// `reported`: the entry ids the running job reported already.
+export function setReports(byEntry, running, handlers, reported = null) {
   reports = byEntry;
   jobRunning = running;
+  fresh = running ? reported || new Set() : null;
   actions = handlers;
   renderIfIdle();
 }
@@ -497,9 +498,8 @@ function renderInputs(experiment, items) {
     : null;
   inputsList.replaceChildren();
   inputsCount.textContent = String(items.length);
-  // decided in order: only the open update has the buttons
-  const open = openReport(Object.values(reports));
-  let pastOpen = false;
+  // read again first: below a change, or not reported by the running job
+  const outdated = outdatedEntries(items, reports);
   for (const item of items) {
     const li = document.createElement("li");
     li.className = "input-tile";
@@ -507,9 +507,7 @@ function renderInputs(experiment, items) {
     // a report of other words (revised since) is not this update's
     const report = reports[item.entry_id];
     const reported = report && (report.text === undefined || report.text === item.text);
-    const later = pastOpen;
-    const isOpen = open !== null && item.entry_id === open.entry_id;
-    if (isOpen) pastOpen = true;
+    const waits = outdated.has(item.entry_id) || (fresh !== null && !fresh.has(item.entry_id));
 
     const meta = document.createElement("div");
     meta.className = "input-meta";
@@ -545,7 +543,7 @@ function renderInputs(experiment, items) {
     const right = document.createElement("span");
     right.className = "input-right";
     meta.append(right);
-    const state = inputState(item, report, jobRunning, Boolean(actions), later);
+    const state = inputState(item, report, jobRunning, Boolean(actions), waits);
     if (state) {
       const chip = document.createElement("span");
       chip.className = "input-state is-" + state.state;
@@ -587,7 +585,7 @@ function renderInputs(experiment, items) {
     }
 
     li.append(meta, text);
-    if (reported) li.append(renderReport(report, isOpen && !report.waiting, later));
+    if (reported) li.append(renderReport(report, !waits));
     li.tabIndex = 0;
     li.setAttribute("aria-label", "Revise the " + inputDescription(item));
     li.addEventListener("click", () => beginRevision(item, experiment, li, text));

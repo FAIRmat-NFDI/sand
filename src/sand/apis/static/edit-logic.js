@@ -44,26 +44,37 @@ export function pendingKeys(reports) {
   return keys;
 }
 
-// The report whose turn it is: the first, in input order, with an
-// undecided edit, or with a decision the last run did not know that
-// changes the sheet the later ones are read on (not a confirmation: they
-// were read with the edit); or the first showing an earlier reading,
-// even with no edit in it (it is read again first). As the server
-// decides it (`_open_report`).
-export function openReport(reports) {
-  const ordered = [...reports].sort((a, b) => a.input - b.input);
-  return ordered.find((report) => report.waiting
-    || pendingKeys([report]).length
-    || (report.unconfirmed_since || []).length
-    || (report.rejected_since || []).length
-    || (report.unrejected_since || []).length) || null;
+// The inputs (entry ids) whose report is not what the next run reads:
+// one whose words changed or that is gone, and every one after it or
+// after a decision above the last run did not know that changes the
+// sheet they are read on. They are decided once read again. `items`:
+// the inputs list, null when not loaded (words are then not compared).
+// As the server decides it (`_outdated`).
+export function outdatedEntries(items, reports) {
+  const texts = items ? new Map(items.map((item) => [item.entry_id, item.text])) : null;
+  const ordered = Object.values(reports).sort((a, b) => a.input - b.input);
+  const outdated = new Set();
+  let stale = false;
+  for (const report of ordered) {
+    if (texts && report.text !== undefined && texts.get(report.entry_id) !== report.text) stale = true;
+    if (stale) outdated.add(report.entry_id);
+    if (changesBelow(report)) stale = true;
+  }
+  return outdated;
 }
 
-// what may be decided now: the open report's undecided edits, unless it
-// shows an earlier reading (it is read again first)
-export function decidableKeys(reports) {
-  const open = openReport(reports);
-  return open && !open.waiting ? pendingKeys([open]) : [];
+// a decision the last run did not know that changes the sheet the
+// inputs after it were read on; not a confirmation: they were read with it
+function changesBelow(report) {
+  return ["unconfirmed_since", "rejected_since", "unrejected_since"]
+    .some((field) => (report[field] || []).length);
+}
+
+// what may be decided now: the undecided edits of every report not
+// outdated, in input order
+export function decidableKeys(reports, outdated = new Set()) {
+  const ordered = [...reports].sort((a, b) => a.input - b.input);
+  return pendingKeys(ordered.filter((report) => !outdated.has(report.entry_id)));
 }
 
 // the pending edits a word check marked: confirm all takes them too,
@@ -99,16 +110,16 @@ export function rewriteWarning(action, items, reports, entryId) {
     : "This update was written into the sheet. Changing its words reads it again; its edits need your confirmation again.";
   if (!later) return first;
   return first + " " + (later === 1
-    ? "The 1 written update after it is read again and needs your confirmation again."
-    : "The " + later + " written updates after it are read again and need your confirmation again.");
+    ? "The 1 written update after it is read again: where what it shows changes, it needs your decision again."
+    : "The " + later + " written updates after it are read again: where what they show changes, they need your decision again.");
 }
 
 // The one-word state of an input, for the chip in its card header:
 // what the job made of it, or where the job is with it. Null while it
 // has no text (the body says "transcribing...") and when no job is at
 // work on this page.
-// `later`: the input comes after the one whose turn it is.
-export function inputState(item, report, jobRunning, canConfirm, later = false) {
+// `outdated`: its report is read again before it is decided.
+export function inputState(item, report, jobRunning, canConfirm, outdated = false) {
   if (!item.text) return null;
   const reported = report && (report.text === undefined || report.text === item.text);
   if (!reported) {
@@ -119,21 +130,20 @@ export function inputState(item, report, jobRunning, canConfirm, later = false) 
       : { state: "waiting", label: "Waiting to be read" };
   }
   if (report.refused) return { state: "refused", label: "Not written" };
-  const pending = pendingKeys([report]).length;
-  if (later && (pending || report.waiting)) return { state: "later", label: "Waiting for the updates above" };
-  if (report.waiting) {
+  if (outdated) {
     return jobRunning
       ? { state: "reading", label: "Reading..." }
       : { state: "waiting", label: "Waiting to be read" };
   }
+  const pending = pendingKeys([report]).length;
   if (pending) {
     const label = pending === 1 ? "1 edit to confirm" : pending + " edits to confirm";
-    // which new edit a lost confirmation was is not known (other keys):
+    // which new edit a lost decision was is not known (other keys):
     // only how many there were
-    const before = report.confirm_again || 0;
+    const before = report.decide_again || 0;
     if (!before) return { state: "ready", label };
     if (before >= pending) return { state: "ready", label: label + " again" };
-    return { state: "ready", label: label + " · " + before + " confirmed before" };
+    return { state: "ready", label: label + " · " + before + " decided before" };
   }
   if ((report.confirmed_since || []).length) return { state: "writing", label: "Confirmed, writing..." };
   if ((report.held || []).length) return { state: "held", label: "Confirmed, waiting for the updates above" };
@@ -157,10 +167,8 @@ export function inputState(item, report, jobRunning, canConfirm, later = false) 
 
 // the label of the button that confirms every pending edit
 // `checked`: how many of them have a check
-// `update`: the number of the update they are of
-export function confirmAllLabel(pending, checked = 0, update = null) {
-  const label = (pending === 1 ? "Confirm the edit" : "Confirm all " + pending + " edits")
-    + (update ? " of update " + update : "");
+export function confirmAllLabel(pending, checked = 0) {
+  const label = pending === 1 ? "Confirm the edit" : "Confirm all " + pending + " edits";
   if (!checked) return label;
   if (pending === 1) return label + ", with a check";
   if (checked === pending) return label + ", all with a check";
@@ -217,25 +225,18 @@ export function undoWarning(items, reports, entryId) {
   }).length;
   if (!decided) return null;
   return "Taking the rejection back puts this edit up for a decision again. " + (decided === 1
-    ? "The 1 decided update after it needs deciding again; its edits leave the sheet until then."
-    : "The " + decided + " decided updates after it need deciding again; their edits leave the sheet until then.");
+    ? "The 1 decided update after it is read again: where what it shows changes, it needs deciding again."
+    : "The " + decided + " decided updates after it are read again: where what they show changes, they need deciding again.");
 }
 
-// the line under an update after the open one with edits to decide:
-// they are shown on the sheet the updates above would leave
-export function laterNote(report, later) {
-  return later && !report.waiting && pendingKeys([report]).length
-    ? "Shown as if the updates above are confirmed."
-    : null;
-}
-
-// the line under a waiting input: its answer is an earlier reading, and
-// why it does not hold on this sheet when the job could tell
-export function earlierNote(report) {
-  const why = report.why_waiting;
-  return why
-    ? "An earlier reading: " + why + ". The update is read again when its turn comes."
-    : "An earlier reading: the update is read again when its turn comes.";
+// the line under an update a decision above changed: its earlier
+// decisions match none of its edits now
+export function resetNote(report) {
+  const lost = report.decide_again || 0;
+  if (!lost) return null;
+  return "An update above changed what this one shows: "
+    + (lost === 1 ? "your decision here is" : "your " + lost + " decisions here are")
+    + " asked again.";
 }
 
 // the confirmed edits of a report the last run wrote: not confirmed
@@ -309,10 +310,23 @@ function sinceLastRun(report) {
   ];
 }
 
-// a new rejection changes no written cell: the download stays
-export function unwrittenCount(status) {
-  return (status.inputs || []).reduce(
-    (n, report) => n + sinceLastRun(report).length - (report.rejected_since || []).length, 0);
+// Why the edited sheet is not to download yet, or "": every edit
+// decided, every update read in its words, nothing decided since the
+// last run. `items`: the inputs list, null when not loaded. As the
+// server decides it (`_not_final`).
+export function downloadBlock(status, items) {
+  const reports = status.inputs || [];
+  if (reports.some((report) => sinceLastRun(report).length)) {
+    return "The sheet is being written again: edits were decided since";
+  }
+  if (items && inputsToRead(items, reportsByEntry(status)).length) {
+    return "An update is not read yet";
+  }
+  const pending = pendingKeys(reports).length;
+  if (pending) {
+    return "Decide every edit first: " + count(pending, "edit waits", "edits wait") + " for a decision";
+  }
+  return "";
 }
 
 // those edits' keys, as one string: "" when the last run wrote everything.
@@ -340,8 +354,7 @@ function summaryParts(status) {
   const parts = [];
   const written = writtenCount(status);
   if (written) parts.push(count(written, "edit written", "edits written"));
-  // an earlier reading's edits are not yet the ones to decide
-  const pending = pendingKeys(reports.filter((report) => !report.waiting)).length;
+  const pending = pendingKeys(reports).length;
   if (pending) parts.push(count(pending, "edit waits", "edits wait") + " for your confirmation");
   const since = reports.reduce((n, report) => n + (report.confirmed_since || []).length, 0);
   if (since) parts.push(count(since, "edit confirmed", "edits confirmed") + ", being written");
@@ -355,9 +368,9 @@ function summaryParts(status) {
   if (undone) parts.push(count(undone, "rejection", "rejections") + " taken back, the updates after it are read again");
   const refused = reports.filter((report) => report.refused).length;
   if (refused) parts.push(count(refused, "update could not", "updates could not") + " be written");
-  // why confirmed edits wait again; other stale confirmations
+  // why decided edits wait again; other stale confirmations
   // (status.stale_confirmations) are not a line
-  const again = reports.filter((report) => report.confirm_again).length;
+  const again = reports.filter((report) => report.decide_again).length;
   if (again) {
     parts.push(count(again, "update was", "updates were") + " read again after an earlier update changed");
   }

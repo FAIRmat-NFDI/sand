@@ -126,7 +126,7 @@ async def test_a_damaged_confirmations_file_is_not_rewritten(voice):
     assert voice.removed == []
 
 
-async def test_an_update_after_a_changed_one_is_to_confirm_again(voice):
+async def test_an_update_after_a_changed_one_is_to_decide_again(voice):
     # n2 was confirmed as k5; n1 was revised since, so the sheet before n2
     # changed and its edit has a new key
     put_status(
@@ -145,7 +145,7 @@ async def test_an_update_after_a_changed_one_is_to_confirm_again(voice):
 
     reports = (await status(voice))['inputs']
 
-    assert [r['confirm_again'] for r in reports] == [0, 1]
+    assert [r['decide_again'] for r in reports] == [0, 1]
 
 
 async def test_an_update_that_lost_its_edit_is_told_too(voice):
@@ -166,7 +166,7 @@ async def test_an_update_that_lost_its_edit_is_told_too(voice):
 
     (report,) = (await status(voice))['inputs']
 
-    assert report['confirm_again'] == 1
+    assert report['decide_again'] == 1
 
 
 async def test_an_update_the_sheet_already_holds_is_not_told(voice):
@@ -179,7 +179,7 @@ async def test_an_update_the_sheet_already_holds_is_not_told(voice):
 
     (report,) = (await status(voice))['inputs']
 
-    assert report['confirm_again'] == 0
+    assert report['decide_again'] == 0
 
 
 async def test_a_withdrawn_confirmation_waits_for_the_next_run(voice):
@@ -195,13 +195,13 @@ async def test_a_withdrawn_confirmation_waits_for_the_next_run(voice):
     assert report['unconfirmed_since'] == ['k1']
 
 
-async def test_a_partly_confirmed_update_is_not_to_confirm_again(voice):
+async def test_a_partly_confirmed_update_is_not_to_decide_again(voice):
     put_confirmations(voice, {'k1': 'n1'})
 
     (report,) = (await status(voice))['inputs']
 
     assert report['confirmed'] == ['k1']
-    assert report['confirm_again'] == 0
+    assert report['decide_again'] == 0
 
 
 async def test_the_inputs_list_says_which_are_applied(voice):

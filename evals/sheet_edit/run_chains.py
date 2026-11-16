@@ -3,7 +3,7 @@
 Every chain of chains.json is a list of notes and the clicks made on
 them (confirm, reject, undo a rejection, reword, delete, add). It is
 played on the synthetic sheet the way the edit job runs it:
-`apply_all`, in order, in turn, one job after every click. After each
+`apply_all`, in order, one job after every click. After each
 job, every note that reused an answer read on another sheet is also
 asked fresh on the sheet it is now read on. Both must make the same
 ready edits: the same cells, the same values. That is the gate, 100 %.
@@ -170,7 +170,6 @@ class Played:
     readings: int = 0  # asked by the jobs; one reading is two passes
     compared: list[Compared] = field(default_factory=list)
     careful: int = 0  # read again, an earlier answer made the same edits
-    waiting: int = 0  # notes shown with an earlier answer, not compared
     skipped: list[str] = field(default_factory=list)  # clicks the page refuses
     failed: str = ''
     # (note, words, sheet) compared already: a later job that leaves the
@@ -265,7 +264,6 @@ def play(
                 counted,
                 set(decisions.confirmed),
                 cache,
-                in_turn=True,
                 rejected=frozenset(decisions.rejected),
             )
             shown = {n.number: step for n, step in zip(notes.notes, steps)}
@@ -305,16 +303,10 @@ def _click_on(  # noqa: PLR0911
         for key in undone:
             del decisions.rejected[key]
         return None if undone else 'no rejection to undo'
-    # confirm or reject: the open note's undecided edits, as the server
-    # allows (`_open_report`): the first waiting or with something to decide
-    opened = next(
-        (n for n, s in shown.items() if s.waiting or decisions.undecided(s)), None
-    )
-    if opened != click.note:
-        return f'not its turn (open: {"none" if opened is None else f"note {opened}"})'
+    # confirm or reject: the note's undecided edits, in any order
     step = shown[click.note]
-    if step.waiting:
-        return 'read again first'
+    if not decisions.undecided(step):
+        return 'nothing to decide'
     kept = decisions.confirmed if click.do == 'confirm' else decisions.rejected
     for key in decisions.undecided(step):
         kept[key] = click.note
@@ -335,9 +327,6 @@ def _compare(  # noqa: PLR0913, PLR0917
     before = sheet
     for note, step in zip(notes, steps):
         read_on, before = before, step.preview
-        if step.waiting:
-            played.waiting += 1
-            continue
         if step.answer[1] != sha256(read_on):
             # an answer read on another sheet
             seen = (note.number, note.text, sha256(read_on))
@@ -410,7 +399,6 @@ def summarize(played: list[Played]) -> dict[str, object]:
         'same': None if not compared else round(100 * same / len(compared), 1),
         'different': len(compared) - same,
         'careful': sum(p.careful for p in played),
-        'waiting': sum(p.waiting for p in played),
     }
 
 
@@ -426,7 +414,7 @@ def report(played: list[Played]) -> str:
         lines.append(f'{p.chain.id:<22} {"ok" if p.ok else "FAIL"}')
         lines.append(
             f'{"":<22}   readings {p.readings} · reused {len(p.compared)} · '
-            f'read again, same edits {p.careful} · waiting {p.waiting}'
+            f'read again, same edits {p.careful}'
         )
         for c in p.compared:
             if not c.same:
@@ -447,7 +435,7 @@ def report(played: list[Played]) -> str:
     )
     lines.append(
         f'readings {s["readings"]} · saved by reuse {s["reused"]} · '
-        f'read again with the same edits {s["careful"]} · waiting {s["waiting"]}'
+        f'read again with the same edits {s["careful"]}'
     )
     return '\n'.join(lines)
 

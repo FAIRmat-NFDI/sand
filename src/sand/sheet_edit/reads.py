@@ -27,7 +27,6 @@ from sand.sheet_edit.coverage import coverage, sheet_values
 from sand.sheet_edit.edits import ProposedEdits, Where
 from sand.sheet_edit.ground import (
     Refusal,
-    column_name,
     in_words,
     resolve_rows,
     same_value,
@@ -62,25 +61,6 @@ def reads_of(
 def holds(reads: Reads, text: str, proposal: ProposedEdits, catalog: Catalog) -> bool:
     """On another sheet: a `whole` answer never does."""
     return reads.whole is None and reads == _seen(text, proposal, catalog)
-
-
-def why_not(
-    reads: Reads | None, text: str, proposal: ProposedEdits, catalog: Catalog
-) -> str | None:
-    """Why the answer does not hold on this sheet, for the user; None
-    when nothing was saved to tell."""
-    if reads is None:
-        return None
-    if reads.whole is not None:
-        return 'its answer holds only on the sheet it was read on'
-    now = _seen(text, proposal, catalog)
-    if now.structure != reads.structure:
-        return 'the columns or the sample labels changed'
-    said = [
-        *_moved(dict(reads.held), dict(now.held), catalog),
-        *_filled(_empty(reads), _empty(now), catalog),
-    ]
-    return '; '.join(said[:2]) or None
 
 
 def to_json(reads: Reads) -> dict:
@@ -265,55 +245,3 @@ def _structure(catalog: Catalog) -> str:
             ]
         ).encode()
     )
-
-
-def _empty(reads: Reads) -> set[Cell]:
-    """The cells that must be empty: written, or picked by `where` empty."""
-    return set(reads.empty) | {(c, r) for c, rows in reads.blank for r in rows}
-
-
-def _moved(
-    before: dict[str, tuple[Cell, ...]],
-    now: dict[str, tuple[Cell, ...]],
-    catalog: Catalog,
-) -> list[str]:
-    """ "Solvent 2 name (1: Preparation) no longer holds 'DMF' on samples 1–3"."""
-    said = []
-    for name in sorted(set(before) | set(now)):
-        old, new = set(before.get(name, ())), set(now.get(name, ()))
-        said += [
-            f'{c} no longer holds {name!r} on samples {r}'
-            for c, r in _by_column(old - new, catalog)
-        ]
-        said += [
-            f'{c} now holds {name!r} on samples {r}'
-            for c, r in _by_column(new - old, catalog)
-        ]
-    return said
-
-
-def _filled(before: set[Cell], now: set[Cell], catalog: Catalog) -> list[str]:
-    return [
-        *(
-            f'{c} on samples {r} is no longer empty'
-            for c, r in _by_column(before - now, catalog)
-        ),
-        *(
-            f'{c} on samples {r} is now empty'
-            for c, r in _by_column(now - before, catalog)
-        ),
-    ]
-
-
-def _by_column(cells: set[Cell], catalog: Catalog) -> list[tuple[str, str]]:
-    """(column name, sample names) per column of the cells."""
-    rows: dict[str, list[int]] = {}
-    for column, row in sorted(cells):
-        rows.setdefault(column, []).append(row)
-    known = {s.row for s in catalog.samples}
-    out = []
-    for column_id, rs in rows.items():
-        column = catalog.column(column_id)
-        name = column_name(column) if column is not None else column_id
-        out.append((name, catalog.names([r for r in rs if r in known]) or '?'))
-    return out

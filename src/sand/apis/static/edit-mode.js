@@ -10,8 +10,8 @@
 
 import { errorDetail, experimentUrl } from "./api.js";
 import {
-  checkedKeys, confirmAllLabel, decidableKeys, describeEditPhase, downloadFilename, editSummary, inputsToRead,
-  openReport, readKey, reportsByEntry, unwrittenCount, unwrittenKey, writtenEdits,
+  checkedKeys, confirmAllLabel, decidableKeys, describeEditPhase, downloadBlock, downloadFilename, editSummary,
+  inputsToRead, outdatedEntries, readKey, reportsByEntry, unwrittenKey, writtenEdits,
 } from "./edit-logic.js";
 import { requireExperiment, showSheet } from "./experiments.js";
 import { rejectEdit } from "./feedback.js";
@@ -58,9 +58,6 @@ let headerFor = null;
 let reportsShown = {}; // the last status's reports, by entry id
 let readFor = null; // readKey of the inputs the last job was started for
 let wroteFor = null; // unwrittenKey the last write was started for
-// the open update showing an earlier reading the last job was started
-// for: read once (a decision above made it the open one)
-let turnFor = null;
 let writeTimer = null; // {timer, experiment}: the write about to start
 // a job found failed before the inputs list arrived: its readKey is the
 // list's, whatever it turns out to be (no restart on a reload)
@@ -100,7 +97,7 @@ function idle() {
   running = false;
   applyStatus.textContent = "";
   applyStatus.classList.remove("busy");
-  gateDownload(unwrittenShown);
+  gateDownload(blockShown);
 }
 
 function note(text) {
@@ -126,27 +123,39 @@ function updateProgress() {
 }
 
 // `checked`: how many pending edits have a check
-function showPending(keys, checked = 0, update = null) {
+function showPending(keys, checked = 0) {
   pending = keys;
   // this experiment's own confirm-all brings the button back itself
   if (current && confirming === current.entry_id) return;
   confirmAllBtn.hidden = keys.length === 0;
   confirmAllBtn.disabled = false;
-  confirmAllLabelEl.textContent = confirmAllLabel(keys.length, checked, update);
+  confirmAllLabelEl.textContent = confirmAllLabel(keys.length, checked);
 }
 
-// the sheet to download is the last run's: not while a job runs, not
-// before confirmed edits are written into it
-let unwrittenShown = 0; // the shown experiment's gate, kept across a download
+// the shown experiment's inputs list, null before it arrived
+function shownItems() {
+  return current && inputsSeen && inputsSeen.entryId === current.entry_id ? inputsSeen.items : null;
+}
 
-function gateDownload(unwritten) {
-  unwrittenShown = unwritten;
-  downloadFinalBtn.disabled = !editedReady || unwritten > 0 || downloading || running;
-  downloadFinalBtn.title = unwritten > 0
-    ? "The sheet is being written again: " + unwritten + " edit" + (unwritten === 1 ? "" : "s")
-      + " decided or withdrawn since"
-    : running ? "The updates are being read"
-      : editedReady ? "" : "No edited sheet yet: the updates have not been read";
+// Confirm all: every undecided edit of the updates not read again
+// first, once the last job completed
+function showDecidable(status) {
+  const all = status.inputs || [];
+  const keys = decidableKeys(all, outdatedEntries(shownItems(), reportsByEntry(status)));
+  const marked = new Set(checkedKeys(all));
+  showPending(keys, keys.filter((key) => marked.has(key)).length);
+}
+
+// the sheet to download is the last run's, once every edit is decided
+// and written into it: not while a job runs
+let blockShown = ""; // the shown experiment's gate, kept across a download
+
+function gateDownload(block) {
+  blockShown = block;
+  downloadFinalBtn.disabled = !editedReady || Boolean(block) || downloading || running;
+  downloadFinalBtn.title = block
+    || (running ? "The updates are being read"
+      : editedReady ? "" : "No edited sheet yet: the updates have not been read");
   // the original is there whatever the job does
   downloadOriginalBtn.disabled = downloading;
 }
@@ -179,7 +188,7 @@ function renderWritten(rows) {
 }
 
 function renderResult(status) {
-  gateDownload(unwrittenCount(status));
+  gateDownload(downloadBlock(status, shownItems()));
   applySummary.textContent = editSummary(status);
   renderWritten(writtenEdits(status));
   // the full log is for the record, behind a fold
@@ -232,13 +241,12 @@ async function poll(experiment, generation) {
   reportsShown = running
     ? { ...reportsShown, ...reportsByEntry(status) }
     : reportsByEntry(status);
-  setReports(reportsShown, running, editActions(experiment));
+  // while a job runs, the updates it has reported are decided already;
+  // the others show the last run's reports
+  const fresh = running ? new Set((status.inputs || []).map((report) => report.entry_id)) : null;
+  setReports(reportsShown, running, editActions(experiment), fresh);
   if (status.phase === "completed") {
-    // confirm all: the edits of the update whose turn it is
-    const all = status.inputs || [];
-    const keys = decidableKeys(all);
-    const open = keys.length ? openReport(all) : null;
-    showPending(keys, open ? checkedKeys([open]).length : 0, open && open.input);
+    showDecidable(status);
   } else {
     showPending([]);
   }
@@ -267,7 +275,7 @@ async function poll(experiment, generation) {
   }
   readAgainBtn.hidden = true;
   busy(describeEditPhase(status));
-  gateDownload(unwrittenShown);
+  gateDownload(blockShown);
   later(experiment, generation);
 }
 
@@ -291,15 +299,6 @@ function settle(experiment, status) {
     writeTimer = { timer, experiment };
     return;
   }
-  // a job that did not start for it (a recording being transcribed)
-  // leaves the reading of new words below to start the next one
-  const turn = status ? openReport(status.inputs || []) : null;
-  const why = turn && turn.waiting ? status.job_id + ":" + turn.entry_id : null;
-  if (why && why !== turnFor) {
-    turnFor = why;
-    startJob(experiment);
-    return;
-  }
   if (!inputsSeen || inputsSeen.entryId !== experiment.entry_id) return;
   const toRead = inputsToRead(inputsSeen.items, reportsShown);
   if (!toRead.length || readKey(inputsSeen.items) === readFor) return;
@@ -313,6 +312,11 @@ function inputsLoaded(experiment, items) {
   if (!stillShown(experiment)) return;
   updateProgress();
   if (readFor === FAILED_BEFORE_INPUTS) readFor = readKey(items);
+  // a revised or deleted update holds back the ones after it
+  if (lastStatus && !running) {
+    showDecidable(lastStatus);
+    gateDownload(downloadBlock(lastStatus, items));
+  }
   if (statusKnown) settle(experiment, lastStatus);
 }
 
@@ -333,7 +337,11 @@ function editActions(experiment) {
     confirm: (key) => confirmEdit(experiment, key),
     reject: async (edit) => {
       const done = await rejectEdit(edit, (why) => postReject(experiment, edit.key, why));
-      if (done && stillShown(experiment)) startPolling(experiment);
+      if (done && stillShown(experiment)) {
+        // the updates below are read again: nothing to confirm all until then
+        showPending([]);
+        startPolling(experiment);
+      }
       return done;
     },
     undoReject: (key) => undoReject(experiment, key),
@@ -366,7 +374,10 @@ async function undoReject(experiment, key) {
     showError("Network error: " + err.message);
     return false;
   }
-  if (stillShown(experiment)) startPolling(experiment);
+  if (stillShown(experiment)) {
+    showPending([]);
+    startPolling(experiment);
+  }
   return true;
 }
 
@@ -438,11 +449,10 @@ export function showEdit(experiment, view) {
   reportsShown = {};
   readFor = null;
   wroteFor = null;
-  turnFor = null;
   idle();
   showPending([]);
   updateProgress();
-  gateDownload(0);
+  gateDownload("");
   readAgainBtn.hidden = true;
   applyResult.hidden = true;
   changelogEl.textContent = "";
@@ -500,7 +510,7 @@ async function startJob(experiment) {
     applyResult.hidden = true;
     changelogFold.open = false;
     busy("Starting...");
-    gateDownload(unwrittenShown);
+    gateDownload(blockShown);
     // no confirming on the way out: the job's reservation refuses it
     setReports(reportsShown, true, editActions(experiment));
   }
@@ -540,7 +550,7 @@ async function downloadSheet(path, suffix) {
   const experiment = requireExperiment();
   if (!experiment) return;
   downloading = true;
-  gateDownload(unwrittenShown);
+  gateDownload(blockShown);
   try {
     const res = await fetch(experimentUrl(experiment, path));
     if (!res.ok) {
@@ -559,7 +569,7 @@ async function downloadSheet(path, suffix) {
   } finally {
     // the button follows the gate of whatever the card shows now
     downloading = false;
-    gateDownload(unwrittenShown);
+    gateDownload(blockShown);
   }
 }
 
