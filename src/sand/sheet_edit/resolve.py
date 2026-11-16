@@ -35,7 +35,7 @@ from sand.sheet_edit.edits import (
     proposed_edits_model,
     proposed_edits_schema,
 )
-from sand.sheet_edit.ground import Refusal, resolve_rows
+from sand.sheet_edit.ground import Refusal, resolve_rows, typed_value
 from sand.sheet_edit.numbers import value
 from sand.sheet_edit.render import table
 
@@ -277,7 +277,7 @@ _HEDGED = 'a pass also left these words unresolved'
 # rows when the sample words resolve, else the spec as given
 RowsAgreementKey = Literal['all'] | frozenset[int] | tuple
 # (target, rows, new): what two opinions must agree on
-AgreementKey = tuple[str, RowsAgreementKey, str]
+AgreementKey = tuple[str, RowsAgreementKey, tuple]
 
 
 def _agreement_key(edit: Edit, catalog: Catalog) -> AgreementKey:
@@ -287,9 +287,26 @@ def _agreement_key(edit: Edit, catalog: Catalog) -> AgreementKey:
     ones disagree);
     `said`, which the passes may cut differently for one and the same
     edit; the anchor, which only points: an anchor of either pass is
-    kept for ground to check, two different ones disagree. The value is compared as written: material
-    names are case-sensitive (PbI2, Me-4PACz)."""
-    return (edit.target, _rows_agreement_key(edit.rows, catalog), edit.new.strip())
+    kept for ground to check, two different ones disagree. The value is
+    compared as it would be written ('200 second' into a [s] column is
+    200, like '200'); text as written: material names are case-sensitive
+    (PbI2, Me-4PACz)."""
+    return (
+        edit.target,
+        _rows_agreement_key(edit.rows, catalog),
+        _value_agreement_key(edit, catalog),
+    )
+
+
+def _value_agreement_key(edit: Edit, catalog: Catalog) -> tuple:
+    new = edit.new.strip()
+    column = catalog.column(edit.target)
+    if column is None:
+        return ('said', new)
+    written, problems = typed_value(new, column)
+    if problems:  # ground refuses it: the words are all there is
+        return ('said', new)
+    return ('written', type(written).__name__, written)
 
 
 def _by_write(edits: list[Edit], catalog: Catalog) -> dict[AgreementKey, list[Edit]]:

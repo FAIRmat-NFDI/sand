@@ -267,6 +267,21 @@ def test_what_is_no_disagreement(catalog):
     )
 
 
+def test_the_value_is_compared_as_it_would_be_written(catalog):
+    # "time 2 is 200 second": both write 200 into the [s] column
+    a = answer(edit(target=TIME_2, old='600', new='200', said='time 2 is 200 second'))
+    b = answer(
+        edit(target=TIME_2, old='600', new='200 second', said='time 2 is 200 second')
+    )
+    assert len(ask(catalog, a, b).edits) == 1
+    assert len(ask(catalog, b, a).edits) == 1
+    # 200 min is not 200 s: refused by ground, so compared as said
+    c = answer(
+        edit(target=TIME_2, old='600', new='200 min', said='time 2 is 200 second')
+    )
+    assert isinstance(ask(catalog, a, c).unresolved[0], Uncertain)
+
+
 def test_the_value_is_compared_as_written(catalog):
     a = answer(edit(target=SOLVENT_2, old='IPA', new='dmso', said='solvent 2 dmso'))
     b = answer(edit(target=SOLVENT_2, old='IPA', new='DMSO', said='solvent 2 dmso'))
