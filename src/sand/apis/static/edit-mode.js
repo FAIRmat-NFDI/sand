@@ -144,7 +144,7 @@ function gateDownload(unwritten) {
   downloadFinalBtn.disabled = !editedReady || unwritten > 0 || downloading || running;
   downloadFinalBtn.title = unwritten > 0
     ? "The sheet is being written again: " + unwritten + " edit" + (unwritten === 1 ? "" : "s")
-      + " confirmed or withdrawn since"
+      + " decided or withdrawn since"
     : running ? "The updates are being read"
       : editedReady ? "" : "No edited sheet yet: the updates have not been read";
   // the original is there whatever the job does
@@ -279,6 +279,9 @@ function settle(experiment, status) {
   if (!stillShown(experiment) || running || confirming === experiment.entry_id) return;
   if (inputsSeen && inputsSeen.entryId === experiment.entry_id) waitingNote(inputsSeen.items);
   const unwritten = status ? unwrittenKey(status) : "";
+  // a run that left nothing unwritten: the same decision made again later
+  // is a new one
+  if (!unwritten) wroteFor = null;
   if (unwritten) {
     if (unwritten === wroteFor || writeTimer) return;
     const timer = setTimeout(() => {

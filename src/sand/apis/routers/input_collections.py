@@ -1014,14 +1014,15 @@ async def _confirmations(client, voice: VoiceElnService, upload_id: str) -> dict
         return None
 
 
-async def _rejections(client, voice: VoiceElnService, upload_id: str) -> dict:
-    """The rejections file; a damaged one shows as none (the reject
-    endpoint refuses on it): a rejection writes nothing."""
+async def _rejections(client, voice: VoiceElnService, upload_id: str) -> dict | None:
+    """The rejections file; None when it is damaged (the reject endpoint
+    refuses on it): it then shows as no rejections, and as none changed
+    since the last run."""
     raw = await voice.writer.read_raw_file(client, upload_id, REJECTIONS_FILE)
     try:
         return read_rejections(raw)
     except ValueError:
-        return {}
+        return None
 
 
 async def _loaded_rejections(client, voice: VoiceElnService, upload_id: str) -> dict:
@@ -1062,8 +1063,10 @@ async def _applied_inputs(
     if status is None or status.get('collection_entry_id') != collection_entry_id:
         return set()
     # an input a running job has not reported yet counts by its record
+    # a held key is not in the sheet (finding T)
     ready = {
         report.get('entry_id'): {edit['key'] for edit in report.get('ready', [])}
+        - set(report.get('held', []))
         for report in status.get('inputs', [])
         if isinstance(report, dict)
     }
@@ -1115,7 +1118,9 @@ def _with_confirmations(
     """The reports say what the job knew when it ran; a confirmation made
     since shows at once, as `confirmed_since`, one removed since (its
     input revised or deleted) as `unconfirmed_since`: both wait for the
-    next run. `rejected`: the ready edits rejected, never written.
+    next run. `held`: confirmed, not written until the inputs above are
+    decided (apply.py). `rejected`: the ready edits rejected, never
+    written; `rejected_since`, `unrejected_since` as for confirmations.
     `confirm_again`: how many confirmations of the input match none of
     its edits, because an update before it was revised or deleted. A
     damaged confirmations file (None) changes nothing the job reported."""
@@ -1131,8 +1136,11 @@ def _with_confirmations(
             report.update(
                 confirmed_since=[],
                 unconfirmed_since=[],
+                held=[],
+                rejected_since=[],
+                unrejected_since=[],
                 confirm_again=0,
-                rejected=[k for k in keys if k in (rejected or {})] if entry_id else [],
+                rejected=_rejected(report, keys, rejected) if entry_id else [],
             )
             continue
         # two inputs of the same words on the same sheet share a key: a
@@ -1142,17 +1150,36 @@ def _with_confirmations(
             for key, c in confirmed.items()
             if isinstance(c, dict) and c.get('input') == entry_id
         }
-        since = [key for key in keys if key in mine and key not in written]
+        # held: confirmed, waiting for the inputs above; no job writes it
+        # before they are decided, so it is not "since"
+        held = [key for key in report.get('held', []) if key in mine]
+        since = [key for key in keys if key in mine and key not in written + held]
         report['unconfirmed_since'] = [key for key in written if key not in mine]
-        report['confirmed'] = [*(k for k in written if k in mine), *since]
+        report['confirmed'] = [*(k for k in written if k in mine), *held, *since]
+        report['held'] = held
         report['confirmed_since'] = since
         # unlike a confirmation, a rejection holds for every input with
         # its key: nothing is written, so two inputs of the same words
         # keep sharing it, and the second would wait for a decision
         # the server refuses
-        report['rejected'] = [
-            key for key in keys if key not in mine and key in (rejected or {})
-        ]
+        # a rejection made or taken back since the run changes the preview
+        # the inputs after it were read on: they wait for the next run. A
+        # report from before reports carried it knew none
+        known = report.get('rejected')
+        if not isinstance(known, list):
+            known = []
+        # a key this input confirmed is not its rejection, whoever holds one
+        known = [key for key in known if key not in mine]
+        now = (
+            # a damaged rejections file is unknown, not undone: what the
+            # run knew stands
+            known
+            if rejected is None
+            else [key for key in keys if key not in mine and key in rejected]
+        )
+        report['rejected_since'] = [key for key in now if key not in known]
+        report['unrejected_since'] = [key for key in known if key not in now]
+        report['rejected'] = now
         # only with something to do: edits to decide, or a part to
         # rephrase; an edit the sheet already holds needs nothing
         decided = mine | set(report['rejected'])
@@ -1163,6 +1190,15 @@ def _with_confirmations(
     return status
 
 
+def _rejected(report: dict, keys: list[str], rejected: dict | None) -> list[str]:
+    """The report's rejected keys; the run's own list while the file is
+    damaged."""
+    if rejected is None:
+        known = report.get('rejected')
+        return [k for k in known if k in keys] if isinstance(known, list) else []
+    return [k for k in keys if k in rejected]
+
+
 def _undecided(report: dict) -> list[str]:
     decided = {*report.get('confirmed', []), *report.get('rejected', [])}
     return [e['key'] for e in report.get('ready', []) if e['key'] not in decided]
@@ -1170,35 +1206,43 @@ def _undecided(report: dict) -> list[str]:
 
 def _open_report(status: dict) -> dict | None:
     """The input whose turn it is: the first with an undecided edit, or
-    with a confirmation not written yet (or taken out), which changes the
-    sheet every input after it is read on; or the first showing an
+    with a decision the last run did not know that changes the sheet
+    every input after it is read on (`_since_last_run`); or the first
+    showing an
     earlier reading, even with no edit in it: it is read again first.
     Of a status with the overlay."""
     for report in status.get('inputs', []):
         if not isinstance(report, dict):
             continue
-        if (
-            report.get('waiting')
-            or _undecided(report)
-            or report.get('confirmed_since')
-            or report.get('unconfirmed_since')
-        ):
+        if report.get('waiting') or _undecided(report) or _since_last_run(report):
             return report
     return None
 
 
-def _withdrawn(status: dict) -> bool:
-    """Whether a confirmation the stored sheet was written with is gone."""
+def _since_last_run(report: dict) -> bool:
+    """A decision the last run did not know that changes the preview the
+    inputs after this one were read on. Not a confirmation: the preview
+    already counted the edit."""
     return any(
-        report.get('unconfirmed_since')
+        report.get(field)
+        for field in ('unconfirmed_since', 'rejected_since', 'unrejected_since')
+    )
+
+
+def _withdrawn(status: dict) -> bool:
+    """Whether a confirmation the stored sheet was written with is gone,
+    or may be: a rejection taken back changes the sheet the inputs after
+    it were confirmed on (finding R)."""
+    return any(
+        report.get('unconfirmed_since') or report.get('unrejected_since')
         for report in status.get('inputs', [])
         if isinstance(report, dict)
     )
 
 
 _WITHDRAWN = (
-    'an update written into the sheet was revised or deleted; '
-    'the sheet is being written again'
+    'an update written into the sheet was revised or deleted, or a '
+    'rejection taken back; the sheet is being written again'
 )
 
 
@@ -1626,7 +1670,8 @@ async def download_final_sheet(
                         'recorded; run the job again',
                     )
                 confirmed = await _confirmations(client, voice, upload_id)
-                if _withdrawn(_with_confirmations(status, confirmed)):
+                rejected = await _rejections(client, voice, upload_id)
+                if _withdrawn(_with_confirmations(status, confirmed, rejected)):
                     raise HTTPException(status_code=409, detail=_WITHDRAWN)
                 sheet = final
             elif final is not None:

@@ -237,6 +237,34 @@ async def test_the_inputs_list_says_which_are_applied(voice):
     ]
 
 
+async def test_a_held_confirmation_is_not_applied(voice):
+    """Finding T: confirmed, not written until the update above is
+    decided."""
+    voice.inputs = [note('n1', 'time 1 is 1000'), note('n2', 'speed 4000')]
+    put_status(
+        voice,
+        [
+            {'input': 1, 'entry_id': 'n1', 'ready': READY, 'confirmed': []},
+            {
+                'input': 2,
+                'entry_id': 'n2',
+                'ready': [{'key': 'k3'}],
+                'confirmed': [],
+                'held': ['k3'],
+            },
+        ],
+    )
+    put_confirmations(voice, {'k3': 'n2'})
+
+    async with api(voice) as client:
+        response = await client.get(
+            f'/api/input-collections/{UPLOAD}/inputs',
+            params={'collection_entry_id': COLLECTION},
+        )
+
+    assert [i['applied'] for i in response.json()['inputs']] == [False, False]
+
+
 async def test_a_confirmation_is_its_own_inputs_when_two_share_a_key(voice):
     # n1 and n2 say the same on the same sheet: one key, n2 confirmed
     same = [{'key': 'k1', 'line': '...'}]

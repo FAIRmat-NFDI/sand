@@ -9,7 +9,9 @@
 // and starts the job that reads a new or revised input.
 
 import { errorDetail, experimentUrl } from "./api.js";
-import { earlierNote, inputState, openReport, previewNotes, rewriteWarning } from "./edit-logic.js";
+import {
+  earlierNote, inputState, laterNote, openReport, previewNotes, rewriteWarning, undoWarning,
+} from "./edit-logic.js";
 import { selectedExperiment } from "./experiments.js";
 import { editReported, reportEdit } from "./feedback.js";
 import { clearError, confirmDialog, showEntryLink, showError } from "./ui.js";
@@ -352,13 +354,14 @@ function decideButton(label, className, title, act) {
 // groups them: a step heading, then one aligned row per edit with its
 // state at the right: written (with the "Wrong" flag), rejected (with
 // Undo), or, on the update whose turn it is (`decide`), the buttons
-// that decide it.
-function renderReport(report, decide) {
+// that decide it. `later`: the update comes after the open one.
+function renderReport(report, decide, later) {
   const box = document.createElement("div");
   box.className = "input-report";
   box.addEventListener("click", (e) => e.stopPropagation());
   const confirmed = new Set(report.confirmed || []);
   const since = new Set(report.confirmed_since || []);
+  const held = new Set(report.held || []);
   const rejected = new Set(report.rejected || []);
   let step;
   for (const edit of report.ready || []) {
@@ -376,7 +379,13 @@ function renderReport(report, decide) {
     const state = document.createElement("span");
     state.className = "report-state";
     row.append(state);
-    if (confirmed.has(edit.key)) {
+    if (held.has(edit.key)) {
+      const mark = document.createElement("span");
+      mark.className = "report-confirmed report-writing";
+      mark.textContent = "confirmed, waiting";
+      mark.title = "Confirmed, waiting for the updates above";
+      state.append(mark);
+    } else if (confirmed.has(edit.key)) {
       const mark = document.createElement("span");
       mark.className = "report-confirmed" + (since.has(edit.key) ? " report-writing" : "");
       mark.textContent = since.has(edit.key) ? "writing..." : "written";
@@ -386,7 +395,7 @@ function renderReport(report, decide) {
       mark.className = "report-rejected";
       mark.textContent = "rejected";
       state.append(mark, decideButton("Undo", "report-undo", "Take the rejection back",
-        () => actions.undoReject(edit.key)));
+        () => undoRejection(report, edit.key)));
     } else if (decide) {
       state.classList.add("report-decide");
       state.append(
@@ -409,6 +418,13 @@ function renderReport(report, decide) {
     p.textContent = earlierNote(report);
     box.append(p);
   }
+  const assumed = laterNote(report, later);
+  if (assumed) {
+    const p = document.createElement("p");
+    p.className = "report-note";
+    p.textContent = assumed;
+    box.append(p);
+  }
   for (const note of previewNotes(report)) {
     const p = document.createElement("p");
     p.className = "report-note";
@@ -422,6 +438,14 @@ function renderReport(report, decide) {
     box.append(p);
   }
   return box;
+}
+
+// the updates after it were read without the edit: the user is asked
+// first when one of them is decided
+async function undoRejection(report, key) {
+  const warning = undoWarning(shown?.items || [], reports, report.entry_id);
+  if (warning && !await confirmDialog(warning, "Undo")) return false;
+  return actions.undoReject(key);
 }
 
 // The job's reports (by entry id), from the Sheet card's polling.
@@ -565,7 +589,7 @@ function renderInputs(experiment, items) {
     }
 
     li.append(meta, text);
-    if (reported) li.append(renderReport(report, isOpen && !report.waiting));
+    if (reported) li.append(renderReport(report, isOpen && !report.waiting, later));
     li.tabIndex = 0;
     li.setAttribute("aria-label", "Revise the " + inputDescription(item));
     li.addEventListener("click", () => beginRevision(item, experiment, li, text));

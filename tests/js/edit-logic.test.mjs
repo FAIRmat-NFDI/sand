@@ -3,8 +3,8 @@ import { test } from "node:test";
 
 import {
   confirmAllLabel, describeEditPhase, earlierNote, downloadFilename, editSummary, inputApplied, inputState,
-  checkedKeys, decidableKeys, inputsToRead, openReport, pendingKeys, previewNotes, readKey, reportsByEntry, unwrittenCount,
-  rewriteWarning, unwrittenKey, writtenCount, writtenEdits,
+  checkedKeys, decidableKeys, inputsToRead, laterNote, openReport, pendingKeys, previewNotes, readKey, reportsByEntry,
+  rewriteWarning, undoWarning, unwrittenCount, unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
 
 const REPORT = {
@@ -72,10 +72,11 @@ test("the open report is the first with an edit to decide", () => {
   // decided: the next one's turn
   assert.equal(openReport([{ ...one, rejected: ["k1"] }, two]).entry_id, "n2");
   assert.equal(openReport([{ ...one, confirmed: ["k1"] }, two]).entry_id, "n2");
-  // confirmed but not written yet: the sheet below changes, nothing below opens
+  // confirmed but not written yet: the one below was read with the edit,
+  // it opens at once
   const writing = { ...one, confirmed: ["k1"], confirmed_since: ["k1"] };
-  assert.equal(openReport([writing, two]), writing);
-  assert.deepEqual(decidableKeys([writing, two]), []);
+  assert.equal(openReport([writing, two]), two);
+  assert.deepEqual(decidableKeys([writing, two]), ["k2"]);
   // an earlier reading is read again before it is decided
   assert.deepEqual(decidableKeys([{ ...one, rejected: ["k1"] }, { ...two, waiting: true }]), []);
   assert.equal(openReport([{ ...one, confirmed: ["k1"] }]), null);
@@ -89,14 +90,14 @@ test("confirmed edits the last run did not write", () => {
   assert.equal(unwrittenKey({ inputs: [REPORT] }), "");
   const since = { inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] };
   assert.equal(unwrittenCount(since), 1);
-  assert.equal(unwrittenKey(since), "k1");
+  assert.equal(unwrittenKey(since), "confirmed k1");
   assert.equal(
     unwrittenKey({ inputs: [{ ...REPORT, confirmed_since: ["k2"] }, { ...REPORT, confirmed_since: ["k1"] }] }),
-    "k1\nk2");
+    "confirmed k1\nconfirmed k2");
   // withdrawn: its update was revised or deleted, the sheet still has it
   const withdrawn = { inputs: [{ ...REPORT, ready: [], unconfirmed_since: ["k0"] }] };
   assert.equal(unwrittenCount(withdrawn), 1);
-  assert.equal(unwrittenKey(withdrawn), "k0");
+  assert.equal(unwrittenKey(withdrawn), "withdrawn k0");
 });
 
 test("the inputs a job has to read", () => {
@@ -342,4 +343,52 @@ test("a waiting input says why its earlier reading does not hold", () => {
     "An earlier reading: the update is read again when its turn comes.",
   );
   assert.equal(earlierNote({ ...REPORT, waiting: true }), earlierNote({ ...REPORT, why_waiting: null }));
+});
+
+test("a held edit is confirmed, not written, and waits for no write", () => {
+  const held = { ...REPORT, confirmed: ["k1"], held: ["k1"] };
+  assert.deepEqual(inputState({ text: REPORT.text }, held, false, true),
+    { state: "held", label: "Confirmed, waiting for the updates above" });
+  assert.equal(inputApplied({ text: REPORT.text }, held), false);
+  assert.equal(writtenCount({ inputs: [held] }), 0);
+  assert.equal(unwrittenKey({ inputs: [held] }), "");
+  assert.equal(openReport([held]), null);
+  assert.match(editSummary({ inputs: [held] }), /1 edit confirmed waits for the updates above/);
+});
+
+test("a rejection made or taken back since the last run is written by the next", () => {
+  const two = { ...REPORT, input: 2, entry_id: "n2", ready: [{ key: "k2", line: "..." }] };
+  const rejected = { ...REPORT, rejected: ["k1"], rejected_since: ["k1"] };
+  assert.equal(openReport([rejected, two]), rejected);
+  assert.deepEqual(decidableKeys([rejected, two]), []);
+  assert.equal(unwrittenKey({ inputs: [rejected] }), "rejected k1");
+  // rejected again after the rejection was taken back: another key
+  assert.notEqual(unwrittenKey({ inputs: [rejected] }), unwrittenKey({ inputs: [{ ...REPORT, unrejected_since: ["k1"] }] }));
+  assert.equal(unwrittenCount({ inputs: [rejected] }), 0);
+  const undone = { ...REPORT, unrejected_since: ["k1"] };
+  assert.equal(openReport([undone, two]), undone);
+  assert.equal(unwrittenCount({ inputs: [undone] }), 1);
+  assert.match(editSummary({ inputs: [undone] }), /1 rejection taken back/);
+});
+
+test("an update after the open one is shown as if the ones above are confirmed", () => {
+  assert.equal(laterNote(REPORT, true), "Shown as if the updates above are confirmed.");
+  assert.equal(laterNote(REPORT, false), null);
+  assert.equal(laterNote({ ...REPORT, waiting: true }, true), null);
+  assert.equal(laterNote({ ...REPORT, confirmed: ["k1"], held: ["k1"] }, true), null);
+});
+
+test("taking back a rejection warns when updates after it are decided", () => {
+  const items = ["n1", "n2", "n3"].map((id) => ({ entry_id: id, text: "x" }));
+  const reports = {
+    n1: { ...REPORT, rejected: ["k1"] },
+    n2: { ...REPORT, entry_id: "n2", confirmed: ["k2"] },
+    n3: { ...REPORT, entry_id: "n3", rejected: ["k3"] },
+  };
+  assert.equal(undoWarning(items, reports, "n1"),
+    "Taking the rejection back puts this edit up for a decision again. "
+    + "The 2 decided updates after it need deciding again; their edits leave the sheet until then.");
+  assert.match(undoWarning(items, reports, "n2"), /The 1 decided update after it needs deciding again/);
+  assert.equal(undoWarning(items, reports, "n3"), null);
+  assert.equal(undoWarning(items, reports, "gone"), null);
 });

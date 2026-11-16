@@ -79,18 +79,33 @@ async def test_a_later_updates_edit_waits_for_the_ones_above(voice, action):
 
 
 async def test_the_open_update_is_decided_edit_by_edit(voice):
+    put_status(voice, report(1, 'n1', 'a1', 'a2', rejected=[]), report(2, 'n2', 'b1'))
     assert (await post(voice, 'confirm', ['a1'])).status_code == HTTPStatus.OK
-    # a1 is waiting to be written: update 1 stays open, a2 is its
+    # a2 is still to decide: update 1 stays open
+    assert (await post(voice, 'confirm', ['b1'])).status_code == HTTPStatus.CONFLICT
     assert (await post(voice, 'reject', ['a2'])).status_code == HTTPStatus.OK
-    # update 1's confirmation changes the sheet update 2 is read on
+    # update 2 was read with a2: its proposal changes with the next run
     response = await post(voice, 'confirm', ['b1'])
     assert response.status_code == HTTPStatus.CONFLICT
 
 
-async def test_a_rejection_opens_the_next_update_at_once(voice):
+async def test_a_confirmation_opens_the_next_update_at_once(voice):
+    """Update 2 was read with update 1's edit: confirming it before the
+    write keeps its key."""
+    put_status(voice, report(1, 'n1', 'a1', rejected=[]), report(2, 'n2', 'b1'))
+    assert (await post(voice, 'confirm', ['a1'])).status_code == HTTPStatus.OK
+    assert (await post(voice, 'confirm', ['b1'])).status_code == HTTPStatus.OK
+
+
+async def test_a_rejection_in_a_run_from_before_reports_knew_them_waits(voice):
+    """Such a report knew no rejections: a new one is since the run, and
+    the next update is decided after the run."""
     await post(voice, 'reject', ['a1', 'a2'])
 
-    assert (await post(voice, 'confirm', ['b1'])).status_code == HTTPStatus.OK
+    response = await post(voice, 'confirm', ['b1'])
+    assert response.status_code == HTTPStatus.CONFLICT
+    first = (await edits(voice))[0]
+    assert sorted(first['rejected_since']) == ['a1', 'a2']
 
 
 async def test_the_next_update_opens_once_the_sheet_is_written(voice):
@@ -161,3 +176,113 @@ async def test_a_waiting_update_without_edits_still_holds_the_ones_after(voice):
 
     assert response.status_code == HTTPStatus.CONFLICT
     assert response.json()['detail'] == 'decide the updates above first'
+
+
+async def edits(voice) -> list[dict]:
+    async with api(voice) as client:
+        response = await client.get(
+            f'/api/input-collections/{UPLOAD}/edits',
+            params={'collection_entry_id': COLLECTION},
+        )
+    return response.json()['inputs']
+
+
+async def test_a_held_edit_is_decided_and_waits_for_no_write(voice):
+    # update 2 was confirmed, then update 1 reworded: read on a preview
+    # with update 1's edit, it is held until update 1 is decided
+    put_status(
+        voice,
+        report(1, 'n1', 'a1', rejected=[]),
+        report(2, 'n2', 'b1', held=['b1'], rejected=[]),
+    )
+    put_confirmed(voice, b1='n2')
+
+    first, second = await edits(voice)
+    assert (second['confirmed'], second['held']) == (['b1'], ['b1'])
+    assert second['confirmed_since'] == []  # no job is started for it
+    assert (await post(voice, 'confirm', ['a1'])).status_code == HTTPStatus.OK
+    assert (await edits(voice))[0]['confirmed_since'] == ['a1']
+
+
+async def test_a_rejection_waits_for_the_run_before_the_next_update(voice):
+    """The update after it was read with the edit: its proposal changes."""
+    put_status(
+        voice,
+        report(1, 'n1', 'a1', rejected=[]),
+        report(2, 'n2', 'b1', rejected=[]),
+    )
+    assert (await post(voice, 'reject', ['a1'])).status_code == HTTPStatus.OK
+
+    first, _ = await edits(voice)
+    assert first['rejected_since'] == ['a1']
+    response = await post(voice, 'confirm', ['b1'])
+    assert response.status_code == HTTPStatus.CONFLICT
+    # the run knows it: update 2 is open
+    put_status(
+        voice,
+        report(1, 'n1', 'a1', rejected=['a1']),
+        report(2, 'n2', 'b2', rejected=[]),
+    )
+    assert (await post(voice, 'confirm', ['b2'])).status_code == HTTPStatus.OK
+
+
+async def test_a_rejection_taken_back_reopens_its_update(voice):
+    put_status(voice, report(1, 'n1', 'a1', rejected=[]), report(2, 'n2', 'b1'))
+    await post(voice, 'reject', ['a1'])
+    # the next run knew it, and update 2 was confirmed and written
+    put_status(
+        voice,
+        report(1, 'n1', 'a1', rejected=['a1']),
+        report(2, 'n2', 'b1', confirmed=['b1'], rejected=[]),
+    )
+    put_confirmed(voice, b1='n2')
+
+    assert (await post(voice, 'undo-reject', ['a1'])).status_code == HTTPStatus.OK
+
+    first, second = await edits(voice)
+    assert (first['rejected'], first['unrejected_since']) == ([], ['a1'])
+    # update 2 was read without a1: it leaves the sheet with the next run
+    assert second['confirmed'] == ['b1']
+    response = await post(voice, 'confirm', ['a1'])
+    assert response.status_code == HTTPStatus.OK, response.text
+
+
+async def test_a_shared_key_confirmed_by_one_input_is_not_its_rejection(voice):
+    """Two updates of the same words share a key: one confirmed it, the
+    other rejected it. The run lists the key as rejected for both."""
+    put_status(
+        voice,
+        report(1, 'n1', 'k1', confirmed=['k1'], rejected=['k1']),
+        report(2, 'n2', 'k1', rejected=['k1']),
+    )
+    put_confirmed(voice, k1='n1')
+    voice.writer.files[REJECTIONS_FILE] = json.dumps(
+        {
+            'k1': {
+                'by': 'user',
+                'at': '2026-11-13T10:00:00+00:00',
+                'input': 'n2',
+                'reason': None,
+                'meant': '',
+                'proposed': None,
+            }
+        }
+    ).encode()
+
+    first, second = await edits(voice)
+    assert first['unrejected_since'] == []
+    assert (second['rejected'], second['rejected_since']) == (['k1'], [])
+
+
+async def test_a_damaged_rejections_file_keeps_the_runs_rejections(voice):
+    put_status(
+        voice,
+        report(1, 'n1', 'a1', rejected=['a1']),
+        report(2, 'n2', 'b1', rejected=[]),
+    )
+    voice.writer.files[REJECTIONS_FILE] = b'not json'
+
+    first, second = await edits(voice)
+    assert first['rejected'] == ['a1']
+    assert (first['rejected_since'], first['unrejected_since']) == ([], [])
+    assert second['rejected'] == []

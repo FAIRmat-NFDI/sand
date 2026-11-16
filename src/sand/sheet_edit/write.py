@@ -57,7 +57,11 @@ class WriteResult:
     changes: list[CellChange]
 
 
-def write_cells(xlsx: bytes, writes: list[Write]) -> WriteResult:
+def write_cells(
+    xlsx: bytes, writes: list[Write], *, verified: bool = True
+) -> WriteResult:
+    """`verified=False` skips reading the result back (most of the time):
+    only for a sheet nobody downloads."""
     book = load_workbook(io.BytesIO(xlsx))
     values = load_workbook(io.BytesIO(xlsx), data_only=True)
     ws, stored = book.worksheets[0], values.worksheets[0]
@@ -95,7 +99,8 @@ def write_cells(xlsx: bytes, writes: list[Write]) -> WriteResult:
         return WriteResult(xlsx, [])
 
     after = _patch(xlsx, new, results)
-    _verify(xlsx, after, changes, before_books=(book, values))
+    if verified:
+        _verify(xlsx, after, changes, before_books=(book, values))
     return WriteResult(after, changes)
 
 
