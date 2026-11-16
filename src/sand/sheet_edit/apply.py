@@ -18,7 +18,8 @@ redo below it. A confirmed edit is written only onto the sheet it was
 read on: while an input above has an edit waiting for a decision, it is
 held.
 
-The inputs may be decided in any order. A decision is bound to its input
+The page decides one input after the other, or all at once (the router
+checks it); this module takes decisions in any order. A decision is bound to its input
 and to what the user saw (`_key`): the words, and the edit with its old
 values, samples and checks. A decision above that changes none of it below keeps the
 decisions there; one that changes it (the old value, the rows, a new

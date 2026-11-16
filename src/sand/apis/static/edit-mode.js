@@ -1,25 +1,29 @@
-// The Edits card: what the edit job did, the confirm-all button, and
-// the final sheet to download. The job runs by itself: it reads an
-// update as soon as it is saved (or its words revised), and writes the
-// confirmed edits a moment after a confirmation. Confirmations and
-// rejections come from the input tiles (inputs.js) through
-// editActions; confirmations also all at once from here.
+// The Edits card: what the edit job did, Confirm all with its review,
+// Undo last and Reset all, and the final sheet to download. The job
+// runs by itself: it reads an update as soon as it is saved (or its
+// words revised), and writes the confirmed edits a moment after a
+// decision. One by one, edits are decided from the input tiles
+// (inputs.js) through editActions, in turn; all at once in the review
+// (review.js).
 //
 // The job's status file is polled, and selecting an experiment resumes
 // an unfinished job's polling (reload-proof).
 
 import { errorDetail, experimentUrl } from "./api.js";
 import {
-  checkedKeys, confirmAllLabel, decidableKeys, describeEditPhase, downloadBlock, downloadFilename, editSummary,
-  inputsToRead, outdatedEntries, readKey, reportsByEntry, unwrittenKey, writtenEdits,
+  checkedKeys, confirmAllLabel, decisionCount, describeEditPhase, downloadBlock, downloadFilename, editSummary,
+  inputsToRead, pendingKeys, readKey, reportsByEntry, settledBlock, undoQuestion, unwrittenKey, writtenEdits,
 } from "./edit-logic.js";
 import { requireExperiment, showSheet } from "./experiments.js";
 import { rejectEdit } from "./feedback.js";
 import { setOverviewUpdates, showOverview } from "./overview.js";
 import { setInputsListener, setReports } from "./inputs.js";
-import { clearError, showError } from "./ui.js";
+import { openReview, updateReview } from "./review.js";
+import { clearError, confirmDialog, showError } from "./ui.js";
 
 const readAgainBtn = document.getElementById("read-again-btn");
+const undoLastBtn = document.getElementById("undo-last-btn");
+const resetBtn = document.getElementById("reset-decisions-btn");
 const confirmAllBtn = document.getElementById("confirm-all-btn");
 const confirmAllLabelEl = document.getElementById("confirm-all-label");
 const applyStatus = document.getElementById("apply-status");
@@ -40,8 +44,7 @@ let pollGeneration = 0;
 let current = null; // the experiment the card shows
 let downloading = false;
 let editedReady = false; // the shown experiment's last job completed: an edited sheet exists
-let pending = []; // keys of the last completed job's unconfirmed edits
-let confirming = null; // entry id of the experiment whose confirm-all is on its way
+let confirming = null; // entry id of the experiment whose review confirmation is on its way
 
 // what decides whether a job must start by itself: the inputs list as
 // last loaded (any experiment: it can arrive before the card switches),
@@ -122,14 +125,16 @@ function updateProgress() {
   setOverviewUpdates(updates);
 }
 
-// `checked`: how many pending edits have a check
-function showPending(keys, checked = 0) {
-  pending = keys;
-  // this experiment's own confirm-all brings the button back itself
+// Confirm all opens the review of `keys`, the undecided edits; `wait`:
+// why it cannot open now ("" when it can). `checked`: how many of them
+// have a check.
+function showPending(keys, checked = 0, wait = "") {
+  // this experiment's own confirmation brings the button back itself
   if (current && confirming === current.entry_id) return;
   confirmAllBtn.hidden = keys.length === 0;
-  confirmAllBtn.disabled = false;
-  confirmAllLabelEl.textContent = confirmAllLabel(keys.length, checked);
+  confirmAllBtn.disabled = Boolean(wait);
+  confirmAllBtn.title = wait;
+  confirmAllLabelEl.textContent = confirmAllLabel(keys.length, checked) + "...";
 }
 
 // the shown experiment's inputs list, null before it arrived
@@ -137,13 +142,25 @@ function shownItems() {
   return current && inputsSeen && inputsSeen.entryId === current.entry_id ? inputsSeen.items : null;
 }
 
-// Confirm all: every undecided edit of the updates not read again
-// first, once the last job completed
-function showDecidable(status) {
+// Confirm all, of a status: open once every update is read and nothing
+// was decided since the last run
+function showDecidable(status, jobRunning = false) {
   const all = status.inputs || [];
-  const keys = decidableKeys(all, outdatedEntries(shownItems(), reportsByEntry(status)));
+  const keys = pendingKeys(all);
   const marked = new Set(checkedKeys(all));
-  showPending(keys, keys.filter((key) => marked.has(key)).length);
+  const wait = jobRunning || status.phase !== "completed" ? "The updates are being read"
+    : settledBlock(status, shownItems()) ? "Wait: the updates are read again" : "";
+  showPending(keys, keys.filter((key) => marked.has(key)).length, wait);
+}
+
+// Undo last and Reset all: shown with a decision to take back, used
+// between runs (the server refuses while a job reads them)
+function showTakeBack(status, jobRunning) {
+  const last = status ? status.last_decision || [] : [];
+  undoLastBtn.hidden = last.length === 0;
+  resetBtn.hidden = !status || (!decisionCount(status) && !last.length);
+  undoLastBtn.disabled = resetBtn.disabled = jobRunning;
+  undoLastBtn.title = resetBtn.title = jobRunning ? "The updates are being read" : "";
 }
 
 // the sheet to download is the last run's, once every edit is decided
@@ -224,6 +241,7 @@ async function poll(experiment, generation) {
     lastStatus = null;
     reportsShown = {};
     showPending([]);
+    showTakeBack(null, false);
     updateProgress();
     setReports({}, false, editActions(experiment));
     settle(experiment, null);
@@ -245,11 +263,10 @@ async function poll(experiment, generation) {
   // the others show the last run's reports
   const fresh = running ? new Set((status.inputs || []).map((report) => report.entry_id)) : null;
   setReports(reportsShown, running, editActions(experiment), fresh);
-  if (status.phase === "completed") {
-    showDecidable(status);
-  } else {
-    showPending([]);
-  }
+  // while a job runs, the button stays, closed, for the last run's edits
+  showDecidable(running ? { ...status, inputs: Object.values(reportsShown) } : status, running);
+  showTakeBack(status, running);
+  updateReview(experiment, status, shownItems(), running);
   if (status.phase === "completed") {
     editedReady = true;
     idle();
@@ -316,6 +333,7 @@ function inputsLoaded(experiment, items) {
   if (lastStatus && !running) {
     showDecidable(lastStatus);
     gateDownload(downloadBlock(lastStatus, items));
+    updateReview(experiment, lastStatus, items, false);
   }
   if (statusKnown) settle(experiment, lastStatus);
 }
@@ -338,13 +356,12 @@ function editActions(experiment) {
     reject: async (edit) => {
       const done = await rejectEdit(edit, (why) => postReject(experiment, edit.key, why));
       if (done && stillShown(experiment)) {
-        // the updates below are read again: nothing to confirm all until then
-        showPending([]);
+        // the updates below are read again: no review until then
+        confirmAllBtn.disabled = true;
         startPolling(experiment);
       }
       return done;
     },
-    undoReject: (key) => undoReject(experiment, key),
   };
 }
 
@@ -358,43 +375,29 @@ async function postReject(experiment, key, { reason, meant }) {
   if (!res.ok) throw new Error(await errorDetail(res));
 }
 
-async function undoReject(experiment, key) {
-  clearError();
+// "" once posted, else why not
+async function post(experiment, path, body) {
   try {
-    const res = await fetch(experimentUrl(experiment, "edits/undo-reject"), {
+    const res = await fetch(experimentUrl(experiment, path), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keys: [key] }),
+      body: JSON.stringify(body),
     });
-    if (!res.ok) {
-      showError("Could not undo: " + await errorDetail(res));
-      return false;
-    }
+    return res.ok ? "" : await errorDetail(res);
   } catch (err) {
-    showError("Network error: " + err.message);
-    return false;
+    return "Network error: " + err.message;
   }
-  if (stillShown(experiment)) {
-    showPending([]);
-    startPolling(experiment);
-  }
-  return true;
 }
 
-// true when confirmed
-async function postConfirm(experiment, keys) {
-  try {
-    const res = await fetch(experimentUrl(experiment, "edits/confirm"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keys }),
-    });
-    if (res.ok) return true;
-    showError("Could not confirm: " + await errorDetail(res));
-  } catch (err) {
-    showError("Network error: " + err.message);
+// the review's rejections: the poll that follows shows the updates read
+// again (settle starts the run)
+async function reviewReject(experiment, keys) {
+  const why = await post(experiment, "edits/reject", { keys, review: true });
+  if (!why && stillShown(experiment)) {
+    confirmAllBtn.disabled = true;
+    startPolling(experiment);
   }
-  return false;
+  return why;
 }
 
 // true when confirmed; false lets the tile offer the button again. The
@@ -402,14 +405,15 @@ async function postConfirm(experiment, keys) {
 // the write a moment later.
 async function confirmEdit(experiment, key) {
   clearError();
-  const ok = await postConfirm(experiment, [key]);
-  if (ok && stillShown(experiment)) startPolling(experiment);
-  return ok;
+  const why = await post(experiment, "edits/confirm", { keys: [key] });
+  if (why) showError("Could not confirm: " + why);
+  else if (stillShown(experiment)) startPolling(experiment);
+  return !why;
 }
 
-// every pending edit of the last job, then the job that writes them
-async function confirmAll(experiment) {
-  clearError();
+// the review's confirmation of every undecided edit, then the job that
+// writes them; "" once confirmed, else why not
+async function reviewConfirm(experiment, keys) {
   // no job may start on a snapshot without these confirmations: settle
   // waits too (startJob or the poll gives the button back), and a write
   // already due goes with this one
@@ -419,21 +423,53 @@ async function confirmAll(experiment) {
     clearTimeout(writeTimer.timer);
     writeTimer = null;
   }
-  let ok;
+  let why;
   try {
-    ok = await postConfirm(experiment, pending);
+    why = await post(experiment, "edits/confirm", { keys, review: true });
   } finally {
     confirming = null;
   }
-  if (!ok) {
+  if (why) {
     // the server's view decides what is still pending (another tab may
     // have run a job)
     if (stillShown(experiment)) startPolling(experiment);
-    return;
+    return why;
   }
   // the write was asked for: it starts even if the user moved on
   if (stillShown(experiment)) confirmAllBtn.hidden = true;
-  await startJob(experiment);
+  startJob(experiment);
+  return "";
+}
+
+function openConfirmAll(experiment) {
+  if (!lastStatus || confirmAllBtn.disabled) return;
+  clearError();
+  openReview(experiment, lastStatus, shownItems(), {
+    reject: (keys) => reviewReject(experiment, keys),
+    confirm: (keys) => reviewConfirm(experiment, keys),
+  });
+}
+
+// the last click's decisions, once the user agreed
+async function undoLast(experiment) {
+  const question = lastStatus && undoQuestion(lastStatus);
+  if (!question || !await confirmDialog(question, "Undo")) return;
+  clearError();
+  const keys = lastStatus.last_decision.map((decision) => decision.key);
+  const why = await post(experiment, "edits/undo-last", { keys });
+  if (why) showError("Could not undo: " + why);
+  if (stillShown(experiment)) startPolling(experiment);
+}
+
+async function resetDecisions(experiment) {
+  const n = lastStatus ? decisionCount(lastStatus) : 0;
+  const what = n === 1 ? "the 1 decision" : n ? "all " + n + " decisions" : "every decision";
+  const question = "Reset " + what + "? Every edit waits for your decision again, as if none was made.";
+  if (!await confirmDialog(question, "Reset")) return;
+  clearError();
+  const why = await post(experiment, "edits/reset", {});
+  if (why) showError("Could not reset: " + why);
+  if (stillShown(experiment)) startPolling(experiment);
 }
 
 // The card for a newly selected experiment with an uploaded sheet
@@ -451,6 +487,7 @@ export function showEdit(experiment, view) {
   wroteFor = null;
   idle();
   showPending([]);
+  showTakeBack(null, false);
   updateProgress();
   gateDownload("");
   readAgainBtn.hidden = true;
@@ -588,7 +625,13 @@ export function initEdit() {
   // the card's experiment, not the selection: they differ while a newly
   // selected experiment's summary is loading
   confirmAllBtn.addEventListener("click", () => {
-    if (current) confirmAll(current);
+    if (current) openConfirmAll(current);
+  });
+  undoLastBtn.addEventListener("click", () => {
+    if (current) undoLast(current);
+  });
+  resetBtn.addEventListener("click", () => {
+    if (current) resetDecisions(current);
   });
   downloadFinalBtn.addEventListener("click", () => downloadSheet("final-sheet", ".xlsx"));
   downloadOriginalBtn.addEventListener("click", () => downloadSheet("original-sheet", " (original).xlsx"));

@@ -1535,8 +1535,7 @@ body {
 }
 
 .report-confirm.btn,
-.report-reject.btn,
-.report-undo.btn {
+.report-reject.btn {
   text-transform: none;
   letter-spacing: 0;
   font-size: 0.8rem;
@@ -1558,8 +1557,7 @@ body {
   font-style: italic;
 }
 
-.report-reject.btn,
-.report-undo.btn {
+.report-reject.btn {
   color: #555;
   border-color: #c4c7cc;
 }
@@ -1624,6 +1622,44 @@ body {
 .confirm-dialog .controls {
   justify-content: flex-end;
   margin: 24px 0 0;
+}
+
+/* Confirm all review: sections of edit rows, a tick each to confirm */
+.confirm-dialog.review-dialog {
+  max-width: min(640px, calc(100vw - 32px));
+}
+
+.review-list {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.review-section {
+  margin: 16px 0 4px;
+  font-weight: 500;
+}
+
+.review-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  overflow-wrap: anywhere;
+}
+
+.review-row input {
+  flex: none;
+}
+
+.review-title {
+  flex: none;
+  color: #6b7079;
+}
+
+.review-changed {
+  flex: none;
+  color: #92400e;
+  font-size: 0.85em;
 }
 
 /* Record section: the title and the voice mode switch, the label with
@@ -1908,8 +1944,8 @@ body {
   color: #777;
 }
 
-/* An edit's state cell: written with the "Wrong" flag, rejected with
-   Undo, or Confirm and Reject */
+/* An edit's state cell: written with the "Wrong" flag, rejected, or
+   Confirm and Reject */
 .report-state {
   display: inline-flex;
   align-items: center;

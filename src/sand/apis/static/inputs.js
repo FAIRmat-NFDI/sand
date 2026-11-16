@@ -10,7 +10,7 @@
 
 import { errorDetail, experimentUrl } from "./api.js";
 import {
-  inputState, outdatedEntries, previewNotes, resetNote, rewriteWarning, undoWarning,
+  inputState, outdatedEntries, previewNotes, resetNote, rewriteWarning, turnEntry,
 } from "./edit-logic.js";
 import { selectedExperiment } from "./experiments.js";
 import { editReported, reportEdit } from "./feedback.js";
@@ -334,16 +334,16 @@ function wrongFlag(edit) {
 }
 
 // A button of an edit row; `act()` resolves false when it did not go
-// through, and the button is offered again. `open`: the update may be
-// decided now (not read again first).
-function decideButton(label, className, title, act, open) {
+// through, and the button is offered again. `wait`: why it may not be
+// used now ("" when it may).
+function decideButton(label, className, title, act, wait) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "btn btn-outlined btn-small " + className;
   btn.textContent = label;
-  btn.dataset.open = open ? "1" : "";
-  btn.disabled = !open || !actions;
-  btn.title = open ? title : "Wait: the update is read again first";
+  btn.dataset.open = wait ? "" : "1";
+  btn.disabled = Boolean(wait) || !actions;
+  btn.title = wait || title;
   btn.addEventListener("click", async () => {
     btn.disabled = true;
     btn.dataset.busy = "1";
@@ -356,10 +356,9 @@ function decideButton(label, className, title, act, open) {
 
 // The edits of a report, grouped under their step as the Sheet table
 // groups them: a step heading, then one aligned row per edit with its
-// state at the right: written (with the "Wrong" flag), rejected (with
-// Undo), or the buttons that decide it; `decide`: they may be used now,
-// else the update is read again first.
-function renderReport(report, decide) {
+// state at the right: written (with the "Wrong" flag), rejected, or the
+// buttons that decide it; `wait`: why they may not be used now.
+function renderReport(report, wait) {
   const box = document.createElement("div");
   box.className = "input-report";
   box.addEventListener("click", (e) => e.stopPropagation());
@@ -398,15 +397,14 @@ function renderReport(report, decide) {
       const mark = document.createElement("span");
       mark.className = "report-rejected";
       mark.textContent = "rejected";
-      state.append(mark, decideButton("Undo", "report-undo", "Take the rejection back",
-        () => undoRejection(report, edit.key), decide));
+      state.append(mark);
     } else {
       state.classList.add("report-decide");
       state.append(
         decideButton("Confirm", "report-confirm", "Confirm this edit",
-          () => actions.confirm(edit.key), decide),
+          () => actions.confirm(edit.key), wait),
         decideButton("Reject", "report-reject", "Reject this edit: it is not written",
-          () => actions.reject(edit), decide),
+          () => actions.reject(edit), wait),
       );
     }
     box.append(row);
@@ -439,16 +437,8 @@ function renderReport(report, decide) {
   return box;
 }
 
-// the updates after it were read without the edit: the user is asked
-// first when one of them is decided
-async function undoRejection(report, key) {
-  const warning = undoWarning(shown?.items || [], reports, report.entry_id);
-  if (warning && !await confirmDialog(warning, "Undo")) return false;
-  return actions.undoReject(key);
-}
-
 // The job's reports (by entry id), from the Sheet card's polling.
-// `handlers`: {confirm(key), reject(edit), undoReject(key)}, each
+// `handlers`: {confirm(key), reject(edit)}, each
 // resolving false when it did not go through; null: nothing to decide.
 // `reported`: the entry ids the running job reported already.
 export function setReports(byEntry, running, handlers, reported = null) {
@@ -505,6 +495,8 @@ function renderInputs(experiment, items) {
     ? Object.fromEntries(Object.entries(reports).filter(([id]) => fresh.has(id)))
     : reports;
   const outdated = outdatedEntries(items, current);
+  // one by one, an update is decided after the ones above
+  const turn = turnEntry(current);
   for (const item of items) {
     const li = document.createElement("li");
     li.className = "input-tile";
@@ -590,7 +582,11 @@ function renderInputs(experiment, items) {
     }
 
     li.append(meta, text);
-    if (reported) li.append(renderReport(report, !waits));
+    if (reported) {
+      const wait = waits ? "Wait: the update is read again first"
+        : item.entry_id !== turn ? "Decide the updates above first, or all at once with Confirm all" : "";
+      li.append(renderReport(report, wait));
+    }
     li.tabIndex = 0;
     li.setAttribute("aria-label", "Revise the " + inputDescription(item));
     li.addEventListener("click", () => beginRevision(item, experiment, li, text));
