@@ -9,12 +9,30 @@
         "step 2 spin coating, rotation speed 3500 for all samples"
       ],
       "clicks": [
-        {"do": "reject", "note": 1},
-        {"do": "confirm", "note": 3},
-        {"do": "undo", "note": 1},
-        {"do": "confirm", "note": 1},
-        {"do": "confirm", "note": 2},
-        {"do": "confirm", "note": 3}
+        {
+          "do": "reject",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 3
+        },
+        {
+          "do": "undo",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 2
+        },
+        {
+          "do": "confirm",
+          "note": 3
+        }
       ]
     },
     {
@@ -26,13 +44,35 @@
         "step 1 UV ozone cleaning, the time of the DMSO to 300 for samples 1 to 3"
       ],
       "clicks": [
-        {"do": "confirm", "note": 1},
-        {"do": "confirm", "note": 2},
-        {"do": "confirm", "note": 3},
-        {"do": "reword", "note": 1, "text": "step 1 UV ozone cleaning, solvent 1 to DMSO for samples 1 to 3"},
-        {"do": "confirm", "note": 1},
-        {"do": "confirm", "note": 2},
-        {"do": "confirm", "note": 3}
+        {
+          "do": "confirm",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 2
+        },
+        {
+          "do": "confirm",
+          "note": 3
+        },
+        {
+          "do": "reword",
+          "note": 1,
+          "text": "step 1 UV ozone cleaning, solvent 1 to DMSO for samples 1 to 3"
+        },
+        {
+          "do": "confirm",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 2
+        },
+        {
+          "do": "confirm",
+          "note": 3
+        }
       ]
     },
     {
@@ -43,11 +83,26 @@
         "step 6 annealing, annealing time 15 for the samples with substrate temperature 115"
       ],
       "clicks": [
-        {"do": "reject", "note": 1},
-        {"do": "confirm", "note": 2},
-        {"do": "undo", "note": 1},
-        {"do": "confirm", "note": 1},
-        {"do": "confirm", "note": 2}
+        {
+          "do": "reject",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 2
+        },
+        {
+          "do": "undo",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 2
+        }
       ]
     },
     {
@@ -58,10 +113,22 @@
         "step 2 spin coating, rotation speed from 3000 to 5000"
       ],
       "clicks": [
-        {"do": "reject", "note": 1},
-        {"do": "undo", "note": 1},
-        {"do": "confirm", "note": 1},
-        {"do": "confirm", "note": 2}
+        {
+          "do": "reject",
+          "note": 1
+        },
+        {
+          "do": "undo",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 2
+        }
       ]
     },
     {
@@ -72,24 +139,48 @@
         "step 2 spin coating, rotation speed 10 percent higher for all samples"
       ],
       "clicks": [
-        {"do": "reject", "note": 1},
-        {"do": "undo", "note": 1},
-        {"do": "confirm", "note": 1},
-        {"do": "confirm", "note": 2}
+        {
+          "do": "reject",
+          "note": 1
+        },
+        {
+          "do": "undo",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 2
+        }
       ]
     },
     {
       "id": "fill-empty",
-      "why": "finding O: a note fills cells that are empty only while the note above is rejected",
+      "why": "finding O: the rows are the empty cells, which the note above fills",
       "notes": [
         "step 2 spin coating, notes: cracked for sample 2",
-        "step 2 spin coating, notes: cloudy for samples 1 to 3"
+        "step 2 spin coating, notes: cloudy for the samples whose notes are empty"
       ],
       "clicks": [
-        {"do": "reject", "note": 1},
-        {"do": "undo", "note": 1},
-        {"do": "confirm", "note": 1},
-        {"do": "confirm", "note": 2}
+        {
+          "do": "reject",
+          "note": 1
+        },
+        {
+          "do": "undo",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 2
+        }
       ]
     },
     {
@@ -100,10 +191,22 @@
         "step 2 spin coating, change the rotation time 30 to 45"
       ],
       "clicks": [
-        {"do": "reject", "note": 1},
-        {"do": "undo", "note": 1},
-        {"do": "confirm", "note": 1},
-        {"do": "confirm", "note": 2}
+        {
+          "do": "reject",
+          "note": 1
+        },
+        {
+          "do": "undo",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 2
+        }
       ]
     },
     {
@@ -114,10 +217,22 @@
         "step 1 UV ozone cleaning, the solvent time to 300 for all samples"
       ],
       "clicks": [
-        {"do": "reject", "note": 1},
-        {"do": "undo", "note": 1},
-        {"do": "confirm", "note": 1},
-        {"do": "confirm", "note": 2}
+        {
+          "do": "reject",
+          "note": 1
+        },
+        {
+          "do": "undo",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 2
+        }
       ]
     },
     {
@@ -129,13 +244,34 @@
         "step 6 annealing, annealing temperature 140 for all samples"
       ],
       "clicks": [
-        {"do": "reject", "note": 1},
-        {"do": "confirm", "note": 2},
-        {"do": "confirm", "note": 3},
-        {"do": "undo", "note": 1},
-        {"do": "confirm", "note": 1},
-        {"do": "confirm", "note": 2},
-        {"do": "confirm", "note": 3}
+        {
+          "do": "reject",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 2
+        },
+        {
+          "do": "confirm",
+          "note": 3
+        },
+        {
+          "do": "undo",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 2
+        },
+        {
+          "do": "confirm",
+          "note": 3
+        }
       ]
     },
     {
@@ -146,8 +282,14 @@
         "step 2 spin coating, rotation speed 3500 for all samples"
       ],
       "clicks": [
-        {"do": "confirm", "note": 1},
-        {"do": "confirm", "note": 2}
+        {
+          "do": "confirm",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 2
+        }
       ]
     },
     {
@@ -158,23 +300,44 @@
         "rotation speed 4000 for all samples"
       ],
       "clicks": [
-        {"do": "reject", "note": 1},
-        {"do": "undo", "note": 1},
-        {"do": "confirm", "note": 1}
+        {
+          "do": "reject",
+          "note": 1
+        },
+        {
+          "do": "undo",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 1
+        }
       ]
     },
     {
       "id": "no-step-certain",
-      "why": "only step 8 has a thickness: a note naming no step may be certain",
+      "why": "only step 5 has a substrate temperature: a note naming no step may be certain; \"the 115\" picks the cells holding it, which the note above changes",
       "notes": [
-        "step 8 evaporation, material Au for all samples",
-        "thickness 80 for all samples"
+        "step 5 close space sublimation, substrate temperature 115 for samples 1 to 3",
+        "change the substrate temperature 115 to 118"
       ],
       "clicks": [
-        {"do": "reject", "note": 1},
-        {"do": "undo", "note": 1},
-        {"do": "confirm", "note": 1},
-        {"do": "confirm", "note": 2}
+        {
+          "do": "reject",
+          "note": 1
+        },
+        {
+          "do": "undo",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 2
+        }
       ]
     },
     {
@@ -186,14 +349,39 @@
         "step 6 annealing, annealing time 15 for all samples"
       ],
       "clicks": [
-        {"do": "confirm", "note": 1},
-        {"do": "confirm", "note": 2},
-        {"do": "reword", "note": 1, "text": "step 1 UV ozone cleaning, time 1 to 350 for all samples"},
-        {"do": "confirm", "note": 1},
-        {"do": "delete", "note": 2},
-        {"do": "confirm", "note": 3},
-        {"do": "add", "text": "step 1 UV ozone cleaning, UV-ozone time 1200 for all samples"},
-        {"do": "confirm", "note": 4}
+        {
+          "do": "confirm",
+          "note": 1
+        },
+        {
+          "do": "confirm",
+          "note": 2
+        },
+        {
+          "do": "reword",
+          "note": 1,
+          "text": "step 1 UV ozone cleaning, time 1 to 350 for all samples"
+        },
+        {
+          "do": "confirm",
+          "note": 1
+        },
+        {
+          "do": "delete",
+          "note": 2
+        },
+        {
+          "do": "confirm",
+          "note": 3
+        },
+        {
+          "do": "add",
+          "text": "step 1 UV ozone cleaning, UV-ozone time 1200 for all samples"
+        },
+        {
+          "do": "confirm",
+          "note": 4
+        }
       ]
     }
   ]

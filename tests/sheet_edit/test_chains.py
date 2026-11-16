@@ -143,3 +143,79 @@ def test_each_pass_is_kept_under_the_prompt_it_answers(synthetic_xlsx):
     assert names[:2] == names[2:4]
     assert names[0].endswith('.first') and names[1].endswith('.second')
     assert len(set(names)) == 4  # noqa: PLR2004
+
+
+def test_an_answer_reused_on_the_same_sheet_again_is_compared_once(synthetic_xlsx):
+    fresh = Canned()
+    played = rc.play(
+        chain(
+            {'do': 'reject', 'note': 1},
+            {'do': 'undo', 'note': 2},  # skipped: no job, nothing new
+            {'do': 'reword', 'note': 2, 'text': TIME + ' please'},
+        ),
+        synthetic_xlsx,
+        Canned({TIME + ' please': ANSWERS[TIME]}),
+        fresh,
+    )
+    sheets = [(c.note, c.reused) for c in played.compared]
+    assert len(sheets) == len(set(sheets))
+    assert fresh.calls.count(SPEED) == 1
+
+
+def test_a_reading_an_earlier_answer_would_have_matched_is_careful(synthetic_xlsx):
+    """The note names "3000", which the note above moves and puts back:
+    read again, with the edits its first answer makes there."""
+    above = 'step 2 spin coating, rotation speed 3500 for samples 1 to 5'
+    said = 'step 2 spin coating, rotation speed from 3000 to 5000 for samples 7 to 13'
+    model = Canned(
+        {
+            above: edit(
+                'C025', Range(first='1', last='5', subbatch=None), '3000', '3500', above
+            ),
+            said: edit(
+                'C025', Range(first='7', last='13', subbatch=None), '3000', '5000', said
+            ).model_copy(update={'said_old': '3000'}),
+        }
+    )
+    played = rc.play(
+        chain(
+            {'do': 'reject', 'note': 1},
+            {'do': 'undo', 'note': 1},
+            notes=(above, said),
+        ),
+        synthetic_xlsx,
+        model,
+    )
+    assert played.ok, rc.report([played])
+    assert played.careful >= 1
+
+
+def test_reword_delete_and_add_play_like_the_page(synthetic_xlsx):
+    added = 'step 2 spin coating, rotation speed 3600 for all samples'
+    model = Canned({added: edit('C025', 'all', '3000', '3600', added)})
+    played = rc.play(
+        chain(
+            {'do': 'confirm', 'note': 1},
+            {'do': 'delete', 'note': 3},
+            {'do': 'add', 'text': added},
+            {'do': 'confirm', 'note': 2},
+            {'do': 'confirm', 'note': 4},
+        ),
+        synthetic_xlsx,
+        model,
+    )
+    # the added note is note 4, not the deleted note's 3
+    assert played.skipped == [], played.skipped
+    assert played.ok
+    assert added in model.calls
+
+
+def test_a_decision_matching_none_of_its_notes_edits_is_dropped():
+    decisions = rc._Decisions(confirmed={'old': 2, 'k': 2, 'other': 3})
+
+    class Step:
+        class interpretation:  # noqa: N801
+            ready = {'k': None}
+
+    decisions.keep_only(2, Step)
+    assert decisions.confirmed == {'k': 2, 'other': 3}

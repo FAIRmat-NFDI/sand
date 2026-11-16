@@ -163,10 +163,13 @@ class Played:
     chain: Chain
     readings: int = 0  # asked by the jobs; one reading is two passes
     compared: list[Compared] = field(default_factory=list)
-    careful: int = 0  # read again, the earlier answer made the same edits
+    careful: int = 0  # read again, an earlier answer made the same edits
     waiting: int = 0  # notes shown with an earlier answer, not compared
     skipped: list[str] = field(default_factory=list)  # clicks the page refuses
     failed: str = ''
+    # (note, words, sheet) compared already: a later job that leaves the
+    # note's sheet alone hits the same answer, as a fresh one would be hit
+    seen: set[tuple[int, str, str]] = field(default_factory=set)
 
     @property
     def ok(self) -> bool:
@@ -180,6 +183,18 @@ class _Note:
 
 
 @dataclass
+class _Notes:
+    """The notes in order; a new one gets the next number, never a
+    number a deleted one had."""
+
+    notes: list[_Note]
+    last: int
+
+    def at(self, number: int) -> int:
+        return next(i for i, n in enumerate(self.notes) if n.number == number)
+
+
+@dataclass
 class _Decisions:
     """The two decision files, each key with the note it was made on."""
 
@@ -189,6 +204,17 @@ class _Decisions:
     def drop(self, number: int) -> None:
         for kept in (self.confirmed, self.rejected):
             for key in [k for k, n in kept.items() if n == number]:
+                del kept[key]
+
+    def keep_only(self, number: int, step: Step) -> None:
+        """As the server on a decision: the note's decisions that match
+        none of its edits now are done with."""
+        for kept in (self.confirmed, self.rejected):
+            for key in [
+                k
+                for k, n in kept.items()
+                if n == number and k not in step.interpretation.ready
+            ]:
                 del kept[key]
 
     def undecided(self, step: Step) -> list[str]:
@@ -206,7 +232,9 @@ def play(
     same model). A job the model fails stops the chain."""
     fresh = fresh or resolve
     played = Played(chain)
-    notes = [_Note(n, text) for n, text in enumerate(chain.notes, 1)]
+    notes = _Notes(
+        [_Note(n, text) for n, text in enumerate(chain.notes, 1)], len(chain.notes)
+    )
     decisions = _Decisions()
     cache: Cache = {}
 
@@ -225,7 +253,7 @@ def play(
         try:
             steps = apply_all(
                 sheet,
-                [n.text for n in notes],
+                [n.text for n in notes.notes],
                 counted,
                 set(decisions.confirmed),
                 cache,
@@ -235,27 +263,32 @@ def play(
             label = (
                 'read' if click is None else f'{click.do} {click.note or ""}'.strip()
             )
-            _compare(played, job, label, notes, steps, sheet, saved, fresh)
         except rt.JobWouldFail as why:
             played.failed = f'job {job}: {why}'
+            return played
+        try:
+            _compare(played, job, label, notes.notes, steps, sheet, saved, fresh)
+        except rt.JobWouldFail as why:
+            played.failed = f'job {job}, the fresh reading: {why}'
             return played
     return played
 
 
 def _click_on(  # noqa: PLR0911
-    click: Click, notes: list[_Note], steps: list[Step], decisions: _Decisions
+    click: Click, notes: _Notes, steps: list[Step], decisions: _Decisions
 ) -> str | None:
     """Make the click; why the page refuses it, else None."""
     if click.do == 'add':
-        notes.append(_Note(max((n.number for n in notes), default=0) + 1, click.text))
+        notes.last += 1
+        notes.notes.append(_Note(notes.last, click.text))
         return None
-    at = next(i for i, n in enumerate(notes) if n.number == click.note)
+    at = notes.at(click.note)
     if click.do == 'reword':
-        notes[at].text = click.text
+        notes.notes[at].text = click.text
         decisions.drop(click.note)
         return None
     if click.do == 'delete':
-        del notes[at]
+        del notes.notes[at]
         decisions.drop(click.note)
         return None
     if click.do == 'undo':
@@ -270,13 +303,14 @@ def _click_on(  # noqa: PLR0911
         None,
     )
     if open_at is None or open_at != at:
-        which = 'none' if open_at is None else f'note {notes[open_at].number}'
+        which = 'none' if open_at is None else f'note {notes.notes[open_at].number}'
         return f'not its turn (open: {which})'
     if steps[at].waiting:
         return 'read again first'
     kept = decisions.confirmed if click.do == 'confirm' else decisions.rejected
     for key in decisions.undecided(steps[at]):
         kept[key] = click.note
+    decisions.keep_only(click.note, steps[at])
     return None
 
 
@@ -298,6 +332,10 @@ def _compare(  # noqa: PLR0913, PLR0917
             continue
         if step.answer[1] != sha256(read_on):
             # an answer read on another sheet
+            seen = (note.number, note.text, sha256(read_on))
+            if seen in played.seen:
+                continue
+            played.seen.add(seen)
             asked = interpret_instruction(note.text, read_on, fresh)
             played.compared.append(
                 Compared(
@@ -308,17 +346,13 @@ def _compare(  # noqa: PLR0913, PLR0917
                     changes(asked),
                 )
             )
-        elif step.answer not in saved:
-            earlier = _newest(saved, step.answer[0])
-            if earlier is not None and changes(
-                _interpret(note.text, read_on, earlier)
-            ) == changes(step.interpretation):
-                played.careful += 1
-
-
-def _newest(cache: Cache, words: str) -> Answer | None:
-    answers = [a for (w, _), a in cache.items() if w == words]
-    return max(answers, key=lambda a: a.seq, default=None)
+        elif step.answer not in saved and any(
+            changes(_interpret(note.text, read_on, a)) == changes(step.interpretation)
+            for (words, _), a in saved.items()
+            if words == step.answer[0]
+        ):
+            # read again, though an earlier answer would have made the same
+            played.careful += 1
 
 
 def _interpret(text: str, sheet: bytes, answer: Answer) -> Interpretation:
