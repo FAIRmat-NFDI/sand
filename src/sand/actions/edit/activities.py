@@ -110,6 +110,7 @@ async def replay_cached_inputs(data: ReplayInput) -> dict:
         files.cache.answers,
         cached_only=True,
         rejected=frozenset(data.rejections),
+        ids=data.input_ids or None,
     )
     confirmed = set(files.confirmations)
     rejected = set(data.rejections)
@@ -347,6 +348,7 @@ def _apply_inputs_from_cache(
         set(files.confirmations),
         files.cache.answers,
         rejected=frozenset(data.rejections),
+        ids=data.input_ids[: len(texts)] or None,
     )
 
 

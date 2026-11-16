@@ -319,7 +319,9 @@ export function downloadBlock(status, items) {
   if (reports.some((report) => sinceLastRun(report).length)) {
     return "The sheet is being written again: edits were decided since";
   }
-  if (items && inputsToRead(items, reportsByEntry(status)).length) {
+  // inputsToRead is empty while a recording is transcribed (no job can
+  // start then): that recording is not read either
+  if (items && (items.some((item) => !item.text) || inputsToRead(items, reportsByEntry(status)).length)) {
     return "An update is not read yet";
   }
   const pending = pendingKeys(reports).length;

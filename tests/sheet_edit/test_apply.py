@@ -604,3 +604,14 @@ def test_a_key_two_inputs_share_is_confirmed_for_the_first_only(
     steps = run(synthetic_xlsx, [SPEED_SAID, SPEED_SAID], keys(first[0]))
     assert steps[0].confirmed == tuple(keys(first[0]))
     assert steps[1].confirmed == ()
+
+
+def test_two_inputs_showing_the_same_edit_are_decided_apart(synthetic_xlsx):
+    """'speed 4000', 'speed 3000', 'speed 4000': the third shows what the
+    first does, 3000 -> 4000; each is still its own input's decision."""
+    inputs, ids = [SPEED_SAID, 'speed 3000', SPEED_SAID], ['n1', 'n2', 'n3']
+    first = apply_all(synthetic_xlsx, inputs, FakeLLM(), set(), {}, ids=ids)
+    assert keys(first[0]) != keys(first[2])
+    confirmed = set().union(*(keys(s) for s in first))
+    steps = apply_all(synthetic_xlsx, inputs, FakeLLM(), confirmed, {}, ids=ids)
+    assert [len(s.written) for s in steps] == [ALL_ROWS] * 3

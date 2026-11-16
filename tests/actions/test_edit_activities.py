@@ -125,6 +125,7 @@ def job(upload, job_id='job-1') -> JobInput:
         llm_model_name=MODEL,
         texts=[i.text for i in upload.inputs],
         confirmations={} if raw is None else json.loads(raw),
+        input_ids=[i.entry_id for i in upload.inputs],
     )
 
 

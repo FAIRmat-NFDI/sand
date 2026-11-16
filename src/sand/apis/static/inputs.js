@@ -498,8 +498,13 @@ function renderInputs(experiment, items) {
     : null;
   inputsList.replaceChildren();
   inputsCount.textContent = String(items.length);
-  // read again first: below a change, or not reported by the running job
-  const outdated = outdatedEntries(items, reports);
+  // read again first: below a change, or not reported by the running job.
+  // While a job runs, only its own reports count: the last run's (one of
+  // a deleted update too) are kept for display only
+  const current = fresh
+    ? Object.fromEntries(Object.entries(reports).filter(([id]) => fresh.has(id)))
+    : reports;
+  const outdated = outdatedEntries(items, current);
   for (const item of items) {
     const li = document.createElement("li");
     li.className = "input-tile";

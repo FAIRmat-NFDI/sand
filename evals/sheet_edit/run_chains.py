@@ -265,6 +265,7 @@ def play(
                 set(decisions.confirmed),
                 cache,
                 rejected=frozenset(decisions.rejected),
+                ids=[str(n.number) for n in notes.notes],
             )
             shown = {n.number: step for n, step in zip(notes.notes, steps)}
             label = (

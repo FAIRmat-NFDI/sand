@@ -122,6 +122,8 @@ test("the edited sheet downloads once every edit is decided and written", () => 
   }
   const added = [...items, { entry_id: "n2", text: "speed 5000" }];
   assert.equal(downloadBlock({ inputs: [decided] }, added), "An update is not read yet");
+  const transcribing = [...items, { entry_id: "n2", text: null }];
+  assert.equal(downloadBlock({ inputs: [decided] }, transcribing), "An update is not read yet");
   assert.equal(downloadBlock({ inputs: [decided] }, null), "");
 });
 

@@ -1009,7 +1009,11 @@ def _not_final(status: dict, texts: dict[str, str]) -> str | None:
     read = {r.get('entry_id'): r.get('text') for r in reports}
     if read.keys() - texts.keys():
         return 'an update was deleted since the sheet was written; it is being written again'
-    if any(read.get(entry_id) != text for entry_id, text in texts.items()):
+    # a recording being transcribed has no words yet, and no report
+    if any(
+        text is None or entry_id not in read or read[entry_id] != text
+        for entry_id, text in texts.items()
+    ):
         return 'an update is not read yet; wait for it'
     undecided = sum(len(_undecided(r)) for r in reports)
     if undecided:

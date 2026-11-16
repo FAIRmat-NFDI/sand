@@ -629,3 +629,13 @@ async def test_no_changelog_stored(voice, synthetic_xlsx):
     del voice.writer.files[CHANGELOG_FILE]
 
     assert (await get(voice, 'changelog')).status_code == HTTPStatus.NOT_FOUND
+
+
+async def test_no_download_while_a_recording_is_transcribed(voice, synthetic_xlsx):
+    put_final(voice, synthetic_xlsx)
+    voice.inputs = [note('n1', 'speed 4000'), note('n2', None)]
+
+    response = await get(voice, 'final-sheet')
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert 'not read yet' in response.json()['detail']
