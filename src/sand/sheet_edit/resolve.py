@@ -342,9 +342,11 @@ def _first_per_anchor(edits: list[Edit]) -> dict[tuple[str, str], Edit]:
 
 
 def _rows_agreement_key(rows: RowSpec, catalog: Catalog) -> RowsAgreementKey:
-    """Samples listed and the range of the same samples are the same rows;
-    the sheet decides, through the one row resolver. 'all' and 'where'
-    stay what they are: named samples and 'every sample' are two readings."""
+    """Samples listed, a range and 'all' are the same rows when they name
+    the same samples ("samples 1 to 13" is every sample when there is no
+    6); the sheet decides, through the one row resolver. 'where' stays
+    what it is: the rows holding a value are another reading than the
+    samples that hold it now."""
     if isinstance(rows, Samples):
         try:
             return frozenset(resolve_rows(rows, catalog)[0])
@@ -356,7 +358,7 @@ def _rows_agreement_key(rows: RowSpec, catalog: Catalog) -> RowsAgreementKey:
         except Refusal:  # "samples 3 to 1", or the same repeated label
             return ('range', rows.first, rows.last, rows.subbatch)
     if rows == 'all':
-        return 'all'
+        return frozenset(resolve_rows(rows, catalog)[0])
     return ('where', rows.where, None if rows.equals is None else rows.equals.strip())
 
 

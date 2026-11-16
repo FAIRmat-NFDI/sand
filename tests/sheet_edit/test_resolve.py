@@ -13,7 +13,6 @@ from sand.sheet_edit.edits import (
     NotFound,
     ProposedEdits,
     Range,
-    Samples,
     Uncertain,
     Unreadable,
     proposed_edits_schema,
@@ -289,6 +288,20 @@ def test_a_range_and_the_same_samples_listed_agree(catalog):
     assert isinstance(ask(catalog, a).unresolved[0], Unreadable)
 
 
+def test_every_sample_named_as_a_range_agrees_with_all(catalog):
+    # the synthetic sheet has samples 1-5 and 7-13: "1 to 13" is all of them
+    every = answer(edit(rows={'first': '1', 'last': '13', 'subbatch': None}))
+    proposal = ask(catalog, every, answer(edit(rows='all')))
+    assert len(proposal.edits) == 1
+    assert proposal.unresolved == []
+    everyone = [s.label for s in catalog.samples]
+    listed = answer(edit(rows={'samples': everyone, 'subbatch': None}))
+    assert len(ask(catalog, answer(edit()), listed).edits) == 1
+    # fewer samples than all is still a disagreement
+    some = answer(edit(rows={'first': '1', 'last': '5', 'subbatch': None}))
+    assert isinstance(ask(catalog, some, answer(edit())).unresolved[0], Uncertain)
+
+
 def test_rows_are_the_sheets_rows_with_subbatches(two_subbatches):
     one = next(s.subbatch for s in two_subbatches.samples if s.row == 9)  # noqa: PLR2004
     zero = next(s.subbatch for s in two_subbatches.samples if s.row == 3)  # noqa: PLR2004
@@ -319,11 +332,7 @@ def test_a_hedge_on_the_other_passs_cut_of_the_quote_counts(catalog):
     assert proposal.unresolved[0].why == 'a pass also left these words unresolved'
 
 
-def test_where_and_all_are_their_own_readings(catalog):
-    everyone = [s.label for s in catalog.samples]
-    b = answer(edit(rows={'samples': everyone, 'subbatch': None}))
-    item = only(ask(catalog, answer(edit()), b), Uncertain)
-    assert isinstance(item.readings[1].rows, Samples)
+def test_where_is_its_own_reading(catalog):
     where = {'where': VARIATION, 'equals': '20min'}
     a = answer(edit(rows=where))
     assert (
