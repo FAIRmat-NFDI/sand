@@ -316,3 +316,21 @@ prompt change) are the same; delete the folder for fresh answers.
 The sheet they are asked about is written there too, as
 `synthetic_sheet.xlsx`, to open next to them. The script never runs in CI; `tests/sheet_edit/test_testcases.py`
 checks the cases and the judgement offline.
+
+A second script measures the reuse of saved answers:
+
+```sh
+~/fairmat/nomad-distro-dev/.venv/bin/python evals/sheet_edit/run_chains.py
+```
+
+`evals/sheet_edit/chains.json` holds short stories: a few notes and the
+clicks made on them (confirm, reject, undo, reword, delete, add). Each
+story is played the way the edit job runs it, one job after every
+click. Whenever a note reuses an answer read on another sheet, the model
+is also asked fresh on the note's sheet. The two must make the same
+edits (the gate, 100 %). The script also prints the readings the jobs
+asked for, the readings reuse saved, and the notes read again although
+their earlier answer made the same edits. Its answers are kept under
+`evals/sheet_edit/cache/chains/<model>/`, one file per prompt and pass.
+`--only ID` and `--model NAME` work as above; `tests/sheet_edit/test_chains.py`
+checks the stories and the player offline.
