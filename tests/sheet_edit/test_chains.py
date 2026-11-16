@@ -71,6 +71,10 @@ def test_every_chain_loads(synthetic_xlsx):
         ([{'do': 'press', 'note': 1}], 'unknown click'),
         ([{'do': 'reword', 'note': 1}], 'takes a note and a text'),
         ([{'do': 'add', 'note': 1, 'text': 'x'}], 'takes a text'),
+        ([{'do': 'add', 'text': 1}], 'takes a text'),
+        ([{'do': 'add', 'text': '  '}], 'takes a text'),
+        ([{'do': 'confirm', 'note': True}], 'takes a note'),
+        ([{'do': 'confirm', 'note': 0}], 'takes a note'),
     ],
 )
 def test_a_click_on_no_note_is_refused_when_loading(tmp_path, clicks, error):
@@ -219,3 +223,19 @@ def test_a_decision_matching_none_of_its_notes_edits_is_dropped():
 
     decisions.keep_only(2, Step)
     assert decisions.confirmed == {'k': 2, 'other': 3}
+
+
+def test_a_click_after_a_note_above_is_deleted_names_the_right_note(synthetic_xlsx):
+    """Deleting note 2 moves note 3 up a place: confirming note 3 must
+    decide note 3's edit."""
+    played = rc.play(
+        chain(
+            {'do': 'confirm', 'note': 1},
+            {'do': 'delete', 'note': 2},
+            {'do': 'confirm', 'note': 3},
+        ),
+        synthetic_xlsx,
+        Canned(),
+    )
+    assert played.skipped == [], played.skipped
+    assert played.ok

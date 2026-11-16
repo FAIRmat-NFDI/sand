@@ -103,12 +103,18 @@ def _click(raw: dict, chain: str) -> Click:
     if do not in CLICKS:
         raise ValueError(f'{chain}: unknown click {do!r}')
     names, says = CLICKS[do]
-    if names != isinstance(raw.get('note'), int) or says != bool(raw.get('text')):
+    note, text = raw.get('note'), raw.get('text')
+    # bool is an int in Python; here it is not
+    numbered = isinstance(note, int) and not isinstance(note, bool) and note >= 1
+    worded = isinstance(text, str) and bool(text.strip())
+    if (names, says) != (numbered, worded) or (
+        not names and note is not None or not says and text is not None
+    ):
         need = ' and '.join(
             part for part, on in (('a note', names), ('a text', says)) if on
         )
         raise ValueError(f'{chain}: {do} takes {need or "nothing"}')
-    return Click(do, raw.get('note'), raw.get('text'))
+    return Click(do, note, text)
 
 
 def _check_notes(chain: Chain) -> None:
@@ -242,10 +248,12 @@ def play(
         played.readings += 1
         return resolve(text, catalog)
 
-    steps: list[Step] = []
+    # the last job's steps by note number: a click names a note, and the
+    # notes move when one above is deleted
+    shown: dict[int, Step] = {}
     for job, click in enumerate([None, *chain.clicks]):
         if click is not None:
-            refused = _click_on(click, notes, steps, decisions)
+            refused = _click_on(click, notes, shown, decisions)
             if refused:
                 played.skipped.append(f'job {job}, {click.do} {click.note}: {refused}')
                 continue
@@ -260,6 +268,7 @@ def play(
                 in_turn=True,
                 rejected=frozenset(decisions.rejected),
             )
+            shown = {n.number: step for n, step in zip(notes.notes, steps)}
             label = (
                 'read' if click is None else f'{click.do} {click.note or ""}'.strip()
             )
@@ -275,7 +284,7 @@ def play(
 
 
 def _click_on(  # noqa: PLR0911
-    click: Click, notes: _Notes, steps: list[Step], decisions: _Decisions
+    click: Click, notes: _Notes, shown: dict[int, Step], decisions: _Decisions
 ) -> str | None:
     """Make the click; why the page refuses it, else None."""
     if click.do == 'add':
@@ -298,19 +307,18 @@ def _click_on(  # noqa: PLR0911
         return None if undone else 'no rejection to undo'
     # confirm or reject: the open note's undecided edits, as the server
     # allows (`_open_report`): the first waiting or with something to decide
-    open_at = next(
-        (i for i, s in enumerate(steps) if s.waiting or decisions.undecided(s)),
-        None,
+    opened = next(
+        (n for n, s in shown.items() if s.waiting or decisions.undecided(s)), None
     )
-    if open_at is None or open_at != at:
-        which = 'none' if open_at is None else f'note {notes.notes[open_at].number}'
-        return f'not its turn (open: {which})'
-    if steps[at].waiting:
+    if opened != click.note:
+        return f'not its turn (open: {"none" if opened is None else f"note {opened}"})'
+    step = shown[click.note]
+    if step.waiting:
         return 'read again first'
     kept = decisions.confirmed if click.do == 'confirm' else decisions.rejected
-    for key in decisions.undecided(steps[at]):
+    for key in decisions.undecided(step):
         kept[key] = click.note
-    decisions.keep_only(click.note, steps[at])
+    decisions.keep_only(click.note, step)
     return None
 
 
