@@ -266,6 +266,48 @@ def test_what_is_no_disagreement(catalog):
     )
 
 
+def test_the_value_is_compared_as_it_would_be_written(catalog):
+    # "time 2 is 200 second": both write 200 into the [s] column
+    a = answer(edit(target=TIME_2, old='600', new='200', said='time 2 is 200 second'))
+    b = answer(
+        edit(target=TIME_2, old='600', new='200 second', said='time 2 is 200 second')
+    )
+    assert len(ask(catalog, a, b).edits) == 1
+    assert len(ask(catalog, b, a).edits) == 1
+    # 200 min is not 200 s: refused by ground, so compared as said
+    c = answer(
+        edit(target=TIME_2, old='600', new='200 min', said='time 2 is 200 second')
+    )
+    assert isinstance(ask(catalog, a, c).unresolved[0], Uncertain)
+
+
+def test_numbers_agree_by_amount_and_empty_only_with_empty(catalog):
+    assert (
+        len(ask(catalog, answer(edit(new='4000')), answer(edit(new='4000.0'))).edits)
+        == 1
+    )
+    assert (
+        len(ask(catalog, answer(edit(new='4000')), answer(edit(new='4,000'))).edits)
+        == 1
+    )
+    cleared = answer(edit(new=''))
+    assert isinstance(ask(catalog, cleared, answer(edit())).unresolved[0], Uncertain)
+
+
+def test_a_note_with_the_columns_unit_shows_the_value_written(synthetic_xlsx):
+    said = 'uv ozone clean, time1 is 200 second'
+    time = edit(target='C011', old='600', new='200', said=said)
+
+    def passes(text, catalog):
+        unit = {**time, 'new': '200 second'}
+        return resolve(text, catalog, FakeCall(answer(unit), answer(time)))
+
+    result = interpret_instruction(said, synthetic_xlsx, passes)
+    assert len(result.ready) == 1, result.preview
+    assert '600 → 200, ' in result.preview
+    assert 'second' not in result.preview.split('\n')[0]
+
+
 def test_the_value_is_compared_as_written(catalog):
     a = answer(edit(target=SOLVENT_2, old='IPA', new='dmso', said='solvent 2 dmso'))
     b = answer(edit(target=SOLVENT_2, old='IPA', new='DMSO', said='solvent 2 dmso'))
