@@ -306,10 +306,10 @@ def _value_agreement_key(edit: Edit, catalog: Catalog) -> tuple:
     new = edit.new.strip()
     column = catalog.column(edit.target)
     if column is None:
-        return ('said', new)
+        return ('said', new, (edit.unit or '').strip())
     written, problems = typed_value(edit, column)
     if problems:  # ground refuses it: the words are all there is
-        return ('said', new)
+        return ('said', new, (edit.unit or '').strip())
     return ('written', type(written).__name__, written)
 
 

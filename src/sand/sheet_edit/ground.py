@@ -732,20 +732,24 @@ def _old_said_problems(
         # not compared yet
         return []
     number = value(said)
-    if (
-        number
-        and number.unit
-        and not (target.unit and same_unit(number.unit, target.unit))
-    ):
-        return []  # '0.05 ml' over a [uL] column: an old value is not converted
+    # in the column's unit: '0.5 min' over [s] is 30; a bare '0.5' takes the
+    # unit of `new` ("from 0.5 to 1 min")
+    unit = number.unit if number else None
+    unit = unit or (said_unit(edit) if number and converted(edit, target) else None)
+    compared = said
+    if unit and not (target.unit and same_unit(unit, target.unit)):
+        amount = convert(number.value, unit, target.unit) if target.unit else None
+        if amount is None:
+            return []  # another quantity: U decides about `new`
+        compared = str(amount)
     # TODO: check that `said_old` is in the user's words, as V does for
     # `new`; one the model made up should be a check too
     held = _by_row(target)
     wrong = [  # speech writes text in any case: 'ag' is Ag
         r
         for r in to_change
-        if not same_value(said, held.get(r))
-        and said.casefold() != _key(held.get(r)).casefold()
+        if not same_value(compared, held.get(r))
+        and compared.casefold() != _key(held.get(r)).casefold()
     ]
     if not wrong:
         return []
@@ -849,8 +853,10 @@ def value_problems(
             [f'{where}: read from {spoken[0]!r}'] if len(spoken) == len(matches) else []
         )
         unit = said_unit(edit)
-        if unit and in_words(unit, said) and not any(m.unit for m in matches):
-            unit = None  # a unit code does not read ('r/min'): as written; U decides
+        if unit and target.unit and same_unit(unit, target.unit):
+            unit = None  # the column's unit: nothing to convert, as if none said
+        if unit and any(_unit_follows(said, m, unit) for m in matches):
+            unit = None  # a unit code does not read ('r/min'), or a range's
         return _unit_said(unit, matches, target, catalog), notes, []
     if candidates:
         said_numbers = ', '.join(c.text for c in candidates)
@@ -858,6 +864,18 @@ def value_problems(
     # nothing to compare: no number said, or a date said in words ('2nd of
     # February 2025'), which code does not read yet
     return [], [], doubt
+
+
+def _unit_follows(said: str, number: Number, unit: str) -> bool:
+    """`unit` as written right after the number, or after the end of its
+    range ('5 to 6 minutes'): never a unit said with another value."""
+    chars = [re.escape(ch) for ch in unit if ch not in ' -']
+    if not chars:
+        return False
+    pattern = (
+        r'\s*(?:(?:to|-|–)\s*[\w.,]+\s*)?' + r'[\s-]*'.join(chars) + r'(?![A-Za-z0-9])'
+    )
+    return re.match(pattern, said[number.end :], re.IGNORECASE) is not None
 
 
 def _unit_said(
@@ -968,7 +986,12 @@ def said_unit(edit: Edit) -> str | None:
 def converted(edit: Edit, target: ColumnInfo) -> bool:
     """Whether the unit said is not the column's: 2 min into [s]."""
     unit = said_unit(edit)
-    return bool(unit and target.unit and not same_unit(unit, target.unit))
+    return bool(
+        unit
+        and target.unit
+        and target.type != 'text'
+        and not same_unit(unit, target.unit)
+    )
 
 
 def as_written(edit: Edit, target: ColumnInfo) -> str:
@@ -978,6 +1001,9 @@ def as_written(edit: Edit, target: ColumnInfo) -> str:
     if problems or written is None or not said_unit(edit):
         return edit.new
     return str(written)
+
+
+_EXACT_DIGITS = 15  # more: a conversion that does not end (100 s in min)
 
 
 def _typed(new: str, unit: str | None, target: ColumnInfo) -> object:  # noqa: PLR0911, PLR0912
@@ -997,7 +1023,9 @@ def _typed(new: str, unit: str | None, target: ColumnInfo) -> object:  # noqa: P
     if target.type == 'date':
         raise Refusal(f'{name} holds dates; sand does not edit dates yet')
     if target.type == 'text':
-        return f'{new} {unit}' if unit else new
+        if unit and not (target.unit and same_unit(unit, target.unit)):
+            return f'{new} {unit}'
+        return new
     number = value(new)
     if number is None:
         if target.type == 'yyyymmdd':
@@ -1020,6 +1048,11 @@ def _typed(new: str, unit: str | None, target: ColumnInfo) -> object:  # noqa: P
             amount = convert(amount, unit, target.unit)
             if amount is None:
                 raise Refusal(f'{name} is in {target.unit}; {new} {unit} is not')
+            if len(amount.as_tuple().digits) > _EXACT_DIGITS:
+                raise Refusal(
+                    f'{name} is in {target.unit}; {new} {unit} is not a number '
+                    f'of {target.unit} that can be written exactly'
+                )
     plain = int(amount) if amount == amount.to_integral_value() else float(amount)
     if target.type == 'yyyymmdd' and not (
         isinstance(plain, int) and is_day(str(plain))

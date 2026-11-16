@@ -944,7 +944,7 @@ def test_a_number_not_said_is_checked(catalog):
         "Rotation speed [rpm] (2: Spin Coating): '4100' is not in your words; you said 4000"
     )
     why = checked(ground(edit(new='4000', said='speed 4 krpm'), catalog))
-    assert why.endswith('you said 4 krpm')  # the LLM converted: a check, see #108
+    assert why.endswith('you said 4 krpm')  # the LLM converted itself: a check
 
 
 def test_a_spoken_number_is_a_note(catalog):
@@ -1311,9 +1311,9 @@ def test_a_unit_said_that_the_column_does_not_have_is_a_check(catalog, accelerat
     hours = {'old': '10', 'new': '2', 'said': 'annealing time 2 hours'}
     result = ground(edit(ANNEAL_TIME, **hours), catalog)  # the unit left out
     assert 'you said 2 hours, the column is in min' in checked(result)
-    # a unit the user did not say
+    # the column's unit, though the user said hours
     result = ground(edit(ANNEAL_TIME, unit='min', **hours), catalog)
-    assert "you did not say 'min' with the value" in checked(result)
+    assert 'you said 2 hours, the column is in min' in checked(result)
     # only the mentions with another unit are quoted
     said = 'annealing time 100 °C for 100 s'
     result = ground(edit(ANNEAL_TIME, old='10', new='100', said=said), catalog)
@@ -1440,7 +1440,7 @@ def test_the_old_value_said_is_checked_over_rows_holding_different_values(
     [
         (SPEED, 'empty'),  # an empty cell, said in words
         (SPEED, 'nothing'),
-        (VOLUME_3, '0.05 ml'),  # another unit: not converted yet (#108)
+        (VOLUME_3, '0.05 ml'),  # another unit, converted: the 50 it holds
         (DATE, '1st of January 2025'),  # dates are not compared yet
     ],
 )
@@ -1449,3 +1449,51 @@ def test_no_check_for_an_old_value_said_in_a_form_not_compared(
 ):
     result = ground(edit(target, new='60', said='60', said_old=said_old), catalog)
     assert not any('you said it was' in c for c in getattr(result, 'checks', ()))
+
+
+def test_a_unit_said_with_another_value_is_not_the_values(catalog):
+    said = 'rotation time 45 and annealing time 10 min'
+    result = ground(edit(TIME, old='30', new='45', unit='min', said=said), catalog)
+    assert "you did not say 'min' with the value" in checked(result)
+    # a range: the unit after its end is the unit of both
+    said = 'rotation time 5 to 6 minutes'
+    result = ground(edit(TIME, old='30', new='5', unit='minutes', said=said), catalog)
+    assert (result.value, result.checks) == (300, ())
+
+
+def test_the_columns_unit_filled_in_by_the_model_is_no_check(catalog):
+    result = ground(edit(new='4000', unit='rpm', said='speed 4000'), catalog)
+    assert isinstance(result, Grounded) and result.checks == ()
+    assert result.value == 4000  # noqa: PLR2004
+
+
+def test_a_conversion_that_does_not_end_is_refused(catalog):
+    said = 'annealing time 100 s'
+    why = refused(
+        ground(edit(ANNEAL_TIME, old='10', new='100', unit='s', said=said), catalog)
+    )
+    assert 'cannot' not in why and 'written exactly' in why
+
+
+def test_kelvin_into_a_celsius_column_is_converted(catalog):
+    said = 'step 6 annealing temperature 400 K'
+    result = ground(edit('C059', old='130', new='400', unit='K', said=said), catalog)
+    assert (result.value, result.checks) == (126.85, ())
+
+
+def test_an_old_value_said_in_another_unit_is_converted(catalog):
+    # rotation time [s] holds 30: 0.5 min is that, 1 min is not
+    for said_old, wrong in (('0.5 min', False), ('0.5', False), ('1 min', True)):
+        result = ground(
+            edit(
+                TIME,
+                old='30',
+                new='1',
+                unit='min',
+                said_old=said_old,
+                said=f'rotation time from {said_old} to 1 min',
+            ),
+            catalog,
+        )
+        assert bool(result.checks) == wrong, (said_old, result.checks)
+        assert result.value == 60  # noqa: PLR2004
