@@ -17,7 +17,7 @@ cannot lose each other's answers while they run; a job publishes its
 answers into the shared cache only at its end, where a lost entry costs
 a model call in a later job, never the running one. All are sand's own
 working files: nothing parses them, and losing a cache costs model
-calls, not data. Not `.xlsx`: NOMAD's hysprint batch parser matches
+calls, not data. Not `.xlsx`: NOMAD's batch parser matches
 any .xlsx in the upload; the suffixes say which sheet is which.
 """
 

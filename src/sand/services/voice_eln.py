@@ -132,11 +132,11 @@ class VoiceElnService:
         self._base_url = base_url
         self.writer = RawFileWriter(retry_interval_s, write_timeout_s)
         # Revisions read-modify-write the whole input archive; concurrent
-        # ones on the same entry (a time edit and a text save) would drop
+        # ones on the same entry (a label edit and a text save) would drop
         # each other's change. Per-process only: enough for one app worker.
         self._input_locks: dict[str, asyncio.Lock] = {}
-        # Same for the collection archive: adding, deleting, and setting
-        # derived_entries all rewrite it whole.
+        # Same for the collection archive: adding and deleting rewrite it
+        # whole.
         self._collection_locks: dict[tuple[str, str], asyncio.Lock] = {}
 
     def build_client(self, token: str) -> httpx.AsyncClient:
@@ -267,7 +267,7 @@ class VoiceElnService:
             upload_id=upload_id, entry_id=collection_entry_id, name=name
         )
 
-    async def add_written_note(  # noqa: PLR0913
+    async def add_written_note(
         self,
         client: httpx.AsyncClient,
         upload_id: str,
@@ -275,14 +275,13 @@ class VoiceElnService:
         collection_entry_id: str,
         *,
         label: str = '',
-        mainfile: str | None = None,
     ) -> EntryHandle:
-        """Add a WrittenNote, by default at a timestamped mainfile.
+        """Add a WrittenNote at a timestamped mainfile.
 
         collection_entry_id names the exact InputCollection entry the
         note is attached to (an upload can hold more than one).
         """
-        mainfile = mainfile or f'note_{_utc_now_stamp()}.archive.json'
+        mainfile = f'note_{_utc_now_stamp()}.archive.json'
         note = _Note(text=text, label=label, mainfile=mainfile)
         return await self._add_note(client, upload_id, note, collection_entry_id)
 
@@ -375,28 +374,6 @@ class VoiceElnService:
         )
         return EntryHandle(upload_id=upload_id, entry_id=entry_id)
 
-    async def set_derived_entries(
-        self,
-        client: httpx.AsyncClient,
-        upload_id: str,
-        entry_ids: list[str],
-        mainfile: str,
-    ) -> None:
-        """Replace the collection's derived_entries references."""
-        async with self._collection_lock(upload_id, mainfile):
-            archive = await self.writer.read_archive(client, upload_id, mainfile)
-            data = archive.get('data')
-            if not isinstance(data, dict):
-                raise NomadAPIError(
-                    0,
-                    f'Experiment mainfile {mainfile} has no data section',
-                    step='read_collection',
-                )
-            refs = [entry_ref(upload_id, entry_id) for entry_id in entry_ids]
-            if data.get('derived_entries') != refs:
-                data['derived_entries'] = refs
-                await self.writer.write_archive(client, upload_id, mainfile, archive)
-
     async def collect_inputs(
         self,
         client: httpx.AsyncClient,
@@ -405,9 +382,8 @@ class VoiceElnService:
     ) -> list[CollectedInput]:
         """All inputs of an experiment's collection, as one ordered list.
 
-        Ordered by the entry's datetime — user-editable in NOMAD, so
-        researchers can correct or arrange the timeline. Entries without
-        one sort last; ties break by entry id.
+        Ordered by the entry's datetime, the time the input was made.
+        Entries without one sort last; ties break by entry id.
         """
         mainfile = await self.resolve_collection_mainfile(
             client, upload_id, collection_entry_id
@@ -533,47 +509,6 @@ class VoiceElnService:
             await self._write_input(client, upload_id, mainfile, archive)
             return kind
 
-    async def revise_input_datetime(
-        self,
-        client: httpx.AsyncClient,
-        upload_id: str,
-        entry_id: str,
-        datetime_value: str,
-        collection_entry_id: str,
-    ) -> str:
-        """Move one input on the timeline; returns its kind.
-
-        The inputs list (and so the extraction narration order) follows
-        these datetimes, so editing one reorders the inputs.
-        """
-        parsed = _parse_input_datetime(datetime_value)
-        if parsed is None:
-            raise ValueError(f'not a valid datetime: {datetime_value!r}')
-        async with self._input_lock(entry_id):
-            mainfile, archive = await self._locate_input(
-                client,
-                upload_id,
-                entry_id,
-                collection_entry_id,
-                step='revise_input_datetime',
-            )
-            section = archive.get('data') or {}
-            m_def = str(section.get('m_def') or '')
-            if m_def.endswith('AudioInput'):
-                kind = 'audio'
-            elif m_def.endswith('WrittenNote'):
-                kind = 'note'
-            else:
-                raise NomadAPIError(
-                    HTTPStatus.NOT_FOUND,
-                    f'entry {entry_id} is not a revisable input',
-                    step='revise_input_datetime',
-                )
-            section['datetime'] = parsed.isoformat()
-            archive['data'] = section
-            await self._write_input(client, upload_id, mainfile, archive)
-            return kind
-
     async def revise_input_label(
         self,
         client: httpx.AsyncClient,
@@ -618,23 +553,13 @@ class VoiceElnService:
         upload_id: str,
         entry_id: str,
         collection_entry_id: str,
-        undeletable: tuple[str, ...] = (),
     ) -> None:
         """Delete one input: its archive, and a recording's audio.
-
-        undeletable: entry ids the caller needs kept (e.g. a form the
-        extraction reads); deleting one is refused.
 
         The collection's reference goes first: if a file delete fails
         after it, the input is gone from the list and only an unreferenced
         file is left, not a reference to a missing entry.
         """
-        if entry_id in undeletable:
-            raise NomadAPIError(
-                HTTPStatus.BAD_REQUEST,
-                f'entry {entry_id} can not be deleted',
-                step='delete_input',
-            )
         async with self._input_lock(entry_id):
             mainfile, archive = await self._locate_input(
                 client, upload_id, entry_id, collection_entry_id, step='delete_input'

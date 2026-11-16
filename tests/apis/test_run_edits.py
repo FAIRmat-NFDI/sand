@@ -12,14 +12,12 @@ from nomad_fakes import COLLECTION, UPLOAD, USER, FakeVoice, api, note
 
 from sand.apis.routers import input_collections
 from sand.apis.routers.input_collections import STALE_JOB_S
-from sand.hysprint.sheet import EXTRACTION_STATUS_MAINFILE
 from sand.services.nomad_api import NomadAPIError
 from sand.sheet_edit.session import ORIGINAL_FILE, STATUS_FILE
 
 pytestmark = pytest.mark.asyncio
 
 EDIT_ACTION = 'sand.actions.edit:edit_action_entry_point'
-EXTRACT_ACTION = 'sand.actions.extract:extract_action_entry_point'
 
 
 @dataclass
@@ -49,10 +47,10 @@ def starter(monkeypatch) -> FakeStarter:
     return starter
 
 
-async def start(voice, job='edit-async'):
+async def start(voice):
     async with api(voice) as client:
         return await client.post(
-            f'/api/input-collections/{UPLOAD}/{job}',
+            f'/api/input-collections/{UPLOAD}/edit-async',
             params={'collection_entry_id': COLLECTION},
         )
 
@@ -270,23 +268,6 @@ async def test_nomad_error_while_collecting_writes_no_reservation(voice, starter
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert starter.started == []
-    assert STATUS_FILE not in voice.writer.files
-
-
-async def test_extract_start_reserves_its_own_status(voice, starter):
-    response = await start(voice, 'extract-async')
-
-    assert response.status_code == HTTPStatus.OK, response.text
-    assert response.json() == {'job_id': 'job-1'}
-    [(action_id, data)] = starter.started
-    assert action_id == EXTRACT_ACTION
-    assert (data.upload_id, data.user_id, data.collection_entry_id) == (
-        UPLOAD,
-        USER,
-        COLLECTION,
-    )
-    reserved = json.loads(voice.writer.files[EXTRACTION_STATUS_MAINFILE])
-    assert (reserved['phase'], reserved['steps']) == ('starting', [])
     assert STATUS_FILE not in voice.writer.files
 
 

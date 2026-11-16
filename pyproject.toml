@@ -13,7 +13,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
 ]
 name = "nomad-sand"
-description = "Structured Audio NOMAD Data - extracting lab process data into NOMAD"
+description = "Structured Audio NOMAD Data - editing lab sheets in NOMAD by voice or text"
 version = "0.1.0"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -134,9 +134,8 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-sand = ["apis/static/*", "apis/static/voice/*", "schemas/*"]
+sand = ["apis/static/*", "apis/static/voice/*"]
 
 [project.entry-points.'nomad.plugin']
 sand_api = "sand.apis:sand_api"
-sand_extract_action = "sand.actions.extract:extract_action_entry_point"
 sand_edit_action = "sand.actions.edit:edit_action_entry_point"
