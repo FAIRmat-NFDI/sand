@@ -1,0 +1,200 @@
+{
+  "chains": [
+    {
+      "id": "anchor-goes",
+      "why": "the time of the DMSO, after the DMSO note is rejected: read again in its turn; the rejection undone brings the first answer back",
+      "notes": [
+        "step 1 UV ozone cleaning, solvent 2 to DMSO for samples 1 to 3",
+        "step 1 UV ozone cleaning, the time of the DMSO to 300 for samples 1 to 3",
+        "step 2 spin coating, rotation speed 3500 for all samples"
+      ],
+      "clicks": [
+        {"do": "reject", "note": 1},
+        {"do": "confirm", "note": 3},
+        {"do": "undo", "note": 1},
+        {"do": "confirm", "note": 1},
+        {"do": "confirm", "note": 2},
+        {"do": "confirm", "note": 3}
+      ]
+    },
+    {
+      "id": "anchor-twice",
+      "why": "finding B: a note above puts DMSO into a second column of the step, the anchor stops being unique",
+      "notes": [
+        "step 1 UV ozone cleaning, solvent 1 to ethanol for samples 1 to 3",
+        "step 1 UV ozone cleaning, solvent 2 to DMSO for samples 1 to 3",
+        "step 1 UV ozone cleaning, the time of the DMSO to 300 for samples 1 to 3"
+      ],
+      "clicks": [
+        {"do": "confirm", "note": 1},
+        {"do": "confirm", "note": 2},
+        {"do": "confirm", "note": 3},
+        {"do": "reword", "note": 1, "text": "step 1 UV ozone cleaning, solvent 1 to DMSO for samples 1 to 3"},
+        {"do": "confirm", "note": 1},
+        {"do": "confirm", "note": 2},
+        {"do": "confirm", "note": 3}
+      ]
+    },
+    {
+      "id": "where-rows",
+      "why": "rows chosen by a value: the samples at 115 change with the note above",
+      "notes": [
+        "step 5 close space sublimation, substrate temperature 115 for samples 1 to 3",
+        "step 6 annealing, annealing time 15 for the samples with substrate temperature 115"
+      ],
+      "clicks": [
+        {"do": "reject", "note": 1},
+        {"do": "confirm", "note": 2},
+        {"do": "undo", "note": 1},
+        {"do": "confirm", "note": 1},
+        {"do": "confirm", "note": 2}
+      ]
+    },
+    {
+      "id": "from-to",
+      "why": "\"from 3000 to 5000\": the samples at 3000 change with the note above",
+      "notes": [
+        "step 2 spin coating, rotation speed 3500 for samples 1 to 5",
+        "step 2 spin coating, rotation speed from 3000 to 5000"
+      ],
+      "clicks": [
+        {"do": "reject", "note": 1},
+        {"do": "undo", "note": 1},
+        {"do": "confirm", "note": 1},
+        {"do": "confirm", "note": 2}
+      ]
+    },
+    {
+      "id": "relative",
+      "why": "\"10 percent higher\": the model works the value out, the answer is never reused",
+      "notes": [
+        "step 2 spin coating, rotation speed 3500 for all samples",
+        "step 2 spin coating, rotation speed 10 percent higher for all samples"
+      ],
+      "clicks": [
+        {"do": "reject", "note": 1},
+        {"do": "undo", "note": 1},
+        {"do": "confirm", "note": 1},
+        {"do": "confirm", "note": 2}
+      ]
+    },
+    {
+      "id": "fill-empty",
+      "why": "finding O: a note fills cells that are empty only while the note above is rejected",
+      "notes": [
+        "step 2 spin coating, notes: cracked for sample 2",
+        "step 2 spin coating, notes: cloudy for samples 1 to 3"
+      ],
+      "clicks": [
+        {"do": "reject", "note": 1},
+        {"do": "undo", "note": 1},
+        {"do": "confirm", "note": 1},
+        {"do": "confirm", "note": 2}
+      ]
+    },
+    {
+      "id": "number-picks",
+      "why": "finding P: \"the 30\" picks the cells holding 30, which the note above changes",
+      "notes": [
+        "step 2 spin coating, rotation time 40 for samples 1 to 3",
+        "step 2 spin coating, change the rotation time 30 to 45"
+      ],
+      "clicks": [
+        {"do": "reject", "note": 1},
+        {"do": "undo", "note": 1},
+        {"do": "confirm", "note": 1},
+        {"do": "confirm", "note": 2}
+      ]
+    },
+    {
+      "id": "empty-sibling",
+      "why": "finding Q: \"the solvent time\" is Time 1 while Solvent 2 is cleared, ambiguous once it is filled again",
+      "notes": [
+        "step 1 UV ozone cleaning, clear solvent 2 for all samples",
+        "step 1 UV ozone cleaning, the solvent time to 300 for all samples"
+      ],
+      "clicks": [
+        {"do": "reject", "note": 1},
+        {"do": "undo", "note": 1},
+        {"do": "confirm", "note": 1},
+        {"do": "confirm", "note": 2}
+      ]
+    },
+    {
+      "id": "undo-above-decided",
+      "why": "finding R: a rejection taken back with decided notes below; they are decided again",
+      "notes": [
+        "step 2 spin coating, rotation speed 3500 for all samples",
+        "step 2 spin coating, rotation time 40 for all samples",
+        "step 6 annealing, annealing temperature 140 for all samples"
+      ],
+      "clicks": [
+        {"do": "reject", "note": 1},
+        {"do": "confirm", "note": 2},
+        {"do": "confirm", "note": 3},
+        {"do": "undo", "note": 1},
+        {"do": "confirm", "note": 1},
+        {"do": "confirm", "note": 2},
+        {"do": "confirm", "note": 3}
+      ]
+    },
+    {
+      "id": "write-refused",
+      "why": "finding N: the variation feeds a formula with no stored result, so the writer refuses it",
+      "notes": [
+        "experiment info, variation 25min for samples 1 to 3",
+        "step 2 spin coating, rotation speed 3500 for all samples"
+      ],
+      "clicks": [
+        {"do": "confirm", "note": 1},
+        {"do": "confirm", "note": 2}
+      ]
+    },
+    {
+      "id": "no-step-ambiguous",
+      "why": "three steps have a rotation speed: a note naming none stays ambiguous, reused or read fresh",
+      "notes": [
+        "step 2 spin coating, rotation speed 3500 for all samples",
+        "rotation speed 4000 for all samples"
+      ],
+      "clicks": [
+        {"do": "reject", "note": 1},
+        {"do": "undo", "note": 1},
+        {"do": "confirm", "note": 1}
+      ]
+    },
+    {
+      "id": "no-step-certain",
+      "why": "only step 8 has a thickness: a note naming no step may be certain",
+      "notes": [
+        "step 8 evaporation, material Au for all samples",
+        "thickness 80 for all samples"
+      ],
+      "clicks": [
+        {"do": "reject", "note": 1},
+        {"do": "undo", "note": 1},
+        {"do": "confirm", "note": 1},
+        {"do": "confirm", "note": 2}
+      ]
+    },
+    {
+      "id": "reword-delete-add",
+      "why": "words changed, a note deleted and one added between the decisions",
+      "notes": [
+        "step 1 UV ozone cleaning, time 1 to 300 for all samples",
+        "step 1 UV ozone cleaning, time 2 to 400 for all samples",
+        "step 6 annealing, annealing time 15 for all samples"
+      ],
+      "clicks": [
+        {"do": "confirm", "note": 1},
+        {"do": "confirm", "note": 2},
+        {"do": "reword", "note": 1, "text": "step 1 UV ozone cleaning, time 1 to 350 for all samples"},
+        {"do": "confirm", "note": 1},
+        {"do": "delete", "note": 2},
+        {"do": "confirm", "note": 3},
+        {"do": "add", "text": "step 1 UV ozone cleaning, UV-ozone time 1200 for all samples"},
+        {"do": "confirm", "note": 4}
+      ]
+    }
+  ]
+}
