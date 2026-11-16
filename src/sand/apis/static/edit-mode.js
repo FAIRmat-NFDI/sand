@@ -54,6 +54,9 @@ let inputsSeen = null; // {entryId, items}
 let statusKnown = false; // the shown experiment's status was fetched once
 let running = false; // a job of the shown experiment runs, or is being started
 let lastStatus = null; // the last completed status of the shown experiment
+// the latest status, whatever its phase: what Undo last and Reset all
+// take back (a failed job's status names the decisions too)
+let decisionStatus = null;
 // the sheet the header was last read for (the view's sha at selection,
 // then each completed job's final); null while a failed re-read waits
 // for its retry
@@ -239,6 +242,7 @@ async function poll(experiment, generation) {
     editedReady = false;
     idle();
     lastStatus = null;
+    decisionStatus = null;
     reportsShown = {};
     showPending([]);
     showTakeBack(null, false);
@@ -265,6 +269,7 @@ async function poll(experiment, generation) {
   setReports(reportsShown, running, editActions(experiment), fresh);
   // while a job runs, the button stays, closed, for the last run's edits
   showDecidable(running ? { ...status, inputs: Object.values(reportsShown) } : status, running);
+  decisionStatus = status;
   showTakeBack(status, running);
   updateReview(experiment, status, shownItems(), running);
   if (status.phase === "completed") {
@@ -447,22 +452,26 @@ function openConfirmAll(experiment) {
   openReview(experiment, lastStatus, shownItems(), {
     reject: (keys) => reviewReject(experiment, keys),
     confirm: (keys) => reviewConfirm(experiment, keys),
+    readAgain: () => {
+      if (stillShown(experiment)) readAgain();
+    },
   });
 }
 
 // the last click's decisions, once the user agreed
 async function undoLast(experiment) {
-  const question = lastStatus && undoQuestion(lastStatus);
+  const status = decisionStatus;
+  const question = status && undoQuestion(status);
   if (!question || !await confirmDialog(question, "Undo")) return;
   clearError();
-  const keys = lastStatus.last_decision.map((decision) => decision.key);
+  const keys = status.last_decision.map((decision) => decision.key);
   const why = await post(experiment, "edits/undo-last", { keys });
   if (why) showError("Could not undo: " + why);
   if (stillShown(experiment)) startPolling(experiment);
 }
 
 async function resetDecisions(experiment) {
-  const n = lastStatus ? decisionCount(lastStatus) : 0;
+  const n = decisionStatus ? decisionCount(decisionStatus) : 0;
   const what = n === 1 ? "the 1 decision" : n ? "all " + n + " decisions" : "every decision";
   const question = "Reset " + what + "? Every edit waits for your decision again, as if none was made.";
   if (!await confirmDialog(question, "Reset")) return;
@@ -480,6 +489,7 @@ export function showEdit(experiment, view) {
   current = experiment;
   statusKnown = false;
   lastStatus = null;
+  decisionStatus = null;
   headerFor = view ? view.sha256 : null;
   editedReady = false;
   reportsShown = {};

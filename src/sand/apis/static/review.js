@@ -14,15 +14,16 @@ const goBtn = document.getElementById("review-go");
 const READING = "Reading the updates again...";
 
 // while open: {experiment, handlers, items, shown (the status shown),
-// block (why it may not be decided now), unticked (keys), before (the
-// snapshot before the last rejection), sending}
+// block (why it may not be decided now), failed (the failed job's
+// error, read again from here), unticked (keys), before (the snapshot
+// before the last rejection), sending}
 let review = null;
 
 // `handlers`: {reject(keys), confirm(keys)}, each resolving to "" once
-// done, else why not
+// done, else why not; readAgain() starts the job again after a failure
 export function openReview(experiment, status, items, handlers) {
   review = {
-    experiment, handlers, items: items || [], shown: status, block: "",
+    experiment, handlers, items: items || [], shown: status, block: "", failed: "",
     unticked: new Set(), before: null, sending: false,
   };
   render();
@@ -33,6 +34,7 @@ export function openReview(experiment, status, items, handlers) {
 export function updateReview(experiment, status, items, running) {
   if (!review || review.experiment.entry_id !== experiment.entry_id || review.sending) return;
   if (items) review.items = items;
+  review.failed = status.phase === "failed" ? status.error || "unknown error" : "";
   const reading = running || status.phase !== "completed" || settledBlock(status, items);
   review.block = reading ? READING : "";
   if (!review.block) review.shown = status;
@@ -70,8 +72,16 @@ function render() {
     list.append(p);
   }
 
+  statusEl.classList.toggle("busy", waiting && !review.failed);
+  if (review.failed) {
+    // not reading any more: the failure, and the way on
+    statusEl.textContent = "Reading the updates failed: " + review.failed;
+    goBtn.hidden = false;
+    goBtn.disabled = review.sending;
+    goBtn.textContent = "Read again";
+    return;
+  }
   statusEl.textContent = block || (review.sending ? "Sending..." : statusEl.dataset.error || "");
-  statusEl.classList.toggle("busy", waiting);
   goBtn.hidden = !rows.confirm.length;
   goBtn.disabled = waiting;
   goBtn.textContent = reviewAction(rows.confirm.length - review.unticked.size, review.unticked.size);
@@ -111,6 +121,13 @@ function mark(text) {
 }
 
 async function go() {
+  if (review && review.failed && !review.sending) {
+    review.failed = "";
+    review.block = READING;
+    render();
+    review.handlers.readAgain();
+    return;
+  }
   if (!review || review.block || review.sending) return;
   const current = review;
   const rows = reviewRows(current.shown, current.items);

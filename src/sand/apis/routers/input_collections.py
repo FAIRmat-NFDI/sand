@@ -1458,10 +1458,13 @@ async def reset_decisions(
     try:
         async with _upload_lock(upload_id), voice.build_client(token) as client:
             await _idle(client, voice, upload_id)
-            # damaged files are refused, not wiped: they need a look
-            if await _loaded_confirmations(client, voice, upload_id):
+            # damaged files are refused, not wiped: they need a look. Both
+            # are read before either is written: one damaged changes nothing
+            confirmed = await _loaded_confirmations(client, voice, upload_id)
+            rejected = await _loaded_rejections(client, voice, upload_id)
+            if confirmed:
                 await voice.writer.write_json(client, upload_id, CONFIRMATIONS_FILE, {})
-            if await _loaded_rejections(client, voice, upload_id):
+            if rejected:
                 await voice.writer.write_json(client, upload_id, REJECTIONS_FILE, {})
     except NomadAPIError as exc:
         raise _http_error(exc) from exc

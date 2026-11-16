@@ -303,6 +303,22 @@ async def test_reset_takes_back_every_decision(voice):
     assert json.loads(voice.writer.files[REJECTIONS_FILE]) == {}
 
 
+async def test_reset_with_a_damaged_file_changes_nothing(voice):
+    await post(voice, 'confirm', ['a1'])
+    confirmations = voice.writer.files[CONFIRMATIONS_FILE]
+    voice.writer.files[REJECTIONS_FILE] = b'not json'
+
+    async with api(voice) as client:
+        response = await client.post(
+            f'/api/input-collections/{UPLOAD}/edits/reset',
+            params={'collection_entry_id': COLLECTION},
+        )
+
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert 'rejections file damaged' in response.json()['detail']
+    assert voice.writer.files[CONFIRMATIONS_FILE] == confirmations
+
+
 @pytest.mark.parametrize('action', ['undo-last', 'reset'])
 async def test_decisions_are_taken_back_between_runs(voice, action):
     await post(voice, 'confirm', ['a1'])
