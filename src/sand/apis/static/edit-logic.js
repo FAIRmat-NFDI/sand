@@ -70,11 +70,14 @@ function changesBelow(report) {
     .some((field) => (report[field] || []).length);
 }
 
-// what may be decided now: the undecided edits of every report not
-// outdated, in input order
-export function decidableKeys(reports, outdated = new Set()) {
-  const ordered = [...reports].sort((a, b) => a.input - b.input);
-  return pendingKeys(ordered.filter((report) => !outdated.has(report.entry_id)));
+// The update decided next, one by one: the first with an undecided
+// edit (entry id), null when none. An edit is read on the sheet the
+// ones above leave, so it waits for them. As the server decides it
+// (`_turn`).
+export function turnEntry(reports) {
+  const ordered = Object.values(reports).sort((a, b) => a.input - b.input);
+  const first = ordered.find((report) => pendingKeys([report]).length);
+  return first ? first.entry_id : null;
 }
 
 // the pending edits a word check marked: confirm all takes them too,
@@ -212,23 +215,6 @@ export function previewNotes(report) {
       && !line.startsWith("⚠ no update in:"));
 }
 
-// The warning before taking back a rejection that has decided updates
-// after it: they were read on a sheet without the edit, so they need
-// deciding again, and their edits leave the sheet until then. Null when
-// none is decided.
-export function undoWarning(items, reports, entryId) {
-  const at = items.findIndex((item) => item.entry_id === entryId);
-  if (at < 0) return null;
-  const decided = items.slice(at + 1).filter((item) => {
-    const report = reports[item.entry_id];
-    return report && ((report.confirmed || []).length || (report.rejected || []).length);
-  }).length;
-  if (!decided) return null;
-  return "Taking the rejection back puts this edit up for a decision again. " + (decided === 1
-    ? "The 1 decided update after it is read again: where what it shows changes, it needs deciding again."
-    : "The " + decided + " decided updates after it are read again: where what they show changes, they need deciding again.");
-}
-
 // the line under an update a decision above changed: its earlier
 // decisions match none of its edits now
 export function resetNote(report) {
@@ -316,6 +302,20 @@ function sinceLastRun(report) {
 // server decides it (`_not_final`).
 export function downloadBlock(status, items) {
   const reports = status.inputs || [];
+  const unsettled = settledBlock(status, items);
+  if (unsettled) return unsettled;
+  const pending = pendingKeys(reports).length;
+  if (pending) {
+    return "Decide every edit first: " + count(pending, "edit waits", "edits wait") + " for a decision";
+  }
+  return "";
+}
+
+// Why the reports are not what the next run reads, or "": every update
+// read in its words, nothing decided since the last run. As the server
+// decides it (`_not_settled`).
+export function settledBlock(status, items) {
+  const reports = status.inputs || [];
   if (reports.some((report) => sinceLastRun(report).length)) {
     return "The sheet is being written again: edits were decided since";
   }
@@ -324,11 +324,91 @@ export function downloadBlock(status, items) {
   if (items && (items.some((item) => !item.text) || inputsToRead(items, reportsByEntry(status)).length)) {
     return "An update is not read yet";
   }
-  const pending = pendingKeys(reports).length;
-  if (pending) {
-    return "Decide every edit first: " + count(pending, "edit waits", "edits wait") + " for a decision";
-  }
   return "";
+}
+
+// The Confirm all review of a completed status, in update order: the
+// undecided edits (to confirm, or untick to reject), the rejected ones,
+// and the updates with a part that is not an edit (skipped: unclear,
+// not applied, not written). `items` give the titles.
+export function reviewRows(status, items) {
+  const titles = new Map(items.map((item, at) => [item.entry_id, item.label || "Update " + (at + 1)]));
+  const rows = { confirm: [], rejected: [], skipped: [] };
+  const ordered = [...(status.inputs || [])].sort((a, b) => a.input - b.input);
+  for (const report of ordered) {
+    const title = titles.get(report.entry_id) || "Update " + report.input;
+    const entry = report.entry_id;
+    const pending = new Set(pendingKeys([report]));
+    const rejected = new Set(report.rejected || []);
+    for (const edit of report.ready || []) {
+      if (pending.has(edit.key)) rows.confirm.push({ entry, title, key: edit.key, line: edit.line });
+      else if (rejected.has(edit.key)) rows.rejected.push({ entry, title, key: edit.key, line: edit.line });
+    }
+    const why = skippedWhy(report);
+    if (why) rows.skipped.push({ entry, title, line: why });
+  }
+  return rows;
+}
+
+function skippedWhy(report) {
+  if (report.refused) return "not written: " + report.refused;
+  const parts = [];
+  if (report.unresolved) parts.push(count(report.unresolved, "part unclear", "parts unclear"));
+  if (report.not_applied) parts.push(count(report.not_applied, "part not applied", "parts not applied"));
+  return parts.join(" · ");
+}
+
+// What each update shows in the review, to mark the ones a rejection
+// changed: its undecided edits and what is skipped
+export function reviewSnapshot(status) {
+  const shown = {};
+  for (const report of status.inputs || []) {
+    const pending = new Set(pendingKeys([report]));
+    shown[report.entry_id] = JSON.stringify([
+      (report.ready || []).filter((edit) => pending.has(edit.key)).map((edit) => edit.line),
+      skippedWhy(report),
+    ]);
+  }
+  return shown;
+}
+
+// the updates (entry ids) shown differently than in `before`
+export function changedEntries(before, after) {
+  if (!before) return new Set();
+  return new Set(Object.keys(after).filter((id) => id in before && before[id] !== after[id]));
+}
+
+// the label of the review's button: what it does with the ticks
+export function reviewAction(toConfirm, unticked) {
+  if (unticked) return "Reject " + unticked + " and check";
+  return toConfirm === 1 ? "Confirm 1 edit" : "Confirm " + toConfirm + " edits";
+}
+
+// What Undo last asks before taking back the last click
+// (status.last_decision), or null when there is none
+export function undoQuestion(status) {
+  const last = status.last_decision || [];
+  if (!last.length) return null;
+  if (last.length === 1) {
+    const [{ key, decision }] = last;
+    const edit = (status.inputs || []).flatMap((report) => report.ready || [])
+      .find((e) => e.key === key);
+    const verb = decision === "confirmed" ? "confirmation" : "rejection";
+    return "Undo your last " + verb + (edit ? ": " + edit.line + "?" : "?")
+      + " The edit waits for your decision again.";
+  }
+  const confirmed = last.filter((d) => d.decision === "confirmed").length;
+  const rejected = last.length - confirmed;
+  const parts = [];
+  if (confirmed) parts.push(count(confirmed, "edit confirmed", "edits confirmed"));
+  if (rejected) parts.push(count(rejected, "edit rejected", "edits rejected"));
+  return "Undo your last decision: " + parts.join(" and ") + "? They wait for your decision again.";
+}
+
+// how many decisions Reset all takes back
+export function decisionCount(status) {
+  return (status.inputs || []).reduce(
+    (n, report) => n + (report.confirmed || []).length + (report.rejected || []).length, 0);
 }
 
 // those edits' keys, as one string: "" when the last run wrote everything.

@@ -48,7 +48,7 @@ const EDIT_MODES = {
   reject: {
     title: "Reject this edit",
     legend: "What's wrong with it? (optional)",
-    hint: "The edit is not written into the sheet. Saved with this sheet, so sand can learn from it. You can undo this.",
+    hint: "The edit is not written into the sheet. Saved with this sheet, so sand can learn from it. Undo last takes it back.",
     send: "Reject",
     done: "Rejected.",
     reasonRequired: false,

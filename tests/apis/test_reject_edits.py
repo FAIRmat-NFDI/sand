@@ -145,18 +145,10 @@ async def test_a_rejected_edit_is_not_confirmed_until_undone(voice):
     assert response.json()['detail'] == 'rejected, undo the rejection first: k1'
     assert CONFIRMATIONS_FILE not in voice.writer.files
 
-    undone = await post(voice, 'undo-reject', {'keys': ['k1']})
+    undone = await post(voice, 'undo-last', {'keys': ['k1']})
     assert undone.status_code == HTTPStatus.OK
-    assert undone.json() == {'rejected': []}
     assert (await report(voice))['rejected'] == []
     assert (await post(voice, 'confirm', {'keys': ['k1']})).status_code == HTTPStatus.OK
-
-
-async def test_undoing_a_key_not_rejected_is_fine(voice):
-    response = await post(voice, 'undo-reject', {'keys': ['k9']})
-
-    assert response.status_code == HTTPStatus.OK
-    assert REJECTIONS_FILE not in voice.writer.files
 
 
 async def test_only_a_ready_edit_of_the_last_job_can_be_rejected(voice):
