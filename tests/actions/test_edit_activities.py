@@ -45,6 +45,7 @@ SPEED_EDIT = {
     'rows': {'first': '1', 'last': '3', 'subbatch': None},
     'anchor': None,
     'old': '3000',
+    'unit': None,
     'said_old': None,
     'new': '4000',
     'said': SAID,
@@ -375,6 +376,7 @@ def speed_edit(first, last, new):
     edit = {
         **SPEED_EDIT,
         'rows': {'first': first, 'last': last, 'subbatch': None},
+        'unit': None,
         'said_old': '3000',
         'new': new,
         'said': said,
@@ -640,6 +642,7 @@ async def test_store_final_sheet_and_changelog_stores_the_final_sheet_with_its_c
         'rows': {'samples': ['1'], 'subbatch': None},
         'anchor': None,
         'old': 'IPA',
+        'unit': None,
         'said_old': None,
         'new': '',
         'said': 'clear solvent 2 of sample 1',

@@ -1,8 +1,8 @@
 """Numbers and units in what the user said or typed, read exactly.
 
 English only. A comma is a thousands separator ('4,000') or a list
-('samples 1,3,7'), never a decimal point. Units are read, never converted:
-'2 min' is not a value for a '[s]' column (conversion in code later, #108).
+('samples 1,3,7'), never a decimal point. Units are read here; `convert`
+turns a value into the column's unit, exactly (2 min into [s] is 120).
 """
 
 import re
@@ -162,16 +162,7 @@ def value(text: str) -> Number | None:
 
 
 class UnitMismatch(Exception):
-    """The value's unit is not the column's; nothing is converted (#108)."""
-
-
-def check_unit(number: Number, header_unit: str | None) -> None:
-    """Raise unless the number's unit, if any, is a spelling of the
-    header's unit: '30 sec' fits '[s]', '2 min' does not."""
-    if number.unit is None or same_unit(number.unit, header_unit or ''):
-        return
-    where = f'a [{header_unit}] column' if header_unit else 'a column without a unit'
-    raise UnitMismatch(f'{number.text!r} is in {number.unit}, not {where}')
+    """A range said with two units ('2 min to 30 s')."""
 
 
 def same_unit(said: str, header: str) -> bool:
@@ -187,6 +178,24 @@ def same_unit(said: str, header: str) -> bool:
     except Exception:  # another dimension, or an offset unit (°C, K)
         return False
     return abs(factor - 1) < 1e-9  # noqa: PLR2004
+
+
+def convert(amount: Decimal, said: str, header: str) -> Decimal | None:
+    """`amount` of the unit `said` in the header's unit, exactly: 2 min is
+    120 s, 20 °C is 293.15 K. None when pint does not know a unit or they
+    measure different things."""
+    a, b = _unit(said), _unit(header)
+    if a is None or b is None:
+        return None
+    try:
+        return _exact().Quantity(amount, str(a)).to(str(b)).magnitude.normalize()
+    except Exception:  # another dimension
+        return None
+
+
+@lru_cache(maxsize=1)
+def _exact() -> pint.UnitRegistry:
+    return pint.UnitRegistry(non_int_type=Decimal)
 
 
 def comparable(said: str, header: str) -> bool:

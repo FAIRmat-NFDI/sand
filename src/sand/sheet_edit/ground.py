@@ -6,7 +6,7 @@ exact match, S the samples the user named are the ones used. Value: A
 the anchor ("the volume of the DMSO") holds and points at the target, O
 `old` is what the cell holds (or one of the values, when the rows
 differ), V `new` is in the user's words, T it fits
-the column's type, U its unit is the column's. N rows that already hold
+the column's type, U its unit is the column's or converts to it. N rows that already hold
 the value are reported, not written.
 
 W, R, T and U refuse: past them the write is impossible or plainly wrong.
@@ -42,9 +42,8 @@ from sand.sheet_edit.edits import (
 from sand.sheet_edit.numbers import (
     RANGE_WORDS,
     Number,
-    UnitMismatch,
-    check_unit,
     comparable,
+    convert,
     numbers,
     same_unit,
     value,
@@ -140,17 +139,18 @@ def ground(
     if old_read is None:  # O
         checks += old_problems(edit, target, catalog, rows)
     else:
-        to_change = _rows_not_holding(target, edit.new, rows)
+        to_change = _rows_not_holding(target, as_written(edit, target), rows)
         checks += old_read or _old_said_problems(edit, target, catalog, to_change)
     found = value_problems(edit, target, anchor, catalog)  # V
     checks, doubts = checks + found[0], doubts + found[2]
     notes = (*notes, *found[1])
-    new, problems = typed_value(edit.new, target)  # T, U
+    new, problems = typed_value(edit, target)  # T, U
     if problems:
         return Refused(edit, (*problems, *checks))
 
     held = {r: g.value for g in target.groups for r in g.rows}  # N
-    unchanged = tuple(r for r in rows if same_value(edit.new, held.get(r)))
+    written = as_written(edit, target)
+    unchanged = tuple(r for r in rows if same_value(written, held.get(r)))
     if unchanged:
         which = (
             samples_text(unchanged, catalog)
@@ -159,7 +159,7 @@ def ground(
         )
         notes = (
             *notes,
-            f'{column_name(target)}: {which} already {edit.new or "empty"}, nothing to change',
+            f'{column_name(target)}: {which} already {written or "empty"}, nothing to change',
         )
     return Grounded(
         edit,
@@ -669,7 +669,7 @@ def old_problems(
 ) -> list[str]:
     """The model's `old` (`_model_old_problems`), else the old value the
     user said (`_old_said_problems`)."""
-    to_change = _rows_not_holding(target, edit.new, rows)
+    to_change = _rows_not_holding(target, as_written(edit, target), rows)
     return _model_old_problems(edit, target, catalog, to_change) or _old_said_problems(
         edit, target, catalog, to_change
     )
@@ -689,7 +689,7 @@ def read_old(proposal: ProposedEdits, catalog: Catalog) -> list[list[str]]:
         if target is None or target.formula or not rows:
             found.append([])
             continue
-        to_change = _rows_not_holding(target, edit.new, rows)
+        to_change = _rows_not_holding(target, as_written(edit, target), rows)
         found.append(_model_old_problems(edit, target, catalog, to_change))
     return found
 
@@ -737,7 +737,7 @@ def _old_said_problems(
         and number.unit
         and not (target.unit and same_unit(number.unit, target.unit))
     ):
-        return []  # '0.05 ml' over a [uL] column: no conversion yet (#108)
+        return []  # '0.05 ml' over a [uL] column: an old value is not converted
     # TODO: check that `said_old` is in the user's words, as V does for
     # `new`; one the model made up should be a check too
     held = _by_row(target)
@@ -848,7 +848,10 @@ def value_problems(
         notes = (
             [f'{where}: read from {spoken[0]!r}'] if len(spoken) == len(matches) else []
         )
-        return _unit_said(number, matches, target, catalog), notes, []
+        unit = said_unit(edit)
+        if unit and in_words(unit, said) and not any(m.unit for m in matches):
+            unit = None  # a unit code does not read ('r/min'): as written; U decides
+        return _unit_said(unit, matches, target, catalog), notes, []
     if candidates:
         said_numbers = ', '.join(c.text for c in candidates)
         return [f'{where} is not in your words; you said {said_numbers}'], [], []
@@ -858,17 +861,19 @@ def value_problems(
 
 
 def _unit_said(
-    number: Number, matches: list[Number], target: ColumnInfo, catalog: Catalog
+    unit: str | None, matches: list[Number], target: ColumnInfo, catalog: Catalog
 ) -> list[str]:
-    """The unit said with the value is not the column's, and `new` does not
-    carry it (the model left it out, or wrote the column's): "rotation
-    speed 500 rpm/s" answered "500" for a [rpm] column (#165). Only units
-    of the column's quantity or of another column of the sheet count:
-    'uh' and 'um' after a spoken number are words, not units."""
+    """The edit's unit must be said with the value. With none, the unit
+    said must be the column's: "rotation speed 500 rpm/s" answered 500
+    and no unit for a [rpm] column (#165). Only units of the column's
+    quantity or of another column of the sheet count: 'uh' and 'um' after
+    a spoken number are words, not units."""
+    if unit:
+        if any(m.unit and same_unit(m.unit, unit) for m in matches):
+            return []
+        return [f'{column_name(target)}: you did not say {unit!r} with the value']
     if not target.unit:
         return []
-    if number.unit is not None and not same_unit(number.unit, target.unit):
-        return []  # U refuses it
     if any(m.unit is None or same_unit(m.unit, target.unit) for m in matches):
         return []
     units = {c.unit for c in catalog.columns if c.unit}
@@ -945,18 +950,37 @@ def word_pattern(text: str) -> re.Pattern | None:
 # --- T type and U unit -------------------------------------------------------
 
 
-def typed_value(new: str, target: ColumnInfo) -> tuple[object, list[str]]:
-    """`new` in the type the column holds, ready to write: '4000 rpm' into
-    a number column is 4000 (after its unit was checked against the
-    header, never converted); text stays text; '' clears. Returns (value,
-    problems)."""
+def typed_value(edit: Edit, target: ColumnInfo) -> tuple[object, list[str]]:
+    """`new` with its `unit` in the type the column holds, ready to write:
+    4000 rpm into a [rpm] column is 4000, 2 min into a [s] column 120
+    (converted only when the unit is not the column's); text stays text,
+    its unit after it; '' clears. Returns (value, problems)."""
     try:
-        return _typed(new.strip(), target), []
+        return _typed(edit.new.strip(), said_unit(edit), target), []
     except Refusal as why:
         return None, [str(why)]
 
 
-def _typed(new: str, target: ColumnInfo) -> object:
+def said_unit(edit: Edit) -> str | None:
+    return (edit.unit or '').strip() or None
+
+
+def converted(edit: Edit, target: ColumnInfo) -> bool:
+    """Whether the unit said is not the column's: 2 min into [s]."""
+    unit = said_unit(edit)
+    return bool(unit and target.unit and not same_unit(unit, target.unit))
+
+
+def as_written(edit: Edit, target: ColumnInfo) -> str:
+    """`new` as the cell will hold it, to compare with what cells hold: 2
+    min into [s] is '120'."""
+    written, problems = typed_value(edit, target)
+    if problems or written is None or not said_unit(edit):
+        return edit.new
+    return str(written)
+
+
+def _typed(new: str, unit: str | None, target: ColumnInfo) -> object:  # noqa: PLR0911, PLR0912
     name = column_name(target)
     if new == EMPTY:  # the LLM copied the table's marker for an empty cell
         raise Refusal(
@@ -964,6 +988,8 @@ def _typed(new: str, target: ColumnInfo) -> object:
         )
     if new == '':
         return None
+    if unit and target.type in ('bool', 'date', 'yyyymmdd'):
+        raise Refusal(f'{name} takes no unit; you said {new} {unit}')
     if target.type == 'bool':
         if new.upper() not in ('TRUE', 'YES', 'FALSE', 'NO'):
             raise Refusal(f'{name} holds TRUE/FALSE; {new!r} is neither')
@@ -971,27 +997,30 @@ def _typed(new: str, target: ColumnInfo) -> object:
     if target.type == 'date':
         raise Refusal(f'{name} holds dates; sand does not edit dates yet')
     if target.type == 'text':
-        return new
+        return f'{new} {unit}' if unit else new
     number = value(new)
     if number is None:
         if target.type == 'yyyymmdd':
             raise Refusal(f'{name} holds dates written as 20250101; {new!r} is not one')
-        if target.type in ('int', 'float'):
-            raise Refusal(f'{name} holds numbers; {new!r} is not a number')
-        if target.unit and numbers(new):
+        if target.type in ('int', 'float') or (target.unit and (unit or numbers(new))):
             # '500 r/min' or 'five hundred r/min' into an empty [rpm] column:
             # a number with words code cannot read, never written as text
-            raise Refusal(f'{name} is in {target.unit}; {new!r} is not a number')
-        return new  # an empty or mixed column keeps what was said
-    try:
-        check_unit(number, target.unit)  # U
-    except UnitMismatch as why:
-        raise Refusal(str(why)) from None
-    plain = (
-        int(number.value)
-        if number.value == number.value.to_integral_value()
-        else float(number.value)
-    )
+            raise Refusal(f'{name} holds numbers; {new!r} is not a number')
+        return f'{new} {unit}' if unit else new  # an empty or mixed column
+    if number.unit is not None:
+        # the unit belongs in `unit`; a value that still holds one is not read
+        raise Refusal(f'{name}: {new!r} is not a plain number')
+    amount = number.value
+    if unit:
+        if not target.unit:
+            if target.type in ('int', 'float'):
+                raise Refusal(f'{name} has no unit; you said {new} {unit}')
+            return f'{new} {unit}'  # an empty or mixed column keeps what was said
+        if not same_unit(unit, target.unit):
+            amount = convert(amount, unit, target.unit)
+            if amount is None:
+                raise Refusal(f'{name} is in {target.unit}; {new} {unit} is not')
+    plain = int(amount) if amount == amount.to_integral_value() else float(amount)
     if target.type == 'yyyymmdd' and not (
         isinstance(plain, int) and is_day(str(plain))
     ):

@@ -469,7 +469,8 @@ def test_a_value_right_after_the_list_is_not_a_sample(catalog):
             ANNEAL_TIME,
             between('1', '3'),
             old='10',
-            new='15 minutes',
+            new='15',
+            unit='minutes',
             said='samples 1 to 3 15 minutes',
         ),
         catalog,
@@ -988,7 +989,8 @@ def test_a_value_with_a_unit_is_never_an_index(catalog):
         edit(
             rate,
             old='1',
-            new='2 angstrom per second',
+            new='2',
+            unit='angstrom per second',
             said='rate 2 angstrom per second',
         ),
         catalog,
@@ -1078,20 +1080,40 @@ def test_clearing_needs_a_clearing_word(catalog):
 # --- T type and U unit ------------------------------------------------------------
 
 
-def test_a_unit_must_be_the_columns(catalog):
-    why = refused(ground(edit(new='4 krpm', said='speed 4 krpm'), catalog))
-    assert why == "'4 krpm' is in krpm, not a [rpm] column"
+def test_a_unit_that_is_not_the_columns_is_converted(catalog):
+    result = ground(edit(new='4', unit='krpm', said='speed 4 krpm'), catalog)
+    assert result.value == 4000  # noqa: PLR2004
+    rotation = {'old': '30', 'said': 'rotation time 15 minutes'}
+    result = ground(edit(TIME, new='15', unit='minutes', **rotation), catalog)
+    assert (result.rows, result.value) == (ALL_ROWS, 900)
+    result = ground(
+        edit(TIME, old='30', new='15', unit='seconds', said='rotation time 15 seconds'),
+        catalog,
+    )
+    assert result.value == 15  # noqa: PLR2004  the column's unit: nothing converted
+    result = ground(
+        edit(TIME, old='30', new='1.5', unit='min', said='rotation time 1.5 min'),
+        catalog,
+    )
+    assert result.value == 90  # noqa: PLR2004  exact, never 89.99
+
+
+def test_a_unit_of_another_quantity_is_refused(catalog):
     why = refused(
         ground(
-            edit(TIME, old='30', new='15 minutes', said='rotation time 15 minutes'),
+            edit(TIME, old='30', new='15', unit='°C', said='rotation time 15 °C'),
             catalog,
         )
     )
-    assert why == "'15 minutes' is in min, not a [s] column"
-    result = ground(
-        edit(TIME, old='30', new='15 seconds', said='rotation time 15 seconds'), catalog
+    assert why == 'Rotation time [s] (2: Spin Coating) is in s; 15 °C is not'
+
+
+def test_a_unit_left_in_the_value_is_refused(catalog):
+    why = refused(ground(edit(new='4 krpm', said='speed 4 krpm'), catalog))
+    assert (
+        why.split(' | ')[0]
+        == "Rotation speed [rpm] (2: Spin Coating): '4 krpm' is not a plain number"
     )
-    assert (result.rows, result.value) == (ALL_ROWS, 15)  # the unit is stripped
 
 
 def test_text_into_a_number_column_is_refused(catalog):
@@ -1104,7 +1126,7 @@ def test_text_into_a_number_column_is_refused(catalog):
 
 def test_values_are_written_in_the_columns_type(catalog):
     written = [
-        ground(edit(new='4000 rpm', said='speed 4000 rpm'), catalog).value,
+        ground(edit(new='4000', unit='rpm', said='speed 4000 rpm'), catalog).value,
         ground(edit(new='3500.5', said='speed 3500.5'), catalog).value,
         ground(
             edit(AREA, old='0.1', new='0.15', said='sample area 0.15'), catalog
@@ -1286,10 +1308,12 @@ def test_a_unit_said_that_the_column_does_not_have_is_a_check(catalog, accelerat
         'Rotation speed [rpm] (2: Spin Coating): you said 500 rpm/s, '
         'the column is in rpm'
     )
-    hours = {'old': '10', 'said': 'annealing time 2 hours'}
-    for new in ('2', '2 min'):  # left out, or swapped for the column's
-        result = ground(edit(ANNEAL_TIME, new=new, **hours), catalog)
-        assert 'you said 2 hours, the column is in min' in checked(result), new
+    hours = {'old': '10', 'new': '2', 'said': 'annealing time 2 hours'}
+    result = ground(edit(ANNEAL_TIME, **hours), catalog)  # the unit left out
+    assert 'you said 2 hours, the column is in min' in checked(result)
+    # a unit the user did not say
+    result = ground(edit(ANNEAL_TIME, unit='min', **hours), catalog)
+    assert "you did not say 'min' with the value" in checked(result)
     # only the mentions with another unit are quoted
     said = 'annealing time 100 °C for 100 s'
     result = ground(edit(ANNEAL_TIME, old='10', new='100', said=said), catalog)
@@ -1314,23 +1338,32 @@ def test_no_unit_check_for_the_columns_unit_or_words(catalog, said):
     assert isinstance(result, Grounded) and result.checks == (), said
 
 
-def test_a_unit_kept_in_the_value_is_still_the_unit_checks(catalog):
-    refused(ground(edit(new='500 rpm/s', said='speed 500 rpm/s'), catalog))
+def test_the_unit_field_is_checked_like_a_unit_said(catalog):
+    refused(ground(edit(new='500', unit='rpm/s', said='speed 500 rpm/s'), catalog))
     # another spelling of the column's unit is the column's unit
     result = ground(
-        edit(new='500 revolutions per minute', said='speed 500 revolutions per minute'),
+        edit(
+            new='500',
+            unit='revolutions per minute',
+            said='speed 500 revolutions per minute',
+        ),
         catalog,
     )
     assert isinstance(result, Grounded) and result.value == 500  # noqa: PLR2004
-    # a number with words code cannot read, into an empty [rpm] column:
-    # refused, never written as text
-    for new in ('500 r/min', 'five hundred r/min'):
+    # a unit pint does not know, into an empty [rpm] column: refused, never
+    # written as text
+    for new in ('500', 'five hundred'):
         why = refused(
-            ground(edit('C069', old=None, new=new, said=f'7 speed {new}'), catalog)
+            ground(
+                edit(
+                    'C069', old=None, new=new, unit='r/min', said=f'7 speed {new} r/min'
+                ),
+                catalog,
+            )
         )
         assert (
             why
-            == f'Rotation speed [rpm] (7: Spin Coating) is in rpm; {new!r} is not a number'
+            == f'Rotation speed [rpm] (7: Spin Coating) is in rpm; {new} r/min is not'
         )
     # no number in it: kept as said
     result = ground(edit('C069', old=None, new='fast', said='7 speed fast'), catalog)
