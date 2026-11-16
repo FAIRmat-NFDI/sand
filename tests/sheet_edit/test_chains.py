@@ -118,15 +118,19 @@ def test_a_reused_answer_a_fresh_reading_would_not_give_fails(synthetic_xlsx):
     assert rc.summarize([played])['different'] >= 1
 
 
-def test_a_click_out_of_turn_is_skipped(synthetic_xlsx):
+def test_a_click_below_an_undecided_note_is_made(synthetic_xlsx):
     played = rc.play(
-        chain({'do': 'confirm', 'note': 3}, {'do': 'undo', 'note': 1}),
+        chain(
+            {'do': 'confirm', 'note': 3},
+            {'do': 'confirm', 'note': 3},
+            {'do': 'undo', 'note': 1},
+        ),
         synthetic_xlsx,
         Canned(),
     )
     assert played.skipped == [
-        'job 1, confirm 3: not its turn (open: note 1)',
-        'job 2, undo 1: no rejection to undo',
+        'job 2, confirm 3: nothing to decide',
+        'job 3, undo 1: no rejection to undo',
     ]
 
 

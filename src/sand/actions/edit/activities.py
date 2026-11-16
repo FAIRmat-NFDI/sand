@@ -24,7 +24,6 @@ from sand.sheet_edit.apply import (
     lookup,
     next_seq,
     saved_answer,
-    waits,
 )
 from sand.sheet_edit.catalog import Catalog
 from sand.sheet_edit.changelog import Confirmation
@@ -83,7 +82,7 @@ async def collect_edit_inputs(data: EditInput) -> dict:
     try:
         confirmed = read_confirmations(confirmations)
         load_confirmations(confirmed)  # malformed entries stop the job here
-        # which input waits for its turn depends on them
+        # a rejected edit is left out of the sheet the later inputs read
         rejected = sorted(read_rejections(rejections))
     except ValueError as why:
         raise ApplicationError(str(why), non_retryable=True) from why
@@ -110,8 +109,8 @@ async def replay_cached_inputs(data: ReplayInput) -> dict:
         set(files.confirmations),
         files.cache.answers,
         cached_only=True,
-        in_turn=True,
         rejected=frozenset(data.rejections),
+        ids=data.input_ids or None,
     )
     confirmed = set(files.confirmations)
     rejected = set(data.rejections)
@@ -128,7 +127,7 @@ async def replay_cached_inputs(data: ReplayInput) -> dict:
 async def prepare_input(data: PrepareInput) -> dict:
     """The two prompts for one input, against the sheet the earlier inputs
     left; or nothing to ask, when an answer to these words holds on this
-    sheet, or the input waits for its turn (apply.py)."""
+    sheet (apply.py)."""
     from sand.sheet_edit.catalog import build
     from sand.sheet_edit.resolve import prompts
 
@@ -224,9 +223,9 @@ async def store_final_sheet_and_changelog(data: JobInput) -> dict:
             client, data.upload_id, CHANGELOG_FILE, to_json(log).encode(), JSON_TYPE
         )
         await _publish_cache(voice.writer, client, files, data, steps)
-    # a confirmation is bound to the words, the sheet and the change: an
-    # input reworded or an earlier edit confirmed since leaves it matching
-    # nothing, and the user should be told to look again
+    # a confirmation is bound to the words and the change as shown: an
+    # input reworded, or a decision above that changed what it shows,
+    # leaves it matching nothing, and the user should be told to look again
     ready = {key for step in steps for key in step.interpretation.ready}
     return {
         'final': sha256(final),
@@ -348,26 +347,17 @@ def _apply_inputs_from_cache(
         _never_asked,
         set(files.confirmations),
         files.cache.answers,
-        in_turn=True,
         rejected=frozenset(data.rejections),
+        ids=data.input_ids[: len(texts)] or None,
     )
 
 
 def _to_read(
     files: _Files, data: PrepareInput, before: list[Step], catalog: Catalog
 ) -> bool:
-    """No answer holds on the input's sheet, and it does not wait."""
+    """No answer holds on the input's sheet."""
     state = _sheet_before(files, before)
-    text = _text(data)
-    if lookup(files.cache.answers, text, sha256(state), catalog) is not None:
-        return False
-    return not waits(
-        before,
-        text,
-        files.cache.answers,
-        confirmed=set(files.confirmations),
-        rejected=frozenset(data.rejections),
-    )
+    return lookup(files.cache.answers, _text(data), sha256(state), catalog) is None
 
 
 def _sheet_before(files: _Files, before: list[Step]) -> bytes:
@@ -406,9 +396,6 @@ def _report(  # noqa: PLR0913
         'entry_id': entry_id,
         'text': step.text,
         'from_cache': from_cache,
-        # an earlier answer until its turn: read again then (apply.py)
-        'waiting': step.waiting,
-        'why_waiting': step.why,
         'preview': step.interpretation.preview,
         'ready': [
             {

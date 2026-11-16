@@ -15,21 +15,18 @@ So input k sees what the inputs above would leave if every edit still
 waiting there is confirmed: "the volume of the DMSO" sees a DMSO an
 earlier input proposes, and confirming that input leaves nothing to
 redo below it. A confirmed edit is written only onto the sheet it was
-read on: after an input above is reworded, or a rejection there taken
-back, it is held until the inputs above are decided. A confirmation is
-bound to the input's text, the sheet it was read on and the edit
-itself; a rerun that produces the identical edit keeps it, any
-difference asks again.
+read on: while an input above has an edit waiting for a decision, it is
+held.
+
+The inputs may be decided in any order. A decision is bound to its input
+and to what the user saw (`_key`): the words, and the edit with its old
+values, samples and checks. A decision above that changes none of it below keeps the
+decisions there; one that changes it (the old value, the rows, a new
+check) leaves the new edit undecided.
 
 An answer read on one sheet is reused on another while what it looked
 at there is the same (`lookup`, reads.py); else the model reads the
 input again.
-
-The inputs are decided in order. With `in_turn`, an input after the
-first one with an undecided edit is not read again: its turn comes
-after the inputs above are decided, and they may change its sheet once
-more. It shows its last answer, checked against today's sheet, writes
-nothing and adds nothing to the preview (`waiting`).
 """
 
 import json
@@ -40,8 +37,8 @@ from sand.sheet_edit.catalog import Catalog, build
 from sand.sheet_edit.coverage import Coverage, coverage
 from sand.sheet_edit.edits import ProposedEdits
 from sand.sheet_edit.ground import Grounded, Refused, column_name, ground, read_old
-from sand.sheet_edit.preview import preview
-from sand.sheet_edit.reads import Reads, holds, reads_of, why_not
+from sand.sheet_edit.preview import edit_summary, preview
+from sand.sheet_edit.reads import Reads, holds, reads_of
 from sand.sheet_edit.workbook import CellChange, sha256
 from sand.sheet_edit.write import Write, WriteRefused, write_cells
 
@@ -126,9 +123,6 @@ class Step:
     # the sheet the next input is read on: `state` plus the edits waiting
     # for a decision
     preview: bytes
-    # an earlier answer shown until its turn: nothing written, not decidable
-    waiting: bool = False
-    why: str | None = None  # why that answer does not hold here (reads.py)
     answer: CacheKey | None = None  # the cache entry it used
     # its confirmed keys: a key two inputs share is the first one's
     confirmed: tuple[str, ...] = ()
@@ -136,16 +130,18 @@ class Step:
     held: tuple[str, ...] = ()
 
 
-def interpret_instruction(
+def interpret_instruction(  # noqa: PLR0913
     text: str,
     sheet: bytes,
     resolve: Resolve,
     old_read: Sequence[Sequence[str]] | None = None,
     catalog: Catalog | None = None,
+    *,
+    owner: str = '',
 ) -> Interpretation:
     """One instruction against one version of the sheet. Nothing is written.
     `old_read`: for an answer read on another sheet (`ground`); `catalog`:
-    the sheet's, when already built.
+    the sheet's, when already built; `owner`: the input's id, in its keys.
 
     1. Build the catalog from the sheet bytes.
     2. Ask the LLM what the instruction means. It answers with edits.
@@ -171,9 +167,10 @@ def interpret_instruction(
         for r in results
     ]
     results = _without_overlaps(results, catalog)
-    state = sha256(sheet)
     ready = {
-        _key(text, state, r): r for r in results if isinstance(r, Grounded) and r.rows
+        _key(owner, text, r, catalog): r
+        for r in results
+        if isinstance(r, Grounded) and r.rows
     }
     # a misquoted edit is shown as refused above; a misquoted unresolved
     # item has no other line, so its coverage line stays
@@ -229,8 +226,8 @@ def apply_all(  # noqa: PLR0913
     cache: Cache,
     *,
     cached_only: bool = False,
-    in_turn: bool = False,
     rejected: frozenset[str] = frozenset(),
+    ids: Sequence[str] | None = None,
 ) -> list[Step]:
     """Every input in order, each against the sheet the earlier ones
     left; the confirmed edits of each are written and verified. The last
@@ -238,41 +235,17 @@ def apply_all(  # noqa: PLR0913
     writer refusal is recorded on the step; a failed verification is a
     bug in the writer and raises, since the file must not be used.
     `cached_only` stops before the first input with no answer here (the
-    inputs after it would read a sheet it may change). `in_turn`: see
-    the module docstring; `rejected` are the keys decided without a
-    confirmation."""
+    inputs after it would read a sheet it may change). `rejected` are
+    the keys decided without a confirmation; `ids` the inputs' own (their
+    entry ids), so two inputs showing the same edit are decided apart."""
     steps: list[Step] = []
     preview = written = original
     taken: set[str] = set()  # confirmed keys an earlier input holds
-    for text in inputs:
+    for number, text in enumerate(inputs):
+        owner = ids[number] if ids else ''
         digest = sha256(preview)
         catalog = build(preview)
         found = lookup(cache, text, digest, catalog)
-        if (
-            found is None
-            and in_turn
-            and waits(steps, text, cache, confirmed=confirmed, rejected=rejected)
-        ):
-            last = _newest_first(cache, sha256(text.encode()))[0]
-            earlier = cache[last]
-            interpretation = interpret_instruction(
-                text, preview, _answering(earlier), _off_sheet(earlier), catalog
-            )
-            why = why_not(earlier.reads, text, earlier.proposal, catalog)
-            steps.append(
-                Step(
-                    text,
-                    interpretation,
-                    (),
-                    None,
-                    written,
-                    preview,
-                    waiting=True,
-                    why=why,
-                    answer=last,
-                )
-            )
-            continue
         if found is None and cached_only:
             break
         if found is None:
@@ -284,7 +257,7 @@ def apply_all(  # noqa: PLR0913
         # read on this sheet: `old` is checked live
         old = None if key[1] == digest else _off_sheet(answer)
         interpretation = interpret_instruction(
-            text, preview, _answering(answer), old, catalog
+            text, preview, _answering(answer), old, catalog, owner=owner
         )
         ready = interpretation.ready
         # a key two inputs share is the first one's, as the server records
@@ -365,29 +338,6 @@ def _previewed(  # noqa: PLR0913, PLR0917
         return preview
 
 
-def waits(
-    steps: list[Step],
-    text: str,
-    cache: Cache,
-    *,
-    confirmed: set[str],
-    rejected: frozenset[str],
-) -> bool:
-    """Whether the next input, with no answer on this sheet (`lookup`),
-    waits for its turn: an input above has an undecided edit, and an
-    earlier answer can be shown. A new input is read once, on the sheet
-    it is added to."""
-    if not _newest_first(cache, sha256(text.encode())):
-        return False
-    return any(
-        step.waiting
-        or any(
-            k not in confirmed and k not in rejected for k in step.interpretation.ready
-        )
-        for step in steps
-    )
-
-
 def _newest_first(cache: Cache, words: str) -> list[CacheKey]:
     """The answers to these words; an answer saved before `seq` existed
     goes by its place in the cache."""
@@ -410,8 +360,11 @@ def _off_sheet(answer: Answer) -> tuple[tuple[str, ...], ...]:
     return tuple(() for _ in answer.proposal.edits)
 
 
-def _key(text: str, state: str, edit: Grounded) -> str:
-    """The confirmation key: the same words, on the same sheet, giving the
-    same change."""
+def _key(owner: str, text: str, edit: Grounded, catalog: Catalog) -> str:
+    """The decision key: the input's, the same words giving the same
+    change, as the user saw it (old values, samples, checks). Not the
+    sheet: a change above that leaves all of it the same keeps the
+    decision."""
     change = [edit.edit.target, list(edit.rows), repr(edit.value)]
-    return sha256(json.dumps([text, state, change]).encode())
+    seen = [edit_summary(edit, catalog), list(edit.checks)]
+    return sha256(json.dumps([owner, text, change, seen]).encode())

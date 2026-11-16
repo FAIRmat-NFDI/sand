@@ -23,6 +23,9 @@ class JobInput(BaseModel):
     # the edits decided without a confirmation (rejections.json's keys);
     # a job started before rejections existed has none
     rejections: list[str] = []
+    # one per text: a decision is its input's (apply.py); none in a job
+    # started before they were passed
+    input_ids: list[str] = []
 
 
 class ReplayInput(JobInput):
