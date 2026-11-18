@@ -130,15 +130,26 @@ async def entry_mainfile(
     return entries[0]['mainfile']
 
 
+# sand's own files: NOMAD stores them and parses nothing there, so a write
+# or delete skips processing the upload (each run is seconds; #202)
+UNPROCESSED_DIR = 'sheet_edit'
+
+
+def _processing(directory: str) -> dict:
+    """The query that keeps NOMAD from processing a write into `directory`."""
+    own = directory == UNPROCESSED_DIR or directory.startswith(UNPROCESSED_DIR + '/')
+    return {'trigger_processing': 'false'} if own else {}
+
+
 @dataclass(frozen=True)
 class RawFileWriter:
     """Raw-file writes that wait out NOMAD's upload processing.
 
-    Every raw-file write triggers processing, and NOMAD rejects further
-    writes to the upload until it finishes. Poll the upload's
-    process_running state and send the body only when the upload is idle —
-    this avoids re-transmitting large files and does not depend on the
-    wording of NOMAD's rejection message.
+    Every raw-file write runs a NOMAD workflow on the upload (and, outside
+    `UNPROCESSED_DIR`, processes it), and NOMAD rejects further writes
+    until it finishes. Poll the upload's process_running state and send the
+    body only when the upload is idle — this avoids re-transmitting large
+    files and does not depend on the wording of NOMAD's rejection message.
     """
 
     retry_interval_s: float = 1.0
@@ -161,7 +172,7 @@ class RawFileWriter:
             upload_id,
             directory,
             file_name,
-            params={'file_name': base_name},
+            params={'file_name': base_name, **_processing(directory)},
             content=content,
             headers={'Content-Type': content_type},
         )
@@ -171,16 +182,18 @@ class RawFileWriter:
         client: httpx.AsyncClient,
         upload_id: str,
         files: list[tuple[str, bytes, str]],
+        directory: str = '',
     ) -> None:
-        """PUT several top-level raw files (name, content, content type) in
-        one multipart request, so NOMAD processes them in the same run."""
+        """PUT several raw files (name, content, content type) into one
+        directory in one multipart request: one NOMAD run for all."""
         if any('/' in name for name, _, _ in files):
-            raise ValueError('upload_raw_files takes top-level file names only')
+            raise ValueError('upload_raw_files takes names within `directory` only')
         await self._put_raw(
             client,
             upload_id,
-            '',
+            directory,
             ', '.join(name for name, _, _ in files),
+            params=_processing(directory),
             files=[('file', (name, content, ctype)) for name, content, ctype in files],
         )
 
@@ -297,7 +310,10 @@ class RawFileWriter:
         deadline = time.monotonic() + self.write_timeout_s
         while True:
             await self.wait_until_writable(client, upload_id, deadline, file_name)
-            response = await client.delete(f'/uploads/{upload_id}/raw/{file_name}')
+            response = await client.delete(
+                f'/uploads/{upload_id}/raw/{file_name}',
+                params=_processing(file_name.rpartition('/')[0]),
+            )
             if response.status_code == HTTPStatus.NOT_FOUND:
                 return
             if (

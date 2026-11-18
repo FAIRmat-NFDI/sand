@@ -16,6 +16,7 @@ from sand.actions.edit.models import (
     LlmAnswer,
     PrepareInput,
     ReplayInput,
+    StoreInput,
     WriteStatusInput,
 )
 from sand.services.voice_eln import CollectedInput
@@ -62,6 +63,7 @@ def answer(*edits, unresolved=()):
 class FakeWriter:
     files: dict[str, bytes]
     written: list[str] = field(default_factory=list)
+    requests: int = 0  # PUTs and DELETEs: each one a NOMAD run
 
     async def read_raw_file(self, client, upload_id, name, *, wait=True):
         return self.files.get(name)
@@ -73,6 +75,14 @@ class FakeWriter:
     async def upload_raw_file(self, client, upload_id, name, content, content_type):
         self.files[name] = content
         self.written.append(name)
+        self.requests += 1
+
+    async def upload_raw_files(self, client, upload_id, files, directory=''):
+        for name, content, _ in files:
+            path = f'{directory}/{name}' if directory else name
+            self.files[path] = content
+            self.written.append(path)
+        self.requests += 1
 
     async def write_json(self, client, upload_id, name, payload):
         await self.upload_raw_file(
@@ -81,6 +91,7 @@ class FakeWriter:
 
     async def delete_raw_file(self, client, upload_id, name):
         self.files.pop(name, None)
+        self.requests += 1
 
 
 @dataclass
@@ -114,11 +125,12 @@ def upload(synthetic_xlsx, monkeypatch):
     return voice
 
 
-def job(upload, job_id='job-1') -> JobInput:
+def job(upload, job_id='job-1') -> StoreInput:
     """As the workflow builds it from `collect_edit_inputs`: the
-    confirmations file as it is now."""
+    confirmations file as it is now. A StoreInput without a status, so
+    the store takes it as well."""
     raw = upload.writer.files.get(CONFIRMATIONS_FILE)
-    return JobInput(
+    return StoreInput(
         upload_id='u1',
         user_id='user',
         job_id=job_id,
@@ -652,6 +664,127 @@ async def test_store_final_sheet_and_changelog_stores_the_final_sheet_with_its_c
     ]
     assert f'original  sha256 {sha256(synthetic_xlsx)}' in done['changelog']
     assert final != synthetic_xlsx
+
+
+async def answer_both(upload):
+    await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2)
+    )
+    await activities.agree_cache_and_apply_input(apply(upload, 2, [answer()] * 2))
+
+
+async def test_the_end_of_a_job_is_one_request(upload):
+    """Every write is a NOMAD run: the sheet, the changelog, the shared
+    cache and the completed status go together."""
+    await answer_both(upload)
+    before = upload.writer.requests
+    status = {'job_id': 'job-1', 'inputs': [{'input': 1}], 'model': MODEL}
+
+    done = await activities.store_final_sheet_and_changelog(
+        StoreInput(**job(upload).model_dump(exclude={'status'}), status=status)
+    )
+
+    # one PUT, then the job's own cache file goes
+    assert upload.writer.requests - before == 1 + 1
+    assert JOB_CACHE not in upload.writer.files
+    stored = json.loads(upload.writer.files[STATUS_FILE])
+    assert (stored['phase'], stored['final']) == ('completed', done['final'])
+    assert stored['inputs'] == [{'input': 1}]
+    for name in (FINAL_FILE, CHANGELOG_FILE, CACHE_FILE):
+        assert name in upload.writer.files
+
+
+async def test_a_job_that_asked_nothing_deletes_nothing(upload):
+    # Confirm all: every answer cached, no file of its own
+    await answer_both(upload)
+    await activities.store_final_sheet_and_changelog(job(upload))
+    before = upload.writer.requests
+
+    await activities.store_final_sheet_and_changelog(job(upload, job_id='job-2'))
+
+    assert upload.writer.requests - before == 1
+
+
+STARTED = '2026-11-18T10:00:00+00:00'
+
+
+def ending(upload, job_id='job-1') -> StoreInput:
+    status = {'job_id': job_id, 'started_at': STARTED, 'model': MODEL, 'inputs': []}
+    return StoreInput(
+        **job(upload, job_id).model_dump(exclude={'status'}), status=status
+    )
+
+
+async def test_the_end_is_checked_once_nomad_stored_it(upload, monkeypatch):
+    """The PUT only queues NOMAD's file update: a lost one is not success
+    (Temporal retries the activity)."""
+    await answer_both(upload)
+
+    async def lost(client, upload_id, files, directory=''):
+        upload.writer.requests += 1
+
+    monkeypatch.setattr(upload.writer, 'upload_raw_files', lost)
+    with pytest.raises(ApplicationError, match='did not store'):
+        await activities.store_final_sheet_and_changelog(ending(upload))
+
+
+async def test_a_retry_after_a_newer_job_took_over_writes_nothing(upload):
+    await answer_both(upload)
+    newer = {
+        'job_id': 'starting',
+        'phase': 'starting',
+        'updated_at': '2026-11-18T10:05:00+00:00',
+    }
+    upload.writer.files[STATUS_FILE] = json.dumps(newer).encode()
+    before = upload.writer.requests
+
+    await activities.store_final_sheet_and_changelog(ending(upload))
+
+    assert upload.writer.requests == before
+    assert json.loads(upload.writer.files[STATUS_FILE]) == newer
+
+
+async def test_its_own_reservation_is_replaced(upload):
+    # a job that asked nothing writes no status before its end
+    await answer_both(upload)
+    own = {
+        'job_id': 'starting',
+        'phase': 'starting',
+        'updated_at': '2026-11-18T09:59:59+00:00',
+    }
+    upload.writer.files[STATUS_FILE] = json.dumps(own).encode()
+
+    await activities.store_final_sheet_and_changelog(ending(upload))
+
+    assert json.loads(upload.writer.files[STATUS_FILE])['phase'] == 'completed'
+
+
+async def test_a_cleanup_that_fails_does_not_fail_the_end(upload, monkeypatch):
+    await answer_both(upload)
+
+    async def down(client, upload_id, name):
+        raise RuntimeError('NOMAD down')
+
+    monkeypatch.setattr(upload.writer, 'delete_raw_file', down)
+    done = await activities.store_final_sheet_and_changelog(ending(upload))
+
+    stored = json.loads(upload.writer.files[STATUS_FILE])
+    assert (stored['phase'], stored['final']) == ('completed', done['final'])
+
+
+async def test_a_failure_does_not_replace_a_newer_jobs_status(upload):
+    newer = {'job_id': 'job-2', 'phase': 'interpreting', 'updated_at': STARTED}
+    upload.writer.files[STATUS_FILE] = json.dumps(newer).encode()
+
+    await activities.write_edit_status(
+        WriteStatusInput(
+            upload_id='u1',
+            user_id='user',
+            status={'job_id': 'job-1', 'phase': 'failed', 'started_at': STARTED},
+        )
+    )
+
+    assert json.loads(upload.writer.files[STATUS_FILE]) == newer
 
 
 async def test_store_final_sheet_and_changelog_without_confirmations_stores_the_original(

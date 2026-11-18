@@ -19,9 +19,9 @@ from sand.actions.common import LLM_TASK_QUEUE, error_message
 from sand.actions.edit.models import (
     ApplyInput,
     EditInput,
-    JobInput,
     PrepareInput,
     ReplayInput,
+    StoreInput,
     WriteStatusInput,
 )
 from sand.actions.edit.workflows import TEMPERATURE, EditSheetWorkflow
@@ -116,9 +116,12 @@ class Stubs:
             return {'input': data.number, 'preview': f'preview {data.number}'}
 
         @activity.defn(name='store_final_sheet_and_changelog')
-        async def store(data: JobInput) -> dict:
+        async def store(data: StoreInput) -> dict:
             stubs.record('store_final_sheet_and_changelog', data)
-            return {'final': 'abc', 'changed': True, 'changes': 3, 'changelog': 'log'}
+            done = {'final': 'abc', 'changed': True, 'changes': 3, 'changelog': 'log'}
+            # the real one writes the completed status with the sheet
+            stubs.record('status', {**data.status, 'phase': 'completed', **done})
+            return done
 
         @activity.defn(name='write_edit_status')
         async def status(data: WriteStatusInput) -> None:
@@ -194,10 +197,11 @@ async def test_each_input_in_order_two_opinions_each_then_the_sheet():
     (replay,) = stubs.of('replay')
     assert (replay.texts, replay.entry_ids) == (first.texts, ['e1', 'e2'])
     assert replay.confirmations == first.confirmations
-    assert (
-        stubs.of('store_final_sheet_and_changelog')[0].confirmations
-        == first.confirmations
-    )
+    (store,) = stubs.of('store_final_sheet_and_changelog')
+    assert store.confirmations == first.confirmations
+    # its status: the job's, with every report; no write of its own after
+    assert store.status['job_id'] == result['job_id']
+    assert [r['input'] for r in store.status['inputs']] == [1, 2]
 
     # the child got the prompt as composed, the model and temperature 0
     a, b = [json.loads(answer.text)['got'] for answer in first.answers]

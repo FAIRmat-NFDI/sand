@@ -3,7 +3,9 @@ upload and leaves nothing in memory, so Temporal can retry or replay any
 of them. The sheet is never patched: each activity rebuilds the state
 from the original and the cached proposals (see apply.py)."""
 
+import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
@@ -15,6 +17,7 @@ from sand.actions.edit.models import (
     JobInput,
     PrepareInput,
     ReplayInput,
+    StoreInput,
     WriteStatusInput,
 )
 from sand.services.nomad_api import XLSX_CONTENT_TYPE
@@ -196,9 +199,11 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
 
 
 @activity.defn
-async def store_final_sheet_and_changelog(data: JobInput) -> dict:
+async def store_final_sheet_and_changelog(data: StoreInput) -> dict:
     """Write the final sheet and the changelog that explains it; the two
-    are checked against the original before anything is stored."""
+    are checked against the original before anything is stored. With the
+    shared cache and the completed status (`data.status`) in the same
+    request: one NOMAD run, and no sheet without its changelog."""
     from sand.sheet_edit.catalog import build
     from sand.sheet_edit.changelog import (
         CheckFailed,
@@ -219,20 +224,11 @@ async def store_final_sheet_and_changelog(data: JobInput) -> dict:
         raise ApplicationError(
             f'the final sheet does not match its changelog: {why}', non_retryable=True
         ) from why
-    voice = common.voice_service()
-    async with voice.build_client(common.user_token(data.user_id)) as client:
-        await voice.writer.upload_raw_file(
-            client, data.upload_id, FINAL_FILE, final, XLSX_CONTENT_TYPE
-        )
-        await voice.writer.upload_raw_file(
-            client, data.upload_id, CHANGELOG_FILE, to_json(log).encode(), JSON_TYPE
-        )
-        await _publish_cache(voice.writer, client, files, data, steps)
     # a confirmation is bound to the words and the change as shown: an
     # input reworded, or a decision above that changed what it shows,
     # leaves it matching nothing, and the user should be told to look again
     ready = {key for step in steps for key in step.interpretation.ready}
-    return {
+    done = {
         'final': sha256(final),
         'changed': final != files.original,
         'changes': len(log.entries),
@@ -242,12 +238,107 @@ async def store_final_sheet_and_changelog(data: JobInput) -> dict:
         # Sample column is in it, a step's catalog is of the sheet before
         'written': written_now(log, build(final)),
     }
+    outputs = [
+        (FINAL_FILE, final, XLSX_CONTENT_TYPE),
+        (CHANGELOG_FILE, to_json(log).encode(), JSON_TYPE),
+    ]
+    if data.status:
+        status = {
+            **data.status,
+            'updated_at': datetime.now(timezone.utc).isoformat(),
+            'phase': 'completed',
+            **done,
+        }
+        outputs.append((STATUS_FILE, _json(status), JSON_TYPE))
+    voice = common.voice_service()
+    async with voice.build_client(common.user_token(data.user_id)) as client:
+        writer = voice.writer
+        # a retry after "completed" landed: a newer job may own the sheet
+        # and the status now, and must not be overwritten
+        if data.status and not _ours(
+            await writer.read_json(client, data.upload_id, STATUS_FILE), data.status
+        ):
+            return done
+        shared = await writer.read_json(client, data.upload_id, CACHE_FILE)
+        outputs.append(
+            (CACHE_FILE, _json(_published(shared, files, data, steps)), JSON_TYPE)
+        )
+        await writer.upload_raw_files(
+            client,
+            data.upload_id,
+            [
+                (name.rpartition('/')[2], content, ctype)
+                for name, content, ctype in outputs
+            ],
+            directory=FINAL_FILE.rpartition('/')[0],
+        )
+        # the PUT only queues NOMAD's file update: read back (the reads
+        # wait until it is done) before the job reports success
+        await _check_stored(writer, client, data, final)
+        # only a job that asked the model has a file of its own; a
+        # leftover is harmless, a failure here must not retry the above
+        if files.cache.of_job(data.job_id).answers:
+            try:
+                await writer.delete_raw_file(
+                    client, data.upload_id, job_cache_file(data.job_id)
+                )
+            except Exception:
+                activity.logger.warning(
+                    'could not delete %s', job_cache_file(data.job_id), exc_info=True
+                )
+    return done
+
+
+def _ours(current: dict | None, status: dict) -> bool:
+    """Whether the status file is still this job's: its own, or the API's
+    reservation made before it started. A newer job's reservation is
+    newer than this job's start."""
+    if not current:
+        return True
+    if current.get('job_id') == status.get('job_id'):
+        return True
+    if current.get('job_id') != 'starting':
+        return False
+    try:
+        reserved = datetime.fromisoformat(current['updated_at'])
+        started = datetime.fromisoformat(status['started_at'])
+    except (KeyError, TypeError, ValueError):
+        # a status of a job started before `started_at`: as before
+        return True
+    return reserved <= started
+
+
+async def _check_stored(writer, client, data: StoreInput, final: bytes) -> None:
+    """Raises (Temporal retries) unless the final sheet and, with a
+    status, the completed status are this job's. A newer job's status
+    there means this one's was stored and the lock taken over."""
+    stored = await writer.read_raw_file(client, data.upload_id, FINAL_FILE)
+    if data.status:
+        current = await writer.read_json(client, data.upload_id, STATUS_FILE)
+        if current and current.get('job_id') != data.job_id:
+            return
+        if not current or current.get('phase') != 'completed':
+            raise ApplicationError('NOMAD did not store the completed status')
+    if stored is None or sha256(stored) != sha256(final):
+        raise ApplicationError('NOMAD did not store the final sheet')
+
+
+def _json(payload: dict) -> bytes:
+    # as write_json writes it
+    return json.dumps(payload, ensure_ascii=False).encode()
 
 
 @activity.defn
 async def write_edit_status(data: WriteStatusInput) -> None:
     voice = common.voice_service()
     async with voice.build_client(common.user_token(data.user_id)) as client:
+        if data.status.get('phase') == 'failed' and not _ours(
+            await voice.writer.read_json(client, data.upload_id, STATUS_FILE),
+            data.status,
+        ):
+            # this job's end was stored and a newer job took over: its
+            # status is not this failure's to replace
+            return
         await voice.writer.write_json(client, data.upload_id, STATUS_FILE, data.status)
 
 
@@ -308,25 +399,18 @@ async def _write_cache(files: _Files, data: JobInput) -> None:
         )
 
 
-async def _publish_cache(  # noqa: PLR0913, PLR0917
-    writer, client, files: _Files, data: JobInput, steps: list[Step]
-) -> None:
-    """The job's readable answers into the shared cache, for later jobs;
-    its own file goes. Two jobs publishing at once can lose each other's
-    entries here, which costs a later job model calls, not a result."""
+def _published(
+    shared: dict | None, files: _Files, data: JobInput, steps: list[Step]
+) -> dict:
+    """The shared cache with the job's readable answers, for later jobs.
+    Two jobs publishing at once can lose each other's entries, which
+    costs a later job model calls, not a result."""
     from sand.sheet_edit.resolve import CACHE_VERSION
 
-    shared = await writer.read_json(client, data.upload_id, CACHE_FILE)
     merged = load_llm_cache(shared, data.llm_model_name, CACHE_VERSION, data.job_id)
     merged.update(files.cache.of_job(data.job_id, readable_only=True))
     merged = merged.trimmed({step.answer for step in steps})
-    await writer.write_json(
-        client,
-        data.upload_id,
-        CACHE_FILE,
-        llm_cache_json(merged, data.llm_model_name, CACHE_VERSION),
-    )
-    await writer.delete_raw_file(client, data.upload_id, job_cache_file(data.job_id))
+    return llm_cache_json(merged, data.llm_model_name, CACHE_VERSION)
 
 
 # --- the state chain ----------------------------------------------------------
