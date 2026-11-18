@@ -80,3 +80,38 @@ async def test_a_sheet_edit_file_is_deleted_without_processing():
 
     assert delete.method == 'DELETE'
     assert delete.url.params['trigger_processing'] == 'false'
+
+
+async def test_a_directory_lists_its_files():
+    listing = {
+        'path': 'sheet_edit',
+        'access': 'unpublished',
+        'directory_metadata': {
+            'name': 'sheet_edit',
+            'content': [
+                {'name': 'status.json', 'is_file': True},
+                {'name': 'old', 'is_file': False},
+            ],
+        },
+    }
+
+    def nomad(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == f'/api/v1/uploads/{UPLOAD}/rawdir/sheet_edit'
+        return httpx.Response(200, json=listing)
+
+    writer = RawFileWriter(retry_interval_s=0, write_timeout_s=5)
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(nomad), base_url=BASE_URL
+    ) as client:
+        assert await writer.list_raw_dir(client, UPLOAD, 'sheet_edit') == [
+            'status.json'
+        ]
+
+
+async def test_a_missing_directory_lists_nothing():
+    writer = RawFileWriter(retry_interval_s=0, write_timeout_s=5)
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(404)),
+        base_url=BASE_URL,
+    ) as client:
+        assert await writer.list_raw_dir(client, UPLOAD, 'sheet_edit') == []

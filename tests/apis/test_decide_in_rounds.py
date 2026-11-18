@@ -227,4 +227,4 @@ async def test_reset_all_unlocks(voice):
         )
 
     assert response.status_code == HTTPStatus.NO_CONTENT
-    assert json.loads(voice.writer.files[CHECKPOINT_FILE]) == {}
+    assert CHECKPOINT_FILE not in voice.writer.files

@@ -4,8 +4,11 @@ beside the original sheet.
     sheet_edit/uploaded.xlsx.origin the uploaded sheet, never modified
     sheet_edit/llm_cache.json       the workflow's: what the model answered,
                                     published by every finished job
-    sheet_edit/llm_cache.<job>.json one running job's answers (its own)
+    sheet_edit/llm_cache.<job>.json one running job's answers (its own); a
+                                    crashed job's is dropped at the next start
     sheet_edit/confirmations.json   the API's: which edits the user confirmed
+    sheet_edit/rejections.json      the API's: the edits unticked, with why
+    sheet_edit/checkpoint.json      the API's: the inputs Confirm all locked
     sheet_edit/edited.xlsx.final    the workflow's: original + confirmed edits
     sheet_edit/changelog.json       the workflow's: what the final sheet changed
     sheet_edit/status.json          the workflow's: progress, previews
@@ -48,6 +51,12 @@ def job_cache_file(job_id: str) -> str:
     """The running job's own cache file; the id is hashed, Temporal's ids
     hold characters a file name should not."""
     return f'sheet_edit/llm_cache.{sha256(job_id.encode())[:16]}.json'
+
+
+def is_job_cache_file(name: str) -> bool:
+    """A job's own cache file, by its name in sheet_edit/."""
+    shared = CACHE_FILE.rpartition('/')[2]
+    return name != shared and name.startswith('llm_cache.') and name.endswith('.json')
 
 
 def cache_key(text: str, state: bytes) -> CacheKey:

@@ -1448,24 +1448,32 @@ async def reset_decisions(
     collection_entry_id: str,
 ) -> None:
     """Take back every confirmation and rejection, as if none was made,
-    and unlock the inputs behind Confirm all."""
+    and unlock the inputs behind Confirm all (#203): the confirmations
+    and the checkpoint are deleted (absent is none); the rejections are
+    emptied, not deleted, until a log keeps them (#201). The original,
+    the cache, the status, the final sheet and its changelog stay: the
+    job after the reset rewrites the last three."""
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
     try:
         async with _upload_lock(upload_id), voice.build_client(token) as client:
             await _idle(client, voice, upload_id)
-            # damaged files are refused, not wiped: they need a look. Both
-            # are read before either is written: one damaged changes nothing
-            confirmed = await _loaded_confirmations(client, voice, upload_id)
+            # damaged files are refused, not wiped: they need a look. All
+            # are read before any is changed: one damaged changes nothing
+            await _loaded_confirmations(client, voice, upload_id)
             rejected = await _loaded_rejections(client, voice, upload_id)
-            locked = await _loaded_checkpoint(client, voice, upload_id)
-            if confirmed:
-                await voice.writer.write_json(client, upload_id, CONFIRMATIONS_FILE, {})
+            await _loaded_checkpoint(client, voice, upload_id)
+            # a file only when it is there (an empty one too): each
+            # request is a NOMAD run
+            for file in (CONFIRMATIONS_FILE, CHECKPOINT_FILE):
+                if (
+                    await voice.writer.read_raw_file(client, upload_id, file)
+                    is not None
+                ):
+                    await voice.writer.delete_raw_file(client, upload_id, file)
             if rejected:
                 await voice.writer.write_json(client, upload_id, REJECTIONS_FILE, {})
-            if locked:
-                await voice.writer.write_json(client, upload_id, CHECKPOINT_FILE, {})
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 

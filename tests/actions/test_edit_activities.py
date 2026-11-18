@@ -94,6 +94,14 @@ class FakeWriter:
         self.files.pop(name, None)
         self.requests += 1
 
+    async def list_raw_dir(self, client, upload_id, directory):
+        prefix = directory + '/'
+        return [
+            name[len(prefix) :]
+            for name in self.files
+            if name.startswith(prefix) and '/' not in name[len(prefix) :]
+        ]
+
 
 @dataclass
 class FakeVoice:
@@ -176,6 +184,30 @@ def cache_file(upload, name=JOB_CACHE) -> dict:
 
 
 # --- collect ---------------------------------------------------------------------
+
+
+async def test_a_job_start_drops_the_cache_files_of_crashed_jobs(upload):
+    """One job runs at a time: another job's own file is a leftover. Its
+    own and the shared cache stay."""
+    for job_id in ('crashed-1', 'crashed-2', 'job-1'):
+        upload.writer.files[job_cache_file(job_id)] = b'{}'
+    upload.writer.files[CACHE_FILE] = b'{}'
+    data = EditInput(upload_id='u1', user_id='user', collection_entry_id='c1')
+
+    await activities._drop_leftover_caches(data, 'job-1')
+
+    caches = sorted(n for n in upload.writer.files if 'llm_cache' in n)
+    assert caches == sorted([CACHE_FILE, job_cache_file('job-1')])
+
+
+async def test_a_failed_cleanup_does_not_stop_the_job(upload, monkeypatch):
+    async def down(client, upload_id, directory):
+        raise RuntimeError('NOMAD down')
+
+    monkeypatch.setattr(upload.writer, 'list_raw_dir', down)
+    data = EditInput(upload_id='u1', user_id='user', collection_entry_id='c1')
+
+    await activities._drop_leftover_caches(data, 'job-1')
 
 
 async def test_collect_gives_the_inputs_in_order_the_confirmations_and_the_model(

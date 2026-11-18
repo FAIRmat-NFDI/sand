@@ -79,6 +79,14 @@ class FakeWriter:
             self.files[path] = content
             self.types[path] = content_type
 
+    async def delete_raw_file(self, client, upload_id, name):
+        assert upload_id == UPLOAD
+        if self.failing or self.writes_allowed == 0:
+            raise nomad_down('delete_raw_file')
+        if self.writes_allowed is not None:
+            self.writes_allowed -= 1
+        self.files.pop(name, None)
+
     async def write_json(self, client, upload_id, name, payload):
         await self.upload_raw_file(
             client, upload_id, name, json.dumps(payload).encode(), 'application/json'

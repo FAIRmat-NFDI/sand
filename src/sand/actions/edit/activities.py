@@ -41,6 +41,7 @@ from sand.sheet_edit.session import (
     STATUS_FILE,
     LlmCache,
     cache_key,
+    is_job_cache_file,
     job_cache_file,
     llm_cache_json,
     load_confirmations,
@@ -75,6 +76,7 @@ async def collect_edit_inputs(data: EditInput) -> dict:
         raise ApplicationError(
             'no sheet was uploaded for editing in this collection', non_retryable=True
         )
+    await _drop_leftover_caches(data)
     pending = [i for i in inputs if i.text is None]
     if pending:
         raise ApplicationError(
@@ -370,6 +372,26 @@ class _Files:
     original: bytes
     cache: LlmCache
     confirmations: dict[str, Confirmation]
+
+
+async def _drop_leftover_caches(data: EditInput, job_id: str | None = None) -> None:
+    """The cache files of jobs that crashed (#203): one job runs at a
+    time, so any but this job's own is a leftover. Best-effort: a file
+    left behind costs nothing but space. `job_id`: the running job's
+    (its workflow id) when not given."""
+    directory = CACHE_FILE.rpartition('/')[0]
+    voice = common.voice_service()
+    try:
+        own = job_cache_file(job_id or activity.info().workflow_id).rpartition('/')[2]
+        async with voice.build_client(common.user_token(data.user_id)) as client:
+            names = await voice.writer.list_raw_dir(client, data.upload_id, directory)
+            for name in names:
+                if is_job_cache_file(name) and name != own:
+                    await voice.writer.delete_raw_file(
+                        client, data.upload_id, f'{directory}/{name}'
+                    )
+    except Exception:
+        activity.logger.warning('could not drop leftover cache files', exc_info=True)
 
 
 async def _read_files(data: JobInput) -> _Files:
