@@ -38,6 +38,9 @@ class StoreInput(JobInput):
 
 class ReplayInput(JobInput):
     entry_ids: list[str]  # one per text, for the reports
+    # with every input cached, the replay stores the final sheet itself,
+    # with this status as completed (StoreInput); empty: it never does
+    store_status: dict = {}
 
 
 class PrepareInput(JobInput):

@@ -88,13 +88,19 @@ class Stubs:
             replayed = 0
             while replayed + 1 in stubs.cached:
                 replayed += 1
-            return {
-                'replayed': replayed,
-                'reports': [
-                    {'input': k, 'preview': f'preview {k}', 'from_cache': True}
-                    for k in range(1, replayed + 1)
-                ],
-            }
+            reports = [
+                {'input': k, 'preview': f'preview {k}', 'from_cache': True}
+                for k in range(1, replayed + 1)
+            ]
+            result = {'replayed': replayed, 'reports': reports}
+            if data.store_status and replayed == len(data.texts):
+                # the real one stores the sheet and the completed status
+                result['done'] = {'final': 'abc', 'changed': True, 'changes': 3}
+                stubs.record(
+                    'status',
+                    {**data.store_status, 'inputs': reports, 'phase': 'completed'},
+                )
+            return result
 
         @activity.defn(name='prepare_input')
         async def prepare(data: PrepareInput) -> dict:
@@ -168,10 +174,9 @@ async def test_each_input_in_order_two_opinions_each_then_the_sheet():
     stubs = Stubs(['speed 4000', 'clear solvent 2'])
     result = await run(stubs)
 
+    # no "collecting" or "replaying" status: the reservation stands
     assert [name for name, _ in stubs.calls] == [
-        'status',
         'collect',
-        'status',
         'replay',
         'status',
         'prepare',
@@ -225,17 +230,15 @@ async def test_status_shows_progress_then_the_result():
     await run(stubs)
     statuses = stubs.of('status')
     assert [s['phase'] for s in statuses] == [
-        'collecting',
-        'replaying',
         *['interpreting'] * 5,
         'writing-sheet',
         'completed',
     ]
     # before and after each input's LLM calls
-    assert [s.get('inputs_done') for s in statuses[2:7]] == [0, 0, 1, 1, 2]
-    assert all(s['inputs_total'] == 2 for s in statuses[1:7])  # noqa: PLR2004
-    assert all(s['inputs_replayed'] == 0 for s in statuses[2:7])
-    assert [len(s['inputs']) for s in statuses] == [0, 0, 0, 0, 1, 1, 2, 2, 2]
+    assert [s.get('inputs_done') for s in statuses[:5]] == [0, 0, 1, 1, 2]
+    assert all(s['inputs_total'] == 2 for s in statuses[:5])  # noqa: PLR2004
+    assert all(s['inputs_replayed'] == 0 for s in statuses[:5])
+    assert [len(s['inputs']) for s in statuses] == [0, 0, 1, 1, 2, 2, 2]
     done = statuses[-1]
     assert done['collection_entry_id'] == 'c1'
     assert done['model'] == MODEL
@@ -272,13 +275,13 @@ async def test_everything_cached_is_replayed_then_written():
     result = await run(stubs)
     assert stubs.of('prepare') == stubs.of('apply') == []
     assert [r['input'] for r in result['inputs']] == [1, 2]
-    # nothing left to read: no "interpreting" snapshot
-    assert [s['phase'] for s in stubs.of('status')] == [
-        'collecting',
-        'replaying',
-        'writing-sheet',
-        'completed',
-    ]
+    # nothing to ask (Confirm all): the replay stores the sheet with the
+    # completed status, one step, no other status written
+    assert stubs.of('store_final_sheet_and_changelog') == []
+    (done,) = stubs.of('status')
+    assert done['phase'] == 'completed'
+    assert [r['input'] for r in done['inputs']] == [1, 2]
+    assert result['final'] == 'abc'
 
 
 async def test_a_cached_input_after_a_new_one_asks_no_child():

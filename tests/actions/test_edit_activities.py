@@ -38,6 +38,7 @@ from sand.sheet_edit.workbook import sha256
 pytestmark = pytest.mark.asyncio
 
 MODEL = 'gemini/test'
+STARTED = '2026-11-18T10:00:00+00:00'  # the job's start
 SPEED = 'C025'
 SAID = 'speed 4000 for samples 1 to 3'
 SAMPLES_1_TO_3 = 3  # cells one confirmed edit of SAID writes
@@ -694,6 +695,42 @@ async def test_the_end_of_a_job_is_one_request(upload):
         assert name in upload.writer.files
 
 
+async def test_a_replay_of_every_input_stores_the_sheet_in_one_request(upload):
+    """Confirm all: nothing to ask, so the sheet built for the reports is
+    the final one, stored with the completed status at once."""
+    await answer_both(upload)
+    await activities.store_final_sheet_and_changelog(job(upload))
+    # the API's reservation, made before the job started
+    reserved = {'job_id': 'starting', 'phase': 'starting', 'updated_at': STARTED}
+    upload.writer.files[STATUS_FILE] = json.dumps(reserved).encode()
+    before = upload.writer.requests
+    status = {'job_id': 'job-2', 'model': MODEL, 'started_at': STARTED}
+
+    result = await activities.replay_cached_inputs(
+        replay(upload, job_id='job-2').model_copy(update={'store_status': status})
+    )
+
+    assert upload.writer.requests - before == 1
+    stored = json.loads(upload.writer.files[STATUS_FILE])
+    assert stored['phase'] == 'completed'
+    assert stored['final'] == result['done']['final']
+    assert [r['input'] for r in stored['inputs']] == [1, 2]
+
+
+async def test_a_replay_with_an_input_to_read_stores_nothing(upload):
+    await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2)
+    )
+    before = upload.writer.requests
+
+    result = await activities.replay_cached_inputs(
+        replay(upload).model_copy(update={'store_status': {'job_id': 'job-1'}})
+    )
+
+    assert (result['replayed'], 'done' in result) == (1, False)
+    assert upload.writer.requests == before
+
+
 async def test_a_job_that_asked_nothing_deletes_nothing(upload):
     # Confirm all: every answer cached, no file of its own
     await answer_both(upload)
@@ -703,9 +740,6 @@ async def test_a_job_that_asked_nothing_deletes_nothing(upload):
     await activities.store_final_sheet_and_changelog(job(upload, job_id='job-2'))
 
     assert upload.writer.requests - before == 1
-
-
-STARTED = '2026-11-18T10:00:00+00:00'
 
 
 def ending(upload, job_id='job-1') -> StoreInput:

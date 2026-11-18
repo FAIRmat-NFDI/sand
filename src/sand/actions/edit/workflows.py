@@ -95,7 +95,11 @@ class EditSheetWorkflow:
             )
 
         try:
-            await status({'phase': 'collecting'})
+            # the reservation says "starting" until the first note is read
+            # or the job is done: a write less, the lock as before
+            quiet = workflow.patched('one-step-when-cached')
+            if not quiet:
+                await status({'phase': 'collecting'})
             collected = await workflow.execute_activity(
                 collect_edit_inputs,
                 data,
@@ -122,31 +126,19 @@ class EditSheetWorkflow:
             # old activity sequence (Temporal replays its history on a
             # worker restart; a new activity there is a non-determinism)
             replay_known = workflow.patched('replay-cached')
-            replayed = 0
+            replay = {'replayed': 0, 'reports': []}
             if replay_known and total:
-                await status(
-                    {
-                        'phase': 'replaying',
-                        'inputs_total': total,
-                        'model': job.llm_model_name,
-                    }
+                replay = await self._replay_cached(
+                    job,
+                    collected['input_entry_ids'],
+                    # every input cached: the replay stores the sheet too
+                    status_of({'model': job.llm_model_name}) if quiet else {},
+                    None if quiet else status,
                 )
-                replay = await workflow.execute_activity(
-                    replay_cached_inputs,
-                    ReplayInput(
-                        **job.model_dump(), entry_ids=collected['input_entry_ids']
-                    ),
-                    start_to_close_timeout=timedelta(minutes=5),
-                    retry_policy=RetryPolicy(maximum_attempts=3),
-                )
-                replayed = replay['replayed']
-                if replayed > total or len(replay['reports']) != replayed:
-                    raise ApplicationError(
-                        f'replayed {replayed} of {total} inputs with '
-                        f'{len(replay["reports"])} reports',
-                        non_retryable=True,
-                    )
-                reports.extend(replay['reports'])
+            replayed = replay['replayed']
+            reports.extend(replay['reports'])
+            if 'done' in replay:
+                return {'job_id': job_id, 'inputs': reports, **replay['done']}
             progress = {
                 'phase': 'interpreting',
                 'inputs_total': total,
@@ -222,6 +214,39 @@ class EditSheetWorkflow:
             except Exception:
                 workflow.logger.exception('could not write the failed status')
             raise
+
+    @staticmethod
+    async def _replay_cached(
+        job: JobInput, entry_ids: list[str], store_status: dict, status
+    ) -> dict:
+        """The leading cached inputs; with every input cached and a
+        `store_status`, the final sheet stored too (`done`). `status`
+        writes the "replaying" status; None: not written."""
+        total = len(job.texts)
+        if status:
+            await status(
+                {
+                    'phase': 'replaying',
+                    'inputs_total': total,
+                    'model': job.llm_model_name,
+                }
+            )
+        replay = await workflow.execute_activity(
+            replay_cached_inputs,
+            ReplayInput(
+                **job.model_dump(), entry_ids=entry_ids, store_status=store_status
+            ),
+            start_to_close_timeout=timedelta(minutes=5),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+        )
+        replayed = replay['replayed']
+        if replayed > total or len(replay['reports']) != replayed:
+            raise ApplicationError(
+                f'replayed {replayed} of {total} inputs with '
+                f'{len(replay["reports"])} reports',
+                non_retryable=True,
+            )
+        return replay
 
     @staticmethod
     async def _ask(prompt: dict, model: str, child_id: str) -> LlmAnswer:
