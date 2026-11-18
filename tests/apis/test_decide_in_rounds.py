@@ -228,3 +228,52 @@ async def test_reset_all_unlocks(voice):
 
     assert response.status_code == HTTPStatus.NO_CONTENT
     assert json.loads(voice.writer.files[CHECKPOINT_FILE]) == {}
+
+
+async def undo_last(voice, keys):
+    async with api(voice) as client:
+        return await client.post(
+            f'/api/input-collections/{UPLOAD}/edits/undo-last',
+            params=PARAMS,
+            json={'keys': keys},
+        )
+
+
+async def test_undo_last_of_a_confirm_all_unlocks_its_inputs(voice):
+    await confirm_all(voice, ['a1', 'a2', 'b1'])
+
+    response = await undo_last(voice, ['a1', 'a2', 'b1'])
+
+    assert response.status_code == HTTPStatus.OK, response.text
+    assert json.loads(voice.writer.files[CHECKPOINT_FILE]) == {}
+    assert (await round_(voice, reject=[{'key': 'a2'}])).status_code == HTTPStatus.OK
+
+
+async def test_undo_last_of_a_confirm_all_keeps_the_locks_before_it(voice):
+    await locked_voice(voice)  # an earlier Confirm all locked n1
+    await confirm_all(voice, ['b1'])
+
+    await undo_last(voice, ['b1'])
+
+    assert json.loads(voice.writer.files[CHECKPOINT_FILE]) == {'inputs': ['n1']}
+
+
+async def test_confirm_all_fails_when_nomad_stored_nothing(voice, monkeypatch):
+    async def lost(client, upload_id, files, directory=''):
+        pass  # acknowledged, not stored
+
+    monkeypatch.setattr(voice.writer, 'upload_raw_files', lost)
+
+    response = await confirm_all(voice, ['a1', 'a2', 'b1'])
+
+    assert response.status_code == HTTPStatus.BAD_GATEWAY
+    assert 'did not store' in response.json()['detail']
+
+
+async def test_a_key_ticked_again_twice_is_one_restore(voice):
+    put_rejected(voice, a2='n1')
+
+    response = await round_(voice, restore=['a2', 'a2'])
+
+    assert response.status_code == HTTPStatus.OK, response.text
+    assert rejections(voice) == {}
