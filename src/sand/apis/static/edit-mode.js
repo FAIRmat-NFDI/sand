@@ -17,7 +17,9 @@ import {
 import { requireExperiment, showSheet } from "./experiments.js";
 import { setOverviewUpdates, showOverview } from "./overview.js";
 import { reloadInputs, setInputsListener, setReports } from "./inputs.js";
-import { clearRound, onRoundChange, roundBody, roundFor, roundSize, sentUnticks } from "./round.js";
+import {
+  anyRound, clearRound, clearSent, onRoundChange, roundBody, roundFor, roundSize, sentUnticks,
+} from "./round.js";
 import { clearError, confirmDialog, showError } from "./ui.js";
 
 const readAgainBtn = document.getElementById("read-again-btn");
@@ -53,6 +55,7 @@ let confirming = null; // entry id of the experiment whose Confirm all is on its
 let inputsSeen = null; // {entryId, items}
 let statusKnown = false; // the shown experiment's status was fetched once
 let running = false; // a job of the shown experiment runs, or is being started
+let sendingRound = false; // a round is on its way
 let lastStatus = null; // the last completed status of the shown experiment
 // the latest status, whatever its phase: what Reset all takes back (a
 // failed job's status names the decisions too)
@@ -412,19 +415,28 @@ async function confirmEdits(experiment, keys) {
 
 // the round, then the job that reads the updates again: once
 async function recompute(experiment) {
-  if (running || recomputeBtn.disabled) return;
+  if (running || sendingRound || recomputeBtn.disabled) return;
   clearError();
   const before = lastStatus ? roundSnapshot(lastStatus) : null;
   const sent = sentUnticks();
   if (roundSize()) {
+    const body = roundBody();
+    // ticks made while it is on its way stay for the next round; the
+    // button stays off until then
+    sendingRound = true;
     recomputeBtn.disabled = true;
-    const why = await post(experiment, "edits/round", roundBody());
+    let why;
+    try {
+      why = await post(experiment, "edits/round", body);
+    } finally {
+      sendingRound = false;
+    }
     if (why) {
       showError("Could not apply the round: " + why);
       if (stillShown(experiment)) startPolling(experiment);
       return;
     }
-    clearRound();
+    clearSent(body, experiment.entry_id);
   }
   roundSent = { entryId: experiment.entry_id, before, sent };
   marks = NO_MARKS;
@@ -454,8 +466,9 @@ async function resetDecisions(experiment) {
   if (!await confirmDialog(question, "Reset")) return;
   clearError();
   const why = await post(experiment, "edits/reset", {});
+  // a refused reset keeps the round not sent yet
   if (why) showError("Could not reset: " + why);
-  clearRound();
+  else clearRound();
   marks = NO_MARKS;
   reloadInputs(experiment);
   if (stillShown(experiment)) startPolling(experiment);
@@ -625,11 +638,11 @@ export function initEdit() {
     if (current) recompute(current);
   });
   onRoundChange(() => {
-    if (current && statusKnown && !running) showActions(lastStatus);
+    if (current && statusKnown && !running && !sendingRound) showActions(lastStatus);
   });
   // a round not sent yet lives in this page only
   window.addEventListener("beforeunload", (event) => {
-    if (roundSize()) event.preventDefault();
+    if (anyRound()) event.preventDefault();
   });
   resetBtn.addEventListener("click", () => {
     if (current) resetDecisions(current);

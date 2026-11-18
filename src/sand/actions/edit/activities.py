@@ -186,7 +186,6 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
             text, agreed, catalog, sha256(state), next_seq(files.cache.answers)
         )
         files.cache.add(cache_key(text, state), answer, data.job_id)
-        await _write_cache(files, data)
     elif _to_read(files, data, before, catalog):
         # the cache file was lost between prepare and apply
         raise ApplicationError(
@@ -194,7 +193,7 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
             non_retryable=True,
         )
     step = _apply_inputs_from_cache(files, data.texts[: data.number], data)[-1]
-    return _report(
+    report = _report(
         data.number,
         data.entry_id,
         step,
@@ -202,6 +201,50 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
         set(data.rejections),
         from_cache=not data.answers,
     )
+    await _write_input(files, data, report)
+    return report
+
+
+async def _write_input(files: '_Files', data: ApplyInput, report: dict) -> None:
+    """The job's own cache file (with a new answer) and its status with
+    this report: one request, one NOMAD run (#202)."""
+    from sand.sheet_edit.resolve import CACHE_VERSION
+
+    outputs = []
+    if data.answers:
+        # one writer per file, so another job on the upload cannot lose them
+        own = llm_cache_json(
+            files.cache.of_job(data.job_id), data.llm_model_name, CACHE_VERSION
+        )
+        outputs.append((job_cache_file(data.job_id), _json(own), JSON_TYPE))
+    if data.status:
+        status = {
+            **data.status,
+            'inputs': [*data.status.get('inputs', []), report],
+            'updated_at': datetime.now(timezone.utc).isoformat(),
+        }
+        outputs.append((STATUS_FILE, _json(status), JSON_TYPE))
+    if not outputs:
+        return
+    voice = common.voice_service()
+    async with voice.build_client(common.user_token(data.user_id)) as client:
+        await voice.writer.upload_raw_files(
+            client,
+            data.upload_id,
+            [
+                (name.rpartition('/')[2], content, ctype)
+                for name, content, ctype in outputs
+            ],
+            directory=STATUS_FILE.rpartition('/')[0],
+        )
+        # the PUT only queues NOMAD's file update: read back (the reads
+        # wait until it is done); a raise retries with the same answers
+        for name, content, _ in outputs:
+            stored = await voice.writer.read_json(client, data.upload_id, name)
+            if stored != json.loads(content):
+                raise ApplicationError(
+                    f'input {data.number}: NOMAD did not store {name}'
+                )
 
 
 @activity.defn
@@ -376,9 +419,10 @@ class _Files:
 
 async def _drop_leftover_caches(data: EditInput, job_id: str | None = None) -> None:
     """The cache files of jobs that crashed (#203): one job runs at a
-    time, so any but this job's own is a leftover. Best-effort: a file
-    left behind costs nothing but space. `job_id`: the running job's
-    (its workflow id) when not given."""
+    time, but a job given up for an old status may still run on, so a
+    file goes only once the workflows of its answers have ended.
+    Best-effort: a file left behind costs nothing but space. `job_id`:
+    the running job's (its workflow id) when not given."""
     directory = CACHE_FILE.rpartition('/')[0]
     voice = common.voice_service()
     try:
@@ -386,12 +430,36 @@ async def _drop_leftover_caches(data: EditInput, job_id: str | None = None) -> N
         async with voice.build_client(common.user_token(data.user_id)) as client:
             names = await voice.writer.list_raw_dir(client, data.upload_id, directory)
             for name in names:
-                if is_job_cache_file(name) and name != own:
-                    await voice.writer.delete_raw_file(
-                        client, data.upload_id, f'{directory}/{name}'
-                    )
+                if not is_job_cache_file(name) or name == own:
+                    continue
+                path = f'{directory}/{name}'
+                cached = await voice.writer.read_json(client, data.upload_id, path)
+                jobs = {
+                    entry.get('job')
+                    for entry in ((cached or {}).get('proposals') or {}).values()
+                    if isinstance(entry, dict)
+                }
+                if all([await _workflow_ended(j) for j in jobs if j]):
+                    await voice.writer.delete_raw_file(client, data.upload_id, path)
     except Exception:
         activity.logger.warning('could not drop leftover cache files', exc_info=True)
+
+
+async def _workflow_ended(workflow_id: str) -> bool:
+    """False while Temporal still runs it; raises when Temporal cannot
+    tell (the file stays)."""
+    from nomad.actions.client import get_client
+    from temporalio.client import WorkflowExecutionStatus
+    from temporalio.service import RPCError, RPCStatusCode
+
+    client = await get_client()
+    try:
+        described = await client.get_workflow_handle(workflow_id).describe()
+    except RPCError as exc:
+        if exc.status == RPCStatusCode.NOT_FOUND:
+            return True
+        raise
+    return described.status != WorkflowExecutionStatus.RUNNING
 
 
 async def _read_files(data: JobInput) -> _Files:
@@ -419,23 +487,6 @@ async def _read_files(data: JobInput) -> _Files:
         cache,
         load_confirmations(data.confirmations),  # collect checked them
     )
-
-
-async def _write_cache(files: _Files, data: JobInput) -> None:
-    """The job's own file, this job's entries only: one writer, so
-    another job on the same upload cannot lose them."""
-    from sand.sheet_edit.resolve import CACHE_VERSION
-
-    voice = common.voice_service()
-    async with voice.build_client(common.user_token(data.user_id)) as client:
-        await voice.writer.write_json(
-            client,
-            data.upload_id,
-            job_cache_file(data.job_id),
-            llm_cache_json(
-                files.cache.of_job(data.job_id), data.llm_model_name, CACHE_VERSION
-            ),
-        )
 
 
 def _published(

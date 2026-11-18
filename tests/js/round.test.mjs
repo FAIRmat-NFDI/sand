@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  clearRound, isRestored, isUnticked, keepRejected, onRoundChange, restore, roundBody, roundFor, roundSize,
-  sentUnticks, tick, untick,
+  anyRound, clearRound, clearSent, isRestored, isUnticked, keepRejected, onRoundChange, restore, roundBody,
+  roundFor, roundSize, sentUnticks, tick, untick,
 } from "../../src/sand/apis/static/round.js";
 
 test("a round holds unticks with their reasons and re-ticks, until cleared", () => {
@@ -28,13 +28,33 @@ test("a round holds unticks with their reasons and re-ticks, until cleared", () 
   assert.equal(heard, 6);
 });
 
-test("another experiment starts an empty round", () => {
+test("each experiment keeps its own round", () => {
   roundFor("c1");
+  clearRound();
   untick({ key: "a", line: "x" }, "n1");
   roundFor("c2");
   assert.equal(roundSize(), 0);
+  assert.ok(anyRound()); // c1's round is not sent yet
+  roundFor("c1");
+  assert.ok(isUnticked("a"));
+  clearRound();
   roundFor("c2");
+  assert.ok(!anyRound());
+});
+
+test("a round applied clears what it sent, not what changed meanwhile", () => {
+  roundFor("c3");
   untick({ key: "a", line: "x" }, "n1");
-  roundFor("c2");
-  assert.equal(roundSize(), 1);
+  untick({ key: "c", line: "z" }, "n1");
+  const body = roundBody();
+  untick({ key: "b", line: "y" }, "n2"); // while the request is on its way
+  untick({ key: "c", line: "z" }, "n1", { reason: "value", meant: "5" }); // its reason changed
+  clearSent(body, "c3");
+  assert.ok(!isUnticked("a") && isUnticked("b") && isUnticked("c"));
+  const second = roundBody();
+  roundFor("c4"); // the page moved on before the answer
+  clearSent(second, "c3");
+  roundFor("c3");
+  assert.equal(roundSize(), 0);
+  clearRound();
 });

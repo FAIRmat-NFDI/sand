@@ -1,19 +1,20 @@
 """The sheet-editing orchestrator: every input of the collection, in
 order, each interpreted against the sheet the earlier ones left.
 
-    status "collecting"
+    (the API's reservation "starting" stands until the first status)
     activity collect_edit_inputs ──▶ {texts[n], input_entry_ids, model}
-    status "replaying"
     activity replay_cached_inputs ──▶ the leading inputs the model already
-        answered on their sheet, applied in one go: r reports
+        answered on their sheet, applied in one go: r reports; with r = n
+        the final sheet stored there too, and the job is done
     status "interpreting r/n"
       per input k > r, IN ORDER (input k reads the sheet after k-1):
         activity prepare_input(k) ──▶ cached, or the two prompts
+        (a status only if the last is older than HEARTBEAT)
         two child ExtractionWorkflows IN PARALLEL (the two opinions)
         activity agree_cache_and_apply_input(k, answers)
-            ──▶ the user's preview, edits ready to confirm, confirmed ones written
-        status "interpreting k/n"
-    status "writing-sheet"
+            ──▶ the user's preview, edits ready to confirm, confirmed ones
+            written; its cache file and status "interpreting k/n" in one
+            request
     activity store_final_sheet_and_changelog ──▶ changelog checked; the sheet,
         changelog, cache and status "completed" {final, changed, changes,
         changelog, written} stored in one request
@@ -60,14 +61,20 @@ with workflow.unsafe.imports_passed_through():
 
 # the two opinions must differ by what they read, not by chance
 TEMPERATURE = 0
+# a status at least this often while notes are read: the API takes a
+# status older than STALE_JOB_S (30 min) for a dead job and opens the lock
+HEARTBEAT = timedelta(minutes=5)
 
 
 @workflow.defn
 class EditSheetWorkflow:
     @workflow.run
-    async def run(self, data: EditInput) -> dict:
+    async def run(self, data: EditInput) -> dict:  # noqa: PLR0912, PLR0915
         job_id = workflow.info().workflow_id
         reports: list[dict] = []  # one per finished input, in order
+        # when the status was last written; the API's reservation is
+        # written just before the job starts
+        last_written = [workflow.info().start_time]
 
         def status_of(payload: dict) -> dict:
             return {
@@ -93,6 +100,13 @@ class EditSheetWorkflow:
                 start_to_close_timeout=timedelta(minutes=2),
                 retry_policy=RetryPolicy(maximum_attempts=3),
             )
+            last_written[0] = workflow.now()
+
+        async def heartbeat(payload: dict) -> None:
+            """A status only when the last one is getting old: progress is
+            told by the writes of each input."""
+            if workflow.now() - last_written[0] >= HEARTBEAT:
+                await status(payload)
 
         try:
             # the reservation says "starting" until the first note is read
@@ -148,6 +162,9 @@ class EditSheetWorkflow:
             if not replay_known or replayed < total:
                 await status({**progress, 'inputs_done': replayed})
 
+            # each input's report goes with its cache file, one write; a job
+            # started before writes a status before and after each input
+            per_note = workflow.patched('one-write-per-note')
             for number, entry_id in enumerate(collected['input_entry_ids'], 1):
                 if number <= replayed:
                     continue
@@ -164,7 +181,8 @@ class EditSheetWorkflow:
                     )
                 # a snapshot between the activities: the API's staleness
                 # guard must not open while one input is being worked on
-                await status({**progress, 'inputs_done': number - 1})
+                before = {**progress, 'inputs_done': number - 1}
+                await (heartbeat(before) if per_note else status(before))
                 # the two opinions at once; none when the proposal is cached
                 answers = await asyncio.gather(
                     *(
@@ -181,14 +199,21 @@ class EditSheetWorkflow:
                         number=number,
                         entry_id=entry_id,
                         answers=list(answers),
+                        status=status_of({**progress, 'inputs_done': number})
+                        if per_note
+                        else {},
                     ),
                     start_to_close_timeout=timedelta(minutes=5),
                     retry_policy=RetryPolicy(maximum_attempts=3),
                 )
                 reports.append(report)
-                await status({**progress, 'inputs_done': number})
+                if per_note:
+                    last_written[0] = workflow.now()
+                else:
+                    await status({**progress, 'inputs_done': number})
 
-            await status({'phase': 'writing-sheet', 'model': job.llm_model_name})
+            writing = {'phase': 'writing-sheet', 'model': job.llm_model_name}
+            await (heartbeat(writing) if per_note else status(writing))
             # the completed status goes with the final sheet, in one write;
             # a job started before writes it after (its history's order)
             together = workflow.patched('one-write-at-the-end')

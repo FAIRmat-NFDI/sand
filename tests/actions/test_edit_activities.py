@@ -186,11 +186,22 @@ def cache_file(upload, name=JOB_CACHE) -> dict:
 # --- collect ---------------------------------------------------------------------
 
 
-async def test_a_job_start_drops_the_cache_files_of_crashed_jobs(upload):
-    """One job runs at a time: another job's own file is a leftover. Its
-    own and the shared cache stay."""
+def put_job_cache(upload, job_id):
+    upload.writer.files[job_cache_file(job_id)] = json.dumps(
+        {'proposals': {'t:s': {'proposal': {}, 'job': job_id}}}
+    ).encode()
+
+
+async def test_a_job_start_drops_the_cache_files_of_crashed_jobs(upload, monkeypatch):
+    """Another job's own file is a leftover once its workflow has ended.
+    Its own and the shared cache stay."""
+
+    async def ended(workflow_id):
+        return True
+
+    monkeypatch.setattr(activities, '_workflow_ended', ended)
     for job_id in ('crashed-1', 'crashed-2', 'job-1'):
-        upload.writer.files[job_cache_file(job_id)] = b'{}'
+        put_job_cache(upload, job_id)
     upload.writer.files[CACHE_FILE] = b'{}'
     data = EditInput(upload_id='u1', user_id='user', collection_entry_id='c1')
 
@@ -198,6 +209,37 @@ async def test_a_job_start_drops_the_cache_files_of_crashed_jobs(upload):
 
     caches = sorted(n for n in upload.writer.files if 'llm_cache' in n)
     assert caches == sorted([CACHE_FILE, job_cache_file('job-1')])
+
+
+async def test_the_cache_of_a_job_still_running_stays(upload, monkeypatch):
+    """A job given up for an old status may still run on: its next
+    note needs the file."""
+
+    async def ended(workflow_id):
+        return workflow_id == 'crashed'
+
+    monkeypatch.setattr(activities, '_workflow_ended', ended)
+    put_job_cache(upload, 'crashed')
+    put_job_cache(upload, 'expired')
+    data = EditInput(upload_id='u1', user_id='user', collection_entry_id='c1')
+
+    await activities._drop_leftover_caches(data, 'job-1')
+
+    assert job_cache_file('crashed') not in upload.writer.files
+    assert job_cache_file('expired') in upload.writer.files
+
+
+async def test_a_cache_stays_when_temporal_cannot_tell(upload, monkeypatch):
+    async def unknown(workflow_id):
+        raise RuntimeError('Temporal down')
+
+    monkeypatch.setattr(activities, '_workflow_ended', unknown)
+    put_job_cache(upload, 'crashed')
+    data = EditInput(upload_id='u1', user_id='user', collection_entry_id='c1')
+
+    await activities._drop_leftover_caches(data, 'job-1')
+
+    assert job_cache_file('crashed') in upload.writer.files
 
 
 async def test_a_failed_cleanup_does_not_stop_the_job(upload, monkeypatch):
@@ -725,6 +767,37 @@ async def test_the_end_of_a_job_is_one_request(upload):
     assert stored['inputs'] == [{'input': 1}]
     for name in (FINAL_FILE, CHANGELOG_FILE, CACHE_FILE):
         assert name in upload.writer.files
+
+
+async def test_an_input_read_is_one_request_with_its_status(upload):
+    status = {'job_id': 'job-1', 'phase': 'interpreting', 'inputs': []}
+    before = upload.writer.requests
+
+    report = await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2).model_copy(update={'status': status})
+    )
+
+    assert upload.writer.requests - before == 1
+    stored = json.loads(upload.writer.files[STATUS_FILE])
+    assert stored['inputs'] == [report]
+    assert job_cache_file('job-1') in upload.writer.files
+
+
+async def test_an_input_whose_write_was_lost_fails_for_a_retry(upload, monkeypatch):
+    """The PUT only queues NOMAD's file update: a lost one is not a read
+    note (Temporal retries the apply, with the answers it has)."""
+
+    async def lost(client, upload_id, files, directory=''):
+        upload.writer.requests += 1
+
+    monkeypatch.setattr(upload.writer, 'upload_raw_files', lost)
+    status = {'job_id': 'job-1', 'phase': 'interpreting', 'inputs': []}
+    with pytest.raises(ApplicationError, match='did not store'):
+        await activities.agree_cache_and_apply_input(
+            apply(upload, 1, [answer(SPEED_EDIT)] * 2).model_copy(
+                update={'status': status}
+            )
+        )
 
 
 async def test_a_replay_of_every_input_stores_the_sheet_in_one_request(upload):
