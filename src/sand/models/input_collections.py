@@ -70,6 +70,7 @@ class InputItemModel(BaseModel):
     corrected: bool  # a human revision exists
     status: str | None  # audio transcription status; None for notes
     applied: bool = False  # an edit of it was confirmed
+    locked: bool = False  # behind the last Confirm all: Reset all to change it
 
 
 class InputListResponse(BaseModel):
@@ -110,6 +111,24 @@ class RejectEditsRequest(BaseModel):
     reason: WrongReason | None = None  # optional, as in the "Wrong" dialog
     meant: str = Field('', max_length=5000)
     review: bool = False  # from the Confirm all review: any update's edits
+
+
+class Untick(BaseModel):
+    key: str  # a ready edit of the last job, not confirmed
+    reason: WrongReason | None = None
+    meant: str = Field('', max_length=5000)
+
+
+class RoundRequest(BaseModel):
+    """One round's decisions, applied at once before the updates are read
+    again: the edits unticked, and the rejected ones ticked again."""
+
+    reject: list[Untick] = []
+    restore: list[str] = []  # rejected keys, matching an edit or not
+
+
+class RoundResponse(BaseModel):
+    rejected: list[str]  # every rejected key after the round
 
 
 class RejectEditsResponse(BaseModel):

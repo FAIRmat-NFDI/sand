@@ -36,6 +36,8 @@ FINAL_FILE = 'sheet_edit/edited.xlsx.final'
 CHANGELOG_FILE = 'sheet_edit/changelog.json'
 CACHE_FILE = 'sheet_edit/llm_cache.json'
 CONFIRMATIONS_FILE = 'sheet_edit/confirmations.json'
+# the inputs a Confirm all covered: locked until Reset all
+CHECKPOINT_FILE = 'sheet_edit/checkpoint.json'
 REJECTIONS_FILE = 'sheet_edit/rejections.json'
 STATUS_FILE = 'sheet_edit/status.json'
 
@@ -231,6 +233,21 @@ def confirmations_json(confirmations: dict[str, Confirmation]) -> dict:
         }
         for key, c in confirmations.items()
     }
+
+
+def read_checkpoint(raw: bytes | None) -> set[str]:
+    """The entry ids behind the last Confirm all; no file is none.
+    Raises ValueError on a damaged file: it decides what may change."""
+    if raw is None:
+        return set()
+    try:
+        data = json.loads(raw)
+    except ValueError as why:
+        raise ValueError(f'the checkpoint file is not JSON: {why}') from why
+    inputs = data.get('inputs', []) if isinstance(data, dict) else None
+    if not isinstance(inputs, list) or not all(isinstance(i, str) for i in inputs):
+        raise ValueError('the checkpoint file has no list of inputs')
+    return set(inputs)
 
 
 def read_rejections(raw: bytes | None) -> dict:
