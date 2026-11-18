@@ -10,13 +10,16 @@
 
 import { errorDetail, experimentUrl } from "./api.js";
 import {
-  inputState, outdatedEntries, previewNotes, resetNote, rewriteWarning, turnEntry,
+  inputState, outdatedEntries, previewNotes, resetNote, rewriteWarning, turnEntry, undoPlace,
 } from "./edit-logic.js";
 import { selectedExperiment } from "./experiments.js";
 import { editReported, reportEdit } from "./feedback.js";
 import { clearError, confirmDialog, showEntryLink, showError } from "./ui.js";
 
 const inputsList = document.getElementById("inputs-list");
+const undoBar = document.getElementById("inputs-undo");
+const undoText = document.getElementById("inputs-undo-text");
+const undoBarBtn = document.getElementById("inputs-undo-btn");
 const inputsCount = document.getElementById("inputs-count");
 const refreshInputsBtn = document.getElementById("refresh-inputs-btn");
 const editsOnlyBtn = document.getElementById("edits-only-btn");
@@ -29,6 +32,8 @@ let reports = {};
 let jobRunning = false;
 let fresh = null;
 let actions = null;
+let undo = null; // undoPlace of the latest status: where Undo shows
+let undoOnRow = false; // the render put it on its edit's row
 let onInputsLoaded = null; // (experiment, items) after every load
 // the last rendered list, re-rendered when the reports change; a change
 // that arrives while an editor is open renders when the editor closes
@@ -407,6 +412,12 @@ function renderReport(report, wait) {
           () => actions.reject(edit), wait),
       );
     }
+    if (undo && undo.key === edit.key && (confirmed.has(edit.key) || rejected.has(edit.key))) {
+      // the last decision, taken back on its row without a question
+      state.append(decideButton("Undo", "report-undo", "Take this decision back",
+        () => actions.undo(false), jobRunning ? "The updates are being read" : ""));
+      undoOnRow = true;
+    }
     box.append(row);
     for (const check of edit.checks || []) {
       const p = document.createElement("p");
@@ -438,14 +449,16 @@ function renderReport(report, wait) {
 }
 
 // The job's reports (by entry id), from the Sheet card's polling.
-// `handlers`: {confirm(key), reject(edit)}, each
+// `handlers`: {confirm(key), reject(edit), undo(ask)}, each
 // resolving false when it did not go through; null: nothing to decide.
 // `reported`: the entry ids the running job reported already.
-export function setReports(byEntry, running, handlers, reported = null) {
+// `status`: the latest status, for the last decision.
+export function setReports(byEntry, running, handlers, reported = null, status = null) {
   reports = byEntry;
   jobRunning = running;
   fresh = running ? reported || new Set() : null;
   actions = handlers;
+  undo = status && handlers ? undoPlace(status) : null;
   renderIfIdle();
 }
 
@@ -473,11 +486,23 @@ function showInputsPlaceholder(message) {
   li.textContent = message;
   inputsList.replaceChildren(li);
   inputsCount.textContent = "";
+  undoBar.hidden = true;
   shown = null;
+}
+
+// a decision of several edits, or one whose row is not shown: the line
+// over the updates, asked before it is taken back
+function showUndoBar() {
+  undoBar.hidden = !undo || undoOnRow;
+  if (undoBar.hidden) return;
+  undoText.textContent = undo.line;
+  undoBarBtn.disabled = jobRunning;
+  undoBarBtn.title = jobRunning ? "The updates are being read" : "Take this decision back";
 }
 
 function renderInputs(experiment, items) {
   shown = { experiment, items };
+  undoOnRow = false;
   if (!items.length) {
     showInputsPlaceholder("No updates yet. Record one, or write a note.");
     return;
@@ -600,6 +625,7 @@ function renderInputs(experiment, items) {
     inputsList.append(li);
     if (item.entry_id === focusedId) li.focus();
   }
+  showUndoBar();
 }
 
 // a refresh can outlive its experiment (a save finishing after the user
@@ -685,6 +711,11 @@ function showEditsOnly(on) {
 }
 
 export function initInputs() {
+  undoBarBtn.addEventListener("click", async () => {
+    if (!actions) return;
+    undoBarBtn.disabled = true;
+    if (!await actions.undo(true)) undoBarBtn.disabled = jobRunning;
+  });
   refreshInputsBtn.addEventListener("click", () => {
     const experiment = selectedExperiment();
     if (experiment) startInputsRefresh(experiment);

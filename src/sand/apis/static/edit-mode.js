@@ -22,7 +22,6 @@ import { openReview, updateReview } from "./review.js";
 import { clearError, confirmDialog, showError } from "./ui.js";
 
 const readAgainBtn = document.getElementById("read-again-btn");
-const undoLastBtn = document.getElementById("undo-last-btn");
 const resetBtn = document.getElementById("reset-decisions-btn");
 const confirmAllBtn = document.getElementById("confirm-all-btn");
 const confirmAllLabelEl = document.getElementById("confirm-all-label");
@@ -156,14 +155,14 @@ function showDecidable(status, jobRunning = false) {
   showPending(keys, keys.filter((key) => marked.has(key)).length, wait);
 }
 
-// Undo last and Reset all: shown with a decision to take back, used
-// between runs (the server refuses while a job reads them)
+// Reset all: shown with a decision to take back, used between runs (the
+// server refuses while a job reads them). Undo is on the updates
+// (inputs.js).
 function showTakeBack(status, jobRunning) {
   const last = status ? status.last_decision || [] : [];
-  undoLastBtn.hidden = last.length === 0;
   resetBtn.hidden = !status || (!decisionCount(status) && !last.length);
-  undoLastBtn.disabled = resetBtn.disabled = jobRunning;
-  undoLastBtn.title = resetBtn.title = jobRunning ? "The updates are being read" : "";
+  resetBtn.disabled = jobRunning;
+  resetBtn.title = jobRunning ? "The updates are being read" : "";
 }
 
 // the sheet to download is the last run's, once every edit is decided
@@ -266,10 +265,10 @@ async function poll(experiment, generation) {
   // while a job runs, the updates it has reported are decided already;
   // the others show the last run's reports
   const fresh = running ? new Set((status.inputs || []).map((report) => report.entry_id)) : null;
-  setReports(reportsShown, running, editActions(experiment), fresh);
+  decisionStatus = status;
+  setReports(reportsShown, running, editActions(experiment), fresh, status);
   // while a job runs, the button stays, closed, for the last run's edits
   showDecidable(running ? { ...status, inputs: Object.values(reportsShown) } : status, running);
-  decisionStatus = status;
   showTakeBack(status, running);
   updateReview(experiment, status, shownItems(), running);
   if (status.phase === "completed") {
@@ -367,6 +366,7 @@ function editActions(experiment) {
       }
       return done;
     },
+    undo: (ask) => undoLast(experiment, ask),
   };
 }
 
@@ -458,16 +458,18 @@ function openConfirmAll(experiment) {
   });
 }
 
-// the last click's decisions, once the user agreed
-async function undoLast(experiment) {
+// the last click's decisions; `ask`: the user agrees first (a click of
+// several edits). True when taken back.
+async function undoLast(experiment, ask) {
   const status = decisionStatus;
   const question = status && undoQuestion(status);
-  if (!question || !await confirmDialog(question, "Undo")) return;
+  if (!question || (ask && !await confirmDialog(question, "Undo"))) return false;
   clearError();
   const keys = status.last_decision.map((decision) => decision.key);
   const why = await post(experiment, "edits/undo-last", { keys });
   if (why) showError("Could not undo: " + why);
   if (stillShown(experiment)) startPolling(experiment);
+  return !why;
 }
 
 async function resetDecisions(experiment) {
@@ -559,7 +561,7 @@ async function startJob(experiment) {
     busy("Starting...");
     gateDownload(blockShown);
     // no confirming on the way out: the job's reservation refuses it
-    setReports(reportsShown, true, editActions(experiment));
+    setReports(reportsShown, true, editActions(experiment), null, decisionStatus);
   }
   try {
     const res = await fetch(experimentUrl(experiment, "edit-async"), { method: "POST" });
@@ -636,9 +638,6 @@ export function initEdit() {
   // selected experiment's summary is loading
   confirmAllBtn.addEventListener("click", () => {
     if (current) openConfirmAll(current);
-  });
-  undoLastBtn.addEventListener("click", () => {
-    if (current) undoLast(current);
   });
   resetBtn.addEventListener("click", () => {
     if (current) resetDecisions(current);

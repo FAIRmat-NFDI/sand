@@ -405,6 +405,25 @@ export function undoQuestion(status) {
   return "Undo your last decision: " + parts.join(" and ") + "? They wait for your decision again.";
 }
 
+// Where Undo shows: on the row of a single decision (`key`), else, for
+// one click that decided several edits (the review), a line over the
+// updates (`line`). Null without a decision.
+export function undoPlace(status) {
+  const last = status.last_decision || [];
+  if (!last.length) return null;
+  if (last.length === 1) return { key: last[0].key, line: lastLine(last) };
+  return { key: null, line: lastLine(last) };
+}
+
+function lastLine(last) {
+  const confirmed = last.filter((d) => d.decision === "confirmed").length;
+  const rejected = last.length - confirmed;
+  const parts = [];
+  if (confirmed) parts.push(count(confirmed, "edit confirmed", "edits confirmed"));
+  if (rejected) parts.push(count(rejected, "edit rejected", "edits rejected"));
+  return "Your last decision: " + parts.join(" and ");
+}
+
 // how many decisions Reset all takes back
 export function decisionCount(status) {
   return (status.inputs || []).reduce(

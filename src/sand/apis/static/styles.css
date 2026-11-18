@@ -1535,7 +1535,8 @@ body {
 }
 
 .report-confirm.btn,
-.report-reject.btn {
+.report-reject.btn,
+.report-undo.btn {
   text-transform: none;
   letter-spacing: 0;
   font-size: 0.8rem;
@@ -1557,7 +1558,8 @@ body {
   font-style: italic;
 }
 
-.report-reject.btn {
+.report-reject.btn,
+.report-undo.btn {
   color: #555;
   border-color: #c4c7cc;
 }
@@ -1622,6 +1624,20 @@ body {
 .confirm-dialog .controls {
   justify-content: flex-end;
   margin: 24px 0 0;
+}
+
+/* the last decision of several edits, over the updates */
+.inputs-undo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  color: #6b7079;
+}
+
+.inputs-undo[hidden] {
+  display: none;
 }
 
 /* Confirm all review: sections of edit rows, a tick each to confirm */
@@ -1945,7 +1961,7 @@ body {
 }
 
 /* An edit's state cell: written with the "Wrong" flag, rejected, or
-   Confirm and Reject */
+   Confirm and Reject; Undo on the last decision */
 .report-state {
   display: inline-flex;
   align-items: center;

@@ -185,6 +185,10 @@
             </div>
           </div>
           <p class="section-hint">Your updates, in the order you made them. Each is read as soon as it is saved and lists the edits it makes. Click one not yet applied to revise its words.</p>
+          <div class="inputs-undo" id="inputs-undo" hidden>
+            <span id="inputs-undo-text"></span>
+            <button class="btn btn-outlined btn-small report-undo" id="inputs-undo-btn" type="button">Undo</button>
+          </div>
           <ul class="inputs-list" id="inputs-list">
             <li class="inputs-empty">Open a sheet to see its updates.</li>
           </ul>
@@ -197,10 +201,6 @@
               <span class="material-icons">done_all</span>
               <span id="confirm-all-label">Confirm all</span>
             </button>
-            <button class="btn btn-outlined" id="undo-last-btn" type="button" hidden>
-              <span class="material-icons">undo</span>
-              Undo last
-            </button>
             <button class="btn btn-outlined" id="reset-decisions-btn" type="button" hidden>
               <span class="material-icons">restart_alt</span>
               Reset all
@@ -211,7 +211,7 @@
             </button>
             <span class="status-text" id="apply-status" role="status"></span>
           </div>
-          <p class="section-hint">Decide the edits update by update, from the top, or all at once with Confirm all: untick the ones to reject, see what that changes, then confirm the rest. Confirmed edits are written into the sheet by themselves. Undo last or Reset all take decisions back. Download the edited sheet from the top of the page once every edit is decided.</p>
+          <p class="section-hint">Decide the edits update by update, from the top, or all at once with Confirm all: untick the ones to reject, see what that changes, then confirm the rest. Confirmed edits are written into the sheet by themselves. Undo, on the last decision in the updates, takes it back; Reset all takes back every one. Download the edited sheet from the top of the page once every edit is decided.</p>
 
           <div class="apply-result" id="apply-result" hidden>
             <hr class="divider">

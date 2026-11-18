@@ -5,7 +5,7 @@ import {
   confirmAllLabel, describeEditPhase, downloadBlock, downloadFilename, editSummary, inputApplied, inputState,
   changedEntries, checkedKeys, decisionCount, inputsToRead, outdatedEntries, pendingKeys, previewNotes, readKey,
   reportsByEntry, resetNote, reviewAction, reviewRows, reviewSnapshot, rewriteWarning, settledBlock, turnEntry,
-  undoQuestion, unwrittenKey, writtenCount, writtenEdits,
+  undoPlace, undoQuestion, unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
 
 const REPORT = {
@@ -116,6 +116,15 @@ test("the review waits for every update read and nothing decided since", () => {
   assert.notEqual(settledBlock({ inputs: [{ ...REPORT, rejected_since: ["k1"] }] }, items), "");
   assert.equal(settledBlock({ inputs: [REPORT] }, [...items, { entry_id: "n2", text: "new" }]),
     "An update is not read yet");
+});
+
+test("Undo shows on the row of a single decision, else over the updates", () => {
+  assert.equal(undoPlace({ inputs: [] }), null);
+  assert.deepEqual(undoPlace({ last_decision: [{ key: "k1", decision: "rejected" }] }),
+    { key: "k1", line: "Your last decision: 1 edit rejected" });
+  const review = [{ key: "k1", decision: "confirmed" }, { key: "k2", decision: "confirmed" }];
+  assert.deepEqual(undoPlace({ last_decision: review }),
+    { key: null, line: "Your last decision: 2 edits confirmed" });
 });
 
 test("Undo last asks about the last click", () => {
