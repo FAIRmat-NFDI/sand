@@ -40,7 +40,7 @@ from sand.sheet_edit.render import table
 
 # recorded with every proposal (changelog, status); bump on any change to
 # the prompts below or to the table in render.py, which the model reads
-PROMPT_VERSION = 'v6'
+PROMPT_VERSION = 'v7'
 # the job's cache keeps proposals after `agree`: bump the second part on
 # a change to how two opinions agree, so agreed answers are asked again
 CACHE_VERSION = f'{PROMPT_VERSION}+agree-2'
@@ -91,6 +91,13 @@ column: if no row holds it, answer "not_found".
 and goes into "said_old"; "old" stays what the table shows.
 - If the words fit more than one column, do not pick one: answer \
 "ambiguous" with every candidate.
+- The same parameter is often in several steps (a rotation speed in every \
+spin coating). A step number, or a material or value only one of those \
+steps holds, picks the step; the step type alone ("spin coating" when \
+several steps are spin coatings) does not. If nothing picks one, answer \
+"ambiguous" with every step's column. Never put the change into several \
+steps to cover them, unless the user asked for every step ("in all spin \
+coatings"). When only one step has the parameter, no step needs naming.
 - If what the user points at is not in the table, answer "not_found".
 - One edit per column and group of samples. Nothing the user asked for may \
 be dropped: what you cannot place goes to "unresolved"."""
@@ -124,6 +131,12 @@ instead: when no row of that column holds it, it is "not_found".
 cell and is the "said_old"; "old" is still the table's value.
 - Several columns could be meant? Then "ambiguous" with all of them, never \
 a guess.
+- A parameter that several steps have (each spin coating has a rotation \
+speed) needs the user to say which step: a step number, or a material or \
+type only one of those steps has. Without it the answer is "ambiguous", \
+listing that column of every such step; spreading the change over several \
+steps is not an answer, except when the user says every step ("all spin \
+coatings"). A parameter only one step has needs no step.
 - Nothing in the table matches? Then "not_found".
 - One edit per column and sample group. Do not drop any part of the \
 instruction: anything you cannot place is "unresolved"."""
