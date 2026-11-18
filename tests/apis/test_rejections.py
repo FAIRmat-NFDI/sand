@@ -1,5 +1,6 @@
-"""Rejecting a proposed edit: recorded with what was proposed, never
-written, decided; undone on request; gone when its update changes."""
+"""Rejecting a proposed edit, by unticking it in a round: recorded with
+what was proposed, never written, decided; ticked again on request;
+gone when its update changes."""
 
 import json
 from datetime import datetime, timezone
@@ -65,6 +66,23 @@ async def post(voice, action, body):
         )
 
 
+async def untick(voice, *keys, reason=None, meant=''):
+    return await post(
+        voice,
+        'round',
+        {'reject': [{'key': k, 'reason': reason, 'meant': meant} for k in keys]},
+    )
+
+
+def put_confirmed(voice, *keys):
+    voice.writer.files[CONFIRMATIONS_FILE] = json.dumps(
+        {
+            k: {'by': 'user', 'at': '2026-11-12T10:00:00+00:00', 'input': 'n1'}
+            for k in keys
+        }
+    ).encode()
+
+
 async def report(voice):
     async with api(voice) as client:
         response = await client.get(
@@ -84,9 +102,7 @@ def voice() -> FakeVoice:
 
 
 async def test_a_rejection_keeps_the_edit_as_proposed_and_the_reason(voice):
-    response = await post(
-        voice, 'reject', {'keys': ['k1'], 'reason': 'value', 'meant': ' 1200 s '}
-    )
+    response = await untick(voice, 'k1', reason='value', meant=' 1200 s ')
 
     assert response.status_code == HTTPStatus.OK, response.text
     assert response.json() == {'rejected': ['k1']}
@@ -102,14 +118,14 @@ async def test_a_rejection_keeps_the_edit_as_proposed_and_the_reason(voice):
 
 
 async def test_the_reason_is_optional(voice):
-    response = await post(voice, 'reject', {'keys': ['k1']})
+    response = await untick(voice, 'k1')
 
     assert response.status_code == HTTPStatus.OK, response.text
     assert rejections(voice)['k1']['reason'] is None
 
 
 async def test_a_rejected_edit_is_decided_and_shown(voice):
-    await post(voice, 'reject', {'keys': ['k1']})
+    await untick(voice, 'k1')
 
     shown = await report(voice)
 
@@ -118,8 +134,8 @@ async def test_a_rejected_edit_is_decided_and_shown(voice):
 
 
 async def test_a_rejected_key_keeps_its_first_record(voice):
-    await post(voice, 'reject', {'keys': ['k1'], 'reason': 'value'})
-    await post(voice, 'reject', {'keys': ['k1', 'k2'], 'reason': 'column'})
+    await untick(voice, 'k1', reason='value')
+    await untick(voice, 'k1', 'k2', reason='column')
 
     records = rejections(voice)
     assert records['k1']['reason'] == 'value'
@@ -127,69 +143,51 @@ async def test_a_rejected_key_keeps_its_first_record(voice):
 
 
 async def test_a_confirmed_edit_cannot_be_rejected(voice):
-    assert (await post(voice, 'confirm', {'keys': ['k1']})).status_code == HTTPStatus.OK
+    put_confirmed(voice, 'k1')
 
-    response = await post(voice, 'reject', {'keys': ['k1', 'k2']})
+    response = await untick(voice, 'k1', 'k2')
 
     assert response.status_code == HTTPStatus.CONFLICT
     assert response.json()['detail'] == 'already confirmed: k1'
     assert REJECTIONS_FILE not in voice.writer.files
 
 
-async def test_a_rejected_edit_is_not_confirmed_until_undone(voice):
-    await post(voice, 'reject', {'keys': ['k1']})
+async def test_a_rejected_edit_ticked_again_is_undecided(voice):
+    await untick(voice, 'k1')
 
-    response = await post(voice, 'confirm', {'keys': ['k1']})
+    response = await post(voice, 'round', {'restore': ['k1']})
 
-    assert response.status_code == HTTPStatus.CONFLICT
-    assert response.json()['detail'] == 'rejected, undo the rejection first: k1'
-    assert CONFIRMATIONS_FILE not in voice.writer.files
-
-    undone = await post(voice, 'undo-last', {'keys': ['k1']})
-    assert undone.status_code == HTTPStatus.OK
+    assert response.status_code == HTTPStatus.OK, response.text
+    assert rejections(voice) == {}
     assert (await report(voice))['rejected'] == []
-    assert (await post(voice, 'confirm', {'keys': ['k1']})).status_code == HTTPStatus.OK
 
 
 async def test_only_a_ready_edit_of_the_last_job_can_be_rejected(voice):
-    response = await post(voice, 'reject', {'keys': ['k9']})
+    response = await untick(voice, 'k9')
 
     assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
-    assert response.json()['detail'] == 'not a ready edit of the last job: k9'
+    assert response.json()['detail'] == 'not a ready edit of the last run: k9'
 
 
 async def test_no_keys(voice):
-    response = await post(voice, 'reject', {'keys': []})
+    response = await post(voice, 'round', {})
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
 
 
-async def test_a_key_the_running_job_has_not_reported_yet_waits(voice):
+async def test_a_round_waits_for_the_running_job(voice):
     put_status(voice, 'interpreting')
 
-    response = await post(voice, 'reject', {'keys': ['k9']})
+    response = await untick(voice, 'k1')
 
     assert response.status_code == HTTPStatus.CONFLICT
-    assert response.json()['detail'] == (
-        'an edit job is running; reject when it has finished'
-    )
-
-
-async def test_words_revised_since_the_run_are_not_rejected(voice):
-    voice.inputs = [note('n1', 'time 1 is 1200')]
-
-    response = await post(voice, 'reject', {'keys': ['k1']})
-
-    assert response.status_code == HTTPStatus.CONFLICT
-    assert response.json()['detail'] == (
-        'the words of an input changed since the last run; apply the updates again, then reject'
-    )
+    assert response.json()['detail'] == 'the updates are being read; wait for it'
 
 
 async def test_a_damaged_rejections_file_is_never_overwritten(voice):
     voice.writer.files[REJECTIONS_FILE] = b'{not json'
 
-    response = await post(voice, 'reject', {'keys': ['k1']})
+    response = await untick(voice, 'k1')
 
     assert response.status_code == HTTPStatus.CONFLICT
     assert response.json()['detail'].startswith('rejections file damaged')
@@ -209,7 +207,7 @@ async def test_a_rejection_holds_for_every_input_with_its_key(voice):
             for i, e in ((1, 'n1'), (2, 'n2'))
         ],
     )
-    await post(voice, 'reject', {'keys': ['k1']})
+    await untick(voice, 'k1')
 
     async with api(voice) as client:
         response = await client.get(
@@ -217,8 +215,6 @@ async def test_a_rejection_holds_for_every_input_with_its_key(voice):
             params={'collection_entry_id': COLLECTION},
         )
     assert [r['rejected'] for r in response.json()['inputs']] == [['k1'], ['k1']]
-    # confirming the other edit of both is fine
-    assert (await post(voice, 'confirm', {'keys': ['k2']})).status_code == HTTPStatus.OK
 
 
 async def test_rejecting_an_input_again_drops_its_lost_rejections(voice):
@@ -229,7 +225,7 @@ async def test_rejecting_an_input_again_drops_its_lost_rejections(voice):
         }
     ).encode()
 
-    await post(voice, 'reject', {'keys': ['k2']})
+    await untick(voice, 'k2')
 
     assert sorted(rejections(voice)) == ['k2', 'other']
 
@@ -240,23 +236,9 @@ async def test_an_input_with_every_edit_decided_has_nothing_to_decide_again(voic
     voice.writer.files[CONFIRMATIONS_FILE] = json.dumps(
         {'gone': {'by': 'user', 'at': '2026-11-12T10:00:00+00:00', 'input': 'n1'}}
     ).encode()
-    await post(voice, 'reject', {'keys': ['k1', 'k2']})
+    await untick(voice, 'k1', 'k2')
 
     assert (await report(voice))['decide_again'] == 0
-
-
-async def test_deciding_an_input_again_drops_its_lost_decisions_of_both_kinds(voice):
-    lost = {'by': 'user', 'at': '2026-11-12T10:00:00+00:00', 'input': 'n1'}
-    voice.writer.files[CONFIRMATIONS_FILE] = json.dumps({'old-c': lost}).encode()
-    voice.writer.files[REJECTIONS_FILE] = json.dumps({'old-r': record('n1')}).encode()
-
-    await post(voice, 'reject', {'keys': ['k1']})
-    assert json.loads(voice.writer.files[CONFIRMATIONS_FILE]) == {}
-    assert sorted(rejections(voice)) == ['k1']
-
-    voice.writer.files[REJECTIONS_FILE] = json.dumps({'old-r': record('n1')}).encode()
-    await post(voice, 'confirm', {'keys': ['k2']})
-    assert rejections(voice) == {}
 
 
 @pytest.mark.parametrize('change', ['revise', 'delete'])
@@ -299,14 +281,13 @@ async def test_a_partly_damaged_record_is_a_damaged_file(voice, damage):
     stored = json.dumps({'k1': damage}).encode()
     voice.writer.files[REJECTIONS_FILE] = stored
 
-    response = await post(voice, 'reject', {'keys': ['k2']})
+    response = await untick(voice, 'k2')
 
     assert response.status_code == HTTPStatus.CONFLICT
     assert voice.writer.files[REJECTIONS_FILE] == stored
     assert (await report(voice))['rejected'] == []
-    assert (await post(voice, 'confirm', {'keys': ['k2']})).status_code == (
-        HTTPStatus.CONFLICT
-    )
+    confirmed = await post(voice, 'confirm', {'keys': ['k1', 'k2']})
+    assert confirmed.status_code == HTTPStatus.CONFLICT
 
 
 async def test_a_damaged_rejections_file_stops_a_revision_before_it_is_saved(voice):

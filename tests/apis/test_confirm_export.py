@@ -1,4 +1,4 @@
-"""Confirming edits, downloading the final sheet, reading the changelog,
+"""Confirm all, downloading the final sheet, reading the changelog,
 against a fake NOMAD."""
 
 import asyncio
@@ -27,7 +27,9 @@ READY = [{'key': 'k1', 'line': 'speed 3000 → 4000'}, {'key': 'k2', 'line': '..
 
 @pytest.fixture
 def voice() -> FakeVoice:
-    return FakeVoice()
+    voice = FakeVoice()
+    voice.inputs = [note('n1', 'speed 4000')]
+    return voice
 
 
 def put_status(voice, phase='completed', collection=COLLECTION, **fields):
@@ -37,7 +39,15 @@ def put_status(voice, phase='completed', collection=COLLECTION, **fields):
             'phase': phase,
             'collection_entry_id': collection,
             'updated_at': datetime.now(timezone.utc).isoformat(),
-            'inputs': [{'input': 1, 'entry_id': 'n1', 'ready': READY, 'confirmed': []}],
+            'inputs': [
+                {
+                    'input': 1,
+                    'entry_id': 'n1',
+                    'text': 'speed 4000',
+                    'ready': READY,
+                    'confirmed': [],
+                }
+            ],
             **fields,
         }
     ).encode()
@@ -95,12 +105,11 @@ async def get(voice, path, **params):
 async def test_confirm_records_who_and_when(voice):
     put_status(voice, 'completed')
 
-    response = await confirm(voice, ['k1'])
+    response = await confirm(voice, ['k1', 'k2'])
 
     assert response.status_code == HTTPStatus.OK, response.text
-    assert response.json() == {'confirmed': ['k1']}
-    [(key, record)] = confirmations(voice).items()
-    assert key == 'k1'
+    assert response.json() == {'confirmed': ['k1', 'k2']}
+    record = confirmations(voice)['k1']
     assert record['by'] == USERNAME
     at = datetime.fromisoformat(record['at'])
     assert at.tzinfo is not None
@@ -108,12 +117,24 @@ async def test_confirm_records_who_and_when(voice):
 
 
 async def test_a_confirmed_key_keeps_its_first_record(voice):
-    put_status(voice, 'completed')
+    # confirmed and written by an earlier Confirm all
+    put_status(
+        voice,
+        inputs=[
+            {
+                'input': 1,
+                'entry_id': 'n1',
+                'text': 'speed 4000',
+                'ready': READY,
+                'confirmed': ['k1'],
+            }
+        ],
+    )
     voice.writer.files[CONFIRMATIONS_FILE] = json.dumps(
         {'k1': {'by': 'user', 'at': '2026-10-28T12:16:05+00:00', 'input': 'n1'}}
     ).encode()
 
-    response = await confirm(voice, ['k1', 'k2'])
+    response = await confirm(voice, ['k2'])
 
     assert response.json() == {'confirmed': ['k1', 'k2']}
     records = confirmations(voice)
@@ -130,20 +151,33 @@ async def test_an_edit_with_a_check_is_confirmed_with_the_others(voice):
     put_status(
         voice,
         'completed',
-        inputs=[{'input': 1, 'entry_id': 'n1', 'ready': [*READY, marked]}],
+        inputs=[
+            {
+                'input': 1,
+                'entry_id': 'n1',
+                'text': 'speed 4000',
+                'ready': [*READY, marked],
+            }
+        ],
     )
 
-    response = await confirm(voice, ['k1', 'k3'])
-    assert response.json() == {'confirmed': ['k1', 'k3']}
-    assert set(confirmations(voice)) == {'k1', 'k3'}
+    response = await confirm(voice, ['k1', 'k2', 'k3'])
+    assert response.json() == {'confirmed': ['k1', 'k2', 'k3']}
+    assert set(confirmations(voice)) == {'k1', 'k2', 'k3'}
 
 
-async def test_two_confirms_at_once_both_survive(voice):
+async def test_two_confirm_alls_at_once_confirm_once(voice):
+    # two tabs: the second sees the first's confirmations, not settled
     put_status(voice, 'completed')
 
-    responses = await asyncio.gather(confirm(voice, ['k1']), confirm(voice, ['k2']))
+    responses = await asyncio.gather(
+        confirm(voice, ['k1', 'k2']), confirm(voice, ['k1', 'k2'])
+    )
 
-    assert [r.status_code for r in responses] == [HTTPStatus.OK] * 2
+    assert sorted(r.status_code for r in responses) == [
+        HTTPStatus.OK,
+        HTTPStatus.CONFLICT,
+    ]
     assert sorted(confirmations(voice)) == ['k1', 'k2']
 
 
@@ -151,7 +185,16 @@ async def test_confirming_an_input_again_drops_its_lost_confirmations(voice):
     # k0 and k5 were n1's edits before an earlier input changed; n2's
     # stays; k8, made before confirmations named their input, is left out
     put_status(
-        voice, inputs=[{'input': 1, 'entry_id': 'n1', 'ready': READY, 'confirmed': []}]
+        voice,
+        inputs=[
+            {
+                'input': 1,
+                'entry_id': 'n1',
+                'text': 'speed 4000',
+                'ready': READY,
+                'confirmed': [],
+            }
+        ],
     )
     record = {'by': 'user', 'at': '2026-10-28T12:16:05+00:00'}
     voice.writer.files[CONFIRMATIONS_FILE] = json.dumps(
@@ -163,8 +206,8 @@ async def test_confirming_an_input_again_drops_its_lost_confirmations(voice):
         }
     ).encode()
 
-    assert (await confirm(voice, ['k1'])).status_code == HTTPStatus.OK
-    assert sorted(confirmations(voice)) == ['k1', 'k9']
+    assert (await confirm(voice, ['k1', 'k2'])).status_code == HTTPStatus.OK
+    assert sorted(confirmations(voice)) == ['k1', 'k2', 'k9']
 
 
 async def test_a_report_that_names_no_input_is_read_again_first(voice):
@@ -181,7 +224,7 @@ async def test_by_falls_back_to_the_user_id(voice):
     put_status(voice, 'completed')
     voice.me = {'user_id': USER}
 
-    await confirm(voice, ['k1'])
+    await confirm(voice, ['k1', 'k2'])
 
     assert confirmations(voice)['k1']['by'] == USER
 
@@ -190,28 +233,21 @@ async def test_a_failed_write_leaves_the_file_and_reports(voice):
     put_status(voice, 'completed')
     voice.writer.writes_allowed = 0
 
-    response = await confirm(voice, ['k1'])
+    response = await confirm(voice, ['k1', 'k2'])
 
     assert response.status_code == HTTPStatus.BAD_GATEWAY
     assert CONFIRMATIONS_FILE not in voice.writer.files
 
 
-async def test_confirming_a_running_jobs_ready_edit_is_fine(voice):
-    # confirmations are read once at a job's start: this lands in the next run
+async def test_confirm_all_waits_for_a_running_job(voice):
+    # what it confirms is what the page showed of a finished run
     put_status(voice, 'interpreting')
 
-    assert (await confirm(voice, ['k1'])).status_code == HTTPStatus.OK
-
-
-async def test_a_key_the_running_job_has_not_reported_yet_waits(voice):
-    # the job starts with no reports; the page may still show the old ones
-    put_status(voice, 'collecting', inputs=[])
-
-    response = await confirm(voice, ['k1'])
+    response = await confirm(voice, ['k1', 'k2'])
 
     assert response.status_code == HTTPStatus.CONFLICT
     assert response.json()['detail'] == (
-        'an edit job is running; confirm when it has finished'
+        'the updates are being read; confirm when it has finished'
     )
 
 
@@ -239,7 +275,7 @@ async def test_a_damaged_confirmations_file_is_never_overwritten(voice):
     put_status(voice, 'completed')
     voice.writer.files[CONFIRMATIONS_FILE] = b'{"k1": "yes"}'
 
-    response = await confirm(voice, ['k1'])
+    response = await confirm(voice, ['k1', 'k2'])
 
     assert response.status_code == HTTPStatus.CONFLICT
     assert response.json()['detail'].startswith('confirmations file damaged')
@@ -250,10 +286,18 @@ async def test_a_confirmation_names_its_input(voice):
     put_status(
         voice,
         'completed',
-        inputs=[{'input': 1, 'entry_id': 'n1', 'ready': READY, 'confirmed': []}],
+        inputs=[
+            {
+                'input': 1,
+                'entry_id': 'n1',
+                'text': 'speed 4000',
+                'ready': READY,
+                'confirmed': [],
+            }
+        ],
     )
 
-    await confirm(voice, ['k1'])
+    await confirm(voice, ['k1', 'k2'])
 
     record = json.loads(voice.writer.files[CONFIRMATIONS_FILE])['k1']
     assert record['input'] == 'n1'
@@ -275,7 +319,7 @@ async def test_words_revised_since_the_run_are_not_confirmed(voice):
         ],
     )
 
-    response = await confirm(voice, ['k1'])
+    response = await confirm(voice, ['k1', 'k2'])
 
     assert response.status_code == HTTPStatus.CONFLICT
     assert response.json()['detail'] == (
@@ -284,17 +328,17 @@ async def test_words_revised_since_the_run_are_not_confirmed(voice):
     assert CONFIRMATIONS_FILE not in voice.writer.files
     # the same words: confirmed
     voice.inputs = [note('n1', 'time 1 is 1000')]
-    assert (await confirm(voice, ['k1'])).status_code == HTTPStatus.OK
+    assert (await confirm(voice, ['k1', 'k2'])).status_code == HTTPStatus.OK
 
 
 async def test_the_status_shows_a_confirmation_as_waiting_for_the_next_run(voice):
     put_status(voice, 'completed')
-    await confirm(voice, ['k1'])
+    await confirm(voice, ['k1', 'k2'])
 
     for path in ('edit-status', 'edits'):
         [report] = (await get(voice, path)).json()['inputs']
-        assert report['confirmed'] == ['k1']
-        assert report['confirmed_since'] == ['k1']
+        assert report['confirmed'] == ['k1', 'k2']
+        assert report['confirmed_since'] == ['k1', 'k2']
 
 
 async def test_a_confirmation_the_job_applied_is_not_since(voice):

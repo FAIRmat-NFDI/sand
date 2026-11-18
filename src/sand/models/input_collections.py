@@ -95,22 +95,10 @@ class JobResponse(BaseModel):
 
 class ConfirmEditsRequest(BaseModel):
     keys: list[str]  # from the reports' ready edits (GET .../edits)
-    review: bool = False  # from the Confirm all review: every undecided edit
-
-
-class DecisionsRequest(BaseModel):
-    keys: list[str]  # the last decision's, as the status names them
 
 
 class ConfirmEditsResponse(BaseModel):
     confirmed: list[str]  # every confirmed key, the new ones included
-
-
-class RejectEditsRequest(BaseModel):
-    keys: list[str]  # ready edits of the last job, none confirmed
-    reason: WrongReason | None = None  # optional, as in the "Wrong" dialog
-    meant: str = Field('', max_length=5000)
-    review: bool = False  # from the Confirm all review: any update's edits
 
 
 class Untick(BaseModel):
@@ -129,11 +117,3 @@ class RoundRequest(BaseModel):
 
 class RoundResponse(BaseModel):
     rejected: list[str]  # every rejected key after the round
-
-
-class RejectEditsResponse(BaseModel):
-    rejected: list[str]  # every rejected key, the new ones included
-
-
-class UndoneResponse(BaseModel):
-    undone: list[str]  # the keys taken back
