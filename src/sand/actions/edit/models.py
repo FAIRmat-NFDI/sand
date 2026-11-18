@@ -57,6 +57,10 @@ class LlmAnswer(BaseModel):
 class ApplyInput(PrepareInput):
     entry_id: str
     answers: list[LlmAnswer]  # empty when the proposal came from the cache
+    # the job's status after this input, without its report: written with
+    # the report and the job's own cache file in one request; empty in a
+    # job started before (its workflow writes the status itself)
+    status: dict = {}
 
 
 class WriteStatusInput(BaseModel):
