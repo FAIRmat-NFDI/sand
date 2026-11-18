@@ -295,7 +295,7 @@ It runs with the distribution's Python, where the extraction engine is
 installed; not `uv run` in the distribution, which may sync it. The key
 comes from the shell (`GEMINI_API_KEY`).
 
-`evals/sheet_edit/testcases.json` holds about twenty instructions on the
+`evals/sheet_edit/testcases.json` holds about forty instructions on the
 synthetic sheet, each with the edits it must produce (column, samples,
 value), the columns it must leave alone and the refusals it must say.
 The script runs each through the same function, prompt and schema the

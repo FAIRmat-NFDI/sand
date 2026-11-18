@@ -124,6 +124,18 @@
       "expect": {"edits": [], "unresolved": ["ambiguous", "uncertain"]}
     },
     {
+      "id": "ambiguous-step-type",
+      "why": "three steps are spin coatings: the step type alone does not pick one",
+      "text": "spin coating, rotation speed 2500 for all samples",
+      "expect": {"edits": [], "unresolved": ["ambiguous", "uncertain"]}
+    },
+    {
+      "id": "no-step-unique",
+      "why": "only step 5 has a substrate temperature: no step needs naming",
+      "text": "substrate temperature 118 for all samples",
+      "expect": {"edits": [{"step": 5, "column": "Substrate temperature", "rows": "all", "new": "118"}]}
+    },
+    {
       "id": "missing-sample",
       "why": "sample 6 does not exist",
       "text": "step 2 annealing time 15 for sample 6",
