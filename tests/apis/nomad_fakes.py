@@ -67,6 +67,18 @@ class FakeWriter:
         self.files[name] = content
         self.types[name] = content_type
 
+    async def upload_raw_files(self, client, upload_id, files, directory=''):
+        # one request: all of them or none
+        assert upload_id == UPLOAD
+        if self.failing or self.writes_allowed == 0:
+            raise nomad_down('upload_raw_files')
+        if self.writes_allowed is not None:
+            self.writes_allowed -= 1
+        for name, content, content_type in files:
+            path = f'{directory}/{name}' if directory else name
+            self.files[path] = content
+            self.types[path] = content_type
+
     async def write_json(self, client, upload_id, name, payload):
         await self.upload_raw_file(
             client, upload_id, name, json.dumps(payload).encode(), 'application/json'

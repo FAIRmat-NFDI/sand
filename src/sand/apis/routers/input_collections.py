@@ -27,6 +27,8 @@ from sand.models.input_collections import (
     ReviseInputRequest,
     ReviseInputResponse,
     ReviseLabelRequest,
+    RoundRequest,
+    RoundResponse,
     UndoneResponse,
 )
 from sand.services.nomad_api import (
@@ -44,6 +46,7 @@ from sand.services.voice_eln import (
 from sand.sheet_edit import catalog, changelog, view
 from sand.sheet_edit.session import (
     CHANGELOG_FILE,
+    CHECKPOINT_FILE,
     CONFIRMATIONS_FILE,
     FINAL_FILE,
     ORIGINAL_FILE,
@@ -52,6 +55,7 @@ from sand.sheet_edit.session import (
     Confirmation,
     confirmations_json,
     load_confirmations,
+    read_checkpoint,
     read_confirmations,
     read_rejections,
 )
@@ -63,6 +67,8 @@ router = APIRouter()
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 CLIENT_ERROR_STATUSES = (400, 404, 409)
+LOCKED = 'confirmed with Confirm all; Reset all to change it'
+JSON_TYPE = 'application/json'
 
 
 def _voice_service(request: Request) -> VoiceElnService:
@@ -507,6 +513,7 @@ async def list_inputs(
             applied = await _applied_inputs(
                 client, voice, upload_id, collection_entry_id
             )
+            locked = await _checkpoint(client, voice, upload_id)
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
@@ -522,6 +529,7 @@ async def list_inputs(
                 corrected=item.corrected,
                 status=item.status,
                 applied=item.entry_id in applied,
+                locked=item.entry_id in locked,
             )
             for item in inputs
         ]
@@ -553,6 +561,7 @@ async def revise_input(
             # first: a revision saved with its old confirmations kept would
             # count as confirmed again if its words were changed back; not
             # for an input the revision is refused on (an empty note)
+            await _unlocked(client, voice, upload_id, entry_id)
             item = await _input_of(
                 client, voice, upload_id, collection_entry_id, entry_id
             )
@@ -617,6 +626,7 @@ async def delete_input(
 
     try:
         async with _upload_lock(upload_id), voice.build_client(token) as client:
+            await _unlocked(client, voice, upload_id, entry_id)
             item = await _input_of(
                 client, voice, upload_id, collection_entry_id, entry_id
             )
@@ -773,6 +783,35 @@ async def _loaded_rejections(client, voice: VoiceElnService, upload_id: str) -> 
         raise HTTPException(
             status_code=409, detail=f'rejections file damaged: {why}'
         ) from why
+
+
+async def _checkpoint(client, voice: VoiceElnService, upload_id: str) -> set[str]:
+    """The inputs behind the last Confirm all; a damaged file is none here
+    (a listing), the endpoints that change inputs refuse on it."""
+    raw = await voice.writer.read_raw_file(client, upload_id, CHECKPOINT_FILE)
+    try:
+        return read_checkpoint(raw)
+    except ValueError:
+        return set()
+
+
+async def _loaded_checkpoint(
+    client, voice: VoiceElnService, upload_id: str
+) -> set[str]:
+    raw = await voice.writer.read_raw_file(client, upload_id, CHECKPOINT_FILE)
+    try:
+        return read_checkpoint(raw)
+    except ValueError as why:
+        raise HTTPException(
+            status_code=409, detail=f'checkpoint file damaged: {why}'
+        ) from why
+
+
+async def _unlocked(
+    client, voice: VoiceElnService, upload_id: str, entry_id: str
+) -> None:
+    if entry_id in await _loaded_checkpoint(client, voice, upload_id):
+        raise HTTPException(status_code=409, detail=LOCKED)
 
 
 async def _loaded_confirmations(client, voice: VoiceElnService, upload_id: str) -> dict:
@@ -1266,14 +1305,91 @@ async def confirm_edits(
                 for key, c in confirmed.items()
                 if c.input not in ready or key in ready[c.input]
             }
-            await voice.writer.write_json(
-                client, upload_id, CONFIRMATIONS_FILE, confirmations_json(confirmed)
-            )
+            if body.review:
+                await _write_with_checkpoint(
+                    client,
+                    voice,
+                    upload_id,
+                    status=status,
+                    confirmed=confirmed,
+                    by=by,
+                    now=now,
+                )
+            else:
+                await voice.writer.write_json(
+                    client, upload_id, CONFIRMATIONS_FILE, confirmations_json(confirmed)
+                )
             await _drop_lost_rejections(client, voice, upload_id, rejected, ready)
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
     return ConfirmEditsResponse(confirmed=sorted(confirmed))
+
+
+async def _write_with_checkpoint(  # noqa: PLR0913
+    client,
+    voice: VoiceElnService,
+    upload_id: str,
+    *,
+    status: dict,
+    confirmed: dict[str, Confirmation],
+    by: str,
+    now: datetime,
+) -> None:
+    """Confirm all: the confirmations and the inputs it covered (every
+    reported one, skipped ones too: #208), locked from now on; one
+    request, so neither is stored without the other."""
+    covered = await _loaded_checkpoint(client, voice, upload_id)
+    before = await voice.writer.read_json(client, upload_id, CHECKPOINT_FILE)
+    covered |= {
+        r['entry_id']
+        for r in status.get('inputs', [])
+        if isinstance(r, dict) and r.get('entry_id')
+    }
+    # `before`: what Undo last puts back
+    checkpoint = {
+        'inputs': sorted(covered),
+        'by': by,
+        'at': now.isoformat(),
+        'before': before or {},
+    }
+    await _write_checked(
+        client,
+        voice,
+        upload_id,
+        [
+            (CONFIRMATIONS_FILE, confirmations_json(confirmed)),
+            (CHECKPOINT_FILE, checkpoint),
+        ],
+    )
+
+
+async def _write_checked(
+    client, voice: VoiceElnService, upload_id: str, files: list[tuple[str, dict]]
+) -> None:
+    """Files of sheet_edit/ in one request, read back: NOMAD's PUT only
+    queues the update (the reads wait until it is done)."""
+    await voice.writer.upload_raw_files(
+        client,
+        upload_id,
+        [
+            (name.rpartition('/')[2], _json(payload), JSON_TYPE)
+            for name, payload in files
+        ],
+        directory=CONFIRMATIONS_FILE.rpartition('/')[0],
+    )
+    for name, payload in files:
+        if await voice.writer.read_json(client, upload_id, name) != json.loads(
+            _json(payload)
+        ):
+            raise HTTPException(
+                status_code=502, detail=f'NOMAD did not store {name}; try again'
+            )
+
+
+def _json(payload: dict) -> bytes:
+    # as write_json writes it
+    return json.dumps(payload, ensure_ascii=False).encode()
 
 
 async def _drop_lost_rejections(
@@ -1395,12 +1511,124 @@ def _last_decision(confirmed: dict | None, rejected: dict | None) -> list[dict]:
     ]
 
 
+async def _undone_checkpoint(
+    client, voice: VoiceElnService, upload_id: str, undone: list[Confirmation]
+) -> dict | None:
+    """The checkpoint before the last Confirm all, when the click taken
+    back is that Confirm all (its confirmations share the checkpoint's
+    time); else None."""
+    await _loaded_checkpoint(client, voice, upload_id)  # a damaged one refuses
+    checkpoint = await voice.writer.read_json(client, upload_id, CHECKPOINT_FILE)
+    at = (checkpoint or {}).get('at')
+    if not at or not undone or datetime.fromisoformat(at) != undone[0].at:
+        return None
+    before = checkpoint.get('before')
+    return before if isinstance(before, dict) else {}
+
+
 async def _idle(client, voice: VoiceElnService, upload_id: str) -> None:
     """Decisions are taken back between runs: a running job reads them."""
     if _job_running(await voice.writer.read_json(client, upload_id, STATUS_FILE)):
         raise HTTPException(
             status_code=409, detail='the updates are being read; wait for it'
         )
+
+
+@router.post('/input-collections/{upload_id}/edits/round', response_model=RoundResponse)
+async def decide_round(
+    upload_id: str,
+    body: RoundRequest,
+    request: Request,
+    collection_entry_id: str,
+) -> RoundResponse:
+    """One round (#208): unticked edits rejected, rejected ones ticked
+    again, in one write; the page then reads the updates again. Edits of
+    the last run, of any input, in any order, also with notes changed in
+    the same round: an untick whose edit changes when read again no
+    longer applies, and the next round drops it (as every rejection that
+    matches no edit of the last run). None behind the last Confirm all."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    keys = [u.key for u in body.reject]
+    if not keys and not body.restore:
+        raise HTTPException(status_code=400, detail='nothing to decide')
+    both = sorted(set(keys) & set(body.restore))
+    if both:
+        raise HTTPException(
+            status_code=400, detail=f'unticked and ticked again: {", ".join(both)}'
+        )
+    try:
+        async with _upload_lock(upload_id), voice.build_client(token) as client:
+            await _idle(client, voice, upload_id)
+            locked = await _loaded_checkpoint(client, voice, upload_id)
+            rejected = await _loaded_rejections(client, voice, upload_id)
+            status = await _edit_status(client, voice, upload_id, collection_entry_id)
+            # a key two inputs share is the first one's, as on confirm
+            reports: dict = {}
+            for report in status.get('inputs', []):
+                for edit in report.get('ready', []) if isinstance(report, dict) else []:
+                    reports.setdefault(edit['key'], report)
+            not_ready = sorted(set(keys) - set(reports))
+            if not_ready:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f'not a ready edit of the last run: {", ".join(not_ready)}',
+                )
+            confirmed = await _loaded_confirmations(client, voice, upload_id)
+            written = sorted(set(keys) & set(confirmed))
+            if written:
+                raise HTTPException(
+                    status_code=409, detail=f'already confirmed: {", ".join(written)}'
+                )
+            unknown = sorted(set(body.restore) - set(rejected))
+            if unknown:
+                raise HTTPException(
+                    status_code=422, detail=f'not rejected: {", ".join(unknown)}'
+                )
+            inputs = [reports[k].get('entry_id') for k in keys] + [
+                rejected[k].get('input') for k in body.restore
+            ]
+            if any(i in locked for i in inputs):
+                raise HTTPException(status_code=409, detail=LOCKED)
+            me = await _me(client)
+            by = me.get('username') or me.get('name') or me['user_id']
+            at = datetime.now(timezone.utc).isoformat()
+            for key in dict.fromkeys(body.restore):
+                del rejected[key]
+            for untick in body.reject:
+                rejected.setdefault(
+                    untick.key,
+                    {
+                        'by': by,
+                        'at': at,
+                        'input': reports[untick.key].get('entry_id'),
+                        'reason': untick.reason,
+                        'meant': untick.meant.strip(),
+                        'proposed': feedback.proposed_edit(status, untick.key),
+                    },
+                )
+            rejected = _matching(rejected, status)
+            await voice.writer.write_json(client, upload_id, REJECTIONS_FILE, rejected)
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    return RoundResponse(rejected=sorted(rejected))
+
+
+def _matching(rejected: dict, status: dict) -> dict:
+    """The rejections still of an edit of their input in the last run; an
+    input the run did not report keeps its own."""
+    ready = {
+        report['entry_id']: {edit['key'] for edit in report.get('ready', [])}
+        for report in status.get('inputs', [])
+        if isinstance(report, dict) and report.get('entry_id')
+    }
+    return {
+        key: r
+        for key, r in rejected.items()
+        if r.get('input') not in ready or key in ready[r['input']]
+    }
 
 
 @router.post(
@@ -1432,7 +1660,23 @@ async def undo_last_decision(
                 )
             undo = {(r['decision'], r['key']) for r in last}
             kept = {k: c for k, c in confirmed.items() if ('confirmed', k) not in undo}
-            if len(kept) < len(confirmed):
+            checkpoint = await _undone_checkpoint(
+                client,
+                voice,
+                upload_id,
+                [confirmed[k] for k in body.keys if k in confirmed],
+            )
+            if checkpoint is not None:  # the click was a Confirm all
+                await _write_checked(
+                    client,
+                    voice,
+                    upload_id,
+                    [
+                        (CONFIRMATIONS_FILE, confirmations_json(kept)),
+                        (CHECKPOINT_FILE, checkpoint),
+                    ],
+                )
+            elif len(kept) < len(confirmed):
                 await voice.writer.write_json(
                     client, upload_id, CONFIRMATIONS_FILE, confirmations_json(kept)
                 )
@@ -1451,7 +1695,8 @@ async def reset_decisions(
     request: Request,
     collection_entry_id: str,
 ) -> None:
-    """Take back every confirmation and rejection, as if none was made."""
+    """Take back every confirmation and rejection, as if none was made,
+    and unlock the inputs behind Confirm all."""
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
@@ -1462,10 +1707,13 @@ async def reset_decisions(
             # are read before either is written: one damaged changes nothing
             confirmed = await _loaded_confirmations(client, voice, upload_id)
             rejected = await _loaded_rejections(client, voice, upload_id)
+            locked = await _loaded_checkpoint(client, voice, upload_id)
             if confirmed:
                 await voice.writer.write_json(client, upload_id, CONFIRMATIONS_FILE, {})
             if rejected:
                 await voice.writer.write_json(client, upload_id, REJECTIONS_FILE, {})
+            if locked:
+                await voice.writer.write_json(client, upload_id, CHECKPOINT_FILE, {})
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
 
