@@ -589,8 +589,8 @@ def test_preview_of_uncertain_and_unreadable_items(catalog):
     )
     proposal = ask(catalog, 'not json')
     assert preview([], proposal.unresolved, NOTHING, catalog) == (
-        "? not done, the model's answer could not be read: "
-        'Expecting value: line 1 column 1 (char 0)'
+        '? sand could not propose an edit for this note. '
+        'Try again, or write the note more clear.'
     )
 
 
@@ -645,8 +645,8 @@ def test_interpret_instruction_applies_nothing_uncertain_or_unreadable(synthetic
     result = interpret_instruction(SAID, synthetic_xlsx, unreadable)
     assert result.ready == {}
     assert result.preview == (
-        "? not done, the model's answer could not be read: "
-        'Expecting value: line 1 column 1 (char 0)'
+        '? sand could not propose an edit for this note. '
+        'Try again, or write the note more clear.'
     )
 
 

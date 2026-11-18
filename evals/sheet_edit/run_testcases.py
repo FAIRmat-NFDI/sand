@@ -205,7 +205,13 @@ class Verdict:
 
 
 def judge(case: Case, result: Interpretation) -> Verdict:
-    v = Verdict(case, preview=result.preview)
+    # the page hides why an answer was unreadable; the eval shows it
+    why = [
+        f'  ({u.detail})'
+        for u in result.proposal.unresolved
+        if isinstance(u, Unreadable)
+    ]
+    v = Verdict(case, preview='\n'.join([result.preview, *why]))
     ready = list(result.ready.values())
     refused = {r.edit.target for r in result.results if isinstance(r, Refused)}
     kinds = {u.reason for u in result.proposal.unresolved}

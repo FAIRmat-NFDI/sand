@@ -316,7 +316,11 @@ def sample_words_problems(
         # "samples 1 to 3 of subbatches 0 and 1" is one edit per subbatch
         in_subbatch = {s.row for s in catalog.samples if s.subbatch == spec.subbatch}
         named, excluded = named & in_subbatch, excluded & in_subbatch
-    if not named and said.all:  # "all samples of subbatch 1": the whole scope
+    # "all samples of subbatch 1", or "subbatch 1" alone: the whole scope.
+    # Not for sample words code cannot read ("the first three of subbatch 1")
+    alone = said.subbatches and not (said.samples or said.unknown)
+    alone = alone and (said.excluded or not _SAMPLE_WORD_RE.search(edit.said))
+    if not named and (said.all or alone):
         named = set(_scope(catalog, spec.subbatch, said.subbatches)) - excluded
     if hit := sorted(excluded & set(rows)):
         problems.append(
@@ -474,10 +478,16 @@ def _listed(clause: str, ordered: list[SampleInfo]) -> list[_Item]:
 
 
 def _between(a: _Item, b: _Item, ordered: list[SampleInfo]) -> tuple[SampleInfo, ...]:
-    """The samples from a to b in sheet order, within each subbatch where
-    both are exactly one sample ("samples 1 to 3 of subbatches 0 and 1").
-    Empty when the range cannot be followed (backwards, or an end is no
+    """The samples from a to b in sheet order. On a sheet where every label
+    is one sample, a range spans subbatches ("1 to 9" over subbatches 1–8
+    and 9–15); labels repeated per subbatch are followed within each subbatch where both are
+    exactly one sample ("samples 1 to 3 of subbatches 0 and 1"). Empty
+    when the range cannot be followed (backwards, or an end is no
     sample)."""
+    unique = len({s.label for s in ordered}) == len(ordered)
+    if unique and len(a.hits) == 1 and len(b.hits) == 1:
+        lo, hi = ordered.index(a.hits[0]), ordered.index(b.hits[0])
+        return tuple(ordered[lo : hi + 1])
     rows = []
     for subbatch in dict.fromkeys(s.subbatch for s in a.hits):
         first = [s for s in a.hits if s.subbatch == subbatch]

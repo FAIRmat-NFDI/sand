@@ -298,7 +298,8 @@ async def test_an_answer_the_child_could_not_get_is_this_inputs_problem(upload):
     )
     assert report['ready'] == []
     assert report['preview'] == (
-        "? not done, the model's answer could not be read: Max retry attempts reached."
+        '? sand could not propose an edit for this note. '
+        'Try again, or write the note more clear.'
     )
     assert (await activities.prepare_input(prepare(upload, 1)))['cached'] is True
     # the next job asks again: an unreadable answer is never published

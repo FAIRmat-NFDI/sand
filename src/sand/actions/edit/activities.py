@@ -165,6 +165,11 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
             else read_answer(a.text, text, catalog)
             for a in data.answers
         ]
+        for opinion in opinions:
+            if isinstance(opinion, Unreadable):  # the page shows no reason
+                activity.logger.warning(
+                    'input %s unreadable: %s', data.number, opinion.detail
+                )
         agreed = agree(opinions, catalog)
         # what holds only on the sheet the model read is saved here: the
         # `old` check and where the named values sit

@@ -253,7 +253,8 @@ def test_the_model_giving_up_is_unreadable_and_a_bad_answer_fails_the_job(
 
     (verdict,) = rt.run([case], synthetic_xlsx, gives_up)
     assert verdict.flagged == 1 and not verdict.failed
-    assert 'unreadable' in verdict.preview or 'could not be read' in verdict.preview
+    assert 'could not propose an edit' in verdict.preview
+    assert rt.GAVE_UP in verdict.preview
 
     def not_json(name, system, text, schema):
         raise rt.JobWouldFail('the answer is not JSON')
