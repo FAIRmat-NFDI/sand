@@ -6,6 +6,7 @@ import json
 import pathlib
 import uuid
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 import pytest
 from temporalio import activity, workflow
@@ -48,6 +49,8 @@ class FakeExtraction:
             return {'extracted_data': {}, 'err_message': 'Max retry attempts reached.'}
         if 'RAISE' in payload['prompt']:
             raise ApplicationError('provider down', non_retryable=True)
+        if 'SLOW' in payload['prompt']:
+            await workflow.sleep(timedelta(minutes=6))  # skipped in tests
         return {'extracted_data': {'got': payload}, 'err_message': None}
 
 
@@ -119,7 +122,12 @@ class Stubs:
         @activity.defn(name='agree_cache_and_apply_input')
         async def apply(data: ApplyInput) -> dict:
             stubs.record('apply', data)
-            return {'input': data.number, 'preview': f'preview {data.number}'}
+            report = {'input': data.number, 'preview': f'preview {data.number}'}
+            if data.status:
+                # the real one writes the status with this report
+                inputs = [*data.status['inputs'], report]
+                stubs.record('status', {**data.status, 'inputs': inputs})
+            return report
 
         @activity.defn(name='store_final_sheet_and_changelog')
         async def store(data: StoreInput) -> dict:
@@ -174,19 +182,17 @@ async def test_each_input_in_order_two_opinions_each_then_the_sheet():
     stubs = Stubs(['speed 4000', 'clear solvent 2'])
     result = await run(stubs)
 
-    # no "collecting" or "replaying" status: the reservation stands
+    # no "collecting" or "replaying" status: the reservation stands; each
+    # input's status goes with its apply (one write), none before it
     assert [name for name, _ in stubs.calls] == [
         'collect',
         'replay',
         'status',
         'prepare',
-        'status',
         'apply',
         'status',
         'prepare',
-        'status',
         'apply',
-        'status',
         'status',
         'store_final_sheet_and_changelog',
         'status',
@@ -229,16 +235,13 @@ async def test_status_shows_progress_then_the_result():
     stubs = Stubs(['speed 4000', 'clear solvent 2'])
     await run(stubs)
     statuses = stubs.of('status')
-    assert [s['phase'] for s in statuses] == [
-        *['interpreting'] * 5,
-        'writing-sheet',
-        'completed',
-    ]
-    # before and after each input's LLM calls
-    assert [s.get('inputs_done') for s in statuses[:5]] == [0, 0, 1, 1, 2]
-    assert all(s['inputs_total'] == 2 for s in statuses[:5])  # noqa: PLR2004
-    assert all(s['inputs_replayed'] == 0 for s in statuses[:5])
-    assert [len(s['inputs']) for s in statuses] == [0, 0, 1, 1, 2, 2, 2]
+    # "writing-sheet" only as a heartbeat: the last status is fresh
+    assert [s['phase'] for s in statuses] == [*['interpreting'] * 3, 'completed']
+    # before the first input, then after each
+    assert [s.get('inputs_done') for s in statuses[:3]] == [0, 1, 2]
+    assert all(s['inputs_total'] == 2 for s in statuses[:3])  # noqa: PLR2004
+    assert all(s['inputs_replayed'] == 0 for s in statuses[:3])
+    assert [len(s['inputs']) for s in statuses] == [0, 1, 2, 2]
     done = statuses[-1]
     assert done['collection_entry_id'] == 'c1'
     assert done['model'] == MODEL
@@ -247,6 +250,20 @@ async def test_status_shows_progress_then_the_result():
     assert (done['final'], done['changed'], done['changes']) == ('abc', True, 3)
     assert done['changelog'] == 'log'
     assert done['job_id'] == statuses[0]['job_id']
+
+
+async def test_a_slow_model_adds_no_write():
+    """Each input's own write keeps the status fresh: the heartbeat is
+    for a slow prepare (its retries), not for the model."""
+    stubs = Stubs(['SLOW speed 4000', 'SLOW clear solvent 2'])
+    await run(stubs)
+    phases = [(s['phase'], s.get('inputs_done')) for s in stubs.of('status')]
+    assert phases == [
+        ('interpreting', 0),
+        ('interpreting', 1),
+        ('interpreting', 2),
+        ('completed', None),
+    ]
 
 
 async def test_the_leading_cached_inputs_are_replayed_in_one_go():
@@ -265,9 +282,9 @@ async def test_the_leading_cached_inputs_are_replayed_in_one_go():
     assert [r['input'] for r in result['inputs']] == [1, 2, 3]
     assert [r['from_cache'] for r in result['inputs'][:2]] == [True, True]
     interpreting = [s for s in stubs.of('status') if s['phase'] == 'interpreting']
-    assert [s['inputs_done'] for s in interpreting] == [2, 2, 3]
+    assert [s['inputs_done'] for s in interpreting] == [2, 3]
     assert all(s['inputs_replayed'] == 2 for s in interpreting)  # noqa: PLR2004
-    assert [len(s['inputs']) for s in interpreting] == [2, 2, 3]
+    assert [len(s['inputs']) for s in interpreting] == [2, 3]
 
 
 async def test_everything_cached_is_replayed_then_written():

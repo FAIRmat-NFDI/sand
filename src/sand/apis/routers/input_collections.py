@@ -1275,7 +1275,13 @@ async def confirm_edits(
                 if c.input not in ready or key in ready[c.input]
             }
             await _write_with_checkpoint(
-                client, voice, upload_id, status, confirmed, by, now
+                client,
+                voice,
+                upload_id,
+                status=status,
+                confirmed=confirmed,
+                by=by,
+                now=now,
             )
             await _drop_lost_rejections(client, voice, upload_id, rejected, ready)
     except NomadAPIError as exc:
@@ -1288,6 +1294,7 @@ async def _write_with_checkpoint(  # noqa: PLR0913
     client,
     voice: VoiceElnService,
     upload_id: str,
+    *,
     status: dict,
     confirmed: dict[str, Confirmation],
     by: str,
@@ -1303,18 +1310,38 @@ async def _write_with_checkpoint(  # noqa: PLR0913
         if isinstance(r, dict) and r.get('entry_id')
     }
     checkpoint = {'inputs': sorted(covered), 'by': by, 'at': now.isoformat()}
+    await _write_checked(
+        client,
+        voice,
+        upload_id,
+        [
+            (CONFIRMATIONS_FILE, confirmations_json(confirmed)),
+            (CHECKPOINT_FILE, checkpoint),
+        ],
+    )
+
+
+async def _write_checked(
+    client, voice: VoiceElnService, upload_id: str, files: list[tuple[str, dict]]
+) -> None:
+    """Files of sheet_edit/ in one request, read back: NOMAD's PUT only
+    queues the update (the reads wait until it is done)."""
     await voice.writer.upload_raw_files(
         client,
         upload_id,
         [
             (name.rpartition('/')[2], _json(payload), JSON_TYPE)
-            for name, payload in (
-                (CONFIRMATIONS_FILE, confirmations_json(confirmed)),
-                (CHECKPOINT_FILE, checkpoint),
-            )
+            for name, payload in files
         ],
         directory=CONFIRMATIONS_FILE.rpartition('/')[0],
     )
+    for name, payload in files:
+        if await voice.writer.read_json(client, upload_id, name) != json.loads(
+            _json(payload)
+        ):
+            raise HTTPException(
+                status_code=502, detail=f'NOMAD did not store {name}; try again'
+            )
 
 
 def _json(payload: dict) -> bytes:
@@ -1404,7 +1431,7 @@ async def decide_round(
             me = await _me(client)
             by = me.get('username') or me.get('name') or me['user_id']
             at = datetime.now(timezone.utc).isoformat()
-            for key in body.restore:
+            for key in dict.fromkeys(body.restore):
                 del rejected[key]
             for untick in body.reject:
                 rejected.setdefault(
