@@ -227,7 +227,6 @@ def confirmations_json(confirmations: dict[str, Confirmation]) -> dict:
     return {
         key: {
             'by': c.by,
-            # to the microsecond: a click's records share it (Undo last)
             'at': c.at.isoformat(),
             'input': c.input,
         }

@@ -12,7 +12,7 @@ import { errorDetail, experimentUrl } from "./api.js";
 import {
   changedEntries, checkedKeys, confirmAllLabel, confirmQuestion, decisionCount, describeEditPhase, downloadBlock,
   downloadFilename, editSummary, inputsToRead, lostUnticks, pendingKeys, readKey, recomputeLabel, reportsByEntry,
-  reviewSnapshot, settledBlock, unwrittenKey, writtenEdits,
+  roundSnapshot, settledBlock, unwrittenKey, writtenEdits,
 } from "./edit-logic.js";
 import { requireExperiment, showSheet } from "./experiments.js";
 import { setOverviewUpdates, showOverview } from "./overview.js";
@@ -44,7 +44,7 @@ let pollGeneration = 0;
 let current = null; // the experiment the card shows
 let downloading = false;
 let editedReady = false; // the shown experiment's last job completed: an edited sheet exists
-let confirming = null; // entry id of the experiment whose review confirmation is on its way
+let confirming = null; // entry id of the experiment whose Confirm all is on its way
 
 // what decides whether a job must start by itself: the inputs list as
 // last loaded (any experiment: it can arrive before the card switches),
@@ -69,7 +69,7 @@ let writeTimer = null; // {timer, experiment}: the write about to start
 // list's, whatever it turns out to be (no restart on a reload)
 const FAILED_BEFORE_INPUTS = Symbol("failed");
 // what the last Recompute is compared with once read again, and what it
-// changed (inputs.js marks): {entryId, before (reviewSnapshot), sent}
+// changed (inputs.js marks): {entryId, before (roundSnapshot), sent}
 let roundSent = null;
 const NO_MARKS = { changed: new Set(), lost: {} };
 let marks = NO_MARKS;
@@ -280,7 +280,7 @@ async function poll(experiment, generation) {
   if (status.phase === "completed" && roundSent && roundSent.entryId === experiment.entry_id) {
     // read again after a Recompute: what the round changed
     marks = {
-      changed: changedEntries(roundSent.before, reviewSnapshot(status)),
+      changed: changedEntries(roundSent.before, roundSnapshot(status)),
       lost: lostUnticks(roundSent.sent, status),
     };
     roundSent = null;
@@ -394,7 +394,7 @@ async function confirmEdits(experiment, keys) {
   }
   let why;
   try {
-    why = await post(experiment, "edits/confirm", { keys, review: true });
+    why = await post(experiment, "edits/confirm", { keys });
   } finally {
     confirming = null;
   }
@@ -414,7 +414,7 @@ async function confirmEdits(experiment, keys) {
 async function recompute(experiment) {
   if (running || recomputeBtn.disabled) return;
   clearError();
-  const before = lastStatus ? reviewSnapshot(lastStatus) : null;
+  const before = lastStatus ? roundSnapshot(lastStatus) : null;
   const sent = sentUnticks();
   if (roundSize()) {
     recomputeBtn.disabled = true;

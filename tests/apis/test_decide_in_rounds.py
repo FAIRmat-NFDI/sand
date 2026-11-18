@@ -7,7 +7,7 @@ from http import HTTPStatus
 
 import pytest
 from nomad_fakes import COLLECTION, UPLOAD, FakeVoice, api, note
-from test_decide_in_turn import TEXTS, put_confirmed, put_status, report
+from test_confirm_all import TEXTS, put_confirmed, put_status, report
 
 from sand.sheet_edit.session import (
     CHECKPOINT_FILE,
@@ -45,7 +45,7 @@ async def confirm_all(voice, keys):
         return await client.post(
             f'/api/input-collections/{UPLOAD}/edits/confirm',
             params=PARAMS,
-            json={'keys': keys, 'review': True},
+            json={'keys': keys},
         )
 
 

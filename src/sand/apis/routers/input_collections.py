@@ -12,7 +12,6 @@ from sand.models.input_collections import (
     ConfirmEditsRequest,
     ConfirmEditsResponse,
     CreateNoteRequest,
-    DecisionsRequest,
     FeedbackRequest,
     FeedbackResponse,
     InputCollectionListResponse,
@@ -21,15 +20,12 @@ from sand.models.input_collections import (
     InputItemModel,
     InputListResponse,
     JobResponse,
-    RejectEditsRequest,
-    RejectEditsResponse,
     RenameRequest,
     ReviseInputRequest,
     ReviseInputResponse,
     ReviseLabelRequest,
     RoundRequest,
     RoundResponse,
-    UndoneResponse,
 )
 from sand.services.nomad_api import (
     XLSX_CONTENT_TYPE,
@@ -749,8 +745,6 @@ async def _edit_status(
         }
     confirmed = await _confirmations(client, voice, upload_id)
     rejected = await _rejections(client, voice, upload_id)
-    # what Undo last takes back
-    status['last_decision'] = _last_decision(confirmed, rejected)
     return _with_confirmations(status, confirmed, rejected)
 
 
@@ -1153,15 +1147,12 @@ async def _decidable(  # noqa: PLR0913
     *,
     keys: list[str],
     verb: str,
-    review: bool,
 ) -> tuple[dict, dict]:
     """The last job's status and, by key, the report each key is a ready
-    edit of: a key to confirm or reject must be one, of an input whose
-    words are the ones the report read. One by one, the keys must be the
-    next input's to decide (`_turn`); from the Confirm all review
-    (`review`), of any input, once every input is read."""
+    edit of: a key to confirm must be one, of an input whose words are
+    the ones the report read, once every input is read."""
     status = await _edit_status(client, voice, upload_id, collection_entry_id)
-    if review and _job_running(status):
+    if _job_running(status):
         raise HTTPException(
             status_code=409,
             detail=f'the updates are being read; {verb} when it has finished',
@@ -1213,26 +1204,10 @@ async def _decidable(  # noqa: PLR0913
             detail='an update above changed: this one is read again first; '
             f'{verb} it when it is ready',
         )
-    if review:
-        why = _not_settled(status, texts)
-        if why:
-            raise HTTPException(status_code=409, detail=why)
-    elif any(reports[key] is not _turn(status) for key in keys):
-        raise HTTPException(
-            status_code=409,
-            detail='decide the updates above first, or decide all at once '
-            'with Confirm all',
-        )
+    why = _not_settled(status, texts)
+    if why:
+        raise HTTPException(status_code=409, detail=why)
     return status, reports
-
-
-def _turn(status: dict) -> dict | None:
-    """The first report with an edit nobody decided: an edit is read on
-    the sheet the ones above leave, so it is decided after them."""
-    return next(
-        (r for r in status.get('inputs', []) if isinstance(r, dict) and _undecided(r)),
-        None,
-    )
 
 
 @router.post(
@@ -1244,11 +1219,11 @@ async def confirm_edits(
     request: Request,
     collection_entry_id: str,
 ) -> ConfirmEditsResponse:
-    """Confirm ready edits by their keys. Only recorded here; the next
-    job run writes them into the sheet (its answers are cached, so the
-    run costs no model calls). A key must be a ready edit of the last
-    job's reports. An already confirmed key keeps its first record. From
-    the Confirm all review, the keys are every undecided edit."""
+    """Confirm all (#208): the keys are every undecided ready edit of the
+    last run, as the page showed them. Only recorded here, with the
+    checkpoint that locks the inputs; the next job run writes them into
+    the sheet (its answers are cached, so the run costs no model calls).
+    An already confirmed key keeps its first record."""
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
@@ -1263,27 +1238,21 @@ async def confirm_edits(
                 collection_entry_id,
                 keys=body.keys,
                 verb='confirm',
-                review=body.review,
             )
-            if body.review and set(body.keys) != {
+            if set(body.keys) != {
                 key
                 for report in status.get('inputs', [])
                 if isinstance(report, dict)
                 for key in _undecided(report)
             }:
-                # what is confirmed is what the review showed, all of it
+                # what is confirmed is what the page showed, all of it
                 raise HTTPException(
                     status_code=409,
-                    detail='the edits changed since the review; look at them again',
+                    detail='the edits changed since they were shown; look at them again',
                 )
             confirmed = await _loaded_confirmations(client, voice, upload_id)
+            # a damaged file stops it: what is rejected is not known
             rejected = await _loaded_rejections(client, voice, upload_id)
-            refused = sorted(key for key in body.keys if key in rejected)
-            if refused:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f'rejected, undo the rejection first: {", ".join(refused)}',
-                )
             me = await _me(client)
             by = me.get('username') or me.get('name') or me['user_id']
             now = datetime.now(timezone.utc)
@@ -1305,14 +1274,9 @@ async def confirm_edits(
                 for key, c in confirmed.items()
                 if c.input not in ready or key in ready[c.input]
             }
-            if body.review:
-                await _write_with_checkpoint(
-                    client, voice, upload_id, status, confirmed, by, now
-                )
-            else:
-                await voice.writer.write_json(
-                    client, upload_id, CONFIRMATIONS_FILE, confirmations_json(confirmed)
-                )
+            await _write_with_checkpoint(
+                client, voice, upload_id, status, confirmed, by, now
+            )
             await _drop_lost_rejections(client, voice, upload_id, rejected, ready)
     except NomadAPIError as exc:
         raise _http_error(exc) from exc
@@ -1370,111 +1334,6 @@ async def _drop_lost_rejections(
     }
     if len(kept) < len(rejected):
         await voice.writer.write_json(client, upload_id, REJECTIONS_FILE, kept)
-
-
-@router.post(
-    '/input-collections/{upload_id}/edits/reject', response_model=RejectEditsResponse
-)
-async def reject_edits(
-    upload_id: str,
-    body: RejectEditsRequest,
-    request: Request,
-    collection_entry_id: str,
-) -> RejectEditsResponse:
-    """Reject ready edits by their keys: never written, and decided. The
-    record keeps the edit as proposed, with the optional reason, so sand
-    can learn from it. A confirmed edit cannot be rejected; an already
-    rejected key keeps its first record."""
-    voice = _voice_service(request)
-    token = get_bearer_token(request)
-
-    if not body.keys:
-        raise HTTPException(status_code=400, detail='no keys to reject')
-    try:
-        async with _upload_lock(upload_id), voice.build_client(token) as client:
-            status, reports = await _decidable(
-                client,
-                voice,
-                upload_id,
-                collection_entry_id,
-                keys=body.keys,
-                verb='reject',
-                review=body.review,
-            )
-            confirmed = await _loaded_confirmations(client, voice, upload_id)
-            rejected = await _loaded_rejections(client, voice, upload_id)
-            written = sorted(
-                key
-                for key in body.keys
-                if key in confirmed
-                and confirmed[key].input == reports[key].get('entry_id')
-            )
-            if written:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f'already confirmed: {", ".join(written)}',
-                )
-            me = await _me(client)
-            by = me.get('username') or me.get('name') or me['user_id']
-            # one click, one time: Undo last takes back what has the last
-            at = datetime.now(timezone.utc).isoformat()
-            for key in body.keys:
-                rejected.setdefault(
-                    key,
-                    {
-                        'by': by,
-                        'at': at,
-                        'input': reports[key].get('entry_id'),
-                        'reason': body.reason,
-                        'meant': body.meant.strip(),
-                        'proposed': feedback.proposed_edit(status, key),
-                    },
-                )
-            # as on confirm: an input decided again is done with its
-            # rejections that match none of its edits
-            ready = {
-                reports[key].get('entry_id'): {
-                    edit['key'] for edit in reports[key].get('ready', [])
-                }
-                for key in body.keys
-            }
-            rejected = {
-                key: r
-                for key, r in rejected.items()
-                if r['input'] not in ready or key in ready[r['input']]
-            }
-            await voice.writer.write_json(client, upload_id, REJECTIONS_FILE, rejected)
-            kept = {
-                key: c
-                for key, c in confirmed.items()
-                if c.input not in ready or key in ready[c.input]
-            }
-            if len(kept) < len(confirmed):
-                # a lost confirmation would count again if the earlier
-                # input's words were changed back
-                await voice.writer.write_json(
-                    client, upload_id, CONFIRMATIONS_FILE, confirmations_json(kept)
-                )
-    except NomadAPIError as exc:
-        raise _http_error(exc) from exc
-
-    return RejectEditsResponse(rejected=sorted(rejected))
-
-
-def _last_decision(confirmed: dict | None, rejected: dict | None) -> list[dict]:
-    """The records of the last click, of either file: they share its time.
-    JSON as loaded (`_confirmations`, `_rejections`)."""
-    records = [
-        {'key': key, 'decision': decision, 'at': datetime.fromisoformat(r['at'])}
-        for decision, file in (('confirmed', confirmed), ('rejected', rejected))
-        for key, r in (file or {}).items()
-    ]
-    if not records:
-        return []
-    last = max(r['at'] for r in records)
-    return [
-        {'key': r['key'], 'decision': r['decision']} for r in records if r['at'] == last
-    ]
 
 
 async def _idle(client, voice: VoiceElnService, upload_id: str) -> None:
@@ -1580,48 +1439,6 @@ def _matching(rejected: dict, status: dict) -> dict:
         for key, r in rejected.items()
         if r.get('input') not in ready or key in ready[r['input']]
     }
-
-
-@router.post(
-    '/input-collections/{upload_id}/edits/undo-last',
-    response_model=UndoneResponse,
-)
-async def undo_last_decision(
-    upload_id: str,
-    body: DecisionsRequest,
-    request: Request,
-    collection_entry_id: str,
-) -> UndoneResponse:
-    """Take back the last click's decisions: its edits wait for a decision
-    again. `keys`: the status's `last_decision`, so a click made since in
-    another tab is not the one taken back."""
-    voice = _voice_service(request)
-    token = get_bearer_token(request)
-
-    try:
-        async with _upload_lock(upload_id), voice.build_client(token) as client:
-            await _idle(client, voice, upload_id)
-            confirmed = await _loaded_confirmations(client, voice, upload_id)
-            rejected = await _loaded_rejections(client, voice, upload_id)
-            last = _last_decision(confirmations_json(confirmed), rejected)
-            if not last or {r['key'] for r in last} != set(body.keys):
-                raise HTTPException(
-                    status_code=409,
-                    detail='this is not the last decision; look again',
-                )
-            undo = {(r['decision'], r['key']) for r in last}
-            kept = {k: c for k, c in confirmed.items() if ('confirmed', k) not in undo}
-            if len(kept) < len(confirmed):
-                await voice.writer.write_json(
-                    client, upload_id, CONFIRMATIONS_FILE, confirmations_json(kept)
-                )
-            still = {k: r for k, r in rejected.items() if ('rejected', k) not in undo}
-            if len(still) < len(rejected):
-                await voice.writer.write_json(client, upload_id, REJECTIONS_FILE, still)
-    except NomadAPIError as exc:
-        raise _http_error(exc) from exc
-
-    return UndoneResponse(undone=sorted(r['key'] for r in last))
 
 
 @router.post('/input-collections/{upload_id}/edits/reset', status_code=204)

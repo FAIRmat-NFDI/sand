@@ -70,16 +70,6 @@ function changesBelow(report) {
     .some((field) => (report[field] || []).length);
 }
 
-// The update decided next, one by one: the first with an undecided
-// edit (entry id), null when none. An edit is read on the sheet the
-// ones above leave, so it waits for them. As the server decides it
-// (`_turn`).
-export function turnEntry(reports) {
-  const ordered = Object.values(reports).sort((a, b) => a.input - b.input);
-  const first = ordered.find((report) => pendingKeys([report]).length);
-  return first ? first.entry_id : null;
-}
-
 // the pending edits a word check marked: confirm all takes them too,
 // its label says how many
 export function checkedKeys(reports) {
@@ -327,29 +317,6 @@ export function settledBlock(status, items) {
   return "";
 }
 
-// The Confirm all review of a completed status, in update order: the
-// undecided edits (to confirm, or untick to reject), the rejected ones,
-// and the updates with a part that is not an edit (skipped: unclear,
-// not applied, not written). `items` give the titles.
-export function reviewRows(status, items) {
-  const titles = new Map(items.map((item, at) => [item.entry_id, item.label || "Update " + (at + 1)]));
-  const rows = { confirm: [], rejected: [], skipped: [] };
-  const ordered = [...(status.inputs || [])].sort((a, b) => a.input - b.input);
-  for (const report of ordered) {
-    const title = titles.get(report.entry_id) || "Update " + report.input;
-    const entry = report.entry_id;
-    const pending = new Set(pendingKeys([report]));
-    const rejected = new Set(report.rejected || []);
-    for (const edit of report.ready || []) {
-      if (pending.has(edit.key)) rows.confirm.push({ entry, title, key: edit.key, line: edit.line });
-      else if (rejected.has(edit.key)) rows.rejected.push({ entry, title, key: edit.key, line: edit.line });
-    }
-    const why = skippedWhy(report);
-    if (why) rows.skipped.push({ entry, title, line: why });
-  }
-  return rows;
-}
-
 function skippedWhy(report) {
   if (report.refused) return "not written: " + report.refused;
   const parts = [];
@@ -358,9 +325,9 @@ function skippedWhy(report) {
   return parts.join(" · ");
 }
 
-// What each update shows in the review, to mark the ones a rejection
-// changed: its undecided edits and what is skipped
-export function reviewSnapshot(status) {
+// What each update shows, to mark the ones a round changed once read
+// again: its undecided edits and what is skipped
+export function roundSnapshot(status) {
   const shown = {};
   for (const report of status.inputs || []) {
     const pending = new Set(pendingKeys([report]));
@@ -376,33 +343,6 @@ export function reviewSnapshot(status) {
 export function changedEntries(before, after) {
   if (!before) return new Set();
   return new Set(Object.keys(after).filter((id) => id in before && before[id] !== after[id]));
-}
-
-// the label of the review's button: what it does with the ticks
-export function reviewAction(toConfirm, unticked) {
-  if (unticked) return "Reject " + unticked + " and check";
-  return toConfirm === 1 ? "Confirm 1 edit" : "Confirm " + toConfirm + " edits";
-}
-
-// What Undo last asks before taking back the last click
-// (status.last_decision), or null when there is none
-export function undoQuestion(status) {
-  const last = status.last_decision || [];
-  if (!last.length) return null;
-  if (last.length === 1) {
-    const [{ key, decision }] = last;
-    const edit = (status.inputs || []).flatMap((report) => report.ready || [])
-      .find((e) => e.key === key);
-    const verb = decision === "confirmed" ? "confirmation" : "rejection";
-    return "Undo your last " + verb + (edit ? ": " + edit.line + "?" : "?")
-      + " The edit waits for your decision again.";
-  }
-  const confirmed = last.filter((d) => d.decision === "confirmed").length;
-  const rejected = last.length - confirmed;
-  const parts = [];
-  if (confirmed) parts.push(count(confirmed, "edit confirmed", "edits confirmed"));
-  if (rejected) parts.push(count(rejected, "edit rejected", "edits rejected"));
-  return "Undo your last decision: " + parts.join(" and ") + "? They wait for your decision again.";
 }
 
 // how many decisions Reset all takes back
