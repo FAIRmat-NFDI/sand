@@ -28,6 +28,14 @@ class JobInput(BaseModel):
     input_ids: list[str] = []
 
 
+class StoreInput(JobInput):
+    """The job, and its status without the store's results: written as
+    completed with the final sheet, in one request. Empty in a job
+    started before (its workflow writes the status itself)."""
+
+    status: dict = {}
+
+
 class ReplayInput(JobInput):
     entry_ids: list[str]  # one per text, for the reports
 

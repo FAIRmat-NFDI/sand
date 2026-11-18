@@ -14,8 +14,9 @@ order, each interpreted against the sheet the earlier ones left.
             ──▶ the user's preview, edits ready to confirm, confirmed ones written
         status "interpreting k/n"
     status "writing-sheet"
-    activity store_final_sheet_and_changelog ──▶ changelog checked, sheet stored
-    status "completed" {final, changed, changes, changelog, written}
+    activity store_final_sheet_and_changelog ──▶ changelog checked; the sheet,
+        changelog, cache and status "completed" {final, changed, changes,
+        changelog, written} stored in one request
     on ANY failure: status "failed" {error}, then re-raise
 
 A model answer the child cannot get (its error message) is one input's
@@ -52,6 +53,7 @@ with workflow.unsafe.imports_passed_through():
         LlmAnswer,
         PrepareInput,
         ReplayInput,
+        StoreInput,
         WriteStatusInput,
     )
     from sand.sheet_edit.resolve import PROMPT_VERSION
@@ -67,21 +69,24 @@ class EditSheetWorkflow:
         job_id = workflow.info().workflow_id
         reports: list[dict] = []  # one per finished input, in order
 
+        def status_of(payload: dict) -> dict:
+            return {
+                'job_id': job_id,
+                'collection_entry_id': data.collection_entry_id,
+                'updated_at': workflow.now().isoformat(),
+                'prompt_version': PROMPT_VERSION,
+                'temperature': TEMPERATURE,
+                'inputs': list(reports),
+                **payload,
+            }
+
         async def status(payload: dict) -> None:
             await workflow.execute_activity(
                 write_edit_status,
                 WriteStatusInput(
                     upload_id=data.upload_id,
                     user_id=data.user_id,
-                    status={
-                        'job_id': job_id,
-                        'collection_entry_id': data.collection_entry_id,
-                        'updated_at': workflow.now().isoformat(),
-                        'prompt_version': PROMPT_VERSION,
-                        'temperature': TEMPERATURE,
-                        'inputs': list(reports),
-                        **payload,
-                    },
+                    status=status_of(payload),
                 ),
                 start_to_close_timeout=timedelta(minutes=2),
                 retry_policy=RetryPolicy(maximum_attempts=3),
@@ -190,13 +195,22 @@ class EditSheetWorkflow:
                 await status({**progress, 'inputs_done': number})
 
             await status({'phase': 'writing-sheet', 'model': job.llm_model_name})
+            # the completed status goes with the final sheet, in one write;
+            # a job started before writes it after (its history's order)
+            together = workflow.patched('one-write-at-the-end')
             done = await workflow.execute_activity(
                 store_final_sheet_and_changelog,
-                job,
+                StoreInput(
+                    **job.model_dump(),
+                    status=status_of({'model': job.llm_model_name}) if together else {},
+                ),
                 start_to_close_timeout=timedelta(minutes=15),
                 retry_policy=RetryPolicy(maximum_attempts=3),
             )
-            await status({'phase': 'completed', 'model': job.llm_model_name, **done})
+            if not together:
+                await status(
+                    {'phase': 'completed', 'model': job.llm_model_name, **done}
+                )
             return {'job_id': job_id, 'inputs': reports, **done}
         except Exception as exc:
             # make the failure visible to the poll, then re-raise so Temporal
