@@ -130,13 +130,13 @@ export function inputState(item, report, jobRunning, canConfirm, outdated = fals
     if (!canConfirm) return null;
     return jobRunning
       ? { state: "reading", label: "Reading..." }
-      : { state: "waiting", label: "Waiting to be read" };
+      : { state: "waiting", label: "Waiting for Recompute" };
   }
   if (report.refused) return { state: "refused", label: "Not written" };
   if (outdated) {
     return jobRunning
       ? { state: "reading", label: "Reading..." }
-      : { state: "waiting", label: "Waiting to be read" };
+      : { state: "waiting", label: "Waiting for Recompute" };
   }
   const pending = pendingKeys([report]).length;
   if (pending) {
@@ -476,4 +476,39 @@ export function downloadFilename(contentDisposition, fallback) {
   }
   const plain = header.match(/filename="([^"]*)"/i);
   return plain ? plain[1] : fallback;
+}
+
+// The question before Confirm all (#208): what is confirmed, and that
+// every update is locked then, skipped parts too
+export function confirmQuestion(status) {
+  const reports = status.inputs || [];
+  const keys = pendingKeys(reports);
+  const updates = reports.filter((report) => pendingKeys([report]).length).length;
+  const skipped = reports.filter((report) => skippedWhy(report)).length;
+  let question = "Confirm " + count(keys.length, "edit", "edits") + " in "
+    + count(updates, "update", "updates") + "? They are written into the sheet, and every update "
+    + "is locked: only Reset all changes them.";
+  if (skipped) {
+    question += " " + (skipped === 1 ? "1 update has" : skipped + " updates have")
+      + " a part that is not an edit (unclear, not applied): locked too. Fix it first, or Reset all later.";
+  }
+  return question;
+}
+
+// the unticks of the last round whose edit is gone once read again (its
+// key changed with the sheet), by entry id: `sent` from sentUnticks()
+export function lostUnticks(sent, status) {
+  const ready = new Map((status.inputs || []).map(
+    (report) => [report.entry_id, new Set((report.ready || []).map((edit) => edit.key))]));
+  const lost = {};
+  for (const untick of sent) {
+    if (ready.get(untick.entry)?.has(untick.key)) continue;
+    (lost[untick.entry] ||= []).push(untick.line);
+  }
+  return lost;
+}
+
+// the Recompute button's label: the round's changes and the updates to read
+export function recomputeLabel(changes) {
+  return "Recompute (" + count(changes, "change", "changes") + ")";
 }

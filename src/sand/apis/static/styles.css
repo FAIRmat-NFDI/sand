@@ -1534,14 +1534,40 @@ body {
   }
 }
 
-.report-confirm.btn,
-.report-reject.btn {
+/* the tick of a proposed edit: ticked, Confirm all confirms it */
+.report-tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.report-tick label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.report-tick-word {
+  color: #757575;
+}
+
+.report-why.btn {
   text-transform: none;
   letter-spacing: 0;
   font-size: 0.8rem;
-  padding: 2px 12px;
-  border-radius: 999px;
-  background: #fff;
+  padding: 0 4px;
+}
+
+/* what the last round changed */
+.report-changed {
+  color: #92400e;
+}
+
+/* behind the last Confirm all: not revisable */
+.input-tile.is-locked {
+  cursor: default;
 }
 
 .report-confirmed {
@@ -1555,11 +1581,6 @@ body {
 
 .report-writing {
   font-style: italic;
-}
-
-.report-reject.btn {
-  color: #555;
-  border-color: #c4c7cc;
 }
 
 /* never written: no colour of its own */
@@ -1622,44 +1643,6 @@ body {
 .confirm-dialog .controls {
   justify-content: flex-end;
   margin: 24px 0 0;
-}
-
-/* Confirm all review: sections of edit rows, a tick each to confirm */
-.confirm-dialog.review-dialog {
-  max-width: min(640px, calc(100vw - 32px));
-}
-
-.review-list {
-  max-height: 60vh;
-  overflow-y: auto;
-}
-
-.review-section {
-  margin: 16px 0 4px;
-  font-weight: 500;
-}
-
-.review-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 4px 0;
-  overflow-wrap: anywhere;
-}
-
-.review-row input {
-  flex: none;
-}
-
-.review-title {
-  flex: none;
-  color: #6b7079;
-}
-
-.review-changed {
-  flex: none;
-  color: #92400e;
-  font-size: 0.85em;
 }
 
 /* Record section: the title and the voice mode switch, the label with
@@ -1953,12 +1936,6 @@ body {
   white-space: nowrap;
 }
 
-/* Confirm above Reject, the same width */
-.report-state.report-decide {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-}
 
 .report-wrong.btn-icon {
   padding: 2px;

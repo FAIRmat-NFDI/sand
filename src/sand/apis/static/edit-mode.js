@@ -1,28 +1,28 @@
-// The Edits card: what the edit job did, Confirm all with its review,
-// Undo last and Reset all, and the final sheet to download. The job
-// runs by itself: it reads an update as soon as it is saved (or its
-// words revised), and writes the confirmed edits a moment after a
-// decision. One by one, edits are decided from the input tiles
-// (inputs.js) through editActions, in turn; all at once in the review
-// (review.js).
+// The Edits card: what the edit job did, Recompute, Confirm all and
+// Reset all, and the final sheet to download. Deciding goes in rounds
+// (#208): the ticks of the input tiles (inputs.js, round.js), revised and
+// deleted updates, and new ones wait for Recompute, which sends the
+// round and reads the updates again, once. Confirm all confirms every
+// ticked edit of a computed state and writes the sheet.
 //
 // The job's status file is polled, and selecting an experiment resumes
 // an unfinished job's polling (reload-proof).
 
 import { errorDetail, experimentUrl } from "./api.js";
 import {
-  checkedKeys, confirmAllLabel, decisionCount, describeEditPhase, downloadBlock, downloadFilename, editSummary,
-  inputsToRead, pendingKeys, readKey, reportsByEntry, settledBlock, undoQuestion, unwrittenKey, writtenEdits,
+  changedEntries, checkedKeys, confirmAllLabel, confirmQuestion, decisionCount, describeEditPhase, downloadBlock,
+  downloadFilename, editSummary, inputsToRead, lostUnticks, pendingKeys, readKey, recomputeLabel, reportsByEntry,
+  reviewSnapshot, settledBlock, unwrittenKey, writtenEdits,
 } from "./edit-logic.js";
 import { requireExperiment, showSheet } from "./experiments.js";
-import { rejectEdit } from "./feedback.js";
 import { setOverviewUpdates, showOverview } from "./overview.js";
-import { setInputsListener, setReports } from "./inputs.js";
-import { openReview, updateReview } from "./review.js";
+import { reloadInputs, setInputsListener, setReports } from "./inputs.js";
+import { clearRound, onRoundChange, roundBody, roundFor, roundSize, sentUnticks } from "./round.js";
 import { clearError, confirmDialog, showError } from "./ui.js";
 
 const readAgainBtn = document.getElementById("read-again-btn");
-const undoLastBtn = document.getElementById("undo-last-btn");
+const recomputeBtn = document.getElementById("recompute-btn");
+const recomputeLabelEl = document.getElementById("recompute-label");
 const resetBtn = document.getElementById("reset-decisions-btn");
 const confirmAllBtn = document.getElementById("confirm-all-btn");
 const confirmAllLabelEl = document.getElementById("confirm-all-label");
@@ -54,8 +54,8 @@ let inputsSeen = null; // {entryId, items}
 let statusKnown = false; // the shown experiment's status was fetched once
 let running = false; // a job of the shown experiment runs, or is being started
 let lastStatus = null; // the last completed status of the shown experiment
-// the latest status, whatever its phase: what Undo last and Reset all
-// take back (a failed job's status names the decisions too)
+// the latest status, whatever its phase: what Reset all takes back (a
+// failed job's status names the decisions too)
 let decisionStatus = null;
 // the sheet the header was last read for (the view's sha at selection,
 // then each completed job's final); null while a failed re-read waits
@@ -68,6 +68,11 @@ let writeTimer = null; // {timer, experiment}: the write about to start
 // a job found failed before the inputs list arrived: its readKey is the
 // list's, whatever it turns out to be (no restart on a reload)
 const FAILED_BEFORE_INPUTS = Symbol("failed");
+// what the last Recompute is compared with once read again, and what it
+// changed (inputs.js marks): {entryId, before (reviewSnapshot), sent}
+let roundSent = null;
+const NO_MARKS = { changed: new Set(), lost: {} };
+let marks = NO_MARKS;
 
 // a response for an experiment no longer shown must not touch the card
 function stillShown(experiment) {
@@ -128,16 +133,35 @@ function updateProgress() {
   setOverviewUpdates(updates);
 }
 
-// Confirm all opens the review of `keys`, the undecided edits; `wait`:
-// why it cannot open now ("" when it can). `checked`: how many of them
-// have a check.
-function showPending(keys, checked = 0, wait = "") {
-  // this experiment's own confirmation brings the button back itself
+// the round's changes and the updates no job read in these words: what
+// Recompute sends and reads
+function changesToApply() {
+  const items = shownItems();
+  return roundSize() + (items ? inputsToRead(items, reportsShown).length : 0);
+}
+
+// Recompute while there are changes, else Confirm all of `status`'s
+// ticked edits once every update is read; `jobRunning`: neither now
+function showActions(status, jobRunning = false) {
+  // this experiment's own confirmation brings the buttons back itself
   if (current && confirming === current.entry_id) return;
+  const changes = changesToApply();
+  const items = shownItems();
+  const transcribing = items && items.some((item) => !item.text);
+  recomputeBtn.hidden = changes === 0 && !(transcribing && roundSize());
+  recomputeBtn.disabled = jobRunning || Boolean(transcribing);
+  recomputeBtn.title = jobRunning ? "The updates are being read"
+    : transcribing ? "Wait: a recording is being transcribed" : "";
+  recomputeLabelEl.textContent = recomputeLabel(Math.max(changes, roundSize()));
+  const all = status ? status.inputs || [] : [];
+  const keys = changes ? [] : pendingKeys(all);
+  const marked = new Set(checkedKeys(all));
   confirmAllBtn.hidden = keys.length === 0;
+  const wait = jobRunning || !status || status.phase !== "completed" ? "The updates are being read"
+    : settledBlock(status, items) ? "Wait: the updates are read again" : "";
   confirmAllBtn.disabled = Boolean(wait);
   confirmAllBtn.title = wait;
-  confirmAllLabelEl.textContent = confirmAllLabel(keys.length, checked) + "...";
+  confirmAllLabelEl.textContent = confirmAllLabel(keys.length, keys.filter((key) => marked.has(key)).length) + "...";
 }
 
 // the shown experiment's inputs list, null before it arrived
@@ -145,25 +169,12 @@ function shownItems() {
   return current && inputsSeen && inputsSeen.entryId === current.entry_id ? inputsSeen.items : null;
 }
 
-// Confirm all, of a status: open once every update is read and nothing
-// was decided since the last run
-function showDecidable(status, jobRunning = false) {
-  const all = status.inputs || [];
-  const keys = pendingKeys(all);
-  const marked = new Set(checkedKeys(all));
-  const wait = jobRunning || status.phase !== "completed" ? "The updates are being read"
-    : settledBlock(status, shownItems()) ? "Wait: the updates are read again" : "";
-  showPending(keys, keys.filter((key) => marked.has(key)).length, wait);
-}
-
-// Undo last and Reset all: shown with a decision to take back, used
-// between runs (the server refuses while a job reads them)
+// Reset all: shown with a decision to take back, used between runs (the
+// server refuses while a job reads them)
 function showTakeBack(status, jobRunning) {
-  const last = status ? status.last_decision || [] : [];
-  undoLastBtn.hidden = last.length === 0;
-  resetBtn.hidden = !status || (!decisionCount(status) && !last.length);
-  undoLastBtn.disabled = resetBtn.disabled = jobRunning;
-  undoLastBtn.title = resetBtn.title = jobRunning ? "The updates are being read" : "";
+  resetBtn.hidden = !status || !decisionCount(status);
+  resetBtn.disabled = jobRunning;
+  resetBtn.title = jobRunning ? "The updates are being read" : "";
 }
 
 // the sheet to download is the last run's, once every edit is decided
@@ -244,10 +255,10 @@ async function poll(experiment, generation) {
     lastStatus = null;
     decisionStatus = null;
     reportsShown = {};
-    showPending([]);
     showTakeBack(null, false);
     updateProgress();
-    setReports({}, false, editActions(experiment));
+    setReports({}, false, true, null, marks);
+    showActions(null);
     settle(experiment, null);
     return;
   }
@@ -266,12 +277,19 @@ async function poll(experiment, generation) {
   // while a job runs, the updates it has reported are decided already;
   // the others show the last run's reports
   const fresh = running ? new Set((status.inputs || []).map((report) => report.entry_id)) : null;
-  setReports(reportsShown, running, editActions(experiment), fresh);
-  // while a job runs, the button stays, closed, for the last run's edits
-  showDecidable(running ? { ...status, inputs: Object.values(reportsShown) } : status, running);
+  if (status.phase === "completed" && roundSent && roundSent.entryId === experiment.entry_id) {
+    // read again after a Recompute: what the round changed
+    marks = {
+      changed: changedEntries(roundSent.before, reviewSnapshot(status)),
+      lost: lostUnticks(roundSent.sent, status),
+    };
+    roundSent = null;
+  }
+  setReports(reportsShown, running, true, fresh, marks);
   decisionStatus = status;
+  // while a job runs, the buttons stay, closed, for the last run's edits
+  showActions(running ? { ...status, inputs: Object.values(reportsShown) } : status, running);
   showTakeBack(status, running);
-  updateReview(experiment, status, shownItems(), running);
   if (status.phase === "completed") {
     editedReady = true;
     idle();
@@ -302,9 +320,9 @@ async function poll(experiment, generation) {
 }
 
 // After a status settled: write what was confirmed since the last run
-// (a moment later, so a row of confirmations makes one write), else
-// read what no job has read in these words. Nothing twice for the same
-// reason: a job that failed stays failed until Read again.
+// and not written yet (a Confirm all whose job did not start: a reload).
+// Nothing twice for the same reason. What no job has read waits for
+// Recompute (#208).
 function settle(experiment, status) {
   if (!stillShown(experiment) || running || confirming === experiment.entry_id) return;
   if (inputsSeen && inputsSeen.entryId === experiment.entry_id) waitingNote(inputsSeen.items);
@@ -321,25 +339,18 @@ function settle(experiment, status) {
     writeTimer = { timer, experiment };
     return;
   }
-  if (!inputsSeen || inputsSeen.entryId !== experiment.entry_id) return;
-  const toRead = inputsToRead(inputsSeen.items, reportsShown);
-  if (!toRead.length || readKey(inputsSeen.items) === readFor) return;
-  startJob(experiment);
 }
 
 // the inputs list as just loaded (inputs.js): a new or revised update
-// is read without a click
+// is one more change for Recompute
 function inputsLoaded(experiment, items) {
   inputsSeen = { entryId: experiment.entry_id, items };
   if (!stillShown(experiment)) return;
   updateProgress();
   if (readFor === FAILED_BEFORE_INPUTS) readFor = readKey(items);
   // a revised or deleted update holds back the ones after it
-  if (lastStatus && !running) {
-    showDecidable(lastStatus);
-    gateDownload(downloadBlock(lastStatus, items));
-    updateReview(experiment, lastStatus, items, false);
-  }
+  if (!running) showActions(lastStatus);
+  if (lastStatus && !running) gateDownload(downloadBlock(lastStatus, items));
   if (statusKnown) settle(experiment, lastStatus);
 }
 
@@ -353,31 +364,6 @@ function waitingNote(items) {
   } else if (!running) {
     note("");
   }
-}
-
-function editActions(experiment) {
-  return {
-    confirm: (key) => confirmEdit(experiment, key),
-    reject: async (edit) => {
-      const done = await rejectEdit(edit, (why) => postReject(experiment, edit.key, why));
-      if (done && stillShown(experiment)) {
-        // the updates below are read again: no review until then
-        confirmAllBtn.disabled = true;
-        startPolling(experiment);
-      }
-      return done;
-    },
-  };
-}
-
-// throws, for the dialog to show why
-async function postReject(experiment, key, { reason, meant }) {
-  const res = await fetch(experimentUrl(experiment, "edits/reject"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ keys: [key], reason, meant }),
-  });
-  if (!res.ok) throw new Error(await errorDetail(res));
 }
 
 // "" once posted, else why not
@@ -394,31 +380,9 @@ async function post(experiment, path, body) {
   }
 }
 
-// the review's rejections: the poll that follows shows the updates read
-// again (settle starts the run)
-async function reviewReject(experiment, keys) {
-  const why = await post(experiment, "edits/reject", { keys, review: true });
-  if (!why && stillShown(experiment)) {
-    confirmAllBtn.disabled = true;
-    startPolling(experiment);
-  }
-  return why;
-}
-
-// true when confirmed; false lets the tile offer the button again. The
-// poll that follows shows the confirmation at once and (settle) starts
-// the write a moment later.
-async function confirmEdit(experiment, key) {
-  clearError();
-  const why = await post(experiment, "edits/confirm", { keys: [key] });
-  if (why) showError("Could not confirm: " + why);
-  else if (stillShown(experiment)) startPolling(experiment);
-  return !why;
-}
-
-// the review's confirmation of every undecided edit, then the job that
+// Confirm all's confirmation of every ticked edit, then the job that
 // writes them; "" once confirmed, else why not
-async function reviewConfirm(experiment, keys) {
+async function confirmEdits(experiment, keys) {
   // no job may start on a snapshot without these confirmations: settle
   // waits too (startJob or the poll gives the button back), and a write
   // already due goes with this one
@@ -446,38 +410,54 @@ async function reviewConfirm(experiment, keys) {
   return "";
 }
 
-function openConfirmAll(experiment) {
-  if (!lastStatus || confirmAllBtn.disabled) return;
+// the round, then the job that reads the updates again: once
+async function recompute(experiment) {
+  if (running || recomputeBtn.disabled) return;
   clearError();
-  openReview(experiment, lastStatus, shownItems(), {
-    reject: (keys) => reviewReject(experiment, keys),
-    confirm: (keys) => reviewConfirm(experiment, keys),
-    readAgain: () => {
-      if (stillShown(experiment)) readAgain();
-    },
-  });
+  const before = lastStatus ? reviewSnapshot(lastStatus) : null;
+  const sent = sentUnticks();
+  if (roundSize()) {
+    recomputeBtn.disabled = true;
+    const why = await post(experiment, "edits/round", roundBody());
+    if (why) {
+      showError("Could not apply the round: " + why);
+      if (stillShown(experiment)) startPolling(experiment);
+      return;
+    }
+    clearRound();
+  }
+  roundSent = { entryId: experiment.entry_id, before, sent };
+  marks = NO_MARKS;
+  startJob(experiment);
 }
 
-// the last click's decisions, once the user agreed
-async function undoLast(experiment) {
-  const status = decisionStatus;
-  const question = status && undoQuestion(status);
-  if (!question || !await confirmDialog(question, "Undo")) return;
+async function confirmAll(experiment) {
+  if (!lastStatus || confirmAllBtn.disabled) return;
+  const status = lastStatus;
+  if (!await confirmDialog(confirmQuestion(status), "Confirm all")) return;
   clearError();
-  const keys = status.last_decision.map((decision) => decision.key);
-  const why = await post(experiment, "edits/undo-last", { keys });
-  if (why) showError("Could not undo: " + why);
-  if (stillShown(experiment)) startPolling(experiment);
+  const why = await confirmEdits(experiment, pendingKeys(status.inputs || []));
+  if (why) {
+    showError("Could not confirm: " + why);
+    return;
+  }
+  marks = NO_MARKS;
+  // the updates it covered are locked now
+  reloadInputs(experiment);
 }
 
 async function resetDecisions(experiment) {
   const n = decisionStatus ? decisionCount(decisionStatus) : 0;
   const what = n === 1 ? "the 1 decision" : n ? "all " + n + " decisions" : "every decision";
-  const question = "Reset " + what + "? Every edit waits for your decision again, as if none was made.";
+  const question = "Reset " + what + "? The sheet goes back to the original, every update is unlocked "
+    + "and waits for your decision again. The updates keep their words.";
   if (!await confirmDialog(question, "Reset")) return;
   clearError();
   const why = await post(experiment, "edits/reset", {});
   if (why) showError("Could not reset: " + why);
+  clearRound();
+  marks = NO_MARKS;
+  reloadInputs(experiment);
   if (stillShown(experiment)) startPolling(experiment);
 }
 
@@ -487,6 +467,9 @@ export function showEdit(experiment, view) {
   stopPolling();
   flushWrite();
   current = experiment;
+  roundFor(experiment ? experiment.entry_id : null);
+  roundSent = null;
+  marks = NO_MARKS;
   statusKnown = false;
   lastStatus = null;
   decisionStatus = null;
@@ -496,7 +479,7 @@ export function showEdit(experiment, view) {
   readFor = null;
   wroteFor = null;
   idle();
-  showPending([]);
+  confirmAllBtn.hidden = recomputeBtn.hidden = true;
   showTakeBack(null, false);
   updateProgress();
   gateDownload("");
@@ -506,7 +489,7 @@ export function showEdit(experiment, view) {
   changelogFold.open = false; // the fold is per result, not per page
   if (!experiment || !view) {
     // nothing to poll: the tiles forget the last job's reports here
-    setReports({}, false, null);
+    setReports({}, false, false, null, NO_MARKS);
   }
   // made before sheets, or by the other tool of this page's past: the
   // header says so, nothing to poll
@@ -558,8 +541,9 @@ async function startJob(experiment) {
     changelogFold.open = false;
     busy("Starting...");
     gateDownload(blockShown);
-    // no confirming on the way out: the job's reservation refuses it
-    setReports(reportsShown, true, editActions(experiment));
+    confirmAllBtn.hidden = recomputeBtn.hidden = true;
+    // no ticking on the way out: the job reads the decisions
+    setReports(reportsShown, true, true, null, marks);
   }
   try {
     const res = await fetch(experimentUrl(experiment, "edit-async"), { method: "POST" });
@@ -635,10 +619,17 @@ export function initEdit() {
   // the card's experiment, not the selection: they differ while a newly
   // selected experiment's summary is loading
   confirmAllBtn.addEventListener("click", () => {
-    if (current) openConfirmAll(current);
+    if (current) confirmAll(current);
   });
-  undoLastBtn.addEventListener("click", () => {
-    if (current) undoLast(current);
+  recomputeBtn.addEventListener("click", () => {
+    if (current) recompute(current);
+  });
+  onRoundChange(() => {
+    if (current && statusKnown && !running) showActions(lastStatus);
+  });
+  // a round not sent yet lives in this page only
+  window.addEventListener("beforeunload", (event) => {
+    if (roundSize()) event.preventDefault();
   });
   resetBtn.addEventListener("click", () => {
     if (current) resetDecisions(current);
