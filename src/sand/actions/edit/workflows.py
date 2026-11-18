@@ -73,6 +73,8 @@ class EditSheetWorkflow:
             return {
                 'job_id': job_id,
                 'collection_entry_id': data.collection_entry_id,
+                # tells this job's reservation from a newer job's (_ours)
+                'started_at': workflow.info().start_time.isoformat(),
                 'updated_at': workflow.now().isoformat(),
                 'prompt_version': PROMPT_VERSION,
                 'temperature': TEMPERATURE,

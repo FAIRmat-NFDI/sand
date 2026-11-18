@@ -705,6 +705,88 @@ async def test_a_job_that_asked_nothing_deletes_nothing(upload):
     assert upload.writer.requests - before == 1
 
 
+STARTED = '2026-11-18T10:00:00+00:00'
+
+
+def ending(upload, job_id='job-1') -> StoreInput:
+    status = {'job_id': job_id, 'started_at': STARTED, 'model': MODEL, 'inputs': []}
+    return StoreInput(
+        **job(upload, job_id).model_dump(exclude={'status'}), status=status
+    )
+
+
+async def test_the_end_is_checked_once_nomad_stored_it(upload, monkeypatch):
+    """The PUT only queues NOMAD's file update: a lost one is not success
+    (Temporal retries the activity)."""
+    await answer_both(upload)
+
+    async def lost(client, upload_id, files, directory=''):
+        upload.writer.requests += 1
+
+    monkeypatch.setattr(upload.writer, 'upload_raw_files', lost)
+    with pytest.raises(ApplicationError, match='did not store'):
+        await activities.store_final_sheet_and_changelog(ending(upload))
+
+
+async def test_a_retry_after_a_newer_job_took_over_writes_nothing(upload):
+    await answer_both(upload)
+    newer = {
+        'job_id': 'starting',
+        'phase': 'starting',
+        'updated_at': '2026-11-18T10:05:00+00:00',
+    }
+    upload.writer.files[STATUS_FILE] = json.dumps(newer).encode()
+    before = upload.writer.requests
+
+    await activities.store_final_sheet_and_changelog(ending(upload))
+
+    assert upload.writer.requests == before
+    assert json.loads(upload.writer.files[STATUS_FILE]) == newer
+
+
+async def test_its_own_reservation_is_replaced(upload):
+    # a job that asked nothing writes no status before its end
+    await answer_both(upload)
+    own = {
+        'job_id': 'starting',
+        'phase': 'starting',
+        'updated_at': '2026-11-18T09:59:59+00:00',
+    }
+    upload.writer.files[STATUS_FILE] = json.dumps(own).encode()
+
+    await activities.store_final_sheet_and_changelog(ending(upload))
+
+    assert json.loads(upload.writer.files[STATUS_FILE])['phase'] == 'completed'
+
+
+async def test_a_cleanup_that_fails_does_not_fail_the_end(upload, monkeypatch):
+    await answer_both(upload)
+
+    async def down(client, upload_id, name):
+        raise RuntimeError('NOMAD down')
+
+    monkeypatch.setattr(upload.writer, 'delete_raw_file', down)
+    done = await activities.store_final_sheet_and_changelog(ending(upload))
+
+    stored = json.loads(upload.writer.files[STATUS_FILE])
+    assert (stored['phase'], stored['final']) == ('completed', done['final'])
+
+
+async def test_a_failure_does_not_replace_a_newer_jobs_status(upload):
+    newer = {'job_id': 'job-2', 'phase': 'interpreting', 'updated_at': STARTED}
+    upload.writer.files[STATUS_FILE] = json.dumps(newer).encode()
+
+    await activities.write_edit_status(
+        WriteStatusInput(
+            upload_id='u1',
+            user_id='user',
+            status={'job_id': 'job-1', 'phase': 'failed', 'started_at': STARTED},
+        )
+    )
+
+    assert json.loads(upload.writer.files[STATUS_FILE]) == newer
+
+
 async def test_store_final_sheet_and_changelog_without_confirmations_stores_the_original(
     upload, synthetic_xlsx
 ):

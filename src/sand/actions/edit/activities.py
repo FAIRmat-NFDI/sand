@@ -252,11 +252,18 @@ async def store_final_sheet_and_changelog(data: StoreInput) -> dict:
         outputs.append((STATUS_FILE, _json(status), JSON_TYPE))
     voice = common.voice_service()
     async with voice.build_client(common.user_token(data.user_id)) as client:
-        shared = await voice.writer.read_json(client, data.upload_id, CACHE_FILE)
+        writer = voice.writer
+        # a retry after "completed" landed: a newer job may own the sheet
+        # and the status now, and must not be overwritten
+        if data.status and not _ours(
+            await writer.read_json(client, data.upload_id, STATUS_FILE), data.status
+        ):
+            return done
+        shared = await writer.read_json(client, data.upload_id, CACHE_FILE)
         outputs.append(
             (CACHE_FILE, _json(_published(shared, files, data, steps)), JSON_TYPE)
         )
-        await voice.writer.upload_raw_files(
+        await writer.upload_raw_files(
             client,
             data.upload_id,
             [
@@ -265,12 +272,55 @@ async def store_final_sheet_and_changelog(data: StoreInput) -> dict:
             ],
             directory=FINAL_FILE.rpartition('/')[0],
         )
-        # only a job that asked the model has a file of its own
+        # the PUT only queues NOMAD's file update: read back (the reads
+        # wait until it is done) before the job reports success
+        await _check_stored(writer, client, data, final)
+        # only a job that asked the model has a file of its own; a
+        # leftover is harmless, a failure here must not retry the above
         if files.cache.of_job(data.job_id).answers:
-            await voice.writer.delete_raw_file(
-                client, data.upload_id, job_cache_file(data.job_id)
-            )
+            try:
+                await writer.delete_raw_file(
+                    client, data.upload_id, job_cache_file(data.job_id)
+                )
+            except Exception:
+                activity.logger.warning(
+                    'could not delete %s', job_cache_file(data.job_id), exc_info=True
+                )
     return done
+
+
+def _ours(current: dict | None, status: dict) -> bool:
+    """Whether the status file is still this job's: its own, or the API's
+    reservation made before it started. A newer job's reservation is
+    newer than this job's start."""
+    if not current:
+        return True
+    if current.get('job_id') == status.get('job_id'):
+        return True
+    if current.get('job_id') != 'starting':
+        return False
+    try:
+        reserved = datetime.fromisoformat(current['updated_at'])
+        started = datetime.fromisoformat(status['started_at'])
+    except (KeyError, TypeError, ValueError):
+        # a status of a job started before `started_at`: as before
+        return True
+    return reserved <= started
+
+
+async def _check_stored(writer, client, data: StoreInput, final: bytes) -> None:
+    """Raises (Temporal retries) unless the final sheet and, with a
+    status, the completed status are this job's. A newer job's status
+    there means this one's was stored and the lock taken over."""
+    stored = await writer.read_raw_file(client, data.upload_id, FINAL_FILE)
+    if data.status:
+        current = await writer.read_json(client, data.upload_id, STATUS_FILE)
+        if current and current.get('job_id') != data.job_id:
+            return
+        if not current or current.get('phase') != 'completed':
+            raise ApplicationError('NOMAD did not store the completed status')
+    if stored is None or sha256(stored) != sha256(final):
+        raise ApplicationError('NOMAD did not store the final sheet')
 
 
 def _json(payload: dict) -> bytes:
@@ -282,6 +332,13 @@ def _json(payload: dict) -> bytes:
 async def write_edit_status(data: WriteStatusInput) -> None:
     voice = common.voice_service()
     async with voice.build_client(common.user_token(data.user_id)) as client:
+        if data.status.get('phase') == 'failed' and not _ours(
+            await voice.writer.read_json(client, data.upload_id, STATUS_FILE),
+            data.status,
+        ):
+            # this job's end was stored and a newer job took over: its
+            # status is not this failure's to replace
+            return
         await voice.writer.write_json(client, data.upload_id, STATUS_FILE, data.status)
 
 
