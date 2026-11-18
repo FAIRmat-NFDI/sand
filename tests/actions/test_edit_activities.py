@@ -695,6 +695,20 @@ async def test_the_end_of_a_job_is_one_request(upload):
         assert name in upload.writer.files
 
 
+async def test_an_input_read_is_one_request_with_its_status(upload):
+    status = {'job_id': 'job-1', 'phase': 'interpreting', 'inputs': []}
+    before = upload.writer.requests
+
+    report = await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2).model_copy(update={'status': status})
+    )
+
+    assert upload.writer.requests - before == 1
+    stored = json.loads(upload.writer.files[STATUS_FILE])
+    assert stored['inputs'] == [report]
+    assert job_cache_file('job-1') in upload.writer.files
+
+
 async def test_a_replay_of_every_input_stores_the_sheet_in_one_request(upload):
     """Confirm all: nothing to ask, so the sheet built for the reports is
     the final one, stored with the completed status at once."""

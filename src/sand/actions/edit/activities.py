@@ -184,7 +184,6 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
             text, agreed, catalog, sha256(state), next_seq(files.cache.answers)
         )
         files.cache.add(cache_key(text, state), answer, data.job_id)
-        await _write_cache(files, data)
     elif _to_read(files, data, before, catalog):
         # the cache file was lost between prepare and apply
         raise ApplicationError(
@@ -192,7 +191,7 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
             non_retryable=True,
         )
     step = _apply_inputs_from_cache(files, data.texts[: data.number], data)[-1]
-    return _report(
+    report = _report(
         data.number,
         data.entry_id,
         step,
@@ -200,6 +199,42 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
         set(data.rejections),
         from_cache=not data.answers,
     )
+    await _write_input(files, data, report)
+    return report
+
+
+async def _write_input(files: '_Files', data: ApplyInput, report: dict) -> None:
+    """The job's own cache file (with a new answer) and its status with
+    this report: one request, one NOMAD run (#202)."""
+    from sand.sheet_edit.resolve import CACHE_VERSION
+
+    outputs = []
+    if data.answers:
+        # one writer per file, so another job on the upload cannot lose them
+        own = llm_cache_json(
+            files.cache.of_job(data.job_id), data.llm_model_name, CACHE_VERSION
+        )
+        outputs.append((job_cache_file(data.job_id), _json(own), JSON_TYPE))
+    if data.status:
+        status = {
+            **data.status,
+            'inputs': [*data.status.get('inputs', []), report],
+            'updated_at': datetime.now(timezone.utc).isoformat(),
+        }
+        outputs.append((STATUS_FILE, _json(status), JSON_TYPE))
+    if not outputs:
+        return
+    voice = common.voice_service()
+    async with voice.build_client(common.user_token(data.user_id)) as client:
+        await voice.writer.upload_raw_files(
+            client,
+            data.upload_id,
+            [
+                (name.rpartition('/')[2], content, ctype)
+                for name, content, ctype in outputs
+            ],
+            directory=STATUS_FILE.rpartition('/')[0],
+        )
 
 
 @activity.defn
@@ -394,23 +429,6 @@ async def _read_files(data: JobInput) -> _Files:
         cache,
         load_confirmations(data.confirmations),  # collect checked them
     )
-
-
-async def _write_cache(files: _Files, data: JobInput) -> None:
-    """The job's own file, this job's entries only: one writer, so
-    another job on the same upload cannot lose them."""
-    from sand.sheet_edit.resolve import CACHE_VERSION
-
-    voice = common.voice_service()
-    async with voice.build_client(common.user_token(data.user_id)) as client:
-        await voice.writer.write_json(
-            client,
-            data.upload_id,
-            job_cache_file(data.job_id),
-            llm_cache_json(
-                files.cache.of_job(data.job_id), data.llm_model_name, CACHE_VERSION
-            ),
-        )
 
 
 def _published(
