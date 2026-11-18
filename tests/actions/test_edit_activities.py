@@ -709,6 +709,23 @@ async def test_an_input_read_is_one_request_with_its_status(upload):
     assert job_cache_file('job-1') in upload.writer.files
 
 
+async def test_an_input_whose_write_was_lost_fails_for_a_retry(upload, monkeypatch):
+    """The PUT only queues NOMAD's file update: a lost one is not a read
+    note (Temporal retries the apply, with the answers it has)."""
+
+    async def lost(client, upload_id, files, directory=''):
+        upload.writer.requests += 1
+
+    monkeypatch.setattr(upload.writer, 'upload_raw_files', lost)
+    status = {'job_id': 'job-1', 'phase': 'interpreting', 'inputs': []}
+    with pytest.raises(ApplicationError, match='did not store'):
+        await activities.agree_cache_and_apply_input(
+            apply(upload, 1, [answer(SPEED_EDIT)] * 2).model_copy(
+                update={'status': status}
+            )
+        )
+
+
 async def test_a_replay_of_every_input_stores_the_sheet_in_one_request(upload):
     """Confirm all: nothing to ask, so the sheet built for the reports is
     the final one, stored with the completed status at once."""

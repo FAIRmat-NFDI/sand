@@ -235,6 +235,14 @@ async def _write_input(files: '_Files', data: ApplyInput, report: dict) -> None:
             ],
             directory=STATUS_FILE.rpartition('/')[0],
         )
+        # the PUT only queues NOMAD's file update: read back (the reads
+        # wait until it is done); a raise retries with the same answers
+        for name, content, _ in outputs:
+            stored = await voice.writer.read_json(client, data.upload_id, name)
+            if stored != json.loads(content):
+                raise ApplicationError(
+                    f'input {data.number}: NOMAD did not store {name}'
+                )
 
 
 @activity.defn
