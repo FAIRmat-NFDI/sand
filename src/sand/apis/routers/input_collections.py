@@ -1494,9 +1494,10 @@ async def decide_round(
 ) -> RoundResponse:
     """One round (#208): unticked edits rejected, rejected ones ticked
     again, in one write; the page then reads the updates again. Edits of
-    any input, in any order, once every input is read; none behind the
-    last Confirm all. Rejections that match no edit of the last run any
-    more are dropped."""
+    the last run, of any input, in any order, also with notes changed in
+    the same round: an untick whose edit changes when read again no
+    longer applies, and the next round drops it (as every rejection that
+    matches no edit of the last run). None behind the last Confirm all."""
     voice = _voice_service(request)
     token = get_bearer_token(request)
 
@@ -1513,27 +1514,23 @@ async def decide_round(
             await _idle(client, voice, upload_id)
             locked = await _loaded_checkpoint(client, voice, upload_id)
             rejected = await _loaded_rejections(client, voice, upload_id)
+            status = await _edit_status(client, voice, upload_id, collection_entry_id)
+            # a key two inputs share is the first one's, as on confirm
             reports: dict = {}
-            if keys:
-                status, reports = await _decidable(
-                    client,
-                    voice,
-                    upload_id,
-                    collection_entry_id,
-                    keys=keys,
-                    verb='reject',
-                    review=True,
+            for report in status.get('inputs', []):
+                for edit in report.get('ready', []) if isinstance(report, dict) else []:
+                    reports.setdefault(edit['key'], report)
+            not_ready = sorted(set(keys) - set(reports))
+            if not_ready:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f'not a ready edit of the last run: {", ".join(not_ready)}',
                 )
-                confirmed = await _loaded_confirmations(client, voice, upload_id)
-                written = sorted(set(keys) & set(confirmed))
-                if written:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=f'already confirmed: {", ".join(written)}',
-                    )
-            else:
-                status = await _edit_status(
-                    client, voice, upload_id, collection_entry_id
+            confirmed = await _loaded_confirmations(client, voice, upload_id)
+            written = sorted(set(keys) & set(confirmed))
+            if written:
+                raise HTTPException(
+                    status_code=409, detail=f'already confirmed: {", ".join(written)}'
                 )
             unknown = sorted(set(body.restore) - set(rejected))
             if unknown:

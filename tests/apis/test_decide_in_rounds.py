@@ -141,13 +141,24 @@ async def test_a_round_cannot_untick_a_confirmed_edit(voice):
     assert response.status_code == HTTPStatus.CONFLICT
 
 
-async def test_a_second_round_waits_for_the_updates_read_again(voice):
-    """A round's unticks change what the updates below show."""
+async def test_a_round_goes_with_the_notes_changed_in_it(voice):
+    """Edit note 1 and untick note 2's edit, one round: the untick is on
+    the last run's edit; read again, it may no longer apply."""
+    voice.inputs[0] = note('n1', 'time 1 is 1200')
+
+    response = await round_(voice, reject=[{'key': 'b1'}])
+
+    assert response.status_code == HTTPStatus.OK, response.text
+    assert list(rejections(voice)) == ['b1']
+
+
+async def test_rounds_follow_each_other_before_a_reread(voice):
     assert (await round_(voice, reject=[{'key': 'a2'}])).status_code == HTTPStatus.OK
 
     response = await round_(voice, reject=[{'key': 'b1'}])
 
-    assert response.status_code == HTTPStatus.CONFLICT
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()['rejected'] == ['a2', 'b1']
 
 
 async def test_confirm_all_locks_every_input_it_covered(voice):
