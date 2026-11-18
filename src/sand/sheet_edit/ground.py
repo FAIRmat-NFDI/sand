@@ -51,6 +51,9 @@ from sand.sheet_edit.numbers import (
 from sand.sheet_edit.render import EMPTY
 
 _SAMPLE_WORD_RE = re.compile(r'\bsamples?(?=\d|\b)', re.IGNORECASE)  # also 'sample1'
+_FOR_SUBBATCH_RE = re.compile(
+    r'\bfor\s+(?:the\s+)?(?:whole\s+|entire\s+)?sub-?\s?batch\b', re.IGNORECASE
+)
 _SUBBATCH_RE = re.compile(r'\bsub-?\s?batch(?:es)?:?\s+', re.IGNORECASE)
 _EXCEPT_RE = re.compile(
     r'\b(?:except|excluding|but not|without|apart from|other than)\b\s*(?:samples?\s+)?',
@@ -316,11 +319,7 @@ def sample_words_problems(
         # "samples 1 to 3 of subbatches 0 and 1" is one edit per subbatch
         in_subbatch = {s.row for s in catalog.samples if s.subbatch == spec.subbatch}
         named, excluded = named & in_subbatch, excluded & in_subbatch
-    # "all samples of subbatch 1", or "subbatch 1" alone: the whole scope.
-    # Not for sample words code cannot read ("the first three of subbatch 1")
-    alone = said.subbatches and not (said.samples or said.unknown)
-    alone = alone and (said.excluded or not _SAMPLE_WORD_RE.search(edit.said))
-    if not named and (said.all or alone):
+    if not named and (said.all or _whole_subbatch(edit.said, said)):
         named = set(_scope(catalog, spec.subbatch, said.subbatches)) - excluded
     if hit := sorted(excluded & set(rows)):
         problems.append(
@@ -342,6 +341,15 @@ def sample_words_problems(
         else:
             doubts.append(f'samples {catalog.names(missing)}: not named in your words')
     return problems, doubts
+
+
+def _whole_subbatch(text: str, said: 'Said') -> bool:
+    """'for subbatch 1' and nothing else about samples: the whole subbatch.
+    Any other words around it may pick a part code cannot read ("the first
+    three of subbatch 1"), so they stay a doubt."""
+    if not said.subbatches or said.samples or said.unknown or said.excluded:
+        return False
+    return bool(_FOR_SUBBATCH_RE.search(text)) and not _SAMPLE_WORD_RE.search(text)
 
 
 def _subbatch_problems(

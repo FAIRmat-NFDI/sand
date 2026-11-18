@@ -1556,15 +1556,16 @@ def test_sample_words_code_cannot_read_stay_a_doubt(split, rows, said):
     )
 
 
-def test_a_subbatch_except_a_sample_names_the_rest(split):
-    result = ground(
-        edit(
-            rows=samples('8', '9', '10', '11', '13', subbatch='1'),
-            said='speed 4000 for subbatch 1 except sample 12',
-        ),
-        split,
-    )
-    assert result.checks == () and result.doubts == ()
+def test_a_subbatch_with_more_words_about_samples_stays_a_doubt(split):
+    # "except" leaves a part code may not read: "the first three ... except 9"
+    rows = samples('10', '11', '12', '13', subbatch='1')
+    for said in (
+        'speed 4000 for the first three samples of subbatch 1 except sample 9',
+        'speed 4000 for the first three of subbatch 1',
+        'speed 4000 for subbatch 1 except sample 9',
+    ):
+        result = ground(edit(rows=rows, said=said), split)
+        assert result.doubts, said
 
 
 def test_a_range_on_labels_repeated_per_subbatch_does_not_span(two_subbatches):
