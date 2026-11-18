@@ -717,6 +717,25 @@ async def test_a_replay_of_every_input_stores_the_sheet_in_one_request(upload):
     assert [r['input'] for r in stored['inputs']] == [1, 2]
 
 
+async def test_a_replay_whose_end_was_lost_fails_for_a_retry(upload, monkeypatch):
+    """The job's own reservation still there after the PUT: nothing was
+    stored, not a newer job's."""
+    await answer_both(upload)
+    await activities.store_final_sheet_and_changelog(job(upload))
+    reserved = {'job_id': 'starting', 'phase': 'starting', 'updated_at': STARTED}
+    upload.writer.files[STATUS_FILE] = json.dumps(reserved).encode()
+
+    async def lost(client, upload_id, files, directory=''):
+        upload.writer.requests += 1
+
+    monkeypatch.setattr(upload.writer, 'upload_raw_files', lost)
+    status = {'job_id': 'job-2', 'model': MODEL, 'started_at': STARTED}
+    with pytest.raises(ApplicationError, match='completed status'):
+        await activities.replay_cached_inputs(
+            replay(upload, job_id='job-2').model_copy(update={'store_status': status})
+        )
+
+
 async def test_a_replay_with_an_input_to_read_stores_nothing(upload):
     await activities.agree_cache_and_apply_input(
         apply(upload, 1, [answer(SPEED_EDIT)] * 2)
