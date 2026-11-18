@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import {
   confirmAllLabel, describeEditPhase, downloadBlock, downloadFilename, editSummary, inputApplied, inputState,
-  changedEntries, checkedKeys, decisionCount, inputsToRead, outdatedEntries, pendingKeys, previewNotes, readKey,
+  changedEntries, checkedKeys, confirmQuestion, decisionCount, lostUnticks, recomputeLabel, inputsToRead, outdatedEntries, pendingKeys, previewNotes, readKey,
   reportsByEntry, resetNote, reviewAction, reviewRows, reviewSnapshot, rewriteWarning, settledBlock, turnEntry,
   undoQuestion, unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
@@ -240,7 +240,7 @@ test("the state chip of an input", () => {
     inputState(item, report, running, canConfirm)?.label ?? null;
   assert.equal(label({ ...note, text: null }, undefined), null);
   assert.equal(label(note, undefined, false, false), null);
-  assert.equal(label(note, undefined), "Waiting to be read");
+  assert.equal(label(note, undefined), "Waiting for Recompute");
   assert.equal(label(note, undefined, true), "Reading...");
   // a report of other words is not this update's
   assert.equal(label({ ...note, text: "speed 4500" }, REPORT, true), "Reading...");
@@ -276,8 +276,8 @@ test("the state chip of an input", () => {
   assert.equal(inputState(note, REPORT, false, true).state, "ready");
   // read again first: below a change above
   const outdated = (report, running = false) => inputState(note, report, running, true, true).label;
-  assert.equal(outdated(REPORT), "Waiting to be read");
-  assert.equal(outdated({ ...REPORT, confirmed: ["k1"] }), "Waiting to be read");
+  assert.equal(outdated(REPORT), "Waiting for Recompute");
+  assert.equal(outdated({ ...REPORT, confirmed: ["k1"] }), "Waiting for Recompute");
   assert.equal(outdated(REPORT, true), "Reading...");
   // the writer refused a confirmed edit: said first, whatever is undecided
   assert.equal(label(note, { ...REPORT, refused: "a formula error" }, false, true), "Not written");
@@ -438,3 +438,34 @@ test("a rejection made or taken back since the last run is written by the next",
   assert.match(editSummary({ inputs: [undone] }), /1 rejection taken back/);
 });
 
+
+test("Confirm all asks what it confirms, and says skipped updates are locked too", () => {
+  const status = { inputs: [
+    { entry_id: "n1", ready: [{ key: "a" }, { key: "b" }] },
+    { entry_id: "n2", ready: [{ key: "c" }], rejected: ["c"] },
+    { entry_id: "n3", ready: [], unresolved: 1 },
+  ] };
+  assert.equal(confirmQuestion(status),
+    "Confirm 2 edits in 1 update? They are written into the sheet, and every update is locked: "
+    + "only Reset all changes them. 1 update has a part that is not an edit (unclear, not applied): "
+    + "locked too. Fix it first, or Reset all later.");
+  assert.ok(!confirmQuestion({ inputs: status.inputs.slice(0, 1) }).includes("locked too"));
+});
+
+test("an untick whose edit is gone after the reread no longer applies", () => {
+  const sent = [
+    { key: "a", entry: "n1", line: "speed 4000" },
+    { key: "b", entry: "n2", line: "time 10 s" },
+    { key: "c", entry: "n3", line: "anneal" },
+  ];
+  const status = { inputs: [
+    { entry_id: "n1", ready: [{ key: "a" }] },
+    { entry_id: "n2", ready: [{ key: "b2" }] },
+  ] };
+  assert.deepEqual(lostUnticks(sent, status), { n2: ["time 10 s"], n3: ["anneal"] });
+});
+
+test("Recompute counts the round's changes", () => {
+  assert.equal(recomputeLabel(1), "Recompute (1 change)");
+  assert.equal(recomputeLabel(3), "Recompute (3 changes)");
+});

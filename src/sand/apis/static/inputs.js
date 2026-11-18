@@ -4,16 +4,20 @@
 // clicking its label renames it (free text, for scanning the list).
 // Audio revisions go to corrected_transcript (clearing withdraws them);
 // note revisions overwrite the note text. Under each input, once a job
-// ran, its report: what it changes, with a confirm button per ready
-// edit. The Sheet card hears of every loaded list (setInputsListener)
-// and starts the job that reads a new or revised input.
+// ran, its report: what it changes, a tick per ready edit. Deciding goes
+// in rounds (#208): untick (round.js), revise or delete, then Recompute
+// and Confirm all (edit-mode.js). An input behind the last Confirm all
+// is locked until Reset all.
 
 import { errorDetail, experimentUrl } from "./api.js";
 import {
-  inputState, outdatedEntries, previewNotes, resetNote, rewriteWarning, turnEntry,
+  inputState, outdatedEntries, previewNotes, resetNote, rewriteWarning,
 } from "./edit-logic.js";
 import { selectedExperiment } from "./experiments.js";
-import { editReported, reportEdit } from "./feedback.js";
+import { editReported, reportEdit, untickWhy } from "./feedback.js";
+import {
+  isRestored, isUnticked, keepRejected, onRoundChange, restore, tick, untick, untickReason,
+} from "./round.js";
 import { clearError, confirmDialog, showEntryLink, showError } from "./ui.js";
 
 const inputsList = document.getElementById("inputs-list");
@@ -23,12 +27,14 @@ const editsOnlyBtn = document.getElementById("edits-only-btn");
 const EDITS_ONLY_KEY = "sand.inputs.editsOnly";
 
 // the job's reports by entry id, whether a job runs, the updates the
-// running job reported already (null: no job runs), and the Sheet
-// card's handlers that decide an edit
+// running job reported already (null: no job runs), whether edits can
+// be decided here (a sheet is open), and what the last round changed:
+// {changed: Set of entry ids, lost: {entry id: [lines]}}
 let reports = {};
 let jobRunning = false;
 let fresh = null;
-let actions = null;
+let decidable = false;
+let marks = { changed: new Set(), lost: {} };
 let onInputsLoaded = null; // (experiment, items) after every load
 // the last rendered list, re-rendered when the reports change; a change
 // that arrives while an editor is open renders when the editor closes
@@ -180,7 +186,7 @@ async function beginRevision(item, experiment, tile, textNode) {
   textEl.replaceWith(box);
   li.classList.add("selected");
   // no confirming words that are about to change
-  for (const btn of li.querySelectorAll(".input-report button")) btn.disabled = true;
+  for (const el of li.querySelectorAll(".input-report button, .input-report input")) el.disabled = true;
   revising = { item, experiment, li, textEl, editor, saveBtn };
   // fit the whole text, capped by the CSS max-height
   editor.style.height = editor.scrollHeight + 2 + "px";
@@ -195,19 +201,10 @@ function endRevision(refocus = false) {
   revising = null;
   editor.parentElement.replaceWith(textEl);
   li.classList.remove("selected");
-  // back to the state the buttons had: none while a job runs, and a
-  // confirmation in flight stays disabled
-  for (const btn of li.querySelectorAll(".input-report button")) {
-    btn.disabled = btn.classList.contains("report-wrong")
-      ? editReported(btn.dataset.key)
-      : !btn.dataset.open || !actions || btn.dataset.busy === "1";
-  }
-  if (renderPending) {
-    renderIfIdle(); // replaces the tiles
-    if (refocus) inputsList.querySelector(`[data-entry-id="${CSS.escape(li.dataset.entryId)}"]`)?.focus();
-    return;
-  }
-  if (refocus && li.isConnected) li.focus();
+  // the ticks and buttons back as they were: the tiles rendered anew
+  renderPending = true;
+  renderIfIdle();
+  if (refocus) inputsList.querySelector(`[data-entry-id="${CSS.escape(li.dataset.entryId)}"]`)?.focus();
 }
 
 async function saveRevision() {
@@ -333,32 +330,59 @@ function wrongFlag(edit) {
   return flag;
 }
 
-// A button of an edit row; `act()` resolves false when it did not go
-// through, and the button is offered again. `wait`: why it may not be
-// used now ("" when it may).
-function decideButton(label, className, title, act, wait) {
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "btn btn-outlined btn-small " + className;
-  btn.textContent = label;
-  btn.dataset.open = wait ? "" : "1";
-  btn.disabled = Boolean(wait) || !actions;
-  btn.title = wait || title;
-  btn.addEventListener("click", async () => {
-    btn.disabled = true;
-    btn.dataset.busy = "1";
-    const done = await act();
-    delete btn.dataset.busy;
-    if (!done) btn.disabled = !btn.dataset.open || !actions;
+// The tick of an edit: ticked, Confirm all confirms it; unticked, it is
+// rejected on Recompute, with an optional reason. A rejected edit ticked
+// again is taken back on Recompute. `wait`: why it may not change now.
+function tickBox(edit, entry, rejected, wait) {
+  const cell = document.createElement("span");
+  cell.className = "report-tick";
+  const label = document.createElement("label");
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = rejected ? isRestored(edit.key) : !isUnticked(edit.key);
+  box.disabled = Boolean(wait) || !decidable;
+  label.title = wait || (rejected
+    ? "Rejected: tick it to take the rejection back on Recompute"
+    : "Untick it to reject it on Recompute");
+  box.addEventListener("change", () => {
+    if (rejected) {
+      if (box.checked) restore(edit, entry);
+      else keepRejected(edit.key);
+    } else if (box.checked) {
+      tick(edit.key);
+    } else {
+      untick(edit, entry);
+    }
   });
-  return btn;
+  const word = document.createElement("span");
+  word.className = rejected && !isRestored(edit.key) ? "report-rejected" : "report-tick-word";
+  word.textContent = rejected
+    ? (isRestored(edit.key) ? "ticked again" : "rejected")
+    : (isUnticked(edit.key) ? "unticked" : "");
+  label.append(box, word);
+  cell.append(label);
+  const why = untickReason(edit.key);
+  if (why) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn btn-text btn-small report-why";
+    btn.textContent = why.reason || why.meant ? "why: given" : "why?";
+    btn.title = "Say what is wrong with it (optional)";
+    btn.addEventListener("click", async () => {
+      const given = await untickWhy(edit);
+      if (given && isUnticked(edit.key)) untick(edit, entry, given);
+    });
+    cell.append(btn);
+  }
+  return cell;
 }
 
 // The edits of a report, grouped under their step as the Sheet table
 // groups them: a step heading, then one aligned row per edit with its
-// state at the right: written (with the "Wrong" flag), rejected, or the
-// buttons that decide it; `wait`: why they may not be used now.
-function renderReport(report, wait) {
+// state at the right: written (with the "Wrong" flag), or its tick;
+// `wait`: why the ticks may not change now; `locked`: behind the last
+// Confirm all, nothing changes.
+function renderReport(report, wait, locked) {
   const box = document.createElement("div");
   box.className = "input-report";
   box.addEventListener("click", (e) => e.stopPropagation());
@@ -393,19 +417,14 @@ function renderReport(report, wait) {
       mark.className = "report-confirmed" + (since.has(edit.key) ? " report-writing" : "");
       mark.textContent = since.has(edit.key) ? "writing..." : "written";
       state.append(mark, wrongFlag(edit));
-    } else if (rejected.has(edit.key)) {
+    } else if (locked) {
       const mark = document.createElement("span");
       mark.className = "report-rejected";
-      mark.textContent = "rejected";
+      mark.textContent = rejected.has(edit.key) ? "rejected" : "";
       state.append(mark);
     } else {
       state.classList.add("report-decide");
-      state.append(
-        decideButton("Confirm", "report-confirm", "Confirm this edit",
-          () => actions.confirm(edit.key), wait),
-        decideButton("Reject", "report-reject", "Reject this edit: it is not written",
-          () => actions.reject(edit), wait),
-      );
+      state.append(tickBox(edit, report.entry_id, rejected.has(edit.key), wait));
     }
     box.append(row);
     for (const check of edit.checks || []) {
@@ -414,6 +433,18 @@ function renderReport(report, wait) {
       p.textContent = "Check: " + check;
       box.append(p);
     }
+  }
+  if (marks.changed.has(report.entry_id)) {
+    const p = document.createElement("p");
+    p.className = "report-note report-changed";
+    p.textContent = "⟳ Changed by the last round: look at it again.";
+    box.append(p);
+  }
+  for (const line of marks.lost[report.entry_id] || []) {
+    const p = document.createElement("p");
+    p.className = "report-note report-changed";
+    p.textContent = "Your untick of “" + line + "” no longer applies: the edit changed. Look at it again.";
+    box.append(p);
   }
   const reset = resetNote(report);
   if (reset) {
@@ -438,14 +469,15 @@ function renderReport(report, wait) {
 }
 
 // The job's reports (by entry id), from the Sheet card's polling.
-// `handlers`: {confirm(key), reject(edit)}, each
-// resolving false when it did not go through; null: nothing to decide.
-// `reported`: the entry ids the running job reported already.
-export function setReports(byEntry, running, handlers, reported = null) {
+// `canDecide`: false, nothing to decide (no sheet). `reported`: the
+// entry ids the running job reported already. `roundMarks`: what the
+// last round changed (see `marks`).
+export function setReports(byEntry, running, canDecide, reported = null, roundMarks = null) {
   reports = byEntry;
   jobRunning = running;
   fresh = running ? reported || new Set() : null;
-  actions = handlers;
+  decidable = canDecide;
+  if (roundMarks) marks = roundMarks;
   renderIfIdle();
 }
 
@@ -476,6 +508,23 @@ function showInputsPlaceholder(message) {
   shown = null;
 }
 
+function deleteButton(item, experiment) {
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "btn btn-icon input-delete";
+  deleteBtn.title = "Delete";
+  deleteBtn.setAttribute("aria-label", "Delete the " + inputDescription(item));
+  const deleteIcon = document.createElement("span");
+  deleteIcon.className = "material-icons";
+  deleteIcon.textContent = "close";
+  deleteBtn.append(deleteIcon);
+  deleteBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    deleteInput(item, experiment, deleteBtn);
+  });
+  return deleteBtn;
+}
+
 function renderInputs(experiment, items) {
   shown = { experiment, items };
   if (!items.length) {
@@ -495,8 +544,6 @@ function renderInputs(experiment, items) {
     ? Object.fromEntries(Object.entries(reports).filter(([id]) => fresh.has(id)))
     : reports;
   const outdated = outdatedEntries(items, current);
-  // one by one, an update is decided after the ones above
-  const turn = turnEntry(current);
   for (const item of items) {
     const li = document.createElement("li");
     li.className = "input-tile";
@@ -540,7 +587,14 @@ function renderInputs(experiment, items) {
     const right = document.createElement("span");
     right.className = "input-right";
     meta.append(right);
-    const state = inputState(item, report, jobRunning, Boolean(actions), waits);
+    if (item.locked) {
+      const badge = document.createElement("span");
+      badge.className = "input-badge";
+      badge.textContent = "locked";
+      badge.title = "Confirmed with Confirm all: Reset all to change it";
+      meta.append(badge);
+    }
+    const state = inputState(item, report, jobRunning, decidable, waits);
     if (state) {
       const chip = document.createElement("span");
       chip.className = "input-state is-" + state.state;
@@ -556,20 +610,8 @@ function renderInputs(experiment, items) {
     nomadLink.title = "View on NOMAD";
     nomadLink.addEventListener("click", (e) => e.stopPropagation());
     right.append(nomadLink);
-    const deleteBtn = document.createElement("button");
-    deleteBtn.type = "button";
-    deleteBtn.className = "btn btn-icon input-delete";
-    deleteBtn.title = "Delete";
-    deleteBtn.setAttribute("aria-label", "Delete the " + inputDescription(item));
-    const deleteIcon = document.createElement("span");
-    deleteIcon.className = "material-icons";
-    deleteIcon.textContent = "close";
-    deleteBtn.append(deleteIcon);
-    deleteBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      deleteInput(item, experiment, deleteBtn);
-    });
-    right.append(deleteBtn);
+    // a locked update keeps its words: no editor, no delete
+    if (!item.locked) right.append(deleteButton(item, experiment));
 
     const text = document.createElement("div");
     text.className = "input-text";
@@ -583,9 +625,15 @@ function renderInputs(experiment, items) {
 
     li.append(meta, text);
     if (reported) {
-      const wait = waits ? "Wait: the update is read again first"
-        : item.entry_id !== turn ? "Decide the updates above first, or all at once with Confirm all" : "";
-      li.append(renderReport(report, wait));
+      // below a change the ticks still work, in the same round: read
+      // again, an untick whose edit changed no longer applies (marked)
+      const wait = jobRunning ? "The updates are being read" : "";
+      li.append(renderReport(report, wait, item.locked));
+    }
+    if (item.locked) {
+      li.classList.add("is-locked");
+      inputsList.append(li);
+      continue;
     }
     li.tabIndex = 0;
     li.setAttribute("aria-label", "Revise the " + inputDescription(item));
@@ -647,6 +695,12 @@ function startInputsRefresh(experiment, delayMs) {
     () => loadInputs(experiment, generation), delayMs || 0);
 }
 
+// The shown experiment's list again (a Confirm all locked updates, a
+// Reset all unlocked them).
+export function reloadInputs(experiment) {
+  if (shown && shown.experiment.entry_id === experiment.entry_id) startInputsRefresh(experiment);
+}
+
 // The list for a newly selected experiment (or none).
 export function showInputs(experiment) {
   endRevision();
@@ -685,6 +739,7 @@ function showEditsOnly(on) {
 }
 
 export function initInputs() {
+  onRoundChange(renderIfIdle);
   refreshInputsBtn.addEventListener("click", () => {
     const experiment = selectedExperiment();
     if (experiment) startInputsRefresh(experiment);

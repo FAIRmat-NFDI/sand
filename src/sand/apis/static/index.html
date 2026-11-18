@@ -193,13 +193,13 @@
         <section class="card section section-apply">
           <h2 class="section-title"><span class="material-icons">table_chart</span>Edits</h2>
           <div class="controls">
+            <button class="btn btn-primary" id="recompute-btn" type="button" hidden>
+              <span class="material-icons">refresh</span>
+              <span id="recompute-label">Recompute</span>
+            </button>
             <button class="btn btn-primary" id="confirm-all-btn" type="button" hidden>
               <span class="material-icons">done_all</span>
               <span id="confirm-all-label">Confirm all</span>
-            </button>
-            <button class="btn btn-outlined" id="undo-last-btn" type="button" hidden>
-              <span class="material-icons">undo</span>
-              Undo last
             </button>
             <button class="btn btn-outlined" id="reset-decisions-btn" type="button" hidden>
               <span class="material-icons">restart_alt</span>
@@ -211,7 +211,7 @@
             </button>
             <span class="status-text" id="apply-status" role="status"></span>
           </div>
-          <p class="section-hint">Decide the edits update by update, from the top, or all at once with Confirm all: untick the ones to reject, see what that changes, then confirm the rest. Confirmed edits are written into the sheet by themselves. Undo last or Reset all take decisions back. Download the edited sheet from the top of the page once every edit is decided.</p>
+          <p class="section-hint">Every proposed edit is ticked. Untick the ones to reject, reword or delete updates, then Recompute: the updates are read again and what changed is marked. Repeat until it is right, then Confirm all writes the ticked edits into the sheet and locks the updates. Reset all takes every decision back. Download the edited sheet from the top of the page.</p>
 
           <div class="apply-result" id="apply-result" hidden>
             <hr class="divider">
@@ -237,17 +237,6 @@
     <div class="controls">
       <button class="btn btn-outlined" id="confirm-cancel" type="button">Cancel</button>
       <button class="btn btn-primary" id="confirm-ok" type="button">OK</button>
-    </div>
-  </dialog>
-
-  <dialog class="confirm-dialog review-dialog" id="review-dialog" aria-labelledby="review-title">
-    <h2 class="feedback-title" id="review-title">Decide all remaining edits</h2>
-    <p class="section-hint">Every edit is ticked to confirm. Untick the ones to reject: the updates below are read again, and what changes is marked before you confirm.</p>
-    <div class="review-list" id="review-list"></div>
-    <p class="status-text" id="review-status" role="status"></p>
-    <div class="controls">
-      <button class="btn btn-outlined" id="review-close" type="button">Close</button>
-      <button class="btn btn-primary" id="review-go" type="button">Confirm</button>
     </div>
   </dialog>
 

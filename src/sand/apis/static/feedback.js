@@ -1,7 +1,8 @@
 // User reports, stored in the open sheet's upload: the "Something's
 // wrong" button (shown only while a sheet is open) and the "Wrong" flag
 // on a written edit (inputs.js). A report changes nothing in the sheet.
-// The flag's dialog also rejects a proposed edit, its reason optional.
+// The flag's dialog also gives an unticked edit its reason, optional,
+// sent with the round (round.js).
 
 import { errorDetail, experimentUrl } from "./api.js";
 import { editReportBody, pageReportBody, WRONG_REASONS } from "./feedback-logic.js";
@@ -45,12 +46,12 @@ const EDIT_MODES = {
     done: "Thanks, your report is saved.",
     reasonRequired: true,
   },
-  reject: {
-    title: "Reject this edit",
+  untick: {
+    title: "Why untick this edit?",
     legend: "What's wrong with it? (optional)",
-    hint: "The edit is not written into the sheet. Saved with this sheet, so sand can learn from it. Undo last takes it back.",
-    send: "Reject",
-    done: "Rejected.",
+    hint: "Sent with the round on Recompute, saved with this sheet, so sand can learn from it.",
+    send: "Save",
+    done: "Saved.",
     reasonRequired: false,
   },
 };
@@ -111,10 +112,13 @@ export function reportEdit(edit) {
   });
 }
 
-// `reject({reason, meant})` throws when the rejection did not go
-// through; resolves true once it did, false when cancelled.
-export function rejectEdit(edit, reject) {
-  return openEditDialog(edit, "reject", ({ reason, meant }) => reject({ reason: reason || null, meant }));
+// Resolves {reason, meant} once given, null when cancelled.
+export async function untickWhy(edit) {
+  let why = null;
+  const given = await openEditDialog(edit, "untick", async ({ reason, meant }) => {
+    why = { reason: reason || null, meant };
+  });
+  return given ? why : null;
 }
 
 function openEditDialog(edit, mode, send) {
