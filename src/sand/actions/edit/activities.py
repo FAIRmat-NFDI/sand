@@ -321,7 +321,7 @@ async def _store(
         )
         # the PUT only queues NOMAD's file update: read back (the reads
         # wait until it is done) before the job reports success
-        await _check_stored(writer, client, data, final, completed=bool(status))
+        await _check_stored(writer, client, data, final, status)
         # only a job that asked the model has a file of its own; a
         # leftover is harmless, a failure here must not retry the above
         if files.cache.of_job(data.job_id).answers:
@@ -355,18 +355,21 @@ def _ours(current: dict | None, status: dict) -> bool:
     return reserved <= started
 
 
-async def _check_stored(  # noqa: PLR0913
-    writer, client, data: JobInput, final: bytes, *, completed: bool
+async def _check_stored(
+    writer, client, data: JobInput, final: bytes, status: dict
 ) -> None:
     """Raises (Temporal retries) unless the final sheet and, with a
-    status, the completed status are this job's. A newer job's status
-    there means this one's was stored and the lock taken over."""
+    `status`, the completed status are this job's. A newer job's status
+    there means this one's was stored and the lock taken over; the job's
+    own reservation still there means it was not."""
     stored = await writer.read_raw_file(client, data.upload_id, FINAL_FILE)
-    if completed:
+    if status:
         current = await writer.read_json(client, data.upload_id, STATUS_FILE)
-        if current and current.get('job_id') != data.job_id:
+        if not _ours(current, status):
             return
-        if not current or current.get('phase') != 'completed':
+        if (current or {}).get('job_id') != data.job_id or current.get(
+            'phase'
+        ) != 'completed':
             raise ApplicationError('NOMAD did not store the completed status')
     if stored is None or sha256(stored) != sha256(final):
         raise ApplicationError('NOMAD did not store the final sheet')
