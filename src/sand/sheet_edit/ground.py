@@ -51,6 +51,9 @@ from sand.sheet_edit.numbers import (
 from sand.sheet_edit.render import EMPTY
 
 _SAMPLE_WORD_RE = re.compile(r'\bsamples?(?=\d|\b)', re.IGNORECASE)  # also 'sample1'
+_FOR_SUBBATCH_RE = re.compile(
+    r'\bfor\s+(?:the\s+)?(?:whole\s+|entire\s+)?sub-?\s?batch\b', re.IGNORECASE
+)
 _SUBBATCH_RE = re.compile(r'\bsub-?\s?batch(?:es)?:?\s+', re.IGNORECASE)
 _EXCEPT_RE = re.compile(
     r'\b(?:except|excluding|but not|without|apart from|other than)\b\s*(?:samples?\s+)?',
@@ -316,7 +319,7 @@ def sample_words_problems(
         # "samples 1 to 3 of subbatches 0 and 1" is one edit per subbatch
         in_subbatch = {s.row for s in catalog.samples if s.subbatch == spec.subbatch}
         named, excluded = named & in_subbatch, excluded & in_subbatch
-    if not named and said.all:  # "all samples of subbatch 1": the whole scope
+    if not named and (said.all or _whole_subbatch(edit.said, said)):
         named = set(_scope(catalog, spec.subbatch, said.subbatches)) - excluded
     if hit := sorted(excluded & set(rows)):
         problems.append(
@@ -338,6 +341,15 @@ def sample_words_problems(
         else:
             doubts.append(f'samples {catalog.names(missing)}: not named in your words')
     return problems, doubts
+
+
+def _whole_subbatch(text: str, said: 'Said') -> bool:
+    """'for subbatch 1' and nothing else about samples: the whole subbatch.
+    Any other words around it may pick a part code cannot read ("the first
+    three of subbatch 1"), so they stay a doubt."""
+    if not said.subbatches or said.samples or said.unknown or said.excluded:
+        return False
+    return bool(_FOR_SUBBATCH_RE.search(text)) and not _SAMPLE_WORD_RE.search(text)
 
 
 def _subbatch_problems(
@@ -474,10 +486,16 @@ def _listed(clause: str, ordered: list[SampleInfo]) -> list[_Item]:
 
 
 def _between(a: _Item, b: _Item, ordered: list[SampleInfo]) -> tuple[SampleInfo, ...]:
-    """The samples from a to b in sheet order, within each subbatch where
-    both are exactly one sample ("samples 1 to 3 of subbatches 0 and 1").
-    Empty when the range cannot be followed (backwards, or an end is no
+    """The samples from a to b in sheet order. On a sheet where every label
+    is one sample, a range spans subbatches ("1 to 9" over subbatches 1–8
+    and 9–15); labels repeated per subbatch are followed within each subbatch where both are
+    exactly one sample ("samples 1 to 3 of subbatches 0 and 1"). Empty
+    when the range cannot be followed (backwards, or an end is no
     sample)."""
+    unique = len({s.label for s in ordered}) == len(ordered)
+    if unique and len(a.hits) == 1 and len(b.hits) == 1:
+        lo, hi = ordered.index(a.hits[0]), ordered.index(b.hits[0])
+        return tuple(ordered[lo : hi + 1])
     rows = []
     for subbatch in dict.fromkeys(s.subbatch for s in a.hits):
         first = [s for s in a.hits if s.subbatch == subbatch]

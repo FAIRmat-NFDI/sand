@@ -161,7 +161,12 @@ def _unresolved_lines(item: Unresolved, catalog: Catalog) -> list[str]:
         ]
         return [f'? uncertain: "{item.said}"', *readings, f'{INDENT}{item.why}']
     if isinstance(item, Unreadable):
-        return [f"? not done, the model's answer could not be read: {item.detail}"]
+        # the detail (a schema error, "Max retry attempts reached") is for
+        # the logs, not the user
+        return [
+            '? sand could not propose an edit for this note. '
+            'Try again, or write the note more clear.'
+        ]
     return [f'? not found: "{item.said}"']
 
 

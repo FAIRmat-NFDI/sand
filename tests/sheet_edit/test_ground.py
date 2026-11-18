@@ -47,6 +47,17 @@ def two_subbatches(synthetic_xlsx):
 
 
 @pytest.fixture(scope='module')
+def split(synthetic_xlsx):
+    subbatch = letter(INFO, 'Subbatch')
+
+    def change(ws):  # samples 8-13 become subbatch 1, numbers stay unique
+        for r in range(9, 15):
+            ws[f'{subbatch}{r}'] = 1
+
+    return build(edited(synthetic_xlsx, change))
+
+
+@pytest.fixture(scope='module')
 def prefixed(synthetic_xlsx):
     sample = letter(INFO, 'Sample')
 
@@ -1511,3 +1522,53 @@ def test_a_fraction_a_conversion_makes_is_written_and_shown(catalog):
     said = 'rotation time 0.01 min'
     result = ground(edit(TIME, old='30', new='0.01', unit='min', said=said), catalog)
     assert (result.value, result.checks) == (0.6, ())
+
+
+def test_a_range_of_unique_numbers_runs_over_the_subbatch_border(split):
+    result = ground(
+        edit(rows=between('4', '9'), said='speed 4000 for samples 4 to 9'), split
+    )
+    assert result.rows == (6, 7, 8, 9, 10)
+    assert result.checks == () and result.doubts == ()
+
+
+def test_a_subbatch_named_alone_names_its_samples(split):
+    result = ground(
+        edit(rows=between('8', '13', subbatch='1'), said='speed 4000 for subbatch 1'),
+        split,
+    )
+    assert result.rows == (9, 10, 11, 12, 13, 14)
+    assert result.checks == () and result.doubts == ()
+
+
+@pytest.mark.parametrize(
+    ('rows', 'said'),
+    [
+        (('8', '10'), 'speed 4000 for the first three samples of subbatch 1'),
+        (('12', '13'), 'speed 4000 for the last two samples of subbatch 1'),
+    ],
+)
+def test_sample_words_code_cannot_read_stay_a_doubt(split, rows, said):
+    result = ground(edit(rows=between(*rows, subbatch='1'), said=said), split)
+    assert result.checks == ()
+    assert result.doubts == (
+        f'samples {rows[0]} to {rows[1]}: not named in your words',
+    )
+
+
+def test_a_subbatch_with_more_words_about_samples_stays_a_doubt(split):
+    # "except" leaves a part code may not read: "the first three ... except 9"
+    rows = samples('10', '11', '12', '13', subbatch='1')
+    for said in (
+        'speed 4000 for the first three samples of subbatch 1 except sample 9',
+        'speed 4000 for the first three of subbatch 1',
+        'speed 4000 for subbatch 1 except sample 9',
+    ):
+        result = ground(edit(rows=rows, said=said), split)
+        assert result.doubts, said
+
+
+def test_a_range_on_labels_repeated_per_subbatch_does_not_span(two_subbatches):
+    # 7 is only in subbatch 0, 6 only in subbatch 1: no range to follow
+    said = said_samples('speed 4000 for samples 7 to 6', two_subbatches)
+    assert [s.row for s in said.samples] == [8, 14]
