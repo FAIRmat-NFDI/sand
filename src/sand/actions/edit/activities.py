@@ -117,13 +117,17 @@ async def replay_cached_inputs(data: ReplayInput) -> dict:
     )
     confirmed = set(files.confirmations)
     rejected = set(data.rejections)
-    return {
-        'replayed': len(steps),
-        'reports': [
-            _report(number, entry_id, step, confirmed, rejected, from_cache=True)
-            for number, (entry_id, step) in enumerate(zip(data.entry_ids, steps), 1)
-        ],
-    }
+    reports = [
+        _report(number, entry_id, step, confirmed, rejected, from_cache=True)
+        for number, (entry_id, step) in enumerate(zip(data.entry_ids, steps), 1)
+    ]
+    replayed = {'replayed': len(steps), 'reports': reports}
+    if data.store_status and len(steps) == len(data.texts):
+        # nothing to ask (Confirm all, undo, reset): the sheet built here
+        # is the final one, stored at once (#202)
+        status = {**data.store_status, 'inputs': reports}
+        replayed['done'] = await _store(data, files, steps, status)
+    return replayed
 
 
 @activity.defn
@@ -204,6 +208,16 @@ async def store_final_sheet_and_changelog(data: StoreInput) -> dict:
     are checked against the original before anything is stored. With the
     shared cache and the completed status (`data.status`) in the same
     request: one NOMAD run, and no sheet without its changelog."""
+    files = await _read_files(data)
+    steps = _apply_inputs_from_cache(files, data.texts, data)
+    return await _store(data, files, steps, data.status)
+
+
+async def _store(
+    data: JobInput, files: '_Files', steps: list[Step], status: dict
+) -> dict:
+    """The final sheet of `steps`, its changelog, the shared cache and,
+    unless `status` is empty, it as completed: in one request."""
     from sand.sheet_edit.catalog import build
     from sand.sheet_edit.changelog import (
         CheckFailed,
@@ -214,8 +228,6 @@ async def store_final_sheet_and_changelog(data: StoreInput) -> dict:
         written_now,
     )
 
-    files = await _read_files(data)
-    steps = _apply_inputs_from_cache(files, data.texts, data)
     final = steps[-1].state if steps else files.original
     log = changelog(files.original, steps, files.confirmations, data.llm_model_name)
     try:
@@ -242,21 +254,21 @@ async def store_final_sheet_and_changelog(data: StoreInput) -> dict:
         (FINAL_FILE, final, XLSX_CONTENT_TYPE),
         (CHANGELOG_FILE, to_json(log).encode(), JSON_TYPE),
     ]
-    if data.status:
-        status = {
-            **data.status,
+    if status:
+        completed = {
+            **status,
             'updated_at': datetime.now(timezone.utc).isoformat(),
             'phase': 'completed',
             **done,
         }
-        outputs.append((STATUS_FILE, _json(status), JSON_TYPE))
+        outputs.append((STATUS_FILE, _json(completed), JSON_TYPE))
     voice = common.voice_service()
     async with voice.build_client(common.user_token(data.user_id)) as client:
         writer = voice.writer
         # a retry after "completed" landed: a newer job may own the sheet
         # and the status now, and must not be overwritten
-        if data.status and not _ours(
-            await writer.read_json(client, data.upload_id, STATUS_FILE), data.status
+        if status and not _ours(
+            await writer.read_json(client, data.upload_id, STATUS_FILE), status
         ):
             return done
         shared = await writer.read_json(client, data.upload_id, CACHE_FILE)
@@ -274,7 +286,7 @@ async def store_final_sheet_and_changelog(data: StoreInput) -> dict:
         )
         # the PUT only queues NOMAD's file update: read back (the reads
         # wait until it is done) before the job reports success
-        await _check_stored(writer, client, data, final)
+        await _check_stored(writer, client, data, final, status)
         # only a job that asked the model has a file of its own; a
         # leftover is harmless, a failure here must not retry the above
         if files.cache.of_job(data.job_id).answers:
@@ -308,16 +320,21 @@ def _ours(current: dict | None, status: dict) -> bool:
     return reserved <= started
 
 
-async def _check_stored(writer, client, data: StoreInput, final: bytes) -> None:
+async def _check_stored(
+    writer, client, data: JobInput, final: bytes, status: dict
+) -> None:
     """Raises (Temporal retries) unless the final sheet and, with a
-    status, the completed status are this job's. A newer job's status
-    there means this one's was stored and the lock taken over."""
+    `status`, the completed status are this job's. A newer job's status
+    there means this one's was stored and the lock taken over; the job's
+    own reservation still there means it was not."""
     stored = await writer.read_raw_file(client, data.upload_id, FINAL_FILE)
-    if data.status:
+    if status:
         current = await writer.read_json(client, data.upload_id, STATUS_FILE)
-        if current and current.get('job_id') != data.job_id:
+        if not _ours(current, status):
             return
-        if not current or current.get('phase') != 'completed':
+        if (current or {}).get('job_id') != data.job_id or current.get(
+            'phase'
+        ) != 'completed':
             raise ApplicationError('NOMAD did not store the completed status')
     if stored is None or sha256(stored) != sha256(final):
         raise ApplicationError('NOMAD did not store the final sheet')
