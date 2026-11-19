@@ -10,7 +10,15 @@ from http import HTTPStatus
 import pytest
 from nomad_fakes import COLLECTION, UPLOAD, FakeVoice, api, note
 
-from sand.sheet_edit.session import CONFIRMATIONS_FILE, REJECTIONS_FILE, STATUS_FILE
+from sand.sheet_edit.session import (
+    CACHE_FILE,
+    CHANGELOG_FILE,
+    CONFIRMATIONS_FILE,
+    FINAL_FILE,
+    ORIGINAL_FILE,
+    REJECTIONS_FILE,
+    STATUS_FILE,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -228,11 +236,35 @@ async def test_reset_takes_back_every_decision(voice):
     put_confirmed(voice, a1='n1')
     put_rejected(voice, a2='n1')
 
+    kept = {
+        name: b'kept'
+        for name in (ORIGINAL_FILE, CACHE_FILE, FINAL_FILE, CHANGELOG_FILE)
+    }
+    voice.writer.files.update(kept)
+    status = voice.writer.files[STATUS_FILE]
+
     response = await reset(voice)
 
     assert response.status_code == HTTPStatus.NO_CONTENT, response.text
-    assert json.loads(voice.writer.files[CONFIRMATIONS_FILE]) == {}
+    # absent is none (#203); the rejections emptied until a log keeps them
+    assert CONFIRMATIONS_FILE not in voice.writer.files
     assert json.loads(voice.writer.files[REJECTIONS_FILE]) == {}
+    # the next job rewrites the sheet, its changelog and the status
+    assert {name: voice.writer.files[name] for name in kept} == kept
+    assert voice.writer.files[STATUS_FILE] == status
+
+
+async def test_an_empty_decision_file_is_deleted_too(voice):
+    voice.writer.files[CONFIRMATIONS_FILE] = b'{}'
+
+    assert (await reset(voice)).status_code == HTTPStatus.NO_CONTENT
+    assert CONFIRMATIONS_FILE not in voice.writer.files
+
+
+async def test_a_reset_with_nothing_to_reset_changes_nothing(voice):
+    voice.writer.writes_allowed = 0  # any write or delete fails
+
+    assert (await reset(voice)).status_code == HTTPStatus.NO_CONTENT
 
 
 async def test_reset_with_a_damaged_file_changes_nothing(voice):

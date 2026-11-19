@@ -302,6 +302,20 @@ class RawFileWriter:
         check_response(response, step='read_raw_file')
         return response.content
 
+    async def list_raw_dir(
+        self, client: httpx.AsyncClient, upload_id: str, directory: str
+    ) -> list[str]:
+        """The names of the files in `directory` (not its directories);
+        none when it does not exist."""
+        response = await client.get(
+            f'/uploads/{upload_id}/rawdir/{directory}', params={'page_size': 1000}
+        )
+        if response.status_code == HTTPStatus.NOT_FOUND:
+            return []
+        check_response(response, step='list_raw_dir')
+        content = (response.json().get('directory_metadata') or {}).get('content', [])
+        return [e['name'] for e in content if e.get('is_file')]
+
     async def delete_raw_file(
         self, client: httpx.AsyncClient, upload_id: str, file_name: str
     ) -> None:

@@ -227,7 +227,22 @@ async def test_reset_all_unlocks(voice):
         )
 
     assert response.status_code == HTTPStatus.NO_CONTENT
-    assert json.loads(voice.writer.files[CHECKPOINT_FILE]) == {}
+    assert CHECKPOINT_FILE not in voice.writer.files
+
+
+@pytest.mark.parametrize('writes', [0, 1])
+async def test_a_reset_that_fails_on_the_way_keeps_the_inputs_locked(voice, writes):
+    await locked_voice(voice)
+    put_rejected(voice, a2='n1')
+    put_confirmed(voice, b1='n2')
+    voice.writer.writes_allowed = writes  # the rejections, then the confirmations
+    async with api(voice) as client:
+        response = await client.post(
+            f'/api/input-collections/{UPLOAD}/edits/reset', params=PARAMS
+        )
+
+    assert response.status_code == HTTPStatus.BAD_GATEWAY
+    assert CHECKPOINT_FILE in voice.writer.files
 
 
 async def test_confirm_all_fails_when_nomad_stored_nothing(voice, monkeypatch):

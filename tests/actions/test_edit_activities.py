@@ -94,6 +94,14 @@ class FakeWriter:
         self.files.pop(name, None)
         self.requests += 1
 
+    async def list_raw_dir(self, client, upload_id, directory):
+        prefix = directory + '/'
+        return [
+            name[len(prefix) :]
+            for name in self.files
+            if name.startswith(prefix) and '/' not in name[len(prefix) :]
+        ]
+
 
 @dataclass
 class FakeVoice:
@@ -176,6 +184,72 @@ def cache_file(upload, name=JOB_CACHE) -> dict:
 
 
 # --- collect ---------------------------------------------------------------------
+
+
+def put_job_cache(upload, job_id):
+    upload.writer.files[job_cache_file(job_id)] = json.dumps(
+        {'proposals': {'t:s': {'proposal': {}, 'job': job_id}}}
+    ).encode()
+
+
+async def test_a_job_start_drops_the_cache_files_of_crashed_jobs(upload, monkeypatch):
+    """Another job's own file is a leftover once its workflow has ended.
+    Its own and the shared cache stay."""
+
+    async def ended(workflow_id):
+        return True
+
+    monkeypatch.setattr(activities, '_workflow_ended', ended)
+    for job_id in ('crashed-1', 'crashed-2', 'job-1'):
+        put_job_cache(upload, job_id)
+    upload.writer.files[CACHE_FILE] = b'{}'
+    data = EditInput(upload_id='u1', user_id='user', collection_entry_id='c1')
+
+    await activities._drop_leftover_caches(data, 'job-1')
+
+    caches = sorted(n for n in upload.writer.files if 'llm_cache' in n)
+    assert caches == sorted([CACHE_FILE, job_cache_file('job-1')])
+
+
+async def test_the_cache_of_a_job_still_running_stays(upload, monkeypatch):
+    """A job given up for an old status may still run on: its next
+    note needs the file."""
+
+    async def ended(workflow_id):
+        return workflow_id == 'crashed'
+
+    monkeypatch.setattr(activities, '_workflow_ended', ended)
+    put_job_cache(upload, 'crashed')
+    put_job_cache(upload, 'expired')
+    data = EditInput(upload_id='u1', user_id='user', collection_entry_id='c1')
+
+    await activities._drop_leftover_caches(data, 'job-1')
+
+    assert job_cache_file('crashed') not in upload.writer.files
+    assert job_cache_file('expired') in upload.writer.files
+
+
+async def test_a_cache_stays_when_temporal_cannot_tell(upload, monkeypatch):
+    async def unknown(workflow_id):
+        raise RuntimeError('Temporal down')
+
+    monkeypatch.setattr(activities, '_workflow_ended', unknown)
+    put_job_cache(upload, 'crashed')
+    data = EditInput(upload_id='u1', user_id='user', collection_entry_id='c1')
+
+    await activities._drop_leftover_caches(data, 'job-1')
+
+    assert job_cache_file('crashed') in upload.writer.files
+
+
+async def test_a_failed_cleanup_does_not_stop_the_job(upload, monkeypatch):
+    async def down(client, upload_id, directory):
+        raise RuntimeError('NOMAD down')
+
+    monkeypatch.setattr(upload.writer, 'list_raw_dir', down)
+    data = EditInput(upload_id='u1', user_id='user', collection_entry_id='c1')
+
+    await activities._drop_leftover_caches(data, 'job-1')
 
 
 async def test_collect_gives_the_inputs_in_order_the_confirmations_and_the_model(

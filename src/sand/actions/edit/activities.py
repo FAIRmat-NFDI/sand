@@ -41,6 +41,7 @@ from sand.sheet_edit.session import (
     STATUS_FILE,
     LlmCache,
     cache_key,
+    is_job_cache_file,
     job_cache_file,
     llm_cache_json,
     load_confirmations,
@@ -75,6 +76,7 @@ async def collect_edit_inputs(data: EditInput) -> dict:
         raise ApplicationError(
             'no sheet was uploaded for editing in this collection', non_retryable=True
         )
+    await _drop_leftover_caches(data)
     pending = [i for i in inputs if i.text is None]
     if pending:
         raise ApplicationError(
@@ -413,6 +415,51 @@ class _Files:
     original: bytes
     cache: LlmCache
     confirmations: dict[str, Confirmation]
+
+
+async def _drop_leftover_caches(data: EditInput, job_id: str | None = None) -> None:
+    """The cache files of jobs that crashed (#203): one job runs at a
+    time, but a job given up for an old status may still run on, so a
+    file goes only once the workflows of its answers have ended.
+    Best-effort: a file left behind costs nothing but space. `job_id`:
+    the running job's (its workflow id) when not given."""
+    directory = CACHE_FILE.rpartition('/')[0]
+    voice = common.voice_service()
+    try:
+        own = job_cache_file(job_id or activity.info().workflow_id).rpartition('/')[2]
+        async with voice.build_client(common.user_token(data.user_id)) as client:
+            names = await voice.writer.list_raw_dir(client, data.upload_id, directory)
+            for name in names:
+                if not is_job_cache_file(name) or name == own:
+                    continue
+                path = f'{directory}/{name}'
+                cached = await voice.writer.read_json(client, data.upload_id, path)
+                jobs = {
+                    entry.get('job')
+                    for entry in ((cached or {}).get('proposals') or {}).values()
+                    if isinstance(entry, dict)
+                }
+                if all([await _workflow_ended(j) for j in jobs if j]):
+                    await voice.writer.delete_raw_file(client, data.upload_id, path)
+    except Exception:
+        activity.logger.warning('could not drop leftover cache files', exc_info=True)
+
+
+async def _workflow_ended(workflow_id: str) -> bool:
+    """False while Temporal still runs it; raises when Temporal cannot
+    tell (the file stays)."""
+    from nomad.actions.client import get_client
+    from temporalio.client import WorkflowExecutionStatus
+    from temporalio.service import RPCError, RPCStatusCode
+
+    client = await get_client()
+    try:
+        described = await client.get_workflow_handle(workflow_id).describe()
+    except RPCError as exc:
+        if exc.status == RPCStatusCode.NOT_FOUND:
+            return True
+        raise
+    return described.status != WorkflowExecutionStatus.RUNNING
 
 
 async def _read_files(data: JobInput) -> _Files:
