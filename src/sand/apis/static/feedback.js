@@ -49,7 +49,7 @@ const EDIT_MODES = {
   untick: {
     title: "Why untick this edit?",
     legend: "What's wrong with it? (optional)",
-    hint: "Sent with the round on Recompute, saved with this sheet, so sand can learn from it.",
+    hint: "Saved with this sheet, so sand can learn from it. The updates are read again once this closes.",
     send: "Save",
     done: "Saved.",
     reasonRequired: false,

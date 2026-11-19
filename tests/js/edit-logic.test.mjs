@@ -4,7 +4,7 @@ import { test } from "node:test";
 import {
   confirmAllLabel, describeEditPhase, downloadBlock, downloadFilename, editSummary, inputApplied, inputState,
   changedEntries, checkedKeys, confirmQuestion, decisionCount, lostUnticks, recomputeLabel, inputsToRead, outdatedEntries, pendingKeys, previewNotes, readKey,
-  onlyNewToRead, reportsByEntry, resetNote, roundSnapshot, rewriteWarning, settledBlock,
+  recomputeDue, reportsByEntry, resetNote, roundSnapshot, rewriteWarning, settledBlock,
   unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
 
@@ -200,7 +200,7 @@ test("the state chip of an input", () => {
     inputState(item, report, running, canConfirm)?.label ?? null;
   assert.equal(label({ ...note, text: null }, undefined), null);
   assert.equal(label(note, undefined, false, false), null);
-  assert.equal(label(note, undefined), "Waiting for Recompute");
+  assert.equal(label(note, undefined), "Waiting to be read");
   assert.equal(label(note, undefined, true), "Reading...");
   // a report of other words is not this update's
   assert.equal(label({ ...note, text: "speed 4500" }, REPORT, true), "Reading...");
@@ -236,8 +236,8 @@ test("the state chip of an input", () => {
   assert.equal(inputState(note, REPORT, false, true).state, "ready");
   // read again first: below a change above
   const outdated = (report, running = false) => inputState(note, report, running, true, true).label;
-  assert.equal(outdated(REPORT), "Waiting for Recompute");
-  assert.equal(outdated({ ...REPORT, confirmed: ["k1"] }), "Waiting for Recompute");
+  assert.equal(outdated(REPORT), "Waiting to be read");
+  assert.equal(outdated({ ...REPORT, confirmed: ["k1"] }), "Waiting to be read");
   assert.equal(outdated(REPORT, true), "Reading...");
   // the writer refused a confirmed edit: said first, whatever is undecided
   assert.equal(label(note, { ...REPORT, refused: "a formula error" }, false, true), "Not written");
@@ -430,17 +430,15 @@ test("Recompute counts the round's changes", () => {
   assert.equal(recomputeLabel(3), "Recompute (3 changes)");
 });
 
-test("only new updates are read by themselves", () => {
-  const item = (id, text = REPORT.text) => ({ entry_id: id, text });
-  const reports = { n1: { ...REPORT, entry_id: "n1" } };
-  // the first update ever, then one more after a read one
-  assert.equal(onlyNewToRead([item("n1")], {}), true);
-  assert.equal(onlyNewToRead([item("n1"), item("n2", "anneal 120")], reports), true);
-  // nothing new, a revised one, a deleted one (with a new one too)
-  assert.equal(onlyNewToRead([item("n1")], reports), false);
-  assert.equal(onlyNewToRead([item("n1", "speed 3000")], reports), false);
-  assert.equal(onlyNewToRead([item("n2", "anneal 120")], reports), false);
-  assert.equal(onlyNewToRead([item("n1", "speed 3000"), item("n2", "anneal 120")], reports), false);
-  // a recording still being transcribed: nothing yet
-  assert.equal(onlyNewToRead([item("n1"), item("n2", null)], reports), false);
+test("changes recompute by themselves, not twice for the same reason", () => {
+  const last = { read: "inputs A", round: "" };
+  assert.equal(recomputeDue(0, "inputs B", "", last), false);
+  // an update added, revised or deleted
+  assert.equal(recomputeDue(1, "inputs B", "", last), true);
+  // the job for these inputs failed
+  assert.equal(recomputeDue(1, "inputs A", "", last), false);
+  // an untick; its send failed, then another untick
+  assert.equal(recomputeDue(1, "inputs A", "round 1", last), true);
+  assert.equal(recomputeDue(1, "inputs A", "round 1", { ...last, round: "round 1" }), false);
+  assert.equal(recomputeDue(2, "inputs A", "round 2", { ...last, round: "round 1" }), true);
 });

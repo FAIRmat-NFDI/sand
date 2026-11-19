@@ -120,13 +120,13 @@ export function inputState(item, report, jobRunning, canConfirm, outdated = fals
     if (!canConfirm) return null;
     return jobRunning
       ? { state: "reading", label: "Reading..." }
-      : { state: "waiting", label: "Waiting for Recompute" };
+      : { state: "waiting", label: "Waiting to be read" };
   }
   if (report.refused) return { state: "refused", label: "Not written" };
   if (outdated) {
     return jobRunning
       ? { state: "reading", label: "Reading..." }
-      : { state: "waiting", label: "Waiting for Recompute" };
+      : { state: "waiting", label: "Waiting to be read" };
   }
   const pending = pendingKeys([report]).length;
   if (pending) {
@@ -182,13 +182,15 @@ export function inputsToRead(items, reports) {
   return ids;
 }
 
-// Whether a job reads by itself: every update to read is new (no report
-// yet), so nothing read before changes. A revised or deleted update
-// waits for Recompute with the round, as unticks do.
-export function onlyNewToRead(items, reports) {
-  const ids = inputsToRead(items, reports);
-  const present = new Set(items.map((item) => item.entry_id));
-  return ids.length > 0 && ids.every((id) => !reports[id] && present.has(id));
+// Whether the changes start a recompute by themselves: there are some,
+// and not the ones the last start was for (a failed job or round is not
+// tried again for the same reason; Read again does). `readNow`: readKey
+// of the inputs; `roundNow`: the round's body as JSON, "" without one;
+// `last`: {read, round}, what the last start was for.
+export function recomputeDue(changes, readNow, roundNow, last) {
+  if (!changes) return false;
+  if (roundNow) return roundNow !== last.round;
+  return readNow !== last.read;
 }
 
 // what a job is started for: the inputs and their words. The same key

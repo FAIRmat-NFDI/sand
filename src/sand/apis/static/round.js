@@ -1,6 +1,6 @@
 // The rounds being prepared (#208), one per experiment: the edits
 // unticked (each with an optional reason) and the rejected ones ticked
-// again. Nothing is sent before Recompute; kept in the page only, so a
+// again. Nothing is sent before the recompute; kept in the page only, so a
 // reload drops them (the page warns before leaving). Another experiment
 // keeps its own round: switching sheets loses nothing.
 
