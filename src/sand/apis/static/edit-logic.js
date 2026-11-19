@@ -120,13 +120,13 @@ export function inputState(item, report, jobRunning, canConfirm, outdated = fals
     if (!canConfirm) return null;
     return jobRunning
       ? { state: "reading", label: "Reading..." }
-      : { state: "waiting", label: "Waiting for Recompute" };
+      : { state: "waiting", label: "Waiting to be read" };
   }
   if (report.refused) return { state: "refused", label: "Not written" };
   if (outdated) {
     return jobRunning
       ? { state: "reading", label: "Reading..." }
-      : { state: "waiting", label: "Waiting for Recompute" };
+      : { state: "waiting", label: "Waiting to be read" };
   }
   const pending = pendingKeys([report]).length;
   if (pending) {
@@ -180,6 +180,26 @@ export function inputsToRead(items, reports) {
   const present = new Set(items.map((item) => item.entry_id));
   for (const id of Object.keys(reports)) if (!present.has(id)) ids.push(id);
   return ids;
+}
+
+// Whether the changes start a recompute by themselves: there are some,
+// and not the ones the last start was for (a failed job or round is not
+// tried again for the same reason; Read again does). `readNow`: readKey
+// of the inputs; `roundNow`: the round's body as JSON, "" without one;
+// `last`: {read, round}, what the last start was for.
+export function recomputeDue(changes, readNow, roundNow, last) {
+  if (!changes) return false;
+  if (roundNow) return roundNow !== last.round;
+  return readNow !== last.read;
+}
+
+// What a failed job is not started again for: the inputs it was started
+// for (`startedFor`, a readKey), so an update added while it ran still
+// recomputes; the inputs shown when this page did not start it (a
+// reload), null before they are loaded.
+export function failedReadKey(startedFor, items) {
+  if (startedFor) return startedFor;
+  return items ? readKey(items) : null;
 }
 
 // what a job is started for: the inputs and their words. The same key

@@ -5,8 +5,8 @@
 // Audio revisions go to corrected_transcript (clearing withdraws them);
 // note revisions overwrite the note text. Under each input, once a job
 // ran, its report: what it changes, a tick per ready edit. Deciding goes
-// in rounds (#208): untick (round.js), revise or delete, then Recompute
-// and Confirm all (edit-mode.js). An input behind the last Confirm all
+// in rounds (#208): untick (round.js), revise or delete, each recomputed
+// by itself, then Confirm all (edit-mode.js). An input behind the last Confirm all
 // is locked until Reset all.
 
 import { errorDetail, experimentUrl } from "./api.js";
@@ -331,8 +331,9 @@ function wrongFlag(edit) {
 }
 
 // The tick of an edit: ticked, Confirm all confirms it; unticked, it is
-// rejected on Recompute, with an optional reason. A rejected edit ticked
-// again is taken back on Recompute. `wait`: why it may not change now.
+// rejected on the recompute, with an optional reason asked at once (the
+// recompute waits for the answer). A rejected edit ticked again is taken
+// back on the recompute. `wait`: why it may not change now.
 function tickBox(edit, entry, rejected, wait) {
   const cell = document.createElement("span");
   cell.className = "report-tick";
@@ -342,8 +343,8 @@ function tickBox(edit, entry, rejected, wait) {
   box.checked = rejected ? isRestored(edit.key) : !isUnticked(edit.key);
   box.disabled = Boolean(wait) || !decidable;
   label.title = wait || (rejected
-    ? "Rejected: tick it to take the rejection back on Recompute"
-    : "Untick it to reject it on Recompute");
+    ? "Rejected: tick it to take the rejection back"
+    : "Untick it to reject it");
   box.addEventListener("change", () => {
     if (rejected) {
       if (box.checked) restore(edit, entry);
@@ -351,7 +352,9 @@ function tickBox(edit, entry, rejected, wait) {
     } else if (box.checked) {
       tick(edit.key);
     } else {
-      untick(edit, entry);
+      // the reason first: the untick starts the recompute. Closed
+      // without one, it is unticked all the same
+      untickWhy(edit).then((given) => untick(edit, entry, given || undefined));
     }
   });
   const word = document.createElement("span");
