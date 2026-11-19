@@ -1160,6 +1160,12 @@ async def _decidable(  # noqa: PLR0913
             status_code=409,
             detail=f'the updates are being read; {verb} when it has finished',
         )
+    if status.get('phase') != 'completed':
+        # a failed job's or start's reports are shown, not decided on
+        raise HTTPException(
+            status_code=409,
+            detail=f'the last reading of the updates failed; read them again, then {verb}',
+        )
     # a key two inputs share is the first one's: the job writes it
     # there, and the later input's key changes with the sheet
     reports = {}
