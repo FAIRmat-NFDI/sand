@@ -406,10 +406,8 @@ test("Confirm all asks what it confirms, and says skipped updates are locked too
     { entry_id: "n3", ready: [], unresolved: 1 },
   ] };
   assert.equal(confirmQuestion(status),
-    "Confirm 2 edits in 1 update? They are written into the sheet, and every update is locked: "
-    + "only Reset all changes them. 1 update has a part that is not an edit (unclear, not applied): "
-    + "locked too. Fix it first, or Reset all later.");
-  assert.ok(!confirmQuestion({ inputs: status.inputs.slice(0, 1) }).includes("locked too"));
+    "Confirm 2 edits in 1 update? Then all updates are locked. 1 update has an unclear part, not applied.");
+  assert.ok(!confirmQuestion({ inputs: status.inputs.slice(0, 1) }).includes("unclear"));
 });
 
 test("an untick whose edit is gone after the reread no longer applies", () => {

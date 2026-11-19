@@ -811,6 +811,8 @@ body {
 .sample-chip.tone-1 { background: #ffe4d1; color: #7c2d12; }
 .sample-chip.tone-2 { background: #d9f2e6; color: #14532d; }
 .sample-chip.tone-3 { background: #ece4ff; color: #4c1d95; }
+.sample-chip.tone-4 { background: #fdf3c7; color: #713f12; }
+.sample-chip.tone-5 { background: #fde2ea; color: #831843; }
 
 /* Link to the created AudioInput entry in NOMAD */
 .audio-entry-text {
@@ -1866,27 +1868,6 @@ body {
   color: #6b7079;
 }
 
-.changelog-details {
-  margin-top: 8px;
-  font-size: 0.85rem;
-  color: #616161;
-}
-
-.changelog-details summary {
-  cursor: pointer;
-}
-
-.changelog-text {
-  margin: 8px 0 0;
-  padding: 8px;
-  max-height: 320px;
-  overflow: auto;
-  white-space: pre-wrap;
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: 0.8rem;
-  background: #f7f7f7;
-  border-radius: 4px;
-}
 
 /* "Something's wrong": quiet on the app bar until clicked */
 .feedback-btn {

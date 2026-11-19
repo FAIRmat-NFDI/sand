@@ -480,11 +480,9 @@ export function confirmQuestion(status) {
   const updates = reports.filter((report) => pendingKeys([report]).length).length;
   const skipped = reports.filter((report) => skippedWhy(report)).length;
   let question = "Confirm " + count(keys.length, "edit", "edits") + " in "
-    + count(updates, "update", "updates") + "? They are written into the sheet, and every update "
-    + "is locked: only Reset all changes them.";
+    + count(updates, "update", "updates") + "? Then all updates are locked.";
   if (skipped) {
-    question += " " + (skipped === 1 ? "1 update has" : skipped + " updates have")
-      + " a part that is not an edit (unclear, not applied): locked too. Fix it first, or Reset all later.";
+    question += " " + (skipped === 1 ? "1 update has" : skipped + " updates have") + " an unclear part, not applied.";
   }
   return question;
 }
