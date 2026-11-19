@@ -41,6 +41,9 @@ class ReplayInput(JobInput):
     # with every input cached, the replay stores the final sheet itself,
     # with this status as completed (StoreInput); empty: it never does
     store_status: dict = {}
+    # the inputs the job has reports of already: only the ones after
+    # them are reported (their reports are in `store_status`)
+    after: int = Field(default=0, ge=0)
 
 
 class PrepareInput(JobInput):

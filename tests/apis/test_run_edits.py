@@ -233,6 +233,29 @@ async def test_a_start_that_fails_releases_the_reservation(voice, starter):
     assert (await start(voice)).status_code == HTTPStatus.OK
 
 
+async def test_the_last_runs_reports_stay_shown_while_a_job_starts(voice, starter):
+    """Until the job's first status, the page shows them, not every
+    update as being read; another collection's are not kept."""
+    reports = [{'input': 1, 'entry_id': 'n1', 'ready': []}]
+    put_status(voice, 'completed', inputs=reports)
+
+    assert (await start(voice)).status_code == HTTPStatus.OK
+    assert status_file(voice)['inputs'] == reports
+
+    put_status(voice, 'completed', collection='other', inputs=reports)
+    assert (await start(voice)).status_code == HTTPStatus.OK
+    assert status_file(voice)['inputs'] == []
+
+
+async def test_a_failed_start_keeps_the_last_runs_reports(voice, starter):
+    reports = [{'input': 1, 'entry_id': 'n1', 'ready': []}]
+    put_status(voice, 'completed', inputs=reports)
+    starter.failing = True
+
+    assert (await start(voice)).status_code == HTTPStatus.BAD_GATEWAY
+    assert status_file(voice)['inputs'] == reports
+
+
 async def test_a_release_that_fails_still_reports_the_start_error(voice, starter):
     starter.failing = True
     voice.writer.writes_allowed = 1  # the reservation, then NOMAD is down

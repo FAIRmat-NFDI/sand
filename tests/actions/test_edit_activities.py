@@ -767,6 +767,36 @@ async def test_a_replay_whose_end_was_lost_fails_for_a_retry(upload, monkeypatch
         )
 
 
+async def test_a_replay_after_a_read_input_reports_only_the_ones_after(upload):
+    """The job read input 1; input 2's answer holds: the replay after it
+    reports input 2 and stores the sheet, with input 1's report as read
+    and this job's answers published."""
+    await answer_both(upload)
+    await activities.store_final_sheet_and_changelog(job(upload))
+    reserved = {'job_id': 'starting', 'phase': 'starting', 'updated_at': STARTED}
+    upload.writer.files[STATUS_FILE] = json.dumps(reserved).encode()
+    # input 1 read again by the next job (as after a change of it)
+    first = await activities.agree_cache_and_apply_input(
+        apply(upload, 1, [answer(SPEED_EDIT)] * 2, job_id='job-2')
+    )
+    status = {'job_id': 'job-2', 'started_at': STARTED, 'inputs': [first]}
+    before = upload.writer.requests
+
+    result = await activities.replay_cached_inputs(
+        replay(upload, job_id='job-2').model_copy(
+            update={'store_status': status, 'after': 1}
+        )
+    )
+
+    assert result['replayed'] == 2  # noqa: PLR2004
+    assert [r['input'] for r in result['reports']] == [2]
+    assert upload.writer.requests - before == 2  # noqa: PLR2004  the store, the delete
+    stored = json.loads(upload.writer.files[STATUS_FILE])
+    assert stored['phase'] == 'completed'
+    assert stored['inputs'] == [first, result['reports'][0]]
+    assert job_cache_file('job-2') not in upload.writer.files
+
+
 async def test_a_replay_with_an_input_to_read_stores_nothing(upload):
     await activities.agree_cache_and_apply_input(
         apply(upload, 1, [answer(SPEED_EDIT)] * 2)
