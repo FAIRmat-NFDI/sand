@@ -82,8 +82,12 @@ const FAILED_BEFORE_INPUTS = Symbol("failed");
 let roundSent = null;
 // the inputs above the first change, when the job started from this page:
 // their reports stay shown while it runs (#215)
-let keptForJob = new Set();
-let keptJob = null; // the workflow id keptForJob is for, from the start's answer
+// `start`: which start made it, so a late answer to an older start (of
+// another experiment, shown before) leaves it alone; `job`: the workflow
+// id that start answered with
+const NO_KEPT = { entryId: null, start: 0, notes: new Set(), job: null };
+let kept = NO_KEPT;
+let starts = 0;
 const NO_MARKS = { changed: new Set(), lost: {} };
 let marks = NO_MARKS;
 
@@ -312,9 +316,10 @@ async function poll(experiment, generation) {
     : reportsByEntry(status);
   // while a job runs, the updates it has reported are decided already;
   // the others show the last run's reports
-  const job = freshReports(status, running, { kept: keptForJob, job: keptJob });
-  keptForJob = job.kept;
-  if (!job.kept.size) keptJob = null;
+  const own = kept.entryId === experiment.entry_id ? kept : NO_KEPT;
+  const job = freshReports(status, running, { kept: own.notes, job: own.job });
+  // a late poll of another experiment leaves the shown one's alone
+  if (own === kept && !job.kept.size) kept = NO_KEPT;
   const fresh = job.fresh;
   if (status.phase === "completed" && roundSent && roundSent.entryId === experiment.entry_id) {
     // read again after a Recompute: what the round changed
@@ -525,8 +530,7 @@ export function showEdit(experiment, view) {
   current = experiment;
   roundFor(experiment ? experiment.entry_id : null);
   roundSent = null;
-  keptForJob = new Set();
-  keptJob = null;
+  kept = NO_KEPT;
   marks = NO_MARKS;
   statusKnown = false;
   lastStatus = null;
@@ -590,6 +594,7 @@ function readAgain() {
 // it still shows this experiment. `decided`: the inputs whose decisions
 // changed (null: all of them)
 async function startJob(experiment, decided = new Set()) {
+  let start = 0; // this start's number, when it shows its experiment
   // any job reads the new updates too
   if (readTimer && readTimer.experiment.entry_id === experiment.entry_id) cancelRead();
   if (stillShown(experiment)) {
@@ -605,16 +610,21 @@ async function startJob(experiment, decided = new Set()) {
     confirmAllBtn.hidden = recomputeBtn.hidden = true;
     const items = inputsSeen && inputsSeen.entryId === experiment.entry_id ? inputsSeen.items : null;
     // the latest status: a failed run's knows only what it reported
-    keptForJob = decided ? unchangedAbove(items, decisionStatus || lastStatus, decided) : new Set();
-    keptJob = null;
+    const notes = decided ? unchangedAbove(items, decisionStatus || lastStatus, decided) : new Set();
+    start = ++starts;
+    kept = { entryId: experiment.entry_id, start, notes, job: null };
     // no ticking on the way out: the job reads the decisions
-    setReports(reportsShown, true, true, keptForJob, marks);
+    setReports(reportsShown, true, true, notes, marks);
   }
+  // the kept notes are this start's while no later start replaced them
+  const forget = () => {
+    if (start && kept.start === start) kept = NO_KEPT;
+  };
   try {
     const res = await fetch(experimentUrl(experiment, "edit-async"), { method: "POST" });
     if (!res.ok) {
       // the job running now, if any, is not this page's
-      keptForJob = new Set();
+      forget();
       // 409: a job runs already (another tab), its progress is shown;
       // 422: an input is not ready (a recording being transcribed), the
       // next inputs list starts the job
@@ -630,11 +640,12 @@ async function startJob(experiment, decided = new Set()) {
       if (stillShown(experiment)) startPolling(experiment);
       return;
     }
-    keptJob = await res.json().then((job) => job.job_id, () => null);
+    const id = await res.json().then((job) => job.job_id, () => null);
+    if (start && kept.start === start) kept = { ...kept, job: id };
     // the reservation is written when the POST returns: polled at once
     if (stillShown(experiment)) startPolling(experiment);
   } catch (err) {
-    keptForJob = new Set();
+    forget();
     if (stillShown(experiment)) {
       showError("Network error: " + err.message);
       readAgainBtn.hidden = false;
