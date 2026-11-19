@@ -77,19 +77,22 @@ export function freshReports(status, running, { kept, job }) {
 }
 
 // The inputs a new job leaves as they are (#215): those above the first
-// one that changed since `status` (words revised, added or deleted, or
-// in `decided`: a round's unticks and re-ticks). Same words on the same
-// sheet: the job only replays them, so their reports stay shown.
+// one that changed since `status` (words revised, added or deleted), and
+// one in `decided` (a round's unticks and re-ticks) itself. Same words
+// on the same sheet: the job only replays them, so their reports stay
+// shown; a decided one's report shows the decision.
 export function unchangedAbove(items, status, decided = new Set()) {
   const kept = new Set();
   if (!items || !status) return kept;
   const ordered = [...(status.inputs || [])].sort((a, b) => a.input - b.input);
   for (const [i, item] of items.entries()) {
     const report = ordered[i];
-    if (!report || report.entry_id !== item.entry_id || decided.has(item.entry_id)) break;
+    if (!report || report.entry_id !== item.entry_id) break;
     if (report.text !== undefined && report.text !== item.text) break;
+    // a decision is not read again (its report shows it): what comes
+    // after it is
     kept.add(item.entry_id);
-    if (changesBelow(report)) break;
+    if (decided.has(item.entry_id) || changesBelow(report)) break;
   }
   return kept;
 }

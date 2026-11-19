@@ -470,7 +470,8 @@ test("a job keeps the reports of the notes above the first change (#215)", () =>
   // note 3 revised, deleted, or decided in a round
   assert.deepEqual(kept(items.map((i) => (i.entry_id === "n3" ? { ...i, text: "c2" } : i))), ["n1", "n2"]);
   assert.deepEqual(kept(items.filter((i) => i.entry_id !== "n3")), ["n1", "n2"]);
-  assert.deepEqual(kept(items, new Set(["n3"])), ["n1", "n2"]);
+  // a rejection of note 3's edit: note 3 is not read again, note 4 is
+  assert.deepEqual(kept(items, new Set(["n3"])), ["n1", "n2", "n3"]);
   // a note added at the end leaves all others
   assert.deepEqual(kept([...items, { entry_id: "n5", text: "e" }]), ["n1", "n2", "n3", "n4"]);
   // a decision the last run did not know changes what comes after it
