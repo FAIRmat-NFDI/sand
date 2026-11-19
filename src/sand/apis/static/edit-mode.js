@@ -239,12 +239,13 @@ function renderWritten(rows) {
     if (row.first) tr.className = "written-first";
     if (row.line) {
       const td = document.createElement("td");
-      td.colSpan = 4;
+      td.colSpan = 5;
       td.textContent = row.line;
       tr.append(td);
     } else {
       for (const [field, text] of [
-        ["step", row.first ? row.step : ""], ["column", row.column], ["value", row.value], ["samples", row.samples],
+        ["step", row.first ? row.step : ""], ["column", row.column], ["old", row.old ?? ""],
+        ["value", row.value], ["samples", row.samples],
       ]) {
         const td = document.createElement("td");
         td.className = "written-" + field;

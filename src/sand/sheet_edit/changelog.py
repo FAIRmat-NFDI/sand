@@ -314,31 +314,36 @@ def _digest(body: dict) -> str:
 
 def written_now(log: Changelog, catalog: Catalog) -> list[dict]:
     """What the written cells hold now, for the GUI's table: the last
-    value of each cell, one row per column and value, the samples named
-    as ranges. A cell edited twice shows once; two edits of one column
-    that overlap come out as the samples each value is left on. Formula
-    results are left out (the full log has them). In sheet order: by
-    column, then by the first sample holding the value.
+    value of each cell and the one it had in the uploaded sheet, one row
+    per column, old and new value, the samples named as ranges. A cell
+    edited twice shows once; two edits of one column that overlap come
+    out as the samples each value is left on. Formula results are left
+    out (the full log has them). In sheet order: by column, then by the
+    first sample holding the value.
 
         {'step': '1: Cleaning UV-Ozone', 'column': 'Time 1 [s]',
-         'value': '120', 'samples': 'samples 1–3'}
+         'old': '600', 'value': '120', 'samples': 'samples 1–3'}
     """
+    first: dict[tuple[int, int], Entry] = {}
     last: dict[tuple[int, int], Entry] = {}
     for e in log.entries:
         if not e.by_formula:
+            first.setdefault((e.column, e.row), e)
             last[(e.column, e.row)] = e
-    rows: dict[tuple[int, str, str, str], list[Entry]] = {}
-    for (column, _), e in sorted(last.items()):
-        key = (column, e.section, e.header, value_text(e.new))
+    rows: dict[tuple[int, str, str, str, str], list[Entry]] = {}
+    for (column, row), e in sorted(last.items()):
+        old = value_text(first[(column, row)].old)
+        key = (column, e.section, e.header, old, value_text(e.new))
         rows.setdefault(key, []).append(e)
     return [
         {
             'step': section,
             'column': header,
+            'old': old,
             'value': value,
             'samples': _held_by(held, catalog),
         }
-        for (_, section, header, value), held in rows.items()
+        for (_, section, header, old, value), held in rows.items()
     ]
 
 

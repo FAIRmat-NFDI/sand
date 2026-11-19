@@ -733,6 +733,7 @@ async def test_store_final_sheet_and_changelog_stores_the_final_sheet_with_its_c
         {
             'step': ready['step'],
             'column': ready['column'],
+            'old': '3000',
             'value': '4000',
             'samples': 'samples 1–3',
         }
