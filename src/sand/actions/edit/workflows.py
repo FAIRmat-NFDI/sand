@@ -15,6 +15,9 @@ order, each interpreted against the sheet the earlier ones left.
             ──▶ the user's preview, edits ready to confirm, confirmed ones
             written; its cache file and status "interpreting k/n" in one
             request
+        activity replay_cached_inputs(after k) ──▶ the inputs after k whose
+            answers still hold, in one go (an input changed above re-reads
+            only what it touches); with all of them, the sheet stored there
     activity store_final_sheet_and_changelog ──▶ changelog checked; the sheet,
         changelog, cache and status "completed" {final, changed, changes,
         changelog, written} stored in one request
@@ -25,7 +28,7 @@ problem: that input is shown as unreadable and the job goes on. An
 activity or child that fails outright fails the job. The browser's only
 bridge to all of this is the status file in the upload; a rerun after a
 confirmation costs model calls only for inputs whose text or sheet
-changed (see session.py), and the inputs before the first of those are
+changed (see session.py), and the cached inputs between those are
 replayed from the cache in one activity instead of two each.
 """
 
@@ -165,6 +168,7 @@ class EditSheetWorkflow:
             # each input's report goes with its cache file, one write; a job
             # started before writes a status before and after each input
             per_note = workflow.patched('one-write-per-note')
+            after_read = workflow.patched('replay-after-read')
             for number, entry_id in enumerate(collected['input_entry_ids'], 1):
                 if number <= replayed:
                     continue
@@ -211,6 +215,20 @@ class EditSheetWorkflow:
                     last_written[0] = workflow.now()
                 else:
                     await status({**progress, 'inputs_done': number})
+                if after_read and number < total:
+                    # the inputs after it whose answers still hold: one step,
+                    # and with all of them the sheet stored too
+                    more = await self._replay_cached(
+                        job,
+                        collected['input_entry_ids'],
+                        status_of({'model': job.llm_model_name}),
+                        None,
+                        after=number,
+                    )
+                    reports.extend(more['reports'])
+                    replayed = more['replayed']
+                    if 'done' in more:
+                        return {'job_id': job_id, 'inputs': reports, **more['done']}
 
             writing = {'phase': 'writing-sheet', 'model': job.llm_model_name}
             await (heartbeat(writing) if per_note else status(writing))
@@ -242,11 +260,12 @@ class EditSheetWorkflow:
 
     @staticmethod
     async def _replay_cached(
-        job: JobInput, entry_ids: list[str], store_status: dict, status
+        job: JobInput, entry_ids: list[str], store_status: dict, status, after=0
     ) -> dict:
         """The leading cached inputs; with every input cached and a
         `store_status`, the final sheet stored too (`done`). `status`
-        writes the "replaying" status; None: not written."""
+        writes the "replaying" status; None: not written. The first
+        `after` inputs are reported already: only the ones after them are."""
         total = len(job.texts)
         if status:
             await status(
@@ -259,13 +278,17 @@ class EditSheetWorkflow:
         replay = await workflow.execute_activity(
             replay_cached_inputs,
             ReplayInput(
-                **job.model_dump(), entry_ids=entry_ids, store_status=store_status
+                **job.model_dump(),
+                entry_ids=entry_ids,
+                store_status=store_status,
+                after=after,
             ),
             start_to_close_timeout=timedelta(minutes=5),
             retry_policy=RetryPolicy(maximum_attempts=3),
         )
         replayed = replay['replayed']
-        if replayed > total or len(replay['reports']) != replayed:
+        # the inputs up to `after` were read in this job: they are cached
+        if not after <= replayed <= total or len(replay['reports']) != replayed - after:
             raise ApplicationError(
                 f'replayed {replayed} of {total} inputs with '
                 f'{len(replay["reports"])} reports',

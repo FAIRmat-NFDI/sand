@@ -103,9 +103,9 @@ async def collect_edit_inputs(data: EditInput) -> dict:
 @activity.defn
 async def replay_cached_inputs(data: ReplayInput) -> dict:
     """The leading inputs the model already answered on their sheet,
-    applied in one go (files read once): their reports and how many
-    there were. The first input without a cached answer stops it; the
-    workflow goes on from there, one input at a time."""
+    applied in one go (files read once): how many there were and the
+    reports of those after `data.after`. The first input without a cached
+    answer stops it; the workflow reads that one and replays again."""
     files = await _read_files(data)
     steps = apply_all(
         files.original,
@@ -122,12 +122,14 @@ async def replay_cached_inputs(data: ReplayInput) -> dict:
     reports = [
         _report(number, entry_id, step, confirmed, rejected, from_cache=True)
         for number, (entry_id, step) in enumerate(zip(data.entry_ids, steps), 1)
+        if number > data.after
     ]
     replayed = {'replayed': len(steps), 'reports': reports}
     if data.store_status and len(steps) == len(data.texts):
-        # nothing to ask (Confirm all, undo, reset): the sheet built here
-        # is the final one, stored at once (#202)
-        status = {**data.store_status, 'inputs': reports}
+        # nothing left to ask: the sheet built here is the final one,
+        # stored at once (#202)
+        earlier = data.store_status.get('inputs', [])[: data.after]
+        status = {**data.store_status, 'inputs': [*earlier, *reports]}
         replayed['done'] = await _store(data, files, steps, status)
     return replayed
 

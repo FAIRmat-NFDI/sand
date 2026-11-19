@@ -65,6 +65,7 @@ class Stubs:
     failing: str | None = None  # the activity that raises
     prompts_for: dict[int, int] = field(default_factory=dict)  # input -> how many
     calls: list[tuple[str, object]] = field(default_factory=list)
+    read: set[int] = field(default_factory=set)  # applied in this job
 
     def activities(self):
         stubs = self
@@ -89,19 +90,25 @@ class Stubs:
         async def replay(data: ReplayInput) -> dict:
             stubs.record('replay', data)
             replayed = 0
-            while replayed + 1 in stubs.cached:
+            # an input read in this job is cached from then on
+            while replayed + 1 in stubs.cached | stubs.read:
                 replayed += 1
             reports = [
                 {'input': k, 'preview': f'preview {k}', 'from_cache': True}
-                for k in range(1, replayed + 1)
+                for k in range(data.after + 1, replayed + 1)
             ]
             result = {'replayed': replayed, 'reports': reports}
             if data.store_status and replayed == len(data.texts):
                 # the real one stores the sheet and the completed status
                 result['done'] = {'final': 'abc', 'changed': True, 'changes': 3}
+                earlier = data.store_status.get('inputs', [])[: data.after]
                 stubs.record(
                     'status',
-                    {**data.store_status, 'inputs': reports, 'phase': 'completed'},
+                    {
+                        **data.store_status,
+                        'inputs': [*earlier, *reports],
+                        'phase': 'completed',
+                    },
                 )
             return result
 
@@ -122,6 +129,7 @@ class Stubs:
         @activity.defn(name='agree_cache_and_apply_input')
         async def apply(data: ApplyInput) -> dict:
             stubs.record('apply', data)
+            stubs.read.add(data.number)
             report = {'input': data.number, 'preview': f'preview {data.number}'}
             if data.status:
                 # the real one writes the status with this report
@@ -191,6 +199,8 @@ async def test_each_input_in_order_two_opinions_each_then_the_sheet():
         'prepare',
         'apply',
         'status',
+        # what follows input 1 is not cached: nothing replayed
+        'replay',
         'prepare',
         'apply',
         'status',
@@ -205,8 +215,9 @@ async def test_each_input_in_order_two_opinions_each_then_the_sheet():
     assert first.confirmations == {
         'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00', 'input': 'n1'}
     }
-    (replay,) = stubs.of('replay')
+    replay, after_first = stubs.of('replay')
     assert (replay.texts, replay.entry_ids) == (first.texts, ['e1', 'e2'])
+    assert (replay.after, after_first.after) == (0, 1)
     assert replay.confirmations == first.confirmations
     (store,) = stubs.of('store_final_sheet_and_changelog')
     assert store.confirmations == first.confirmations
@@ -301,13 +312,30 @@ async def test_everything_cached_is_replayed_then_written():
     assert result['final'] == 'abc'
 
 
-async def test_a_cached_input_after_a_new_one_asks_no_child():
+async def test_the_cached_inputs_after_a_read_one_are_one_step():
+    """Notes 2 and 5 changed: 1 is replayed, 2 read, 3 and 4 replayed
+    together, 5 read, then the sheet stored."""
+    texts = ['speed 4000', 'anneal 120', 'time 30', 'speed +500', 'DMF']
+    stubs = Stubs(texts, cached={1, 3, 4})
+    result = await run(stubs)
+
+    assert [a.number for a in stubs.of('apply')] == [2, 5]
+    assert all(len(a.answers) == 2 for a in stubs.of('apply'))  # noqa: PLR2004
+    assert [r.after for r in stubs.of('replay')] == [0, 2]
+    assert [p.number for p in stubs.of('prepare')] == [2, 5]
+    assert [r['input'] for r in result['inputs']] == [1, 2, 3, 4, 5]
+
+
+async def test_a_replay_after_the_last_read_stores_the_sheet():
     stubs = Stubs(['speed 4000', 'clear solvent 2'], cached={2})
-    await run(stubs)
-    assert stubs.of('replay')[0].texts == ['speed 4000', 'clear solvent 2']
-    first, second = stubs.of('apply')
-    assert len(first.answers) == 2  # noqa: PLR2004
-    assert second.answers == []
+    result = await run(stubs)
+
+    assert [a.number for a in stubs.of('apply')] == [1]
+    assert stubs.of('store_final_sheet_and_changelog') == []
+    completed = stubs.of('status')[-1]
+    assert completed['phase'] == 'completed'
+    assert [r['input'] for r in completed['inputs']] == [1, 2]
+    assert result['final'] == 'abc'
 
 
 async def test_a_replay_that_does_not_add_up_fails_the_job():

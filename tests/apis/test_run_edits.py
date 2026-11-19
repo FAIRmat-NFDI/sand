@@ -13,7 +13,7 @@ from nomad_fakes import COLLECTION, UPLOAD, USER, FakeVoice, api, note
 from sand.apis.routers import input_collections
 from sand.apis.routers.input_collections import STALE_JOB_S
 from sand.services.nomad_api import NomadAPIError
-from sand.sheet_edit.session import ORIGINAL_FILE, STATUS_FILE
+from sand.sheet_edit.session import CONFIRMATIONS_FILE, ORIGINAL_FILE, STATUS_FILE
 
 pytestmark = pytest.mark.asyncio
 
@@ -231,6 +231,40 @@ async def test_a_start_that_fails_releases_the_reservation(voice, starter):
     # and the next start goes through
     starter.failing = False
     assert (await start(voice)).status_code == HTTPStatus.OK
+
+
+async def test_the_last_runs_reports_stay_shown_while_a_job_starts(voice, starter):
+    """Until the job's first status, the page shows them, not every
+    update as being read; another collection's are not kept."""
+    reports = [{'input': 1, 'entry_id': 'n1', 'ready': []}]
+    put_status(voice, 'completed', inputs=reports)
+
+    assert (await start(voice)).status_code == HTTPStatus.OK
+    assert status_file(voice)['inputs'] == reports
+
+    put_status(voice, 'completed', collection='other', inputs=reports)
+    assert (await start(voice)).status_code == HTTPStatus.OK
+    assert status_file(voice)['inputs'] == []
+
+
+async def test_a_failed_start_keeps_the_last_runs_reports(voice, starter):
+    ready = [{'key': 'k1', 'line': 'a'}]
+    reports = [{'input': 1, 'entry_id': 'n1', 'text': 'speed 4000', 'ready': ready}]
+    put_status(voice, 'completed', inputs=reports)
+    starter.failing = True
+
+    assert (await start(voice)).status_code == HTTPStatus.BAD_GATEWAY
+    assert status_file(voice)['inputs'] == reports
+    # shown only: a stale tab's Confirm all of them is refused
+    async with api(voice) as client:
+        confirmed = await client.post(
+            f'/api/input-collections/{UPLOAD}/edits/confirm',
+            params={'collection_entry_id': COLLECTION},
+            json={'keys': ['k1']},
+        )
+    assert confirmed.status_code == HTTPStatus.CONFLICT
+    assert 'failed' in confirmed.json()['detail']
+    assert CONFIRMATIONS_FILE not in voice.writer.files
 
 
 async def test_a_release_that_fails_still_reports_the_start_error(voice, starter):

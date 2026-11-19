@@ -691,11 +691,14 @@ async def start_edit_async(
                         'processed yet; try again in a moment',
                     )
                 user_id = await _user_id(client)
+                # the last run's reports stay shown until the job's own
+                # replace them; nothing is decided on them while it starts
+                last = status.get('inputs', []) if read_before else []
                 await voice.writer.write_json(
                     client,
                     upload_id,
                     STATUS_FILE,
-                    _reservation(collection_entry_id, 'starting', inputs=[]),
+                    _reservation(collection_entry_id, 'starting', inputs=last),
                 )
         except NomadAPIError as exc:
             raise _http_error(exc) from exc
@@ -718,7 +721,7 @@ async def start_edit_async(
                 token,
                 upload_id,
                 STATUS_FILE,
-                _reservation(collection_entry_id, 'failed', error=error, inputs=[]),
+                _reservation(collection_entry_id, 'failed', error=error, inputs=last),
             )
             raise HTTPException(status_code=502, detail=error) from exc
     return JobResponse(job_id=job_id)
@@ -1156,6 +1159,12 @@ async def _decidable(  # noqa: PLR0913
         raise HTTPException(
             status_code=409,
             detail=f'the updates are being read; {verb} when it has finished',
+        )
+    if status.get('phase') != 'completed':
+        # a failed job's or start's reports are shown, not decided on
+        raise HTTPException(
+            status_code=409,
+            detail=f'the last reading of the updates failed; read them again, then {verb}',
         )
     # a key two inputs share is the first one's: the job writes it
     # there, and the later input's key changes with the sheet
