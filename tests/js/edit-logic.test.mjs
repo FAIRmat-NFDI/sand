@@ -4,7 +4,7 @@ import { test } from "node:test";
 import {
   confirmAllLabel, describeEditPhase, downloadBlock, downloadFilename, editSummary, inputApplied, inputState,
   changedEntries, checkedKeys, confirmQuestion, decisionCount, lostUnticks, recomputeLabel, inputsToRead, outdatedEntries, pendingKeys, previewNotes, readKey,
-  reportsByEntry, resetNote, roundSnapshot, rewriteWarning, settledBlock,
+  onlyNewToRead, reportsByEntry, resetNote, roundSnapshot, rewriteWarning, settledBlock,
   unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
 
@@ -428,4 +428,19 @@ test("an untick whose edit is gone after the reread no longer applies", () => {
 test("Recompute counts the round's changes", () => {
   assert.equal(recomputeLabel(1), "Recompute (1 change)");
   assert.equal(recomputeLabel(3), "Recompute (3 changes)");
+});
+
+test("only new updates are read by themselves", () => {
+  const item = (id, text = REPORT.text) => ({ entry_id: id, text });
+  const reports = { n1: { ...REPORT, entry_id: "n1" } };
+  // the first update ever, then one more after a read one
+  assert.equal(onlyNewToRead([item("n1")], {}), true);
+  assert.equal(onlyNewToRead([item("n1"), item("n2", "anneal 120")], reports), true);
+  // nothing new, a revised one, a deleted one (with a new one too)
+  assert.equal(onlyNewToRead([item("n1")], reports), false);
+  assert.equal(onlyNewToRead([item("n1", "speed 3000")], reports), false);
+  assert.equal(onlyNewToRead([item("n2", "anneal 120")], reports), false);
+  assert.equal(onlyNewToRead([item("n1", "speed 3000"), item("n2", "anneal 120")], reports), false);
+  // a recording still being transcribed: nothing yet
+  assert.equal(onlyNewToRead([item("n1"), item("n2", null)], reports), false);
 });

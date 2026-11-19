@@ -11,7 +11,8 @@
 import { errorDetail, experimentUrl } from "./api.js";
 import {
   changedEntries, checkedKeys, confirmAllLabel, confirmQuestion, decisionCount, describeEditPhase, downloadBlock,
-  downloadFilename, editSummary, inputsToRead, lostUnticks, pendingKeys, readKey, recomputeLabel, reportsByEntry,
+  downloadFilename, editSummary, inputsToRead, lostUnticks, onlyNewToRead, pendingKeys, readKey, recomputeLabel,
+  reportsByEntry,
   roundSnapshot, settledBlock, unwrittenKey, writtenEdits,
 } from "./edit-logic.js";
 import { requireExperiment, showSheet } from "./experiments.js";
@@ -41,6 +42,8 @@ const downloadOriginalBtn = document.getElementById("download-original-btn");
 const POLL_MS = 3000;
 // confirmations made one after the other go into one write
 const WRITE_DELAY_MS = 2000;
+// new updates said one after the other go into one read
+const READ_DELAY_MS = 2000;
 let pollTimer = null;
 let pollGeneration = 0;
 let current = null; // the experiment the card shows
@@ -68,6 +71,7 @@ let reportsShown = {}; // the last status's reports, by entry id
 let readFor = null; // readKey of the inputs the last job was started for
 let wroteFor = null; // unwrittenKey the last write was started for
 let writeTimer = null; // {timer, experiment}: the write about to start
+let readTimer = null; // {timer, experiment}: the read of new updates about to start
 // a job found failed before the inputs list arrived: its readKey is the
 // list's, whatever it turns out to be (no restart on a reload)
 const FAILED_BEFORE_INPUTS = Symbol("failed");
@@ -96,6 +100,32 @@ function startPolling(experiment, delayMs) {
 
 function later(experiment, generation) {
   pollTimer = setTimeout(() => poll(experiment, generation), POLL_MS);
+}
+
+function cancelRead() {
+  if (!readTimer) return;
+  clearTimeout(readTimer.timer);
+  readTimer = null;
+}
+
+// the experiment's new updates (and only new ones: see onlyNewToRead)
+// are read by themselves, so a proposal shows while one is still
+// speaking; each new one waits READ_DELAY_MS again. Not twice for the
+// same inputs after a failed job (Read again does)
+function readNewSoon(experiment) {
+  const items = inputsSeen && inputsSeen.entryId === experiment.entry_id ? inputsSeen.items : null;
+  if (!items || !onlyNewToRead(items, reportsShown) || readKey(items) === readFor) {
+    cancelRead();
+    return;
+  }
+  cancelRead();
+  const timer = setTimeout(() => {
+    readTimer = null;
+    if (stillShown(experiment) && !running && !sendingRound && confirming !== experiment.entry_id) {
+      startJob(experiment);
+    }
+  }, READ_DELAY_MS);
+  readTimer = { timer, experiment };
 }
 
 // the write waits for no one: leaving the experiment starts it now
@@ -323,9 +353,9 @@ async function poll(experiment, generation) {
 }
 
 // After a status settled: write what was confirmed since the last run
-// and not written yet (a Confirm all whose job did not start: a reload).
-// Nothing twice for the same reason. What no job has read waits for
-// Recompute (#208).
+// and not written yet (a Confirm all whose job did not start: a reload),
+// else read the new updates. Nothing twice for the same reason. Revised
+// or deleted updates wait for Recompute (#208).
 function settle(experiment, status) {
   if (!stillShown(experiment) || running || confirming === experiment.entry_id) return;
   if (inputsSeen && inputsSeen.entryId === experiment.entry_id) waitingNote(inputsSeen.items);
@@ -342,6 +372,7 @@ function settle(experiment, status) {
     writeTimer = { timer, experiment };
     return;
   }
+  readNewSoon(experiment);
 }
 
 // the inputs list as just loaded (inputs.js): a new or revised update
@@ -479,6 +510,8 @@ async function resetDecisions(experiment) {
 export function showEdit(experiment, view) {
   stopPolling();
   flushWrite();
+  // read when the experiment is shown again (its status settles then)
+  cancelRead();
   current = experiment;
   roundFor(experiment ? experiment.entry_id : null);
   roundSent = null;
@@ -544,6 +577,8 @@ function readAgain() {
 // posts the start whatever is shown; the card is touched only while
 // it still shows this experiment
 async function startJob(experiment) {
+  // any job reads the new updates too
+  if (readTimer && readTimer.experiment.entry_id === experiment.entry_id) cancelRead();
   if (stillShown(experiment)) {
     running = true;
     if (inputsSeen && inputsSeen.entryId === experiment.entry_id) readFor = readKey(inputsSeen.items);
