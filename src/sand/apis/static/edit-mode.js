@@ -14,13 +14,13 @@ import {
   changedEntries, checkedKeys, confirmAllLabel, confirmQuestion, decisionCount, describeEditPhase, downloadBlock,
   downloadFilename, editSummary, failedReadKey, inputsToRead, lostUnticks, pendingKeys, readKey, recomputeDue, recomputeLabel,
   reportsByEntry,
-  roundSnapshot, settledBlock, unwrittenKey, writtenEdits,
+  roundSnapshot, settledBlock, unchangedAbove, unwrittenKey, writtenEdits,
 } from "./edit-logic.js";
 import { requireExperiment, showSheet } from "./experiments.js";
 import { setOverviewUpdates, showOverview } from "./overview.js";
 import { reloadInputs, setInputsListener, setReports } from "./inputs.js";
 import {
-  anyRound, clearRound, clearSent, onRoundChange, roundBody, roundFor, roundSize, sentUnticks,
+  anyRound, clearRound, clearSent, onRoundChange, roundBody, roundEntries, roundFor, roundSize, sentUnticks,
 } from "./round.js";
 import { clearError, confirmDialog, showError } from "./ui.js";
 
@@ -80,6 +80,10 @@ const FAILED_BEFORE_INPUTS = Symbol("failed");
 // what the last Recompute is compared with once read again, and what it
 // changed (inputs.js marks): {entryId, before (roundSnapshot), sent}
 let roundSent = null;
+// the inputs above the first change, when the job started from this page:
+// their reports stay shown while it runs (#215)
+let keptForJob = new Set();
+let keptJob = null; // the job keptForJob is for, once a poll saw it
 const NO_MARKS = { changed: new Set(), lost: {} };
 let marks = NO_MARKS;
 
@@ -308,7 +312,17 @@ async function poll(experiment, generation) {
     : reportsByEntry(status);
   // while a job runs, the updates it has reported are decided already;
   // the others show the last run's reports
-  const fresh = running ? new Set((status.inputs || []).map((report) => report.entry_id)) : null;
+  // only for the job this page started: a later one (another tab's) may
+  // follow decisions this page did not see
+  // "starting": the server's reservation, before the workflow's own id
+  if (running && (keptJob === null || keptJob === "starting")) keptJob = status.job_id;
+  if (!running || status.job_id !== keptJob) {
+    keptForJob = new Set();
+    keptJob = running ? status.job_id : null;
+  }
+  const fresh = running
+    ? new Set([...keptForJob, ...(status.inputs || []).map((report) => report.entry_id)])
+    : null;
   if (status.phase === "completed" && roundSent && roundSent.entryId === experiment.entry_id) {
     // read again after a Recompute: what the round changed
     marks = {
@@ -439,7 +453,8 @@ async function confirmEdits(experiment, keys) {
   }
   // the write was asked for: it starts even if the user moved on
   if (stillShown(experiment)) confirmAllBtn.hidden = true;
-  startJob(experiment);
+  // every report changes, and the last status predates the confirmations
+  startJob(experiment, null);
   return "";
 }
 
@@ -449,6 +464,7 @@ async function recompute(experiment) {
   clearError();
   const before = lastStatus ? roundSnapshot(lastStatus) : null;
   const sent = sentUnticks();
+  const decided = roundEntries();
   if (roundSize()) {
     const body = roundBody();
     // ticks made while it is on its way stay for the next round; the
@@ -472,7 +488,7 @@ async function recompute(experiment) {
   }
   roundSent = { entryId: experiment.entry_id, before, sent };
   marks = NO_MARKS;
-  startJob(experiment);
+  startJob(experiment, decided);
 }
 
 async function confirmAll(experiment) {
@@ -516,6 +532,8 @@ export function showEdit(experiment, view) {
   current = experiment;
   roundFor(experiment ? experiment.entry_id : null);
   roundSent = null;
+  keptForJob = new Set();
+  keptJob = null;
   marks = NO_MARKS;
   statusKnown = false;
   lastStatus = null;
@@ -576,8 +594,9 @@ function readAgain() {
 }
 
 // posts the start whatever is shown; the card is touched only while
-// it still shows this experiment
-async function startJob(experiment) {
+// it still shows this experiment. `decided`: the inputs whose decisions
+// changed (null: all of them)
+async function startJob(experiment, decided = new Set()) {
   // any job reads the new updates too
   if (readTimer && readTimer.experiment.entry_id === experiment.entry_id) cancelRead();
   if (stillShown(experiment)) {
@@ -591,12 +610,18 @@ async function startJob(experiment) {
     busy("Starting...");
     gateDownload(blockShown);
     confirmAllBtn.hidden = recomputeBtn.hidden = true;
+    const items = inputsSeen && inputsSeen.entryId === experiment.entry_id ? inputsSeen.items : null;
+    // the latest status: a failed run's knows only what it reported
+    keptForJob = decided ? unchangedAbove(items, decisionStatus || lastStatus, decided) : new Set();
+    keptJob = null;
     // no ticking on the way out: the job reads the decisions
-    setReports(reportsShown, true, true, null, marks);
+    setReports(reportsShown, true, true, keptForJob, marks);
   }
   try {
     const res = await fetch(experimentUrl(experiment, "edit-async"), { method: "POST" });
     if (!res.ok) {
+      // the job running now, if any, is not this page's
+      keptForJob = new Set();
       // 409: a job runs already (another tab), its progress is shown;
       // 422: an input is not ready (a recording being transcribed), the
       // next inputs list starts the job
@@ -615,6 +640,7 @@ async function startJob(experiment) {
     // the reservation is written when the POST returns: polled at once
     if (stillShown(experiment)) startPolling(experiment);
   } catch (err) {
+    keptForJob = new Set();
     if (stillShown(experiment)) {
       showError("Network error: " + err.message);
       readAgainBtn.hidden = false;

@@ -5,7 +5,7 @@ import {
   confirmAllLabel, describeEditPhase, downloadBlock, downloadFilename, editSummary, inputApplied, inputState,
   changedEntries, checkedKeys, confirmQuestion, decisionCount, lostUnticks, recomputeLabel, inputsToRead, outdatedEntries, pendingKeys, previewNotes, readKey,
   failedReadKey, recomputeDue, reportsByEntry, resetNote, roundSnapshot, rewriteWarning, settledBlock,
-  unwrittenKey, writtenCount, writtenEdits,
+  unchangedAbove, unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
 
 const REPORT = {
@@ -452,4 +452,29 @@ test("a failed job holds back the inputs it was started for, not one added since
   // a reload onto the failed status: the inputs shown
   assert.equal(failedReadKey(null, two), readKey(two));
   assert.equal(failedReadKey(null, null), null);
+});
+
+test("a job keeps the reports of the notes above the first change (#215)", () => {
+  const items = [
+    { entry_id: "n1", text: "a" }, { entry_id: "n2", text: "b" },
+    { entry_id: "n3", text: "c" }, { entry_id: "n4", text: "d" },
+  ];
+  const status = {
+    inputs: [
+      { input: 2, entry_id: "n2", text: "b" }, { input: 1, entry_id: "n1", text: "a" },
+      { input: 3, entry_id: "n3", text: "c" }, { input: 4, entry_id: "n4", text: "d" },
+    ],
+  };
+  const kept = (its, decided) => [...unchangedAbove(its, status, decided)];
+  assert.deepEqual(kept(items), ["n1", "n2", "n3", "n4"]);
+  // note 3 revised, deleted, or decided in a round
+  assert.deepEqual(kept(items.map((i) => (i.entry_id === "n3" ? { ...i, text: "c2" } : i))), ["n1", "n2"]);
+  assert.deepEqual(kept(items.filter((i) => i.entry_id !== "n3")), ["n1", "n2"]);
+  assert.deepEqual(kept(items, new Set(["n3"])), ["n1", "n2"]);
+  // a note added at the end leaves all others
+  assert.deepEqual(kept([...items, { entry_id: "n5", text: "e" }]), ["n1", "n2", "n3", "n4"]);
+  // a decision the last run did not know changes what comes after it
+  const since = { inputs: status.inputs.map((r) => (r.entry_id === "n2" ? { ...r, rejected_since: ["k"] } : r)) };
+  assert.deepEqual([...unchangedAbove(items, since)], ["n1", "n2"]);
+  assert.deepEqual([...unchangedAbove(items, null)], []);
 });

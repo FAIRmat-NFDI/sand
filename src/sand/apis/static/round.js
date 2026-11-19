@@ -65,6 +65,11 @@ export function untickReason(key) {
   return unticked.get(key) || null;
 }
 
+// the inputs whose edits the round decides
+export function roundEntries() {
+  return new Set([...unticked.values(), ...restored.values()].map((d) => d.entry));
+}
+
 export function roundSize() {
   return unticked.size + restored.size;
 }
