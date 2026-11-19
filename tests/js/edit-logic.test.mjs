@@ -5,7 +5,7 @@ import {
   confirmAllLabel, describeEditPhase, downloadBlock, downloadFilename, editSummary, inputApplied, inputState,
   changedEntries, checkedKeys, confirmQuestion, decisionCount, lostUnticks, recomputeLabel, inputsToRead, outdatedEntries, pendingKeys, previewNotes, readKey,
   failedReadKey, recomputeDue, reportsByEntry, resetNote, roundSnapshot, rewriteWarning, settledBlock,
-  unchangedAbove, unwrittenKey, writtenCount, writtenEdits,
+  freshReports, unchangedAbove, unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
 
 const REPORT = {
@@ -477,4 +477,19 @@ test("a job keeps the reports of the notes above the first change (#215)", () =>
   const since = { inputs: status.inputs.map((r) => (r.entry_id === "n2" ? { ...r, rejected_since: ["k"] } : r)) };
   assert.deepEqual([...unchangedAbove(items, since)], ["n1", "n2"]);
   assert.deepEqual([...unchangedAbove(items, null)], []);
+});
+
+test("the kept notes hold for the started workflow only; the reservation reads none", () => {
+  const kept = new Set(["n1"]);
+  const last = [{ entry_id: "n1" }, { entry_id: "n2" }];
+  // the reservation carries the last run's reports: note 2 is not read yet
+  const reserved = freshReports({ job_id: "starting", inputs: last }, true, { kept, job: "w1" });
+  assert.deepEqual([...reserved.fresh], ["n1"]);
+  const ours = freshReports({ job_id: "w1", inputs: [{ entry_id: "n2" }] }, true, { kept, job: "w1" });
+  assert.deepEqual([...ours.fresh].sort(), ["n1", "n2"]);
+  // another tab's workflow: nothing kept
+  const other = freshReports({ job_id: "w2", inputs: [] }, true, { kept, job: "w1" });
+  assert.deepEqual([...other.fresh], []);
+  assert.equal(other.kept.size, 0);
+  assert.deepEqual(freshReports({ job_id: "w1" }, false, { kept, job: "w1" }), { fresh: null, kept: new Set() });
 });

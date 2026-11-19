@@ -14,7 +14,7 @@ import {
   changedEntries, checkedKeys, confirmAllLabel, confirmQuestion, decisionCount, describeEditPhase, downloadBlock,
   downloadFilename, editSummary, failedReadKey, inputsToRead, lostUnticks, pendingKeys, readKey, recomputeDue, recomputeLabel,
   reportsByEntry,
-  roundSnapshot, settledBlock, unchangedAbove, unwrittenKey, writtenEdits,
+  freshReports, roundSnapshot, settledBlock, unchangedAbove, unwrittenKey, writtenEdits,
 } from "./edit-logic.js";
 import { requireExperiment, showSheet } from "./experiments.js";
 import { setOverviewUpdates, showOverview } from "./overview.js";
@@ -83,7 +83,7 @@ let roundSent = null;
 // the inputs above the first change, when the job started from this page:
 // their reports stay shown while it runs (#215)
 let keptForJob = new Set();
-let keptJob = null; // the job keptForJob is for, once a poll saw it
+let keptJob = null; // the workflow id keptForJob is for, from the start's answer
 const NO_MARKS = { changed: new Set(), lost: {} };
 let marks = NO_MARKS;
 
@@ -312,17 +312,10 @@ async function poll(experiment, generation) {
     : reportsByEntry(status);
   // while a job runs, the updates it has reported are decided already;
   // the others show the last run's reports
-  // only for the job this page started: a later one (another tab's) may
-  // follow decisions this page did not see
-  // "starting": the server's reservation, before the workflow's own id
-  if (running && (keptJob === null || keptJob === "starting")) keptJob = status.job_id;
-  if (!running || status.job_id !== keptJob) {
-    keptForJob = new Set();
-    keptJob = running ? status.job_id : null;
-  }
-  const fresh = running
-    ? new Set([...keptForJob, ...(status.inputs || []).map((report) => report.entry_id)])
-    : null;
+  const job = freshReports(status, running, { kept: keptForJob, job: keptJob });
+  keptForJob = job.kept;
+  if (!job.kept.size) keptJob = null;
+  const fresh = job.fresh;
   if (status.phase === "completed" && roundSent && roundSent.entryId === experiment.entry_id) {
     // read again after a Recompute: what the round changed
     marks = {
@@ -637,6 +630,7 @@ async function startJob(experiment, decided = new Set()) {
       if (stillShown(experiment)) startPolling(experiment);
       return;
     }
+    keptJob = await res.json().then((job) => job.job_id, () => null);
     // the reservation is written when the POST returns: polled at once
     if (stillShown(experiment)) startPolling(experiment);
   } catch (err) {

@@ -63,6 +63,19 @@ export function outdatedEntries(items, reports) {
   return outdated;
 }
 
+// The inputs a running job counts as decided (null when none runs), and
+// what stays kept: `kept` (from `unchangedAbove`) holds only for the
+// workflow `job` this page started; another one (another tab's) may
+// follow decisions this page did not see. The reservation ("starting")
+// carries the last run's reports, none of them read yet.
+export function freshReports(status, running, { kept, job }) {
+  if (!running) return { fresh: null, kept: new Set() };
+  const starting = status.job_id === "starting";
+  const ours = starting || status.job_id === job ? kept : new Set();
+  const reported = starting ? [] : (status.inputs || []).map((report) => report.entry_id);
+  return { fresh: new Set([...ours, ...reported]), kept: ours };
+}
+
 // The inputs a new job leaves as they are (#215): those above the first
 // one that changed since `status` (words revised, added or deleted, or
 // in `decided`: a round's unticks and re-ticks). Same words on the same
