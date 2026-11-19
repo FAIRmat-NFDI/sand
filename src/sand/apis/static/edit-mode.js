@@ -12,7 +12,7 @@
 import { errorDetail, experimentUrl } from "./api.js";
 import {
   changedEntries, checkedKeys, confirmAllLabel, confirmQuestion, decisionCount, describeEditPhase, downloadBlock,
-  downloadFilename, editSummary, inputsToRead, lostUnticks, pendingKeys, readKey, recomputeDue, recomputeLabel,
+  downloadFilename, editSummary, failedReadKey, inputsToRead, lostUnticks, pendingKeys, readKey, recomputeDue, recomputeLabel,
   reportsByEntry,
   roundSnapshot, settledBlock, unwrittenKey, writtenEdits,
 } from "./edit-logic.js";
@@ -338,11 +338,12 @@ async function poll(experiment, generation) {
     editedReady = false;
     idle();
     // not started again for these inputs by itself (Read again does)
-    readFor = inputsSeen && inputsSeen.entryId === experiment.entry_id
-      ? readKey(inputsSeen.items)
-      : FAILED_BEFORE_INPUTS;
+    const items = inputsSeen && inputsSeen.entryId === experiment.entry_id ? inputsSeen.items : null;
+    readFor = failedReadKey(readFor, items) || FAILED_BEFORE_INPUTS;
     showError("Reading the updates failed: " + (status.error || "unknown error"));
     readAgainBtn.hidden = false;
+    // an update added while it ran, already listed: recomputed all the same
+    recomputeSoon(experiment);
     return;
   }
   readAgainBtn.hidden = true;

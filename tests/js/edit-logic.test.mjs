@@ -4,7 +4,7 @@ import { test } from "node:test";
 import {
   confirmAllLabel, describeEditPhase, downloadBlock, downloadFilename, editSummary, inputApplied, inputState,
   changedEntries, checkedKeys, confirmQuestion, decisionCount, lostUnticks, recomputeLabel, inputsToRead, outdatedEntries, pendingKeys, previewNotes, readKey,
-  recomputeDue, reportsByEntry, resetNote, roundSnapshot, rewriteWarning, settledBlock,
+  failedReadKey, recomputeDue, reportsByEntry, resetNote, roundSnapshot, rewriteWarning, settledBlock,
   unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
 
@@ -441,4 +441,15 @@ test("changes recompute by themselves, not twice for the same reason", () => {
   assert.equal(recomputeDue(1, "inputs A", "round 1", last), true);
   assert.equal(recomputeDue(1, "inputs A", "round 1", { ...last, round: "round 1" }), false);
   assert.equal(recomputeDue(2, "inputs A", "round 2", { ...last, round: "round 1" }), true);
+});
+
+test("a failed job holds back the inputs it was started for, not one added since", () => {
+  const one = [{ entry_id: "n1", text: "speed 4000" }];
+  const two = [...one, { entry_id: "n2", text: "anneal 120" }];
+  const failed = failedReadKey(readKey(one), two);
+  assert.equal(recomputeDue(1, readKey(two), "", { read: failed, round: null }), true);
+  assert.equal(recomputeDue(1, readKey(one), "", { read: failed, round: null }), false);
+  // a reload onto the failed status: the inputs shown
+  assert.equal(failedReadKey(null, two), readKey(two));
+  assert.equal(failedReadKey(null, null), null);
 });

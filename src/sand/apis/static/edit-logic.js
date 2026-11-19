@@ -193,6 +193,15 @@ export function recomputeDue(changes, readNow, roundNow, last) {
   return readNow !== last.read;
 }
 
+// What a failed job is not started again for: the inputs it was started
+// for (`startedFor`, a readKey), so an update added while it ran still
+// recomputes; the inputs shown when this page did not start it (a
+// reload), null before they are loaded.
+export function failedReadKey(startedFor, items) {
+  if (startedFor) return startedFor;
+  return items ? readKey(items) : null;
+}
+
 // what a job is started for: the inputs and their words. The same key
 // after a failed job is the same failure, so it is not started again.
 export function readKey(items) {
