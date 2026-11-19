@@ -63,6 +63,40 @@ export function outdatedEntries(items, reports) {
   return outdated;
 }
 
+// The inputs a running job counts as decided (null when none runs), and
+// what stays kept: `kept` (from `unchangedAbove`) holds only for the
+// workflow `job` this page started; another one (another tab's) may
+// follow decisions this page did not see. The reservation ("starting")
+// carries the last run's reports, none of them read yet.
+export function freshReports(status, running, { kept, job }) {
+  if (!running) return { fresh: null, kept: new Set() };
+  const starting = status.job_id === "starting";
+  const ours = starting || status.job_id === job ? kept : new Set();
+  const reported = starting ? [] : (status.inputs || []).map((report) => report.entry_id);
+  return { fresh: new Set([...ours, ...reported]), kept: ours };
+}
+
+// The inputs a new job leaves as they are (#215): those above the first
+// one that changed since `status` (words revised, added or deleted), and
+// one in `decided` (a round's unticks and re-ticks) itself. Same words
+// on the same sheet: the job only replays them, so their reports stay
+// shown; a decided one's report shows the decision.
+export function unchangedAbove(items, status, decided = new Set()) {
+  const kept = new Set();
+  if (!items || !status) return kept;
+  const ordered = [...(status.inputs || [])].sort((a, b) => a.input - b.input);
+  for (const [i, item] of items.entries()) {
+    const report = ordered[i];
+    if (!report || report.entry_id !== item.entry_id) break;
+    if (report.text !== undefined && report.text !== item.text) break;
+    // a decision is not read again (its report shows it): what comes
+    // after it is
+    kept.add(item.entry_id);
+    if (decided.has(item.entry_id) || changesBelow(report)) break;
+  }
+  return kept;
+}
+
 // a decision the last run did not know that changes the sheet the
 // inputs after it were read on; not a confirmation: they were read with it
 function changesBelow(report) {
