@@ -790,7 +790,9 @@ body {
   font-size: 0.74rem;
   color: #1f2430;
   font-weight: 600;
-  white-space: nowrap;
+  /* a value wider than its capped column wraps instead of running into
+     the next one */
+  overflow-wrap: anywhere;
 }
 
 .sample-chips {
