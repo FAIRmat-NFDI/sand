@@ -543,10 +543,13 @@ function renderInputs(experiment, items) {
     showInputsPlaceholder("No updates yet. Record one, or write a note.");
     return;
   }
-  // a re-render replaces the tiles: keep keyboard focus on the same one
+  // a re-render replaces the tiles (every poll while a job runs): keep
+  // keyboard focus on the same one, and the list where the user scrolled it
   const focusedId = inputsList.contains(document.activeElement)
     ? document.activeElement.closest(".input-tile")?.dataset.entryId
     : null;
+  const scrolled = inputsList.scrollTop;
+  let refocus = null;
   inputsList.replaceChildren();
   inputsCount.textContent = String(items.length);
   // read again first: below a change, or not reported by the running job.
@@ -658,8 +661,11 @@ function renderInputs(experiment, items) {
       beginRevision(item, experiment, li, text);
     });
     inputsList.append(li);
-    if (item.entry_id === focusedId) li.focus();
+    if (item.entry_id === focusedId) refocus = li;
   }
+  inputsList.scrollTop = scrolled;
+  // after every tile is back: focus never scrolls the list
+  refocus?.focus({ preventScroll: true });
 }
 
 // a refresh can outlive its experiment (a save finishing after the user
