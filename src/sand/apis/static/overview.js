@@ -32,13 +32,12 @@ function el(tag, className, text) {
   return node;
 }
 
-// a value the confirmed edits changed: the dot, the old value on hover
-function mark(span, changed) {
-  if (changed) {
-    span.classList.add("value-changed");
-    span.title = changed;
-  }
-  return span;
+// a value the confirmed edits changed: "~~30~~ → 96 °C"
+function mark(span, old) {
+  if (!old) return span;
+  const change = el("span", "value-changed");
+  change.append(el("span", "value-old", old), el("span", "value-arrow", "→"), span);
+  return change;
 }
 
 function setOpen(open) {

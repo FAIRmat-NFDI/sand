@@ -43,15 +43,16 @@ export function valueCell(param) {
   return text;
 }
 
-// what the confirmed edits did to a column, for the hover: "was 3000"
-// from one old value, else "edited on N samples"
+// what a column held before the confirmed edits, shown struck out before
+// the value: "3000", a few old values as "100 / 110", more as "various"
+const SHOWN_OLDS = 3;
+
 function changeNote(columnId, changed) {
   const cells = changed.filter((c) => c.column_id === columnId);
   if (!cells.length) return "";
-  const olds = new Set(cells.map((c) => c.old));
-  if (olds.size === 1) return "was " + [...olds][0];
-  const rows = new Set(cells.map((c) => c.row)).size;
-  return "edited on " + rows + (rows === 1 ? " sample" : " samples");
+  // an empty old cell is still a change: "(empty)", as the server writes None
+  const olds = [...new Set(cells.map((c) => c.old || "(empty)"))];
+  return olds.length > SHOWN_OLDS ? "various" : olds.join(" / ");
 }
 
 function familyLabel(family, families) {
@@ -263,7 +264,10 @@ export function stepCard(step, changed = []) {
         values: [{
           text: ratios.map((r) => text(r.ratio)).join(":"),
           varies: false,
-          changed: ratios.map((r) => changeNote(r.ratio.column_id, changed)).filter(Boolean).join("; "),
+          // the old ratio: the parts not edited as they are
+          changed: ratios.some((r) => changeNote(r.ratio.column_id, changed))
+            ? ratios.map((r) => changeNote(r.ratio.column_id, changed) || text(r.ratio)).join(":")
+            : "",
         }],
       },
     });
