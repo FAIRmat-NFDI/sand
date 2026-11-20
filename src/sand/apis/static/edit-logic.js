@@ -280,7 +280,8 @@ export function problemLines(report) {
 // any other line
 export function problemShort(line) {
   if (line.startsWith("? sand could not propose")) return "No edit proposed";
-  const head = /^(?:\? (ambiguous|not found)|(disputed)|✗ (not applied)): (.*)$/.exec(line);
+  // "? disputed": a report read before the ? went, until the next read
+  const head = /^(?:\? (ambiguous|not found)|(?:\? )?(disputed)|✗ (not applied)): (.*)$/.exec(line);
   if (!head) return null;
   const kind = head[1] || head[2] || head[3];
   return kind[0].toUpperCase() + kind.slice(1) + ": " + head[4];
