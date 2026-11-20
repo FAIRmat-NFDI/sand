@@ -543,6 +543,24 @@ def test_ambiguous_on_words_within_other_words_is_one_item(catalog):
     assert [u.said for u in apart.unresolved] == [longer, 'time 20']
 
 
+def test_a_broad_ambiguous_quote_over_two_clauses_is_not_merged(catalog):
+    broad = {
+        'reason': 'ambiguous',
+        'candidates': [SPEED, ANNEAL_TIME],
+        'said': 'speed 1000 and time 20',
+    }
+    speed = {'reason': 'ambiguous', 'candidates': [SPEED, TIME_2], 'said': 'speed 1000'}
+    time = {'reason': 'ambiguous', 'candidates': [ANNEAL_TIME], 'said': 'time 20'}
+    proposal = ask(
+        catalog, answer(unresolved=[broad]), answer(unresolved=[speed, time])
+    )
+    assert [(u.said, u.candidates) for u in proposal.unresolved] == [
+        ('speed 1000 and time 20', [SPEED, ANNEAL_TIME]),
+        ('speed 1000', [SPEED, TIME_2]),
+        ('time 20', [ANNEAL_TIME]),
+    ]
+
+
 # --- answers that cannot be read ---------------------------------------------------
 
 

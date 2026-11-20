@@ -325,29 +325,71 @@ def _overlap(one: str, other: str) -> bool:
 
 def _once(items: list) -> list:
     """Items on overlapping words (a group of _disputes): the same item
-    from both passes, or twice, is one; every "ambiguous" is one, on the
-    longest quote, with the candidates of each."""
+    from both passes, or twice, is one; ambiguous items about the same
+    choice are one (_one_choice)."""
     kept: dict = {}
     for item in items:
-        if isinstance(item, Ambiguous) and 'ambiguous' in kept:
-            known = kept['ambiguous']
-            more = [c for c in item.candidates if c not in known.candidates]
-            kept['ambiguous'] = known.model_copy(
-                update={
-                    'candidates': [*known.candidates, *more],
-                    'said': max(known.said, item.said, key=len),
-                }
-            )
-            continue
         # edits are deduplicated by _readings already
         if isinstance(item, Edit):
             key = id(item)
         elif isinstance(item, Ambiguous):
-            key = 'ambiguous'
+            key = ('ambiguous', id(item))
         else:
             key = (item.reason, _quote(item.said))
         kept.setdefault(key, item)
-    return list(kept.values())
+    ambiguous = [i for i in kept.values() if isinstance(i, Ambiguous)]
+    merged = {id(i): m for m in _one_choice(ambiguous) for i in m[1]}
+    out = []
+    for item in kept.values():
+        if not isinstance(item, Ambiguous):
+            out.append(item)
+        elif merged[id(item)][1][0] is item:  # where its first member was
+            out.append(merged[id(item)][0])
+    return out
+
+
+def _one_choice(items: list[Ambiguous]) -> list[tuple[Ambiguous, list[Ambiguous]]]:
+    """Ambiguous items about the same choice, as one on the longest quote
+    with every candidate once, and the items it stands for. Two are the
+    same choice when their words overlap, they share a candidate (or the
+    words), and no third item overlaps one of them only: a broad quote
+    over two clauses ("speed 1000 and time 20") is not merged with
+    either clause's item."""
+
+    def near(x: Ambiguous, y: Ambiguous) -> bool:
+        return _overlap(_quote(x.said), _quote(y.said))
+
+    def same(x: Ambiguous, y: Ambiguous) -> bool:
+        return (
+            near(x, y)
+            and (
+                _quote(x.said) == _quote(y.said)
+                or bool(set(x.candidates) & set(y.candidates))
+            )
+            and not any(
+                near(z, x) != near(z, y) for z in items if z is not x and z is not y
+            )
+        )
+
+    groups: list[list[Ambiguous]] = []
+    for item in items:
+        hit = [g for g in groups if any(same(item, other) for other in g)]
+        for g in hit:
+            groups.remove(g)
+        groups.append([*(i for g in hit for i in g), item])
+    groups.sort(key=lambda g: min(items.index(i) for i in g))
+    out = []
+    for group in groups:
+        group.sort(key=items.index)
+        candidates = list(dict.fromkeys(c for i in group for c in i.candidates))
+        said = max((i.said for i in group), key=len)
+        out.append(
+            (
+                group[0].model_copy(update={'candidates': candidates, 'said': said}),
+                group,
+            )
+        )
+    return out
 
 
 # the rows of an edit, as compared between the two opinions: the sheet
