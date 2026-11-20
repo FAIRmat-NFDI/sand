@@ -260,14 +260,16 @@ export function previewNotes(report) {
 }
 
 // the preview lines that say no edit was made: an unclear part ("?
-// ambiguous", "? disputed", "? not found", "? sand could not propose")
+// ambiguous", "disputed", "? not found", "? sand could not propose")
 // or a refused edit ("✗ not applied"), each with its indented lines.
 // Indented "? doubt" lines under a ready edit are not.
 export function problemLines(report) {
   const problems = new Set();
   let inProblem = false;
   for (const line of (report.preview || "").split("\n")) {
-    if (!line.startsWith(" ")) inProblem = line.startsWith("? ") || line.startsWith("✗ ");
+    if (!line.startsWith(" ")) {
+      inProblem = line.startsWith("? ") || line.startsWith("✗ ") || line.startsWith("disputed: ");
+    }
     if (inProblem && line) problems.add(line);
   }
   return problems;
@@ -278,10 +280,11 @@ export function problemLines(report) {
 // any other line
 export function problemShort(line) {
   if (line.startsWith("? sand could not propose")) return "No edit proposed";
-  const head = /^(?:\? (ambiguous|disputed|not found)|✗ (not applied)): (.*)$/.exec(line);
+  // "? disputed": a report read before the ? went, until the next read
+  const head = /^(?:\? (ambiguous|not found)|(?:\? )?(disputed)|✗ (not applied)): (.*)$/.exec(line);
   if (!head) return null;
-  const kind = head[1] || head[2];
-  return kind[0].toUpperCase() + kind.slice(1) + ": " + head[3];
+  const kind = head[1] || head[2] || head[3];
+  return kind[0].toUpperCase() + kind.slice(1) + ": " + head[4];
 }
 
 // the line under an update a decision above changed: its earlier

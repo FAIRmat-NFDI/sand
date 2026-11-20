@@ -372,7 +372,7 @@ async def test_disagreeing_answers_make_the_input_disputed(upload):
     )
     assert report['ready'] == []
     assert report['unresolved'] == 1  # the page says "Unclear"
-    assert report['preview'].startswith(f'? disputed: "{SAID}"')
+    assert report['preview'].startswith(f'disputed: "{SAID}"')
 
 
 async def test_an_answer_the_child_could_not_get_is_this_inputs_problem(upload):

@@ -275,6 +275,11 @@ test("the lines of an unclear part or a refused edit are problems, a ready edit'
     "✗ not applied: \"time 9999\"",
     "   too long",
     "? sand could not propose an edit for this note. Try again, or write the note more clear.",
+    "disputed: \"speed up\"",
+    "   - Reading 1:",
+    "       2: Spin Coating · Rotation speed [rpm] → 3000",
+    "   - Reading 2:",
+    "       no edit",
   ].join("\n");
   assert.deepEqual([...problemLines({ preview })], preview.split("\n").slice(2));
   assert.equal(problemLines({}).size, 0);
@@ -282,6 +287,7 @@ test("the lines of an unclear part or a refused edit are problems, a ready edit'
 
 test("edits only shows a problem as one short line", () => {
   assert.equal(problemShort("? ambiguous: \"the speed\""), "Ambiguous: \"the speed\"");
+  assert.equal(problemShort("disputed: \"speed up\""), "Disputed: \"speed up\"");
   assert.equal(problemShort("? disputed: \"speed up\""), "Disputed: \"speed up\"");
   assert.equal(problemShort("? not found: \"and dry\""), "Not found: \"and dry\"");
   assert.equal(problemShort("✗ not applied: \"time 9999\""), "Not applied: \"time 9999\"");
