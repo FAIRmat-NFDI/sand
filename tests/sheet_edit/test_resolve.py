@@ -514,6 +514,19 @@ def test_unresolved_items_of_either_pass_are_kept_once(catalog):
     assert [type(u) for u in proposal.unresolved] == [Ambiguous, NotFound]
 
 
+def test_ambiguous_on_the_same_words_is_one_item_with_every_candidate(catalog):
+    # pass A names three columns, pass B two of them and one more
+    said = 'rotation speed 2500'
+    a = {
+        'reason': 'ambiguous',
+        'candidates': [SPEED, ANNEAL_TIME, TIME_2],
+        'said': said,
+    }
+    b = {'reason': 'ambiguous', 'candidates': [SPEED, SOLVENT_2], 'said': said}
+    item = only(ask(catalog, answer(unresolved=[a]), answer(unresolved=[b])), Ambiguous)
+    assert item.candidates == [SPEED, ANNEAL_TIME, TIME_2, SOLVENT_2]
+
+
 # --- answers that cannot be read ---------------------------------------------------
 
 
@@ -605,8 +618,9 @@ def test_a_hedge_on_words_around_an_edit_is_that_passs_reading(catalog):
         '   - Reading 1:\n'
         '       2: Spin Coating · Rotation speed [rpm] → 4000\n'
         '   - Reading 2:\n'
-        '       2: Spin Coating · Annealing time [min], or\n'
-        '       2: Spin Coating · Rotation speed [rpm]?'
+        '       which column?\n'
+        '       - 2: Spin Coating · Annealing time [min]\n'
+        '       - 2: Spin Coating · Rotation speed [rpm]'
     )
 
 
