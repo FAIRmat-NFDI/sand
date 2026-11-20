@@ -37,7 +37,7 @@ from sand.sheet_edit.edits import (
 from sand.sheet_edit.ground import Refusal, resolve_rows, typed_value
 from sand.sheet_edit.numbers import value
 from sand.sheet_edit.render import table
-from sand.sheet_edit.workbook import EXPERIMENT_INFO, SAMPLE_HEADER, SUBBATCH_HEADER
+from sand.sheet_edit.workbook import SAMPLE_HEADER, SUBBATCH_HEADER, info_column
 
 # recorded with every proposal (changelog, status); bump on any change to
 # the prompts below or to the table in render.py, which the model reads
@@ -467,13 +467,15 @@ def _rows_agreement_key(rows: RowSpec, catalog: Catalog) -> RowsAgreementKey:  #
 
 
 def _on_labels(column_id: str, catalog: Catalog) -> bool:
+    """The column the catalog reads the sample or subbatch labels from, in
+    the leading Experiment Info: a numbered step may have its own
+    'Sample' value column."""
     column = catalog.column(column_id)
-    return column is not None and (
-        column.column.section.step_type,
-        column.column.header,
-    ) in {
-        (EXPERIMENT_INFO, SAMPLE_HEADER),
-        (EXPERIMENT_INFO, SUBBATCH_HEADER),
+    if column is None or column.column.section.position is not None:
+        return False
+    return column.column.index in {
+        info_column(catalog.structure.columns, header)
+        for header in (SAMPLE_HEADER, SUBBATCH_HEADER)
     }
 
 
