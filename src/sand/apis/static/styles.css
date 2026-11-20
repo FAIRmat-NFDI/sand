@@ -692,17 +692,17 @@ body {
   font-weight: 600;
 }
 
-/* a value the confirmed edits changed, in a line or the headline: a dot,
-   the old value on hover */
-.value-changed::before {
-  content: "";
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #2A4CDF;
-  margin-right: 5px;
-  vertical-align: middle;
+/* a value the confirmed edits changed: the old one struck out before it */
+.value-old {
+  color: #9aa0a6;
+  font-weight: 400;
+  text-decoration: line-through;
+}
+
+.value-arrow {
+  margin: 0 4px;
+  color: #9aa0a6;
+  font-weight: 400;
 }
 
 /* the samples: a row per value of the first varying column, the cells

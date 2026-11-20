@@ -226,6 +226,16 @@ test("numbered columns merge behind their name; ratios read MAI:MABr 3:1", () =>
     num("Source temperature", "120", "°C"),
   ]));
   assert.deepEqual(texts(ratios), ["3 mbar", "MAI:MABr  3:1", "source T 120 °C"]);
+  // one part of a ratio edited: the old ratio keeps the other part
+  const parts = [
+    param("Source material name 1", one("MAI"), { family: one1 }),
+    param("Source material name 2", one("MABr"), { family: two }),
+    num("Source material ratio 1", "3", null, one1),
+    num("Source material ratio 2", "1", null, two),
+  ];
+  const edited = stepCard(step(5, "Close Space Sublimation", parts),
+    [{ column_id: parts[2].column_id, row: 3, old: "2", new: "3", by_formula: false }]);
+  assert.equal(edited.lines[0].values[0].changed, "2:1");
   // two names behind one number without a group are two things: nothing merges
   const twoNames = stepCard(step(5, "Close Space Sublimation", [
     param("Material name 1", one("C60"), { family: one1 }),
@@ -248,11 +258,15 @@ test("a varying value is marked, a changed one carries its old value", () => {
   assert.deepEqual(card.lines, [{
     label: "",
     values: [
-      { text: "substrate T 120 / 115 °C", varies: true, changed: "edited on 2 samples" },
-      { text: "deposition 900 s", varies: false, changed: "was 600" },
+      { text: "substrate T 120 / 115 °C", varies: true, changed: "100 / 110" },
+      { text: "deposition 900 s", varies: false, changed: "600" },
     ],
   }]);
   assert.equal(card.varies, true);
+  // more old values than fit: "various"
+  const many = ["90", "100", "110", "112"].map((old, i) => (
+    { column_id: temperature.column_id, row: i + 3, old, new: "120", by_formula: false }));
+  assert.equal(stepCard(step(5, "Close Space Sublimation", [temperature]), many).lines[0].values[0].changed, "various");
   // in a merged line each value keeps its own mark
   const rotation = { group: "rotation_steps", index: 1 };
   const speed = num("Rotation speed", "3000", "rpm", rotation);
@@ -260,7 +274,7 @@ test("a varying value is marked, a changed one carries its old value", () => {
   const spin = stepCard(step(2, "Spin Coating", [speed, spinTime]), [
     { column_id: speed.column_id, row: 3, old: "2000", new: "3000", by_formula: false },
   ]);
-  assert.deepEqual(spin.lines[0].lines[0].values.map((v) => v.changed), ["was 2000", ""]);
+  assert.deepEqual(spin.lines[0].lines[0].values.map((v) => v.changed), ["2000", ""]);
   // the headline's material, layer and tool keep their marks too
   const material = param("Material name", one("Me-4PACz"));
   const layer = param("Layer type", one("HTL"));
@@ -269,8 +283,8 @@ test("a varying value is marked, a changed one carries its old value", () => {
     ...ALL.map((row) => ({ column_id: material.column_id, row, old: "2PACz", new: "Me-4PACz", by_formula: false })),
     { column_id: tool.column_id, row: 3, old: "box2", new: "box1", by_formula: false },
   ]);
-  assert.deepEqual(head.material, { text: "Me-4PACz", changed: "was 2PACz" });
-  assert.deepEqual(head.sub, [{ text: "HTL", changed: "" }, { text: "box1", changed: "was box2" }]);
+  assert.deepEqual(head.material, { text: "Me-4PACz", changed: "2PACz" });
+  assert.deepEqual(head.sub, [{ text: "HTL", changed: "" }, { text: "box1", changed: "box2" }]);
 });
 
 test("a note on some samples does not vary", () => {
@@ -495,7 +509,7 @@ test("a step that dissolves something writes its solution as one block, where it
     "5 s",
     "solution  DMF | PbI2  1.5 M | volume 80 uL · T 70 °C · filtered",
   ]);
-  assert.equal(later.lines[1].lines[2].values[0].changed, "was 60");
+  assert.equal(later.lines[1].lines[2].values[0].changed, "60");
   // a "no" drops the block's word from inside its words too
   const unfiltered = stepCard(step(2, "Spin Coating", [
     param("Solute 1 name", one("PbI2"), { family: solute }),
