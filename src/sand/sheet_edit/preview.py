@@ -24,6 +24,7 @@ from sand.sheet_edit.edits import (
     Ambiguous,
     Disputed,
     Edit,
+    NotFound,
     Range,
     Samples,
     Unreadable,
@@ -155,11 +156,7 @@ def _unresolved_lines(item: Unresolved, catalog: Catalog) -> list[str]:
         names = [_where(c) if c else cid for c, cid in zip(columns, item.candidates)]
         return [f'? ambiguous: "{item.said}"', f'{INDENT}{" or ".join(names)}?']
     if isinstance(item, Disputed):
-        readings = [
-            f'{INDENT}{"or " if i else ""}{_reading(edit, catalog)}'
-            for i, edit in enumerate(item.readings)
-        ]
-        return [f'? disputed: "{item.said}"', *readings, f'{INDENT}{item.why}']
+        return [f'? disputed: "{item.said}"', *_disputed_lines(item, catalog)]
     if isinstance(item, Unreadable):
         # the detail (a schema error, "Max retry attempts reached") is for
         # the logs, not the user
@@ -170,10 +167,44 @@ def _unresolved_lines(item: Unresolved, catalog: Catalog) -> list[str]:
     return [f'? not found: "{item.said}"']
 
 
-def _reading(edit: Edit, catalog: Catalog) -> str:
-    """'2: Spin Coating · Rotation speed [rpm] → 4000, samples 1–3 of
-    subbatch 1, pointed through Solvent 2 = DMSO': everything two
-    readings may differ in, or the user cannot tell them apart."""
+def _disputed_lines(item: Disputed, catalog: Catalog) -> list[str]:
+    """'Reading 1: …', 'Reading 2: …', one per pass. An edit shows where
+    and what, and of the rest only what tells the edits apart."""
+    edits = item.edits()
+    parts = {id(e): _reading_parts(e, catalog) for e in edits}
+    differ = [
+        i for i in range(1, len(_SLOTS)) if len({parts[id(e)][i] for e in edits}) > 1
+    ]
+
+    def lines(thing: Edit | Ambiguous | NotFound) -> list[str]:
+        if isinstance(thing, Edit):
+            shown = [parts[id(thing)][0], *(parts[id(thing)][i] for i in differ)]
+            return [', '.join(p for p in shown if p)]
+        if isinstance(thing, Ambiguous):
+            columns = [catalog.column(c) for c in thing.candidates]
+            names = [
+                _where(c) if c else cid for c, cid in zip(columns, thing.candidates)
+            ]
+            return [f'{n}, or' for n in names[:-1]] + [f'{names[-1]}?']
+        return [f'not found: "{thing.said}"']
+
+    out = []
+    for number, side in enumerate((item.first, item.second), 1):
+        head = f'Reading {number}: '
+        said = [line for thing in side for line in lines(thing)] or ['no edit']
+        out += [f'{INDENT}{head}{said[0]}']
+        out += [f'{INDENT}{" " * len(head)}{line}' for line in said[1:]]
+    return out
+
+
+# the parts of an edit's reading (_reading_parts), the first always shown
+_SLOTS = ('where and what', 'samples', 'pointed through', 'said it was')
+
+
+def _reading_parts(edit: Edit, catalog: Catalog) -> list[str]:
+    """'2: Spin Coating · Rotation speed [rpm] → 4000', 'samples 1–3 of
+    subbatch 1', 'pointed through Solvent 2 = DMSO', '': everything two
+    readings may differ in, one part per _SLOTS."""
     column = catalog.column(edit.target)
     where = _where(column) if column else edit.target
     rows = edit.rows
@@ -192,16 +223,20 @@ def _reading(edit: Edit, catalog: Catalog) -> str:
         )
         samples += f' ({_written(rows, catalog)})'
     said = f'{edit.new} {said_unit(edit)}' if said_unit(edit) else edit.new
-    text = f'{where} → {said or EMPTY}, {samples}'
     if subbatch is not None:
-        text += f' of subbatch {subbatch}'
+        samples += f' of subbatch {subbatch}'
+    pointed = ''
     if edit.anchor:
         through = catalog.column(edit.anchor.column)
         name = through.column.header if through else edit.anchor.column
-        text += f', pointed through {name} = {edit.anchor.equals}'
-    if edit.said_old and edit.said_old.strip():
-        text += f', you said it was {edit.said_old.strip()}'
-    return text
+        pointed = f'pointed through {name} = {edit.anchor.equals}'
+    old = (edit.said_old or '').strip()
+    return [
+        f'{where} → {said or EMPTY}',
+        samples,
+        pointed,
+        f'you said it was {old}' if old else '',
+    ]
 
 
 def _written(rows, catalog: Catalog) -> str:

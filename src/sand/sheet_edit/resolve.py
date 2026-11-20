@@ -225,31 +225,18 @@ def agree(opinions: Sequence[Opinion], catalog: Catalog) -> ProposedEdits:
 
 def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdits:
     """Edits in both passes stay, in pass A's order, unless a pass also
-    left the same words unresolved. Every other edit is disputed, one
-    item per quote with every reading of it. Unresolved items of either
-    pass are kept once."""
+    left the same words unresolved. Every other edit is disputed (see
+    _disputes)."""
     by_a, by_b = _by_write(a.edits, catalog), _by_write(b.edits, catalog)
     hedged = {_quote(u.said) for u in [*a.unresolved, *b.unresolved]}
     edits: list[Edit] = []
-    disputed: dict[str, Disputed] = {}  # by quote, in order of appearance
-
-    def doubt(edit: Edit, why: str) -> None:
-        quote = _quote(edit.said)
-        if quote in disputed:
-            item = disputed[quote]
-            disputed[quote] = item.model_copy(
-                update={'readings': [*item.readings, edit], 'why': _DIFFER}
-            )
-        else:
-            disputed[quote] = Disputed(
-                reason='disputed', readings=[edit], why=why, said=edit.said
-            )
+    # (pass, edit, the quotes of its write's repeats): not agreed on
+    doubts: list[tuple[int, Edit, set[str]]] = []
 
     for key, group in by_a.items():
         edit = group[0]
         if key not in by_b:
-            for reading in _readings(group):
-                doubt(reading, _ONE_PASS)
+            doubts += [(0, r, _quotes(group)) for r in _readings(group)]
             continue
         both = [*group, *by_b[key]]
         pointed = _first_per_anchor(both)
@@ -258,36 +245,100 @@ def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdi
         # old values heard: each is a reading
         differ = next((d for d in (pointed, olds) if len(d) > 1), {})
         if differ:
-            for e in differ.values():
-                doubt(e, _DIFFER)
+            doubts += [
+                (0 if any(e is g for g in group) else 1, e, _quotes(both))
+                for e in differ.values()
+            ]
         elif hedged & {_quote(e.said) for e in both}:
             # the passes (and repeats) may cut the quote differently: a
             # hedge on any of these quotes counts
-            doubt(edit, _HEDGED)
+            doubts += [(0, edit, _quotes(both)), (1, by_b[key][0], _quotes(both))]
         else:
             # after _kept, which may take another pass's edit for its anchor
             edits.append(_named(_kept(edit, pointed, olds), both))
     for key, group in by_b.items():
         if key not in by_a:
-            for reading in _readings(group):
-                doubt(reading, _ONE_PASS)
-    seen: set[tuple] = set()
-    unresolved: list[Unresolved] = []
-    for item in [*a.unresolved, *b.unresolved]:
+            doubts += [(1, r, _quotes(group)) for r in _readings(group)]
+    unresolved = _disputes(doubts, a.unresolved, b.unresolved)
+    return ProposedEdits(edits=edits, unresolved=unresolved)
+
+
+def _disputes(
+    doubts: list[tuple[int, Edit, set[str]]],
+    a: list[Unresolved],
+    b: list[Unresolved],
+) -> list[Unresolved]:
+    """The edits not agreed on and the passes' unresolved items, grouped
+    by overlapping words: a group with an edit is one Disputed, what each
+    pass made of the words side by side; the other items are kept once."""
+    pieces = [
+        *doubts,
+        *(
+            (side, u, {_quote(u.said)})
+            for side, items in enumerate((a, b))
+            for u in items
+        ),
+    ]
+    groups: list[list[tuple[int, Edit | Unresolved, set[str]]]] = []
+    for piece in pieces:
+        hit = [
+            i
+            for i, group in enumerate(groups)
+            if any(_overlap(q, o) for q in piece[2] for _, _, qs in group for o in qs)
+        ]
+        if not hit:
+            groups.append([piece])
+            continue
+        groups[hit[0]] = [*(p for i in hit for p in groups[i]), piece]
+        for i in reversed(hit[1:]):
+            del groups[i]
+    disputed: list[Unresolved] = []
+    kept: list[Unresolved] = []
+    for group in groups:
+        if any(isinstance(p, Edit) for _, p, _ in group):
+            first, second = ([p for s, p, _ in group if s == side] for side in (0, 1))
+            disputed.append(
+                Disputed(
+                    reason='disputed',
+                    first=_once(first),
+                    second=_once(second),
+                    said=max((p.said for _, p, _ in group), key=len),
+                )
+            )
+        else:
+            kept += _once([p for _, p, _ in group])
+    return [*disputed, *kept]
+
+
+def _quotes(edits: list[Edit]) -> set[str]:
+    return {_quote(e.said) for e in edits}
+
+
+def _overlap(one: str, other: str) -> bool:
+    """One quote within the other, by whole words."""
+    return bool(one and other) and (
+        f' {one} ' in f' {other} ' or f' {other} ' in f' {one} '
+    )
+
+
+def _once(items: list) -> list:
+    """The same unresolved item from both passes, or twice, is one."""
+    seen: set = set()
+    kept = []
+    for item in items:
         key = (
-            item.reason,
-            _quote(item.said),
-            frozenset(getattr(item, 'candidates', ())),
+            id(item)  # edits are deduplicated by _readings already
+            if isinstance(item, Edit)
+            else (
+                item.reason,
+                _quote(item.said),
+                frozenset(getattr(item, 'candidates', ())),
+            )
         )
         if key not in seen:
             seen.add(key)
-            unresolved.append(item)
-    return ProposedEdits(edits=edits, unresolved=[*disputed.values(), *unresolved])
-
-
-_ONE_PASS = 'only one of the two passes proposed it'
-_DIFFER = 'the two passes read these words differently'
-_HEDGED = 'a pass also left these words unresolved'
+            kept.append(item)
+    return kept
 
 
 # the rows of an edit, as compared between the two opinions: the sheet

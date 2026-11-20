@@ -193,11 +193,11 @@ def test_a_different_value_is_disputed_with_both_readings(catalog):
     proposal = ask(catalog, answer(edit(new='4000')), answer(edit(new='4100')))
     assert proposal.edits == []
     item = only(proposal, Disputed)
-    assert [r.new for r in item.readings] == ['4000', '4100']
-    assert (item.said, item.why) == (
-        SAID,
-        'the two passes read these words differently',
-    )
+    assert [[r.new for r in side] for side in (item.first, item.second)] == [
+        ['4000'],
+        ['4100'],
+    ]
+    assert item.said == SAID
 
 
 def test_a_different_column_is_disputed(catalog):
@@ -205,7 +205,7 @@ def test_a_different_column_is_disputed(catalog):
         catalog, answer(edit(target=SPEED)), answer(edit(target=ANNEAL_TIME))
     )
     item = only(proposal, Disputed)
-    assert [r.target for r in item.readings] == [SPEED, ANNEAL_TIME]
+    assert [r.target for r in item.edits()] == [SPEED, ANNEAL_TIME]
 
 
 def test_an_edit_only_one_pass_makes_is_disputed_with_one_reading(catalog):
@@ -217,11 +217,9 @@ def test_an_edit_only_one_pass_makes_is_disputed_with_one_reading(catalog):
         proposal = ask(catalog, a, b)
         assert [e.target for e in proposal.edits] == [SPEED]
         item = only(proposal, Disputed)
-        assert len(item.readings) == 1
-        assert (item.said, item.why) == (
-            'solvent 2 DMSO',
-            'only one of the two passes proposed it',
-        )
+        assert len(item.edits()) == 1
+        assert [] in (item.first, item.second)  # the other pass: no edit
+        assert item.said == 'solvent 2 DMSO'
 
 
 def test_several_edits_of_the_same_words_make_one_disputed_item(catalog):
@@ -231,7 +229,7 @@ def test_several_edits_of_the_same_words_make_one_disputed_item(catalog):
     proposal = ask(catalog, a, b)
     assert proposal.edits == []
     item = only(proposal, Disputed)
-    assert [(r.target, r.new) for r in item.readings] == [
+    assert [(r.target, r.new) for r in item.edits()] == [
         (SPEED, '4000'),
         (ANNEAL_TIME, '4000'),
         (ANNEAL_TIME, '4100'),
@@ -243,10 +241,10 @@ def test_an_agreed_edit_a_pass_also_hedged_on_is_disputed(catalog):
     hedge = {'reason': 'ambiguous', 'candidates': [SPEED, ANNEAL_TIME], 'said': SAID}
     proposal = ask(catalog, answer(edit()), answer(edit(), unresolved=[hedge]))
     assert proposal.edits == []
-    disputed, ambiguous = proposal.unresolved
-    assert isinstance(disputed, Disputed)
-    assert disputed.why == 'a pass also left these words unresolved'
-    assert isinstance(ambiguous, Ambiguous)
+    # one item: the hedge is pass B's reading of the same words
+    item = only(proposal, Disputed)
+    assert [type(t) for t in item.first] == [Edit]
+    assert [type(t) for t in item.second] == [Edit, Ambiguous]
 
 
 def test_what_is_no_disagreement(catalog):
@@ -319,7 +317,7 @@ def test_the_value_is_compared_as_written(catalog):
     a = answer(edit(target=SOLVENT_2, old='IPA', new='dmso', said='solvent 2 dmso'))
     b = answer(edit(target=SOLVENT_2, old='IPA', new='DMSO', said='solvent 2 dmso'))
     item = only(ask(catalog, a, b), Disputed)
-    assert [r.new for r in item.readings] == ['dmso', 'DMSO']
+    assert [r.new for r in item.edits()] == ['dmso', 'DMSO']
 
 
 def test_a_range_and_the_same_samples_listed_agree(catalog):
@@ -381,8 +379,8 @@ def test_a_hedge_on_the_other_passs_cut_of_the_quote_counts(catalog):
     b = answer(edit(said=SAID), unresolved=[hedge])
     proposal = ask(catalog, a, b)
     assert proposal.edits == []
-    assert isinstance(proposal.unresolved[0], Disputed)
-    assert proposal.unresolved[0].why == 'a pass also left these words unresolved'
+    item = only(proposal, Disputed)
+    assert isinstance(item.second[-1], Ambiguous)
 
 
 def test_where_is_its_own_reading(catalog):
@@ -427,10 +425,10 @@ def test_an_anchor_is_no_disagreement_and_is_kept(catalog, synthetic_xlsx):
     # two different anchors for the same write: each is a reading
     other = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'IPA'})
     item = only(ask(catalog, answer(dmso), answer(other)), Disputed)
-    assert [r.anchor.equals for r in item.readings] == ['DMSO', 'IPA']
+    assert [r.anchor.equals for r in item.edits()] == ['DMSO', 'IPA']
     # a different value is still a disagreement, anchor or not
     item = only(ask(catalog, answer(dmso), answer({**plain, 'new': '400'})), Disputed)
-    assert [r.new for r in item.readings] == ['300', '400']
+    assert [r.new for r in item.edits()] == ['300', '400']
 
 
 def test_an_old_value_said_is_no_disagreement_and_is_kept(catalog, synthetic_xlsx):
@@ -458,11 +456,11 @@ def test_an_old_value_said_is_no_disagreement_and_is_kept(catalog, synthetic_xls
         ask(catalog, answer(minutes), answer(edit(said=said, said_old='2 h'))),
         Disputed,
     )
-    assert [r.said_old for r in item.readings] == ['2 min', '2 h']
+    assert [r.said_old for r in item.edits()] == ['2 min', '2 h']
     # two old values heard: each is a reading
     other = edit(said=said, said_old='3000')
     item = only(ask(catalog, answer(heard), answer(other)), Disputed)
-    assert [r.said_old for r in item.readings] == ['2000', '3000']
+    assert [r.said_old for r in item.edits()] == ['2000', '3000']
     # the readings differ only there: the preview says which is which
     result = interpret_instruction(
         said,
@@ -487,7 +485,7 @@ def test_repeats_of_one_write_in_a_pass_are_all_compared(catalog):
     ipa = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'IPA'})
     # only one pass, through two anchors: both are shown
     item = only(ask(catalog, answer(dmso, ipa), answer()), Disputed)
-    assert [r.anchor.equals for r in item.readings] == ['DMSO', 'IPA']
+    assert [r.anchor.equals for r in item.edits()] == ['DMSO', 'IPA']
     # a hedge on the quote of a later repeat counts too
     repeat = {**time, 'said': 'time 300', 'anchor': None}
     hedge = {'reason': 'not_found', 'said': 'time 300'}
@@ -497,7 +495,8 @@ def test_repeats_of_one_write_in_a_pass_are_all_compared(catalog):
         answer(edit(**{**time, 'anchor': None}), unresolved=[hedge]),
     )
     assert proposal.edits == []
-    assert proposal.unresolved[0].why == 'a pass also left these words unresolved'
+    item = only(proposal, Disputed)
+    assert isinstance(item.second[-1], NotFound)
 
 
 def test_unresolved_items_of_either_pass_are_kept_once(catalog):
@@ -530,7 +529,7 @@ def test_unresolved_items_of_either_pass_are_kept_once(catalog):
         (answer(edit(rows={'samples': [], 'subbatch': None})), 'validation error'),
         (json.dumps({'edits': []}), 'validation error'),
         (
-            '{"edits": [], "unresolved": [{"reason": "disputed", "readings": [], "why": "", "said": "x"}]}',
+            '{"edits": [], "unresolved": [{"reason": "disputed", "first": [], "second": [], "said": "x"}]}',
             'validation error',
         ),
     ],
@@ -568,9 +567,8 @@ def test_preview_of_disputed_and_unreadable_items(catalog):
     )
     assert preview([], proposal.unresolved, NOTHING, catalog) == (
         f'? disputed: "{SAID}"\n'
-        '   2: Spin Coating · Rotation speed [rpm] → 4000, all samples (1–5, 7–13)\n'
-        '   or 2: Spin Coating · Annealing time [min] → 4000, all samples (1–5, 7–13)\n'
-        '   the two passes read these words differently'
+        '   Reading 1: 2: Spin Coating · Rotation speed [rpm] → 4000\n'
+        '   Reading 2: 2: Spin Coating · Annealing time [min] → 4000'
     )
     one = edit(
         target=SOLVENT_2,
@@ -582,13 +580,27 @@ def test_preview_of_disputed_and_unreadable_items(catalog):
     proposal = ask(catalog, answer(edit(), one), answer(edit()))
     assert preview([], proposal.unresolved, NOTHING, catalog) == (
         '? disputed: "clear solvent 2 of 1 to 3"\n'
-        '   1: Cleaning UV-Ozone · Solvent 2 → (empty), samples 1–3\n'
-        '   only one of the two passes proposed it'
+        '   Reading 1: 1: Cleaning UV-Ozone · Solvent 2 → (empty)\n'
+        '   Reading 2: no edit'
     )
     proposal = ask(catalog, 'not json')
     assert preview([], proposal.unresolved, NOTHING, catalog) == (
         '? sand could not propose an edit for this note. '
         'Try again, or write the note more clear.'
+    )
+
+
+def test_a_hedge_on_words_around_an_edit_is_that_passs_reading(catalog):
+    # pass A: the speed; pass B: the longer words could be either column
+    said = 'speed 4000 for samples 1 to 3'
+    longer = f'time 1 is 1 for 3. {said}'
+    hedge = {'reason': 'ambiguous', 'candidates': [ANNEAL_TIME, SPEED], 'said': longer}
+    proposal = ask(catalog, answer(edit(said=said)), answer(unresolved=[hedge]))
+    assert preview([], proposal.unresolved, NOTHING, catalog) == (
+        f'? disputed: "{longer}"\n'
+        '   Reading 1: 2: Spin Coating · Rotation speed [rpm] → 4000\n'
+        '   Reading 2: 2: Spin Coating · Annealing time [min], or\n'
+        '              2: Spin Coating · Rotation speed [rpm]?'
     )
 
 
@@ -607,10 +619,10 @@ def test_a_reading_shows_subbatch_anchor_and_an_empty_where(two_subbatches):
     assert preview([], proposal.unresolved, NOTHING, two_subbatches).splitlines()[
         1:3
     ] == [
-        f'   1: Cleaning UV-Ozone · Time 2 [s] → 300, samples 1, 2 of subbatch {one}, '
-        'pointed through Solvent 2 = DMSO',
-        '   or 1: Cleaning UV-Ozone · Time 2 [s] → 300, where Experiment Info · '
-        'Variation is empty (no sample)',
+        f'   Reading 1: 1: Cleaning UV-Ozone · Time 2 [s] → 300, samples 1, 2 of '
+        f'subbatch {one}, pointed through Solvent 2 = DMSO',
+        '   Reading 2: 1: Cleaning UV-Ozone · Time 2 [s] → 300, where Experiment '
+        'Info · Variation is empty (no sample)',
     ]
 
 

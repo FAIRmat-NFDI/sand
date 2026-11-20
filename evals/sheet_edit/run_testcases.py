@@ -316,7 +316,12 @@ def _unresolved_about(target: str, result: Interpretation) -> bool:
     for u in result.proposal.unresolved:
         if u.reason == 'unreadable':
             return True
-        if u.reason == 'disputed' and any(r.target == target for r in u.readings):
+        if u.reason == 'disputed' and (
+            any(e.target == target for e in u.edits())
+            or any(
+                target in getattr(t, 'candidates', ()) for t in [*u.first, *u.second]
+            )
+        ):
             return True
         if u.reason == 'ambiguous' and target in u.candidates:
             return True
