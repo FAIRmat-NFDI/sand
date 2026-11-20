@@ -33,8 +33,6 @@ const confirmAllLabelEl = document.getElementById("confirm-all-label");
 const applyStatus = document.getElementById("apply-status");
 const applyResult = document.getElementById("apply-result");
 const applySummary = document.getElementById("apply-summary");
-const changelogEl = document.getElementById("changelog-text");
-const changelogFold = document.querySelector(".changelog-details");
 const writtenTable = document.getElementById("written-table");
 const writtenBody = writtenTable.querySelector("tbody");
 const downloadFinalBtn = document.getElementById("download-final-btn");
@@ -241,12 +239,13 @@ function renderWritten(rows) {
     if (row.first) tr.className = "written-first";
     if (row.line) {
       const td = document.createElement("td");
-      td.colSpan = 4;
+      td.colSpan = 5;
       td.textContent = row.line;
       tr.append(td);
     } else {
       for (const [field, text] of [
-        ["step", row.first ? row.step : ""], ["column", row.column], ["value", row.value], ["samples", row.samples],
+        ["step", row.first ? row.step : ""], ["column", row.column], ["old", row.old ?? ""],
+        ["value", row.value], ["samples", row.samples],
       ]) {
         const td = document.createElement("td");
         td.className = "written-" + field;
@@ -262,8 +261,6 @@ function renderResult(status) {
   gateDownload(downloadBlock(status, shownItems()));
   applySummary.textContent = editSummary(status);
   renderWritten(writtenEdits(status));
-  // the full log is for the record, behind a fold
-  changelogEl.textContent = status.changelog || "";
   applyResult.hidden = false;
 }
 
@@ -507,8 +504,7 @@ async function confirmAll(experiment) {
 async function resetDecisions(experiment) {
   const n = decisionStatus ? decisionCount(decisionStatus) : 0;
   const what = n === 1 ? "the 1 decision" : n ? "all " + n + " decisions" : "every decision";
-  const question = "Reset " + what + "? The sheet goes back to the original, every update is unlocked "
-    + "and waits for your decision again. The updates keep their words.";
+  const question = "Reset " + what + "? The sheet goes back to the original.";
   if (!await confirmDialog(question, "Reset")) return;
   clearError();
   const why = await post(experiment, "edits/reset", {});
@@ -547,8 +543,6 @@ export function showEdit(experiment, view) {
   gateDownload("");
   readAgainBtn.hidden = true;
   applyResult.hidden = true;
-  changelogEl.textContent = "";
-  changelogFold.open = false; // the fold is per result, not per page
   if (!experiment || !view) {
     // nothing to poll: the tiles forget the last job's reports here
     setReports({}, false, false, null, NO_MARKS);
@@ -604,7 +598,6 @@ async function startJob(experiment, decided = new Set()) {
     confirmAllBtn.hidden = true;
     readAgainBtn.hidden = true;
     applyResult.hidden = true;
-    changelogFold.open = false;
     busy("Starting...");
     gateDownload(blockShown);
     confirmAllBtn.hidden = recomputeBtn.hidden = true;

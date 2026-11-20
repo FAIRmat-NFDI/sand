@@ -116,6 +116,9 @@ function renderLine(line, withLabel) {
   return p;
 }
 
+// the chips' colours: the sample groups of one row each get their own
+const TONES = 6;
+
 function chips(labels, tone) {
   const box = el("div", "sample-chips");
   for (const label of labels) box.append(el("span", "sample-chip tone-" + tone, label));
@@ -131,7 +134,7 @@ function renderSamples(groups) {
   samplesBlock.hidden = groups.kind === "none";
   if (groups.kind === "none") return;
   if (groups.kind === "flat") {
-    groups.blocks.forEach((block, i) => {
+    groups.blocks.forEach((block) => {
       const row = el("div", "sample-row");
       const head = el("div", "sample-axis");
       head.append(el("span", "sample-axis-value", axisText(block)));
@@ -139,12 +142,12 @@ function renderSamples(groups) {
       row.append(head);
       const cells = el("div", "sample-cells");
       cells.style.setProperty("--cells", String(block.groups.length));
-      for (const group of block.groups) {
+      block.groups.forEach((group, j) => {
         const cell = el("div", "sample-cell");
         cell.append(el("span", "sample-cell-value", group.value));
-        cell.append(chips(group.labels, i % 4));
+        cell.append(chips(group.labels, j % TONES));
         cells.append(cell);
-      }
+      });
       row.append(cells);
       samplesBox.append(row);
     });
@@ -159,7 +162,7 @@ function renderSamples(groups) {
   acrossName.append(el("span", "sample-axis-step", groups.b.step));
   across.append(acrossName);
   samplesBox.append(across);
-  groups.rows.forEach((row, i) => {
+  groups.rows.forEach((row) => {
     const line = el("div", "sample-row");
     const head = el("div", "sample-axis");
     head.append(el("span", "sample-axis-value", row.value));
@@ -168,12 +171,12 @@ function renderSamples(groups) {
     line.append(head);
     const cells = el("div", "sample-cells");
     cells.style.setProperty("--cells", String(row.cells.length));
-    for (const cell of row.cells) {
+    row.cells.forEach((cell, j) => {
       const box = el("div", "sample-cell");
       box.append(el("span", "sample-cell-value", cell.value));
-      box.append(chips(cell.labels, i % 4));
+      box.append(chips(cell.labels, j % TONES));
       cells.append(box);
-    }
+    });
     line.append(cells);
     samplesBox.append(line);
   });

@@ -259,6 +259,31 @@ export function previewNotes(report) {
       && !line.startsWith("⚠ no update in:"));
 }
 
+// the preview lines that say no edit was made: an unclear part ("?
+// ambiguous", "? uncertain", "? not found", "? sand could not propose")
+// or a refused edit ("✗ not applied"), each with its indented lines.
+// Indented "? doubt" lines under a ready edit are not.
+export function problemLines(report) {
+  const problems = new Set();
+  let inProblem = false;
+  for (const line of (report.preview || "").split("\n")) {
+    if (!line.startsWith(" ")) inProblem = line.startsWith("? ") || line.startsWith("✗ ");
+    if (inProblem && line) problems.add(line);
+  }
+  return problems;
+}
+
+// the short form of a problem's first line, for the edits-only view:
+// '? ambiguous: "the speed"' -> 'Ambiguous: "the speed"'; null for
+// any other line
+export function problemShort(line) {
+  if (line.startsWith("? sand could not propose")) return "No edit proposed";
+  const head = /^(?:\? (ambiguous|uncertain|not found)|✗ (not applied)): (.*)$/.exec(line);
+  if (!head) return null;
+  const kind = head[1] || head[2];
+  return kind[0].toUpperCase() + kind.slice(1) + ": " + head[3];
+}
+
 // the line under an update a decision above changed: its earlier
 // decisions match none of its edits now
 export function resetNote(report) {
@@ -480,11 +505,9 @@ export function confirmQuestion(status) {
   const updates = reports.filter((report) => pendingKeys([report]).length).length;
   const skipped = reports.filter((report) => skippedWhy(report)).length;
   let question = "Confirm " + count(keys.length, "edit", "edits") + " in "
-    + count(updates, "update", "updates") + "? They are written into the sheet, and every update "
-    + "is locked: only Reset all changes them.";
+    + count(updates, "update", "updates") + "? Then all updates are locked.";
   if (skipped) {
-    question += " " + (skipped === 1 ? "1 update has" : skipped + " updates have")
-      + " a part that is not an edit (unclear, not applied): locked too. Fix it first, or Reset all later.";
+    question += " " + (skipped === 1 ? "1 update has" : skipped + " updates have") + " an unclear part, not applied.";
   }
   return question;
 }

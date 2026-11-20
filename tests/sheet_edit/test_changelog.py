@@ -27,6 +27,7 @@ from sand.sheet_edit.edits import Edit, ProposedEdits, Range, Samples
 from sand.sheet_edit.write import Write, write_cells
 
 CLEAN_SOLVENT_2, SPEED, VARIATION = 'C013', 'C025', 'C007'
+SUBSTRATE = 'C055'  # 120 on samples 1–5, 7; 115 on 8–13
 SOLVENT_2_COLUMN, SPEED_COLUMN = 13, 25
 DEPOSITION_COLUMN = column_index_from_string(
     letter('5: Close Space Sublimation', 'Deposition Time [s]')
@@ -44,6 +45,7 @@ SPEED_UP = 'speed up to 4000'  # answered 4400: a check
 BOTH = 'solvent 2 to DMSO for samples 1 to 3 and speed up to 4000'
 VARIATION_SAID = 'variation 30min for sample 1'
 SPEED_6000_ONE = 'speed 6000 for sample 1'
+SUBSTRATE_118 = 'substrate temperature 118'
 
 
 def edit(target, rows, old, new, said):
@@ -78,6 +80,7 @@ PROPOSALS = {
             SPEED, Samples(samples=['1'], subbatch=None), '4000', '6000', SPEED_6000_ONE
         )
     ],
+    SUBSTRATE_118: [edit(SUBSTRATE, 'all', None, '118', SUBSTRATE_118)],
     VARIATION_SAID: [
         edit(
             VARIATION,
@@ -177,9 +180,11 @@ def test_written_now_is_the_last_value_of_each_cell(synthetic_xlsx):
     # the speed column edited twice over the same cells: one row, the last value
     log, _ = logged(synthetic_xlsx, [SPEED_4000, SPEED_5000])
     (row,) = written_now(log, catalog)
+    # the old value is the uploaded sheet's, not the first edit's
     assert row == {
         'step': '2: Spin Coating',
         'column': 'Rotation speed [rpm]',
+        'old': '3000',
         'value': '5000',
         'samples': f'all {len(catalog.samples)} samples',
     }
@@ -190,6 +195,12 @@ def test_written_now_is_the_last_value_of_each_cell(synthetic_xlsx):
     assert [(r['value'], r['samples']) for r in rows] == [
         ('6000', 'sample 1'),
         ('4000', f'samples {catalog.names(rest)}'),
+    ]
+    # cells that held different values: a row per old value
+    log, _ = logged(synthetic_xlsx, [SUBSTRATE_118])
+    assert [(r['old'], r['value']) for r in written_now(log, catalog)] == [
+        ('120', '118'),
+        ('115', '118'),
     ]
     # in sheet order by column, the solvent column (M) before the speed (Y)
     log, _ = logged(synthetic_xlsx, [SPEED_4000, SOLVENT])

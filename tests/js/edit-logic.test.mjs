@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import {
   confirmAllLabel, describeEditPhase, downloadBlock, downloadFilename, editSummary, inputApplied, inputState,
-  changedEntries, checkedKeys, confirmQuestion, decisionCount, lostUnticks, recomputeLabel, inputsToRead, outdatedEntries, pendingKeys, previewNotes, readKey,
+  changedEntries, checkedKeys, confirmQuestion, decisionCount, lostUnticks, recomputeLabel, inputsToRead, outdatedEntries, pendingKeys, previewNotes, problemLines, problemShort, readKey,
   failedReadKey, recomputeDue, reportsByEntry, resetNote, roundSnapshot, rewriteWarning, settledBlock,
   freshReports, unchangedAbove, unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
@@ -266,6 +266,30 @@ test("the preview notes are what the ready edits do not show", () => {
   assert.deepEqual(previewNotes(aside), ["   · read from 'four thousand'"]);
 });
 
+test("the lines of an unclear part or a refused edit are problems, a ready edit's doubt is not", () => {
+  const preview = [
+    REPORT.ready[0].line,
+    "   ? read from 'four thousand'",
+    "? ambiguous: \"the speed\"",
+    "   2: Spin Coating · Rotation speed [rpm] or 4: Spin Coating · Rotation speed [rpm]?",
+    "✗ not applied: \"time 9999\"",
+    "   too long",
+    "? sand could not propose an edit for this note. Try again, or write the note more clear.",
+  ].join("\n");
+  assert.deepEqual([...problemLines({ preview })], preview.split("\n").slice(2));
+  assert.equal(problemLines({}).size, 0);
+});
+
+test("edits only shows a problem as one short line", () => {
+  assert.equal(problemShort("? ambiguous: \"the speed\""), "Ambiguous: \"the speed\"");
+  assert.equal(problemShort("? uncertain: \"speed up\""), "Uncertain: \"speed up\"");
+  assert.equal(problemShort("? not found: \"and dry\""), "Not found: \"and dry\"");
+  assert.equal(problemShort("✗ not applied: \"time 9999\""), "Not applied: \"time 9999\"");
+  assert.equal(problemShort("? sand could not propose an edit for this note. Try again, or write the note more clear."),
+    "No edit proposed");
+  assert.equal(problemShort("   or 4: Spin Coating · Rotation speed [rpm]?"), null);
+});
+
 test("the summary line of a completed job", () => {
   assert.equal(editSummary({ changes: 0, inputs: [] }), "Nothing written yet.");
   assert.equal(editSummary({ changes: 1, inputs: [REPORT] }), "1 edit waits for your confirmation");
@@ -406,10 +430,8 @@ test("Confirm all asks what it confirms, and says skipped updates are locked too
     { entry_id: "n3", ready: [], unresolved: 1 },
   ] };
   assert.equal(confirmQuestion(status),
-    "Confirm 2 edits in 1 update? They are written into the sheet, and every update is locked: "
-    + "only Reset all changes them. 1 update has a part that is not an edit (unclear, not applied): "
-    + "locked too. Fix it first, or Reset all later.");
-  assert.ok(!confirmQuestion({ inputs: status.inputs.slice(0, 1) }).includes("locked too"));
+    "Confirm 2 edits in 1 update? Then all updates are locked. 1 update has an unclear part, not applied.");
+  assert.ok(!confirmQuestion({ inputs: status.inputs.slice(0, 1) }).includes("unclear"));
 });
 
 test("an untick whose edit is gone after the reread no longer applies", () => {
