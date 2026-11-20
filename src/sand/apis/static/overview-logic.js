@@ -361,6 +361,32 @@ function rowNames(rows) {
   return new Map(rows.map((r) => [r.row, name(r)]));
 }
 
+// the chips of some samples: consecutive numbers as one, "1–4", as
+// Catalog.names writes them; a missing sample breaks a run. "07", "1.5"
+// and "A" are kept as written. "1 of subbatch 0": runs within a subbatch
+export function sampleRuns(labels) {
+  const runs = [];
+  for (const label of labels) {
+    const at = numbered(label);
+    const last = runs[runs.length - 1];
+    if (at && last?.at && at.prefix === last.at.prefix && at.suffix === last.at.suffix
+      && at.n === last.at.n + 1) {
+      last.labels.push(label);
+      last.at = at;
+    } else {
+      runs.push({ labels: [label], at, first: at });
+    }
+  }
+  return runs.map((r) => (r.labels.length === 1 ? r.labels[0]
+    : r.first.prefix + r.first.n + "–" + r.at.prefix + r.at.n + r.at.suffix));
+}
+
+function numbered(label) {
+  const m = /^(.*?)(\d+)( of subbatch .+)?$/.exec(label);
+  if (!m || m[2] !== String(Number(m[2])) || /[.-]$/.test(m[1])) return null;
+  return { prefix: m[1], n: Number(m[2]), suffix: m[3] || "" };
+}
+
 function labelsOf(rows, byRow) {
   return rows.map((r) => byRow.get(r) ?? "row " + r);
 }

@@ -710,8 +710,8 @@ body {
 .samples-box {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 16px;
+  gap: 10px;
+  padding: 10px 12px;
   border: 1px solid #e3e6eb;
   border-radius: 4px;
   overflow-x: auto;
@@ -720,37 +720,37 @@ body {
 .sample-row {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
 }
 
 .sample-axis {
-  width: 128px;
+  width: 112px;
   flex: none;
   display: flex;
   flex-direction: column;
 }
 
 .sample-axis-value {
-  font-size: 1rem;
+  font-size: 0.85rem;
   font-weight: 600;
   color: #1f2430;
   overflow-wrap: anywhere;
 }
 
 .sample-axis-name {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: #6b7079;
 }
 
 .sample-axis-step {
   display: block;
-  font-size: 0.74rem;
+  font-size: 0.7rem;
   color: #9aa0aa;
 }
 
 /* the second axis of a cross, over its cells */
 .sample-across {
-  margin-bottom: -8px;
+  margin-bottom: -4px;
 }
 
 .sample-across-name {
@@ -773,19 +773,19 @@ body {
 .sample-cells {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(var(--cells, auto-fill), minmax(72px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(var(--cells, auto-fill), minmax(64px, 1fr));
+  gap: 8px;
 }
 
 .sample-cell {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-width: 72px;
+  gap: 4px;
+  min-width: 64px;
 }
 
 .sample-cell-value {
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   color: #1f2430;
   font-weight: 600;
   white-space: nowrap;
@@ -794,14 +794,14 @@ body {
 .sample-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 3px;
 }
 
 .sample-chip {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 600;
-  min-width: 26px;
-  padding: 4px 6px;
+  min-width: 22px;
+  padding: 2px 5px;
   border-radius: 4px;
   text-align: center;
   font-variant-numeric: tabular-nums;

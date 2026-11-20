@@ -4,7 +4,7 @@
 // the user folds or unfolds it, the overview is open while the sheet has
 // no updates and folded once it has.
 
-import { overviewSummary, sampleGroups, stepCard } from "./overview-logic.js";
+import { overviewSummary, sampleGroups, sampleRuns, stepCard } from "./overview-logic.js";
 import { metaLines } from "./sheet-header-logic.js";
 
 const section = document.getElementById("sheet-overview");
@@ -121,7 +121,7 @@ const TONES = 6;
 
 function chips(labels, tone) {
   const box = el("div", "sample-chips");
-  for (const label of labels) box.append(el("span", "sample-chip tone-" + tone, label));
+  for (const run of sampleRuns(labels)) box.append(el("span", "sample-chip tone-" + tone, run));
   return box;
 }
 
