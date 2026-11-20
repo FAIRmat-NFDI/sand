@@ -263,6 +263,9 @@ test("a varying value is marked, a changed one carries its old value", () => {
     ],
   }]);
   assert.equal(card.varies, true);
+  // a filled empty cell is a change too
+  const filled = [{ column_id: temperature.column_id, row: 3, old: "", new: "120", by_formula: false }];
+  assert.equal(stepCard(step(5, "Close Space Sublimation", [temperature]), filled).lines[0].values[0].changed, "(empty)");
   // more old values than fit: "various"
   const many = ["90", "100", "110", "112"].map((old, i) => (
     { column_id: temperature.column_id, row: i + 3, old, new: "120", by_formula: false }));

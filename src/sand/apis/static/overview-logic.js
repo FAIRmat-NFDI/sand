@@ -50,7 +50,8 @@ const SHOWN_OLDS = 3;
 function changeNote(columnId, changed) {
   const cells = changed.filter((c) => c.column_id === columnId);
   if (!cells.length) return "";
-  const olds = [...new Set(cells.map((c) => c.old))];
+  // an empty old cell is still a change: "(empty)", as the server writes None
+  const olds = [...new Set(cells.map((c) => c.old || "(empty)"))];
   return olds.length > SHOWN_OLDS ? "various" : olds.join(" / ");
 }
 
