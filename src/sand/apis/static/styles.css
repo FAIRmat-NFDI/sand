@@ -773,8 +773,10 @@ body {
 .sample-cells {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(var(--cells, auto-fill), minmax(64px, 1fr));
-  gap: 8px;
+  /* capped, not stretched: two values sit near each other, and the
+     columns still line up from row to row */
+  grid-template-columns: repeat(var(--cells, auto-fill), minmax(64px, 240px));
+  gap: 8px 24px;
 }
 
 .sample-cell {
