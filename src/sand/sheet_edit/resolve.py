@@ -45,7 +45,7 @@ from sand.sheet_edit.workbook import SAMPLE_HEADER, SUBBATCH_HEADER, info_column
 PROMPT_VERSION = 'v7'
 # the job's cache keeps proposals after `agree`: bump the second part on
 # a change to how two opinions agree, so agreed answers are asked again
-CACHE_VERSION = f'{PROMPT_VERSION}+agree-5'
+CACHE_VERSION = f'{PROMPT_VERSION}+agree-6'
 
 # (system prompt, user text, JSON schema) -> the model's answer, as text.
 # The schema is for the provider's structured output; the answer is still
@@ -324,16 +324,28 @@ def _overlap(one: str, other: str) -> bool:
 
 
 def _once(items: list) -> list:
-    """The same unresolved item from both passes, or twice, is one; so is
-    "ambiguous" on the same words, with the candidates of each."""
+    """Items on overlapping words (a group of _disputes): the same item
+    from both passes, or twice, is one; every "ambiguous" is one, on the
+    longest quote, with the candidates of each."""
     kept: dict = {}
     for item in items:
+        if isinstance(item, Ambiguous) and 'ambiguous' in kept:
+            known = kept['ambiguous']
+            more = [c for c in item.candidates if c not in known.candidates]
+            kept['ambiguous'] = known.model_copy(
+                update={
+                    'candidates': [*known.candidates, *more],
+                    'said': max(known.said, item.said, key=len),
+                }
+            )
+            continue
         # edits are deduplicated by _readings already
-        key = id(item) if isinstance(item, Edit) else (item.reason, _quote(item.said))
-        if key in kept and isinstance(item, Ambiguous):
-            known = kept[key].candidates
-            more = [c for c in item.candidates if c not in known]
-            kept[key] = kept[key].model_copy(update={'candidates': [*known, *more]})
+        if isinstance(item, Edit):
+            key = id(item)
+        elif isinstance(item, Ambiguous):
+            key = 'ambiguous'
+        else:
+            key = (item.reason, _quote(item.said))
         kept.setdefault(key, item)
     return list(kept.values())
 

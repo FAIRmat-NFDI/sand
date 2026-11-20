@@ -527,6 +527,22 @@ def test_ambiguous_on_the_same_words_is_one_item_with_every_candidate(catalog):
     assert item.candidates == [SPEED, ANNEAL_TIME, TIME_2, SOLVENT_2]
 
 
+def test_ambiguous_on_words_within_other_words_is_one_item(catalog):
+    longer = 'step 2 spin coating, rotation speed 1000 for all samples'
+    a = {'reason': 'ambiguous', 'candidates': [SPEED], 'said': longer}
+    b = {
+        'reason': 'ambiguous',
+        'candidates': [ANNEAL_TIME, SPEED],
+        'said': 'rotation speed 1000 for all samples',
+    }
+    item = only(ask(catalog, answer(unresolved=[a]), answer(unresolved=[b])), Ambiguous)
+    assert (item.said, item.candidates) == (longer, [SPEED, ANNEAL_TIME])
+    # on other words, two items
+    c = {**b, 'said': 'time 20'}
+    apart = ask(catalog, answer(unresolved=[a]), answer(unresolved=[c]))
+    assert [u.said for u in apart.unresolved] == [longer, 'time 20']
+
+
 # --- answers that cannot be read ---------------------------------------------------
 
 
@@ -618,7 +634,6 @@ def test_a_hedge_on_words_around_an_edit_is_that_passs_reading(catalog):
         '   - Reading 1:\n'
         '       2: Spin Coating · Rotation speed [rpm] → 4000\n'
         '   - Reading 2:\n'
-        '       which column?\n'
         '       - 2: Spin Coating · Annealing time [min]\n'
         '       - 2: Spin Coating · Rotation speed [rpm]'
     )

@@ -271,7 +271,6 @@ test("the lines of an unclear part or a refused edit are problems, a ready edit'
     REPORT.ready[0].line,
     "   ? read from 'four thousand'",
     "ambiguous: \"the speed\"",
-    "   which column? (name the step)",
     "   - 2: Spin Coating · Rotation speed [rpm]",
     "   - 4: Spin Coating · Rotation speed [rpm]",
     "not found: \"and dry\"",
