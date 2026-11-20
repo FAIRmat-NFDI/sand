@@ -297,18 +297,11 @@ def test_unresolved_items(catalog):
     item = Ambiguous(reason='ambiguous', candidates=[TIME, ANNEAL_TIME], said='time 40')
     assert lines(catalog, unresolved=[item]) == [
         'ambiguous: "time 40"',
-        '   which column?',
         '   - 2: Spin Coating · Rotation time [s]',
         '   - 2: Spin Coating · Annealing time [min]',
     ]
     item = Ambiguous(reason='ambiguous', candidates=['C999'], said='time 40')
-    assert lines(catalog, unresolved=[item])[2] == '   - C999'
-
-
-def test_candidates_in_other_steps_ask_for_the_step(catalog):
-    other = next(c for c in catalog.columns if c.column.section.position == 3)  # noqa: PLR2004
-    item = Ambiguous(reason='ambiguous', candidates=[TIME, other.id], said='time 40')
-    assert lines(catalog, unresolved=[item])[1] == '   which column? (name the step)'
+    assert lines(catalog, unresolved=[item])[1] == '   - C999'
 
 
 def test_what_nothing_used_comes_last(catalog):

@@ -168,13 +168,9 @@ def _unresolved_lines(item: Unresolved, catalog: Catalog) -> list[str]:
 
 
 def _choices(item: Ambiguous, catalog: Catalog) -> list[str]:
-    """'which column?' and a line per candidate; naming the step helps
-    only when they are in different steps."""
     columns = [catalog.column(c) for c in item.candidates]
-    steps = {c.column.section for c in columns if c}
-    head = 'which column? (name the step)' if len(steps) > 1 else 'which column?'
     names = [_where(c) if c else cid for c, cid in zip(columns, item.candidates)]
-    return [head, *(f'- {name}' for name in names)]
+    return [f'- {name}' for name in names]
 
 
 def _disputed_lines(item: Disputed, catalog: Catalog) -> list[str]:

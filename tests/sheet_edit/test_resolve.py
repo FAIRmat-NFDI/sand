@@ -527,6 +527,40 @@ def test_ambiguous_on_the_same_words_is_one_item_with_every_candidate(catalog):
     assert item.candidates == [SPEED, ANNEAL_TIME, TIME_2, SOLVENT_2]
 
 
+def test_ambiguous_on_words_within_other_words_is_one_item(catalog):
+    longer = 'step 2 spin coating, rotation speed 1000 for all samples'
+    a = {'reason': 'ambiguous', 'candidates': [SPEED], 'said': longer}
+    b = {
+        'reason': 'ambiguous',
+        'candidates': [ANNEAL_TIME, SPEED],
+        'said': 'rotation speed 1000 for all samples',
+    }
+    item = only(ask(catalog, answer(unresolved=[a]), answer(unresolved=[b])), Ambiguous)
+    assert (item.said, item.candidates) == (longer, [SPEED, ANNEAL_TIME])
+    # on other words, two items
+    c = {**b, 'said': 'time 20'}
+    apart = ask(catalog, answer(unresolved=[a]), answer(unresolved=[c]))
+    assert [u.said for u in apart.unresolved] == [longer, 'time 20']
+
+
+def test_a_broad_ambiguous_quote_over_two_clauses_is_not_merged(catalog):
+    broad = {
+        'reason': 'ambiguous',
+        'candidates': [SPEED, ANNEAL_TIME],
+        'said': 'speed 1000 and time 20',
+    }
+    speed = {'reason': 'ambiguous', 'candidates': [SPEED, TIME_2], 'said': 'speed 1000'}
+    time = {'reason': 'ambiguous', 'candidates': [ANNEAL_TIME], 'said': 'time 20'}
+    proposal = ask(
+        catalog, answer(unresolved=[broad]), answer(unresolved=[speed, time])
+    )
+    assert [(u.said, u.candidates) for u in proposal.unresolved] == [
+        ('speed 1000 and time 20', [SPEED, ANNEAL_TIME]),
+        ('speed 1000', [SPEED, TIME_2]),
+        ('time 20', [ANNEAL_TIME]),
+    ]
+
+
 # --- answers that cannot be read ---------------------------------------------------
 
 
@@ -618,7 +652,6 @@ def test_a_hedge_on_words_around_an_edit_is_that_passs_reading(catalog):
         '   - Reading 1:\n'
         '       2: Spin Coating · Rotation speed [rpm] → 4000\n'
         '   - Reading 2:\n'
-        '       which column?\n'
         '       - 2: Spin Coating · Annealing time [min]\n'
         '       - 2: Spin Coating · Rotation speed [rpm]'
     )
