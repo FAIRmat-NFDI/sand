@@ -725,3 +725,23 @@ def test_all_with_an_anchor_keeps_the_samples_the_other_pass_named(synthetic_xls
     assert 'you named samples' not in result.preview
     (kept,) = result.ready.values()
     assert kept.edit.anchor is not None  # pass A's anchor, still checked
+
+
+def test_a_hedge_on_words_around_an_agreed_edit_disputes_it(catalog):
+    hedge = {
+        'reason': 'ambiguous',
+        'candidates': [SPEED, ANNEAL_TIME],
+        'said': f'set {SAID} now',
+    }
+    proposal = ask(catalog, answer(edit()), answer(edit(), unresolved=[hedge]))
+    assert proposal.edits == []
+    item = only(proposal, Disputed)
+    assert [type(t) for t in item.second] == [Edit, Ambiguous]
+
+
+def test_each_pass_keeps_its_reading_when_pointers_differ(catalog):
+    dmso = edit(anchor={'column': SOLVENT_2, 'equals': 'DMSO'})
+    ipa = edit(anchor={'column': SOLVENT_2, 'equals': 'IPA'})
+    item = only(ask(catalog, answer(dmso, ipa), answer(edit())), Disputed)
+    assert [r.anchor.equals for r in item.first] == ['DMSO', 'IPA']
+    assert [r.anchor for r in item.second] == [None]

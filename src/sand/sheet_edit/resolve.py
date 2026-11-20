@@ -228,7 +228,7 @@ def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdi
     left the same words unresolved. Every other edit is disputed (see
     _disputes)."""
     by_a, by_b = _by_write(a.edits, catalog), _by_write(b.edits, catalog)
-    hedged = {_quote(u.said) for u in [*a.unresolved, *b.unresolved]}
+    hedges = {_quote(u.said) for u in [*a.unresolved, *b.unresolved]}
     edits: list[Edit] = []
     # (pass, edit, the quotes of its write's repeats): not agreed on
     doubts: list[tuple[int, Edit, set[str]]] = []
@@ -244,15 +244,15 @@ def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdi
         # the same write pointed at through different cells, or with two
         # old values heard: each is a reading
         differ = next((d for d in (pointed, olds) if len(d) > 1), {})
-        if differ:
+        # the passes (and repeats) may cut the quote differently: a hedge
+        # on words around any of these quotes counts
+        hedged = any(_overlap(h, q) for h in hedges for q in _quotes(both))
+        if differ or hedged:
             doubts += [
-                (0 if any(e is g for g in group) else 1, e, _quotes(both))
-                for e in differ.values()
+                (side, r, _quotes(both))
+                for side, own in enumerate((group, by_b[key]))
+                for r in _readings(own)
             ]
-        elif hedged & {_quote(e.said) for e in both}:
-            # the passes (and repeats) may cut the quote differently: a
-            # hedge on any of these quotes counts
-            doubts += [(0, edit, _quotes(both)), (1, by_b[key][0], _quotes(both))]
         else:
             # after _kept, which may take another pass's edit for its anchor
             edits.append(_named(_kept(edit, pointed, olds), both))
@@ -388,8 +388,10 @@ def _by_write(edits: list[Edit], catalog: Catalog) -> dict[AgreementKey, list[Ed
 
 def _readings(group: list[Edit]) -> list[Edit]:
     """One pass's repeats of a write, as the user sees them: one reading
-    per anchor, or the first edit when none has one."""
-    return list(_first_per_anchor(group).values()) or group[:1]
+    per anchor and per old value said, or the first edit when none has
+    either."""
+    found = [*_first_per_anchor(group).values(), *_first_per_said_old(group).values()]
+    return list({id(e): e for e in found}.values()) or group[:1]
 
 
 def _kept(edit: Edit, pointed: dict, olds: dict) -> Edit:
