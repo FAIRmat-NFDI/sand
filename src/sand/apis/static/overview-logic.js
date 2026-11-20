@@ -238,7 +238,7 @@ export function stepCard(step, changed = []) {
       // inside a block each line says what it is
       const block = inBlock(name);
       const label = !block && text(name) === head.material?.text ? "" : text(name);
-      items.push({ at, line: { label, values }, block });
+      items.push({ at, line: withLabelChange({ label, values }, label && changeNote(name.column_id, changed)), block });
     } else if (name) {
       items.push({ at, single: name, value: valueOf(name, changed), block: inBlock(name) }); // "Ethanol"
     } else if (label && rest.length > 1) {
@@ -259,7 +259,7 @@ export function stepCard(step, changed = []) {
     ratios.sort((x, y) => x.at - y.at);
     items.push({
       at: ratios[0].at,
-      line: {
+      line: withLabelChange({
         label: ratios.map((r) => text(r.name)).join(":"),
         values: [{
           text: ratios.map((r) => text(r.ratio)).join(":"),
@@ -269,7 +269,9 @@ export function stepCard(step, changed = []) {
             ? ratios.map((r) => changeNote(r.ratio.column_id, changed) || text(r.ratio)).join(":")
             : "",
         }],
-      },
+      }, ratios.some((r) => changeNote(r.name.column_id, changed))
+        ? ratios.map((r) => changeNote(r.name.column_id, changed) || text(r.name)).join(":")
+        : ""),
     });
   }
   // singles that share their first word: one line behind the word, or
@@ -333,6 +335,12 @@ export function stepCard(step, changed = []) {
     varies: stepVaries(step),
     lines,
   };
+}
+
+// a name that labels its line ("proponal  900 s") was edited: its old
+// name, as `labelChanged`
+function withLabelChange(line, old) {
+  return old ? { ...line, labelChanged: old } : line;
 }
 
 // lines as they are; loose values run together, in the sheet's order

@@ -32,12 +32,11 @@ function el(tag, className, text) {
   return node;
 }
 
-// a value the confirmed edits changed: "~~30~~ → 96 °C"
+// a value the confirmed edits changed: "~~30~~ → 96 °C", inside the
+// span, which may be a grid cell (a line's label)
 function mark(span, old) {
-  if (!old) return span;
-  const change = el("span", "value-changed");
-  change.append(el("span", "value-old", old), el("span", "value-arrow", "→"), span);
-  return change;
+  if (old) span.prepend(el("span", "value-old", old), el("span", "value-arrow", "→"));
+  return span;
 }
 
 function setOpen(open) {
@@ -88,7 +87,7 @@ function renderStep(card) {
   // they say; a block's lines stack in the second
   const lines = el("div", "step-lines");
   for (const line of card.lines) {
-    lines.append(el("span", "line-label", line.label));
+    lines.append(mark(el("span", "line-label", line.label), line.labelChanged));
     if (line.lines) {
       const inner = el("div", "step-block-lines");
       for (const sub of line.lines) inner.append(renderLine(sub, true));
@@ -104,7 +103,7 @@ function renderStep(card) {
 // inside a block the label is the line's own: the solvent's name, "step 1"
 function renderLine(line, withLabel) {
   const p = el("p", line.note ? "step-line step-note" : "step-line");
-  if (withLabel && line.label) p.append(el("span", "line-name", line.label));
+  if (withLabel && line.label) p.append(mark(el("span", "line-name", line.label), line.labelChanged));
   line.values.forEach((value, i) => {
     if (i) p.append(el("span", "line-sep", "·"));
     const span = el("span", "line-value", value.text);
