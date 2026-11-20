@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from sand.sheet_edit.catalog import Catalog
 
-Status = Literal['ok', 'unresolved', 'mismatch', 'uncertain', 'noop']
+Status = Literal['ok', 'unresolved', 'mismatch', 'disputed', 'noop']
 # computed from the checks (ground.py), never from the LLM's self-rating
 Confidence = Literal['high', 'medium', 'low']
 
@@ -93,15 +93,19 @@ class NotFound(_Model):
     said: str
 
 
-class Uncertain(_Model):
+class Disputed(_Model):
     """The two LLM passes did not agree on these words (resolve.py). Never
-    in the LLM's schema: only code produces it. `readings` are the edits
-    the passes made of them, `why` says how they disagreed."""
+    in the LLM's schema: only code produces it. `first` and `second`: what
+    each pass made of them, edits or its own unresolved items; empty:
+    nothing."""
 
-    reason: Literal['uncertain']
-    readings: list[Edit] = Field(min_length=1)
-    why: str
+    reason: Literal['disputed']
+    first: list[Edit | Ambiguous | NotFound]
+    second: list[Edit | Ambiguous | NotFound]
     said: str
+
+    def edits(self) -> list[Edit]:
+        return [e for e in [*self.first, *self.second] if isinstance(e, Edit)]
 
 
 class Unreadable(_Model):
@@ -121,7 +125,7 @@ class Unreadable(_Model):
 
 
 Unresolved = Annotated[
-    Ambiguous | NotFound | Uncertain | Unreadable, Field(discriminator='reason')
+    Ambiguous | NotFound | Disputed | Unreadable, Field(discriminator='reason')
 ]
 
 

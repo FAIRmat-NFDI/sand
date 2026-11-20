@@ -10,7 +10,7 @@ One model is available, so the two passes differ by what they see, not
 by chance: pass A reads the table in sheet order with the rules as
 written, pass B the steps in reverse order with the rules reworded. Both
 run at temperature 0, which the workflow sets. Only edits both passes
-agree on go on as edits; the rest becomes `Uncertain`, shown with every
+agree on go on as edits; the rest becomes `Disputed`, shown with every
 reading and never applied without the user choosing. Same model means
 shared blind spots: this is one more layer, the deterministic checks in
 ground.py are the safety net.
@@ -23,12 +23,12 @@ from dataclasses import dataclass
 from sand.sheet_edit.catalog import Catalog
 from sand.sheet_edit.coverage import quote_words
 from sand.sheet_edit.edits import (
+    Disputed,
     Edit,
     ProposedEdits,
     Range,
     RowSpec,
     Samples,
-    Uncertain,
     Unreadable,
     Unresolved,
     proposed_edits_model,
@@ -43,7 +43,7 @@ from sand.sheet_edit.render import table
 PROMPT_VERSION = 'v7'
 # the job's cache keeps proposals after `agree`: bump the second part on
 # a change to how two opinions agree, so agreed answers are asked again
-CACHE_VERSION = f'{PROMPT_VERSION}+agree-2'
+CACHE_VERSION = f'{PROMPT_VERSION}+agree-3'
 
 # (system prompt, user text, JSON schema) -> the model's answer, as text.
 # The schema is for the provider's structured output; the answer is still
@@ -225,31 +225,18 @@ def agree(opinions: Sequence[Opinion], catalog: Catalog) -> ProposedEdits:
 
 def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdits:
     """Edits in both passes stay, in pass A's order, unless a pass also
-    left the same words unresolved. Every other edit is uncertain, one
-    item per quote with every reading of it. Unresolved items of either
-    pass are kept once."""
+    left the same words unresolved. Every other edit is disputed (see
+    _disputes)."""
     by_a, by_b = _by_write(a.edits, catalog), _by_write(b.edits, catalog)
-    hedged = {_quote(u.said) for u in [*a.unresolved, *b.unresolved]}
+    hedges = {_quote(u.said) for u in [*a.unresolved, *b.unresolved]}
     edits: list[Edit] = []
-    uncertain: dict[str, Uncertain] = {}  # by quote, in order of appearance
-
-    def doubt(edit: Edit, why: str) -> None:
-        quote = _quote(edit.said)
-        if quote in uncertain:
-            item = uncertain[quote]
-            uncertain[quote] = item.model_copy(
-                update={'readings': [*item.readings, edit], 'why': _DIFFER}
-            )
-        else:
-            uncertain[quote] = Uncertain(
-                reason='uncertain', readings=[edit], why=why, said=edit.said
-            )
+    # (pass, edit, the quotes of its write's repeats): not agreed on
+    doubts: list[tuple[int, Edit, set[str]]] = []
 
     for key, group in by_a.items():
         edit = group[0]
         if key not in by_b:
-            for reading in _readings(group):
-                doubt(reading, _ONE_PASS)
+            doubts += [(0, r, _quotes(group)) for r in _readings(group)]
             continue
         both = [*group, *by_b[key]]
         pointed = _first_per_anchor(both)
@@ -257,37 +244,101 @@ def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdi
         # the same write pointed at through different cells, or with two
         # old values heard: each is a reading
         differ = next((d for d in (pointed, olds) if len(d) > 1), {})
-        if differ:
-            for e in differ.values():
-                doubt(e, _DIFFER)
-        elif hedged & {_quote(e.said) for e in both}:
-            # the passes (and repeats) may cut the quote differently: a
-            # hedge on any of these quotes counts
-            doubt(edit, _HEDGED)
+        # the passes (and repeats) may cut the quote differently: a hedge
+        # on words around any of these quotes counts
+        hedged = any(_overlap(h, q) for h in hedges for q in _quotes(both))
+        if differ or hedged:
+            doubts += [
+                (side, r, _quotes(both))
+                for side, own in enumerate((group, by_b[key]))
+                for r in _readings(own)
+            ]
         else:
             # after _kept, which may take another pass's edit for its anchor
             edits.append(_named(_kept(edit, pointed, olds), both))
     for key, group in by_b.items():
         if key not in by_a:
-            for reading in _readings(group):
-                doubt(reading, _ONE_PASS)
-    seen: set[tuple] = set()
-    unresolved: list[Unresolved] = []
-    for item in [*a.unresolved, *b.unresolved]:
+            doubts += [(1, r, _quotes(group)) for r in _readings(group)]
+    unresolved = _disputes(doubts, a.unresolved, b.unresolved)
+    return ProposedEdits(edits=edits, unresolved=unresolved)
+
+
+def _disputes(
+    doubts: list[tuple[int, Edit, set[str]]],
+    a: list[Unresolved],
+    b: list[Unresolved],
+) -> list[Unresolved]:
+    """The edits not agreed on and the passes' unresolved items, grouped
+    by overlapping words: a group with an edit is one Disputed, what each
+    pass made of the words side by side; the other items are kept once."""
+    pieces = [
+        *doubts,
+        *(
+            (side, u, {_quote(u.said)})
+            for side, items in enumerate((a, b))
+            for u in items
+        ),
+    ]
+    groups: list[list[tuple[int, Edit | Unresolved, set[str]]]] = []
+    for piece in pieces:
+        hit = [
+            i
+            for i, group in enumerate(groups)
+            if any(_overlap(q, o) for q in piece[2] for _, _, qs in group for o in qs)
+        ]
+        if not hit:
+            groups.append([piece])
+            continue
+        groups[hit[0]] = [*(p for i in hit for p in groups[i]), piece]
+        for i in reversed(hit[1:]):
+            del groups[i]
+    disputed: list[Unresolved] = []
+    kept: list[Unresolved] = []
+    for group in groups:
+        if any(isinstance(p, Edit) for _, p, _ in group):
+            first, second = ([p for s, p, _ in group if s == side] for side in (0, 1))
+            disputed.append(
+                Disputed(
+                    reason='disputed',
+                    first=_once(first),
+                    second=_once(second),
+                    said=max((p.said for _, p, _ in group), key=len),
+                )
+            )
+        else:
+            kept += _once([p for _, p, _ in group])
+    return [*disputed, *kept]
+
+
+def _quotes(edits: list[Edit]) -> set[str]:
+    return {_quote(e.said) for e in edits}
+
+
+def _overlap(one: str, other: str) -> bool:
+    """One quote within the other, by whole words."""
+    return bool(one and other) and (
+        f' {one} ' in f' {other} ' or f' {other} ' in f' {one} '
+    )
+
+
+def _once(items: list) -> list:
+    """The same unresolved item from both passes, or twice, is one."""
+    seen: set = set()
+    kept = []
+    for item in items:
         key = (
-            item.reason,
-            _quote(item.said),
-            frozenset(getattr(item, 'candidates', ())),
+            id(item)  # edits are deduplicated by _readings already
+            if isinstance(item, Edit)
+            else (
+                item.reason,
+                _quote(item.said),
+                frozenset(getattr(item, 'candidates', ())),
+            )
         )
         if key not in seen:
             seen.add(key)
-            unresolved.append(item)
-    return ProposedEdits(edits=edits, unresolved=[*uncertain.values(), *unresolved])
-
-
-_ONE_PASS = 'only one of the two passes proposed it'
-_DIFFER = 'the two passes read these words differently'
-_HEDGED = 'a pass also left these words unresolved'
+            kept.append(item)
+    return kept
 
 
 # the rows of an edit, as compared between the two opinions: the sheet
@@ -337,8 +388,10 @@ def _by_write(edits: list[Edit], catalog: Catalog) -> dict[AgreementKey, list[Ed
 
 def _readings(group: list[Edit]) -> list[Edit]:
     """One pass's repeats of a write, as the user sees them: one reading
-    per anchor, or the first edit when none has one."""
-    return list(_first_per_anchor(group).values()) or group[:1]
+    per anchor and per old value said, or the first edit when none has
+    either."""
+    found = [*_first_per_anchor(group).values(), *_first_per_said_old(group).values()]
+    return list({id(e): e for e in found}.values()) or group[:1]
 
 
 def _kept(edit: Edit, pointed: dict, olds: dict) -> Edit:

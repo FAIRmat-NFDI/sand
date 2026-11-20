@@ -282,7 +282,7 @@ test("the lines of an unclear part or a refused edit are problems, a ready edit'
 
 test("edits only shows a problem as one short line", () => {
   assert.equal(problemShort("? ambiguous: \"the speed\""), "Ambiguous: \"the speed\"");
-  assert.equal(problemShort("? uncertain: \"speed up\""), "Uncertain: \"speed up\"");
+  assert.equal(problemShort("? disputed: \"speed up\""), "Disputed: \"speed up\"");
   assert.equal(problemShort("? not found: \"and dry\""), "Not found: \"and dry\"");
   assert.equal(problemShort("✗ not applied: \"time 9999\""), "Not applied: \"time 9999\"");
   assert.equal(problemShort("? sand could not propose an edit for this note. Try again, or write the note more clear."),

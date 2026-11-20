@@ -260,7 +260,7 @@ export function previewNotes(report) {
 }
 
 // the preview lines that say no edit was made: an unclear part ("?
-// ambiguous", "? uncertain", "? not found", "? sand could not propose")
+// ambiguous", "? disputed", "? not found", "? sand could not propose")
 // or a refused edit ("✗ not applied"), each with its indented lines.
 // Indented "? doubt" lines under a ready edit are not.
 export function problemLines(report) {
@@ -278,7 +278,7 @@ export function problemLines(report) {
 // any other line
 export function problemShort(line) {
   if (line.startsWith("? sand could not propose")) return "No edit proposed";
-  const head = /^(?:\? (ambiguous|uncertain|not found)|✗ (not applied)): (.*)$/.exec(line);
+  const head = /^(?:\? (ambiguous|disputed|not found)|✗ (not applied)): (.*)$/.exec(line);
   if (!head) return null;
   const kind = head[1] || head[2];
   return kind[0].toUpperCase() + kind.slice(1) + ": " + head[3];

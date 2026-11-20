@@ -127,7 +127,7 @@ def test_the_judge_wants_a_refusal_where_the_case_asks_one(cases, synthetic_xlsx
         case, interpret_instruction(case.text, synthetic_xlsx, lambda t, c: silent)
     )
     assert not verdict.ok
-    assert verdict.notes == ['expected not_found or uncertain, got no unresolved item']
+    assert verdict.notes == ['expected not_found or disputed, got no unresolved item']
 
 
 def test_a_flagged_column_that_gets_written_fails_the_case(
