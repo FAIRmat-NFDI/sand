@@ -259,6 +259,20 @@ export function previewNotes(report) {
       && !line.startsWith("⚠ no update in:"));
 }
 
+// the preview lines that say no edit was made: an unclear part ("?
+// ambiguous", "? uncertain", "? not found", "? sand could not propose")
+// or a refused edit ("✗ not applied"), each with its indented lines.
+// Indented "? doubt" lines under a ready edit are not.
+export function problemLines(report) {
+  const problems = new Set();
+  let inProblem = false;
+  for (const line of (report.preview || "").split("\n")) {
+    if (!line.startsWith(" ")) inProblem = line.startsWith("? ") || line.startsWith("✗ ");
+    if (inProblem && line) problems.add(line);
+  }
+  return problems;
+}
+
 // the line under an update a decision above changed: its earlier
 // decisions match none of its edits now
 export function resetNote(report) {

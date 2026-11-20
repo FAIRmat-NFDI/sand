@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import {
   confirmAllLabel, describeEditPhase, downloadBlock, downloadFilename, editSummary, inputApplied, inputState,
-  changedEntries, checkedKeys, confirmQuestion, decisionCount, lostUnticks, recomputeLabel, inputsToRead, outdatedEntries, pendingKeys, previewNotes, readKey,
+  changedEntries, checkedKeys, confirmQuestion, decisionCount, lostUnticks, recomputeLabel, inputsToRead, outdatedEntries, pendingKeys, previewNotes, problemLines, readKey,
   failedReadKey, recomputeDue, reportsByEntry, resetNote, roundSnapshot, rewriteWarning, settledBlock,
   freshReports, unchangedAbove, unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
@@ -264,6 +264,20 @@ test("the preview notes are what the ready edits do not show", () => {
     ready: [{ ...REPORT.ready[0], unchanged: "samples 8–13 already 4000" }],
   };
   assert.deepEqual(previewNotes(aside), ["   · read from 'four thousand'"]);
+});
+
+test("the lines of an unclear part or a refused edit are problems, a ready edit's doubt is not", () => {
+  const preview = [
+    REPORT.ready[0].line,
+    "   ? read from 'four thousand'",
+    "? ambiguous: \"the speed\"",
+    "   2: Spin Coating · Rotation speed [rpm] or 4: Spin Coating · Rotation speed [rpm]?",
+    "✗ not applied: \"time 9999\"",
+    "   too long",
+    "? sand could not propose an edit for this note. Try again, or write the note more clear.",
+  ].join("\n");
+  assert.deepEqual([...problemLines({ preview })], preview.split("\n").slice(2));
+  assert.equal(problemLines({}).size, 0);
 });
 
 test("the summary line of a completed job", () => {

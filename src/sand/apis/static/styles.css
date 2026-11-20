@@ -1288,8 +1288,8 @@ body {
 }
 
 .input-meta .input-state.is-unclear {
-  background: #fffbeb;
-  color: #92400e;
+  background: #fde7e7;
+  color: #b3261e;
 }
 
 .input-meta .input-state.is-refused {

@@ -11,7 +11,7 @@
 
 import { errorDetail, experimentUrl } from "./api.js";
 import {
-  inputState, outdatedEntries, previewNotes, resetNote, rewriteWarning,
+  inputState, outdatedEntries, previewNotes, problemLines, resetNote, rewriteWarning,
 } from "./edit-logic.js";
 import { selectedExperiment } from "./experiments.js";
 import { editReported, reportEdit, untickWhy } from "./feedback.js";
@@ -456,9 +456,10 @@ function renderReport(report, wait, locked) {
     p.textContent = reset;
     box.append(p);
   }
+  const problems = problemLines(report);
   for (const note of previewNotes(report)) {
     const p = document.createElement("p");
-    p.className = "report-note";
+    p.className = problems.has(note) ? "report-note problem-text" : "report-note";
     p.textContent = note;
     box.append(p);
   }
