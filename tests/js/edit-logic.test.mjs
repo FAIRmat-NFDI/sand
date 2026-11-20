@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import {
   confirmAllLabel, describeEditPhase, downloadBlock, downloadFilename, editSummary, inputApplied, inputState,
-  changedEntries, checkedKeys, confirmQuestion, decisionCount, lostUnticks, recomputeLabel, inputsToRead, outdatedEntries, pendingKeys, previewNotes, problemLines, readKey,
+  changedEntries, checkedKeys, confirmQuestion, decisionCount, lostUnticks, recomputeLabel, inputsToRead, outdatedEntries, pendingKeys, previewNotes, problemLines, problemShort, readKey,
   failedReadKey, recomputeDue, reportsByEntry, resetNote, roundSnapshot, rewriteWarning, settledBlock,
   freshReports, unchangedAbove, unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
@@ -278,6 +278,16 @@ test("the lines of an unclear part or a refused edit are problems, a ready edit'
   ].join("\n");
   assert.deepEqual([...problemLines({ preview })], preview.split("\n").slice(2));
   assert.equal(problemLines({}).size, 0);
+});
+
+test("edits only shows a problem as one short line", () => {
+  assert.equal(problemShort("? ambiguous: \"the speed\""), "Ambiguous: \"the speed\"");
+  assert.equal(problemShort("? uncertain: \"speed up\""), "Uncertain: \"speed up\"");
+  assert.equal(problemShort("? not found: \"and dry\""), "Not found: \"and dry\"");
+  assert.equal(problemShort("✗ not applied: \"time 9999\""), "Not applied: \"time 9999\"");
+  assert.equal(problemShort("? sand could not propose an edit for this note. Try again, or write the note more clear."),
+    "No edit proposed");
+  assert.equal(problemShort("   or 4: Spin Coating · Rotation speed [rpm]?"), null);
 });
 
 test("the summary line of a completed job", () => {

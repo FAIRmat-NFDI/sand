@@ -1100,6 +1100,11 @@ body {
   display: none;
 }
 
+.inputs-list:not(.edits-only) .problem-short,
+.inputs-list.edits-only .problem-full {
+  display: none;
+}
+
 .inputs-list.edits-only .input-report {
   border-top: none;
 }

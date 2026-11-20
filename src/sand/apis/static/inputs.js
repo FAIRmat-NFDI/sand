@@ -11,7 +11,7 @@
 
 import { errorDetail, experimentUrl } from "./api.js";
 import {
-  inputState, outdatedEntries, previewNotes, problemLines, resetNote, rewriteWarning,
+  inputState, outdatedEntries, previewNotes, problemLines, problemShort, resetNote, rewriteWarning,
 } from "./edit-logic.js";
 import { selectedExperiment } from "./experiments.js";
 import { editReported, reportEdit, untickWhy } from "./feedback.js";
@@ -458,8 +458,16 @@ function renderReport(report, wait, locked) {
   }
   const problems = problemLines(report);
   for (const note of previewNotes(report)) {
+    // edits only: a problem is its short line, the full lines are folded
+    const short = problems.has(note) && problemShort(note);
+    if (short) {
+      const p = document.createElement("p");
+      p.className = "report-note problem-text problem-short";
+      p.textContent = short;
+      box.append(p);
+    }
     const p = document.createElement("p");
-    p.className = problems.has(note) ? "report-note problem-text" : "report-note";
+    p.className = problems.has(note) ? "report-note problem-text problem-full" : "report-note";
     p.textContent = note;
     box.append(p);
   }

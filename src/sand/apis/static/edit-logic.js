@@ -273,6 +273,17 @@ export function problemLines(report) {
   return problems;
 }
 
+// the short form of a problem's first line, for the edits-only view:
+// '? ambiguous: "the speed"' -> 'Ambiguous: "the speed"'; null for
+// any other line
+export function problemShort(line) {
+  if (line.startsWith("? sand could not propose")) return "No edit proposed";
+  const head = /^(?:\? (ambiguous|uncertain|not found)|✗ (not applied)): (.*)$/.exec(line);
+  if (!head) return null;
+  const kind = head[1] || head[2];
+  return kind[0].toUpperCase() + kind.slice(1) + ": " + head[3];
+}
+
 // the line under an update a decision above changed: its earlier
 // decisions match none of its edits now
 export function resetNote(report) {
