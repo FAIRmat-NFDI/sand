@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  EMPTY, layerStack, overviewSummary, sampleGroups, stepCard, valueCell,
+  EMPTY, layerStack, overviewSummary, sampleGroups, sampleRuns, stepCard, valueCell,
 } from "../../src/sand/apis/static/overview-logic.js";
 
 let nextColumn = 0;
@@ -502,4 +502,18 @@ test("a step that dissolves something writes its solution as one block, where it
     param("Solution filtered", one("no")),
   ]));
   assert.deepEqual(texts(unfiltered), ["solution  PbI2 | no filtered"]);
+});
+
+test("consecutive samples are one chip, as the edits name them", () => {
+  assert.deepEqual(sampleRuns(["1", "2", "3", "4", "7", "9", "10"]), ["1–4", "7", "9–10"]);
+  // a missing sample breaks a run; the order is the sheet's
+  assert.deepEqual(sampleRuns(["3", "1", "2"]), ["3", "1–2"]);
+  assert.deepEqual(sampleRuns(["s_1", "s_2", "s_3"]), ["s_1–s_3"]);
+  // kept as written: not numbers
+  assert.deepEqual(sampleRuns(["07", "08", "1.5", "1.6", "A", "B"]), ["07", "08", "1.5", "1.6", "A", "B"]);
+  assert.deepEqual(
+    sampleRuns(["1 of subbatch 0", "2 of subbatch 0", "1 of subbatch 1", "2 of subbatch 1"]),
+    ["1–2 of subbatch 0", "1–2 of subbatch 1"],
+  );
+  assert.deepEqual(sampleRuns(["row 5", "row 6"]), ["row 5–row 6"]);
 });
