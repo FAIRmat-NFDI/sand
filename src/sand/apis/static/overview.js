@@ -107,7 +107,8 @@ function renderLine(line, withLabel) {
   line.values.forEach((value, i) => {
     if (i) p.append(el("span", "line-sep", "·"));
     const span = el("span", "line-value", value.text);
-    if (value.text.length > LONG_VALUE) span.classList.add("long");
+    // the old value is inside the span too: "~~old~~ → new" counts whole
+    if (value.text.length + (value.changed || "").length > LONG_VALUE) span.classList.add("long");
     if (value.varies) span.classList.add("value-varies");
     p.append(mark(span, value.changed));
   });
