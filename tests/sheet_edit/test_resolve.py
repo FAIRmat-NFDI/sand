@@ -566,9 +566,11 @@ def test_preview_of_disputed_and_unreadable_items(catalog):
         catalog, answer(edit(target=SPEED)), answer(edit(target=ANNEAL_TIME))
     )
     assert preview([], proposal.unresolved, NOTHING, catalog) == (
-        f'? disputed: "{SAID}"\n'
-        '   Reading 1: 2: Spin Coating · Rotation speed [rpm] → 4000\n'
-        '   Reading 2: 2: Spin Coating · Annealing time [min] → 4000'
+        f'disputed: "{SAID}"\n'
+        '   - Reading 1:\n'
+        '       2: Spin Coating · Rotation speed [rpm] → 4000\n'
+        '   - Reading 2:\n'
+        '       2: Spin Coating · Annealing time [min] → 4000'
     )
     one = edit(
         target=SOLVENT_2,
@@ -579,9 +581,11 @@ def test_preview_of_disputed_and_unreadable_items(catalog):
     )
     proposal = ask(catalog, answer(edit(), one), answer(edit()))
     assert preview([], proposal.unresolved, NOTHING, catalog) == (
-        '? disputed: "clear solvent 2 of 1 to 3"\n'
-        '   Reading 1: 1: Cleaning UV-Ozone · Solvent 2 → (empty)\n'
-        '   Reading 2: no edit'
+        'disputed: "clear solvent 2 of 1 to 3"\n'
+        '   - Reading 1:\n'
+        '       1: Cleaning UV-Ozone · Solvent 2 → (empty)\n'
+        '   - Reading 2:\n'
+        '       no edit'
     )
     proposal = ask(catalog, 'not json')
     assert preview([], proposal.unresolved, NOTHING, catalog) == (
@@ -597,10 +601,12 @@ def test_a_hedge_on_words_around_an_edit_is_that_passs_reading(catalog):
     hedge = {'reason': 'ambiguous', 'candidates': [ANNEAL_TIME, SPEED], 'said': longer}
     proposal = ask(catalog, answer(edit(said=said)), answer(unresolved=[hedge]))
     assert preview([], proposal.unresolved, NOTHING, catalog) == (
-        f'? disputed: "{longer}"\n'
-        '   Reading 1: 2: Spin Coating · Rotation speed [rpm] → 4000\n'
-        '   Reading 2: 2: Spin Coating · Annealing time [min], or\n'
-        '              2: Spin Coating · Rotation speed [rpm]?'
+        f'disputed: "{longer}"\n'
+        '   - Reading 1:\n'
+        '       2: Spin Coating · Rotation speed [rpm] → 4000\n'
+        '   - Reading 2:\n'
+        '       2: Spin Coating · Annealing time [min], or\n'
+        '       2: Spin Coating · Rotation speed [rpm]?'
     )
 
 
@@ -617,11 +623,11 @@ def test_a_reading_shows_subbatch_anchor_and_an_empty_where(two_subbatches):
     b = {**a, 'rows': {'where': VARIATION, 'equals': None}, 'anchor': None}
     proposal = ask(two_subbatches, answer(a), answer(b))
     assert preview([], proposal.unresolved, NOTHING, two_subbatches).splitlines()[
-        1:3
+        2:5:2
     ] == [
-        f'   Reading 1: 1: Cleaning UV-Ozone · Time 2 [s] → 300, samples 1, 2 of '
+        f'       1: Cleaning UV-Ozone · Time 2 [s] → 300, samples 1, 2 of '
         f'subbatch {one}, pointed through Solvent 2 = DMSO',
-        '   Reading 2: 1: Cleaning UV-Ozone · Time 2 [s] → 300, where Experiment '
+        '       1: Cleaning UV-Ozone · Time 2 [s] → 300, where Experiment '
         'Info · Variation is empty (no sample)',
     ]
 
@@ -632,8 +638,8 @@ def test_a_reading_by_all_or_by_a_value_names_its_samples(catalog):
     rows = {'where': SUBSTRATE_TEMP, 'equals': '115'}
     proposal = ask(catalog, answer(edit()), answer(edit(rows=rows)))
     lines = preview([], proposal.unresolved, NOTHING, catalog).splitlines()
-    assert lines[1].endswith('→ 4000, all samples (1–5, 7–13)')
-    assert lines[2].endswith('Substrate temperature [°C] = 115 (samples 8–13)')
+    assert lines[2].endswith('→ 4000, all samples (1–5, 7–13)')
+    assert lines[4].endswith('Substrate temperature [°C] = 115 (samples 8–13)')
 
 
 def test_interpret_instruction_applies_nothing_disputed_or_unreadable(synthetic_xlsx):
@@ -646,7 +652,7 @@ def test_interpret_instruction_applies_nothing_disputed_or_unreadable(synthetic_
 
     result = interpret_instruction(SAID, synthetic_xlsx, differing)
     assert result.ready == {}
-    assert result.preview.startswith(f'? disputed: "{SAID}"')
+    assert result.preview.startswith(f'disputed: "{SAID}"')
     assert '⚠' not in result.preview  # the quote covers the instruction
 
     def unreadable(text, catalog):

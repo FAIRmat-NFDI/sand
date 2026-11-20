@@ -13,7 +13,8 @@ next to each line. One instruction's whole outcome reads as
     ⚠ no update in: "time 40"
 
 The first character says what to do: nothing (fine, or a · to glance at),
-? (confirm one by one), ✗ or ⚠ (rephrase), = (nothing to change).
+? (confirm one by one), ✗ or ⚠ (rephrase), = (nothing to change);
+"disputed" (the two passes read it differently: rephrase).
 """
 
 from collections.abc import Iterable
@@ -156,7 +157,7 @@ def _unresolved_lines(item: Unresolved, catalog: Catalog) -> list[str]:
         names = [_where(c) if c else cid for c, cid in zip(columns, item.candidates)]
         return [f'? ambiguous: "{item.said}"', f'{INDENT}{" or ".join(names)}?']
     if isinstance(item, Disputed):
-        return [f'? disputed: "{item.said}"', *_disputed_lines(item, catalog)]
+        return [f'disputed: "{item.said}"', *_disputed_lines(item, catalog)]
     if isinstance(item, Unreadable):
         # the detail (a schema error, "Max retry attempts reached") is for
         # the logs, not the user
@@ -168,8 +169,9 @@ def _unresolved_lines(item: Unresolved, catalog: Catalog) -> list[str]:
 
 
 def _disputed_lines(item: Disputed, catalog: Catalog) -> list[str]:
-    """'Reading 1: …', 'Reading 2: …', one per pass. An edit shows where
-    and what, and of the rest only what tells the edits apart."""
+    """'- Reading 1:' and '- Reading 2:', one per pass, each with what
+    it read on the lines under it. An edit shows where and what, and of
+    the rest only what tells the edits apart."""
     edits = item.edits()
     parts = {id(e): _reading_parts(e, catalog) for e in edits}
     differ = [
@@ -190,10 +192,8 @@ def _disputed_lines(item: Disputed, catalog: Catalog) -> list[str]:
 
     out = []
     for number, side in enumerate((item.first, item.second), 1):
-        head = f'Reading {number}: '
-        said = [line for thing in side for line in lines(thing)] or ['no edit']
-        out += [f'{INDENT}{head}{said[0]}']
-        out += [f'{INDENT}{" " * len(head)}{line}' for line in said[1:]]
+        read = [line for thing in side for line in lines(thing)] or ['no edit']
+        out += [f'{INDENT}- Reading {number}:', *(f'{INDENT}    {r}' for r in read)]
     return out
 
 
