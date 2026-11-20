@@ -594,7 +594,7 @@ def _report(  # noqa: PLR0913
         # as this run knew them: one rejected or taken back since changes
         # the preview of every input after it
         'rejected': [key for key in step.interpretation.ready if key in rejected],
-        # what the job could not settle (uncertain, ambiguous, not found)
+        # what the job could not settle (disputed, ambiguous, not found)
         'unresolved': len(step.interpretation.proposal.unresolved),
         # edits a check refused, and edits the sheet already holds
         'not_applied': sum(isinstance(r, Refused) for r in results),

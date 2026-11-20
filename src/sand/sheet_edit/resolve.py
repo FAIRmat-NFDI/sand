@@ -10,7 +10,7 @@ One model is available, so the two passes differ by what they see, not
 by chance: pass A reads the table in sheet order with the rules as
 written, pass B the steps in reverse order with the rules reworded. Both
 run at temperature 0, which the workflow sets. Only edits both passes
-agree on go on as edits; the rest becomes `Uncertain`, shown with every
+agree on go on as edits; the rest becomes `Disputed`, shown with every
 reading and never applied without the user choosing. Same model means
 shared blind spots: this is one more layer, the deterministic checks in
 ground.py are the safety net.
@@ -23,12 +23,12 @@ from dataclasses import dataclass
 from sand.sheet_edit.catalog import Catalog
 from sand.sheet_edit.coverage import quote_words
 from sand.sheet_edit.edits import (
+    Disputed,
     Edit,
     ProposedEdits,
     Range,
     RowSpec,
     Samples,
-    Uncertain,
     Unreadable,
     Unresolved,
     proposed_edits_model,
@@ -43,7 +43,7 @@ from sand.sheet_edit.render import table
 PROMPT_VERSION = 'v7'
 # the job's cache keeps proposals after `agree`: bump the second part on
 # a change to how two opinions agree, so agreed answers are asked again
-CACHE_VERSION = f'{PROMPT_VERSION}+agree-2'
+CACHE_VERSION = f'{PROMPT_VERSION}+agree-3'
 
 # (system prompt, user text, JSON schema) -> the model's answer, as text.
 # The schema is for the provider's structured output; the answer is still
@@ -225,24 +225,24 @@ def agree(opinions: Sequence[Opinion], catalog: Catalog) -> ProposedEdits:
 
 def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdits:
     """Edits in both passes stay, in pass A's order, unless a pass also
-    left the same words unresolved. Every other edit is uncertain, one
+    left the same words unresolved. Every other edit is disputed, one
     item per quote with every reading of it. Unresolved items of either
     pass are kept once."""
     by_a, by_b = _by_write(a.edits, catalog), _by_write(b.edits, catalog)
     hedged = {_quote(u.said) for u in [*a.unresolved, *b.unresolved]}
     edits: list[Edit] = []
-    uncertain: dict[str, Uncertain] = {}  # by quote, in order of appearance
+    disputed: dict[str, Disputed] = {}  # by quote, in order of appearance
 
     def doubt(edit: Edit, why: str) -> None:
         quote = _quote(edit.said)
-        if quote in uncertain:
-            item = uncertain[quote]
-            uncertain[quote] = item.model_copy(
+        if quote in disputed:
+            item = disputed[quote]
+            disputed[quote] = item.model_copy(
                 update={'readings': [*item.readings, edit], 'why': _DIFFER}
             )
         else:
-            uncertain[quote] = Uncertain(
-                reason='uncertain', readings=[edit], why=why, said=edit.said
+            disputed[quote] = Disputed(
+                reason='disputed', readings=[edit], why=why, said=edit.said
             )
 
     for key, group in by_a.items():
@@ -282,7 +282,7 @@ def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdi
         if key not in seen:
             seen.add(key)
             unresolved.append(item)
-    return ProposedEdits(edits=edits, unresolved=[*uncertain.values(), *unresolved])
+    return ProposedEdits(edits=edits, unresolved=[*disputed.values(), *unresolved])
 
 
 _ONE_PASS = 'only one of the two passes proposed it'

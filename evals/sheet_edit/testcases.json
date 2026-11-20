@@ -115,19 +115,19 @@
       "id": "unknown-column",
       "why": "no such column: must be said, never guessed",
       "text": "set the humidity of step 2 to 30 percent for all samples",
-      "expect": {"edits": [], "unresolved": ["not_found", "uncertain"]}
+      "expect": {"edits": [], "unresolved": ["not_found", "disputed"]}
     },
     {
       "id": "ambiguous-step",
       "why": "three spin-coating steps: the words fit more than one column",
       "text": "rotation speed to 5000 for all samples",
-      "expect": {"edits": [], "unresolved": ["ambiguous", "uncertain"]}
+      "expect": {"edits": [], "unresolved": ["ambiguous", "disputed"]}
     },
     {
       "id": "ambiguous-step-type",
       "why": "three steps are spin coatings: the step type alone does not pick one",
       "text": "spin coating, rotation speed 2500 for all samples",
-      "expect": {"edits": [], "unresolved": ["ambiguous", "uncertain"]}
+      "expect": {"edits": [], "unresolved": ["ambiguous", "disputed"]}
     },
     {
       "id": "no-step-unique",

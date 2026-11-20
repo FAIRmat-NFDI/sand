@@ -22,10 +22,10 @@ from sand.sheet_edit.catalog import Catalog, ColumnInfo
 from sand.sheet_edit.coverage import Coverage
 from sand.sheet_edit.edits import (
     Ambiguous,
+    Disputed,
     Edit,
     Range,
     Samples,
-    Uncertain,
     Unreadable,
     Unresolved,
 )
@@ -154,12 +154,12 @@ def _unresolved_lines(item: Unresolved, catalog: Catalog) -> list[str]:
         columns = [catalog.column(c) for c in item.candidates]
         names = [_where(c) if c else cid for c, cid in zip(columns, item.candidates)]
         return [f'? ambiguous: "{item.said}"', f'{INDENT}{" or ".join(names)}?']
-    if isinstance(item, Uncertain):
+    if isinstance(item, Disputed):
         readings = [
             f'{INDENT}{"or " if i else ""}{_reading(edit, catalog)}'
             for i, edit in enumerate(item.readings)
         ]
-        return [f'? uncertain: "{item.said}"', *readings, f'{INDENT}{item.why}']
+        return [f'? disputed: "{item.said}"', *readings, f'{INDENT}{item.why}']
     if isinstance(item, Unreadable):
         # the detail (a schema error, "Max retry attempts reached") is for
         # the logs, not the user

@@ -365,14 +365,14 @@ async def test_the_report_counts_refused_and_unchanged_edits(upload):
     assert (report['ready'], report['not_applied'], report['unchanged']) == ([], 0, 1)
 
 
-async def test_disagreeing_answers_make_the_input_uncertain(upload):
+async def test_disagreeing_answers_make_the_input_disputed(upload):
     other = {**SPEED_EDIT, 'target': 'C027'}
     report = await activities.agree_cache_and_apply_input(
         apply(upload, 1, [answer(SPEED_EDIT), answer(other)])
     )
     assert report['ready'] == []
     assert report['unresolved'] == 1  # the page says "Unclear"
-    assert report['preview'].startswith(f'? uncertain: "{SAID}"')
+    assert report['preview'].startswith(f'? disputed: "{SAID}"')
 
 
 async def test_an_answer_the_child_could_not_get_is_this_inputs_problem(upload):

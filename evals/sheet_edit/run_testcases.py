@@ -311,12 +311,12 @@ def _dropped_in_silence(
 
 def _unresolved_about(target: str, result: Interpretation) -> bool:
     """An unresolved item that covers this column: an unreadable answer
-    covers everything; uncertain readings and ambiguous candidates name
+    covers everything; disputed readings and ambiguous candidates name
     their columns. A not-found about other words covers nothing."""
     for u in result.proposal.unresolved:
         if u.reason == 'unreadable':
             return True
-        if u.reason == 'uncertain' and any(r.target == target for r in u.readings):
+        if u.reason == 'disputed' and any(r.target == target for r in u.readings):
             return True
         if u.reason == 'ambiguous' and target in u.candidates:
             return True

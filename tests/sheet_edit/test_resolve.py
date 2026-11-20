@@ -9,11 +9,11 @@ from sand.sheet_edit.catalog import build
 from sand.sheet_edit.coverage import Coverage
 from sand.sheet_edit.edits import (
     Ambiguous,
+    Disputed,
     Edit,
     NotFound,
     ProposedEdits,
     Range,
-    Uncertain,
     Unreadable,
     proposed_edits_schema,
 )
@@ -171,7 +171,7 @@ def test_both_passes_keep_the_anchor_to_the_users_value():
 
 def test_the_schema_cannot_express_what_only_code_produces(catalog):
     schema = json.dumps(proposed_edits_schema(catalog))
-    assert 'uncertain' not in schema
+    assert 'disputed' not in schema
     assert 'unreadable' not in schema
     assert user_text(SAID, catalog, second_opinion=False).startswith('| ID | Step |')
     assert (
@@ -189,10 +189,10 @@ def test_an_edit_both_passes_make_is_proposed(catalog):
     )
 
 
-def test_a_different_value_is_uncertain_with_both_readings(catalog):
+def test_a_different_value_is_disputed_with_both_readings(catalog):
     proposal = ask(catalog, answer(edit(new='4000')), answer(edit(new='4100')))
     assert proposal.edits == []
-    item = only(proposal, Uncertain)
+    item = only(proposal, Disputed)
     assert [r.new for r in item.readings] == ['4000', '4100']
     assert (item.said, item.why) == (
         SAID,
@@ -200,15 +200,15 @@ def test_a_different_value_is_uncertain_with_both_readings(catalog):
     )
 
 
-def test_a_different_column_is_uncertain(catalog):
+def test_a_different_column_is_disputed(catalog):
     proposal = ask(
         catalog, answer(edit(target=SPEED)), answer(edit(target=ANNEAL_TIME))
     )
-    item = only(proposal, Uncertain)
+    item = only(proposal, Disputed)
     assert [r.target for r in item.readings] == [SPEED, ANNEAL_TIME]
 
 
-def test_an_edit_only_one_pass_makes_is_uncertain_with_one_reading(catalog):
+def test_an_edit_only_one_pass_makes_is_disputed_with_one_reading(catalog):
     second = edit(target=SOLVENT_2, old='IPA', new='DMSO', said='solvent 2 DMSO')
     for a, b in [
         (answer(edit(), second), answer(edit())),
@@ -216,7 +216,7 @@ def test_an_edit_only_one_pass_makes_is_uncertain_with_one_reading(catalog):
     ]:
         proposal = ask(catalog, a, b)
         assert [e.target for e in proposal.edits] == [SPEED]
-        item = only(proposal, Uncertain)
+        item = only(proposal, Disputed)
         assert len(item.readings) == 1
         assert (item.said, item.why) == (
             'solvent 2 DMSO',
@@ -224,13 +224,13 @@ def test_an_edit_only_one_pass_makes_is_uncertain_with_one_reading(catalog):
         )
 
 
-def test_several_edits_of_the_same_words_make_one_uncertain_item(catalog):
+def test_several_edits_of_the_same_words_make_one_disputed_item(catalog):
     # pass A: speed 4000 and time 4000; pass B: time 4100 and speed 4100
     a = answer(edit(target=SPEED, new='4000'), edit(target=ANNEAL_TIME, new='4000'))
     b = answer(edit(target=ANNEAL_TIME, new='4100'), edit(target=SPEED, new='4100'))
     proposal = ask(catalog, a, b)
     assert proposal.edits == []
-    item = only(proposal, Uncertain)
+    item = only(proposal, Disputed)
     assert [(r.target, r.new) for r in item.readings] == [
         (SPEED, '4000'),
         (ANNEAL_TIME, '4000'),
@@ -239,13 +239,13 @@ def test_several_edits_of_the_same_words_make_one_uncertain_item(catalog):
     ]
 
 
-def test_an_agreed_edit_a_pass_also_hedged_on_is_uncertain(catalog):
+def test_an_agreed_edit_a_pass_also_hedged_on_is_disputed(catalog):
     hedge = {'reason': 'ambiguous', 'candidates': [SPEED, ANNEAL_TIME], 'said': SAID}
     proposal = ask(catalog, answer(edit()), answer(edit(), unresolved=[hedge]))
     assert proposal.edits == []
-    uncertain, ambiguous = proposal.unresolved
-    assert isinstance(uncertain, Uncertain)
-    assert uncertain.why == 'a pass also left these words unresolved'
+    disputed, ambiguous = proposal.unresolved
+    assert isinstance(disputed, Disputed)
+    assert disputed.why == 'a pass also left these words unresolved'
     assert isinstance(ambiguous, Ambiguous)
 
 
@@ -279,9 +279,7 @@ def test_the_value_is_compared_as_it_would_be_written(catalog):
     assert len(ask(catalog, time('2', 'min'), time('120', 's')).edits) == 1
     assert len(ask(catalog, time('120'), time('2', 'min')).edits) == 1
     # 2 min is not 2 s
-    assert isinstance(
-        ask(catalog, time('2'), time('2', 'min')).unresolved[0], Uncertain
-    )
+    assert isinstance(ask(catalog, time('2'), time('2', 'min')).unresolved[0], Disputed)
 
 
 def test_numbers_agree_by_amount_and_empty_only_with_empty(catalog):
@@ -294,7 +292,7 @@ def test_numbers_agree_by_amount_and_empty_only_with_empty(catalog):
         == 1
     )
     cleared = answer(edit(new=''))
-    assert isinstance(ask(catalog, cleared, answer(edit())).unresolved[0], Uncertain)
+    assert isinstance(ask(catalog, cleared, answer(edit())).unresolved[0], Disputed)
 
 
 @pytest.mark.parametrize(
@@ -320,7 +318,7 @@ def test_the_preview_shows_a_conversion_only(synthetic_xlsx, said, new, unit, sh
 def test_the_value_is_compared_as_written(catalog):
     a = answer(edit(target=SOLVENT_2, old='IPA', new='dmso', said='solvent 2 dmso'))
     b = answer(edit(target=SOLVENT_2, old='IPA', new='DMSO', said='solvent 2 dmso'))
-    item = only(ask(catalog, a, b), Uncertain)
+    item = only(ask(catalog, a, b), Disputed)
     assert [r.new for r in item.readings] == ['dmso', 'DMSO']
 
 
@@ -333,7 +331,7 @@ def test_a_range_and_the_same_samples_listed_agree(catalog):
     # a range that cannot be followed ("samples 3 to 1") stays what it is
     a = answer(edit(rows={'first': '3', 'last': '1', 'subbatch': None}))
     b = answer(edit(rows={'samples': ['1', '2', '3'], 'subbatch': None}))
-    assert isinstance(ask(catalog, a, b).unresolved[0], Uncertain)
+    assert isinstance(ask(catalog, a, b).unresolved[0], Disputed)
     # a label the sheet does not have is outside the schema altogether
     a = answer(edit(rows={'first': '1', 'last': '99', 'subbatch': None}))
     assert isinstance(ask(catalog, a).unresolved[0], Unreadable)
@@ -354,7 +352,7 @@ def test_every_sample_named_as_a_range_agrees_with_all(catalog):
     assert isinstance(proposal.edits[0].rows, Range)
     # fewer samples than all is still a disagreement
     some = answer(edit(rows={'first': '1', 'last': '5', 'subbatch': None}))
-    assert isinstance(ask(catalog, some, answer(edit())).unresolved[0], Uncertain)
+    assert isinstance(ask(catalog, some, answer(edit())).unresolved[0], Disputed)
 
 
 def test_rows_are_the_sheets_rows_with_subbatches(two_subbatches):
@@ -364,7 +362,7 @@ def test_rows_are_the_sheets_rows_with_subbatches(two_subbatches):
     b = answer(edit(rows={'samples': ['1', '2', '3'], 'subbatch': one}))
     assert len(ask(two_subbatches, a, b).edits) == 1
     c = answer(edit(rows={'samples': ['1', '2', '3'], 'subbatch': zero}))
-    assert isinstance(ask(two_subbatches, a, c).unresolved[0], Uncertain)
+    assert isinstance(ask(two_subbatches, a, c).unresolved[0], Disputed)
 
 
 def test_samples_the_sheet_cannot_place_are_compared_as_said(two_subbatches):
@@ -374,7 +372,7 @@ def test_samples_the_sheet_cannot_place_are_compared_as_said(two_subbatches):
     proposal = ask(two_subbatches, same)
     assert len(proposal.edits) == 1
     other = answer(edit(rows={'samples': ['2', '1'], 'subbatch': None}))
-    assert isinstance(ask(two_subbatches, same, other).unresolved[0], Uncertain)
+    assert isinstance(ask(two_subbatches, same, other).unresolved[0], Disputed)
 
 
 def test_a_hedge_on_the_other_passs_cut_of_the_quote_counts(catalog):
@@ -383,7 +381,7 @@ def test_a_hedge_on_the_other_passs_cut_of_the_quote_counts(catalog):
     b = answer(edit(said=SAID), unresolved=[hedge])
     proposal = ask(catalog, a, b)
     assert proposal.edits == []
-    assert isinstance(proposal.unresolved[0], Uncertain)
+    assert isinstance(proposal.unresolved[0], Disputed)
     assert proposal.unresolved[0].why == 'a pass also left these words unresolved'
 
 
@@ -396,7 +394,7 @@ def test_where_is_its_own_reading(catalog):
     )
     assert isinstance(
         ask(catalog, a, answer(edit(rows={**where, 'equals': None}))).unresolved[0],
-        Uncertain,
+        Disputed,
     )
 
 
@@ -428,10 +426,10 @@ def test_an_anchor_is_no_disagreement_and_is_kept(catalog, synthetic_xlsx):
         assert "not 'DMSO'" in ready.checks[0]
     # two different anchors for the same write: each is a reading
     other = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'IPA'})
-    item = only(ask(catalog, answer(dmso), answer(other)), Uncertain)
+    item = only(ask(catalog, answer(dmso), answer(other)), Disputed)
     assert [r.anchor.equals for r in item.readings] == ['DMSO', 'IPA']
     # a different value is still a disagreement, anchor or not
-    item = only(ask(catalog, answer(dmso), answer({**plain, 'new': '400'})), Uncertain)
+    item = only(ask(catalog, answer(dmso), answer({**plain, 'new': '400'})), Disputed)
     assert [r.new for r in item.readings] == ['300', '400']
 
 
@@ -458,12 +456,12 @@ def test_an_old_value_said_is_no_disagreement_and_is_kept(catalog, synthetic_xls
     minutes = edit(said=said, said_old='2 min')
     item = only(
         ask(catalog, answer(minutes), answer(edit(said=said, said_old='2 h'))),
-        Uncertain,
+        Disputed,
     )
     assert [r.said_old for r in item.readings] == ['2 min', '2 h']
     # two old values heard: each is a reading
     other = edit(said=said, said_old='3000')
-    item = only(ask(catalog, answer(heard), answer(other)), Uncertain)
+    item = only(ask(catalog, answer(heard), answer(other)), Disputed)
     assert [r.said_old for r in item.readings] == ['2000', '3000']
     # the readings differ only there: the preview says which is which
     result = interpret_instruction(
@@ -488,7 +486,7 @@ def test_repeats_of_one_write_in_a_pass_are_all_compared(catalog):
     dmso = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'DMSO'})
     ipa = edit(**time, anchor={'column': SOLVENT_2, 'equals': 'IPA'})
     # only one pass, through two anchors: both are shown
-    item = only(ask(catalog, answer(dmso, ipa), answer()), Uncertain)
+    item = only(ask(catalog, answer(dmso, ipa), answer()), Disputed)
     assert [r.anchor.equals for r in item.readings] == ['DMSO', 'IPA']
     # a hedge on the quote of a later repeat counts too
     repeat = {**time, 'said': 'time 300', 'anchor': None}
@@ -532,7 +530,7 @@ def test_unresolved_items_of_either_pass_are_kept_once(catalog):
         (answer(edit(rows={'samples': [], 'subbatch': None})), 'validation error'),
         (json.dumps({'edits': []}), 'validation error'),
         (
-            '{"edits": [], "unresolved": [{"reason": "uncertain", "readings": [], "why": "", "said": "x"}]}',
+            '{"edits": [], "unresolved": [{"reason": "disputed", "readings": [], "why": "", "said": "x"}]}',
             'validation error',
         ),
     ],
@@ -564,12 +562,12 @@ def test_a_call_that_raises_is_not_caught(catalog):
 # --- how the user sees it --------------------------------------------------------
 
 
-def test_preview_of_uncertain_and_unreadable_items(catalog):
+def test_preview_of_disputed_and_unreadable_items(catalog):
     proposal = ask(
         catalog, answer(edit(target=SPEED)), answer(edit(target=ANNEAL_TIME))
     )
     assert preview([], proposal.unresolved, NOTHING, catalog) == (
-        f'? uncertain: "{SAID}"\n'
+        f'? disputed: "{SAID}"\n'
         '   2: Spin Coating · Rotation speed [rpm] → 4000, all samples (1–5, 7–13)\n'
         '   or 2: Spin Coating · Annealing time [min] → 4000, all samples (1–5, 7–13)\n'
         '   the two passes read these words differently'
@@ -583,7 +581,7 @@ def test_preview_of_uncertain_and_unreadable_items(catalog):
     )
     proposal = ask(catalog, answer(edit(), one), answer(edit()))
     assert preview([], proposal.unresolved, NOTHING, catalog) == (
-        '? uncertain: "clear solvent 2 of 1 to 3"\n'
+        '? disputed: "clear solvent 2 of 1 to 3"\n'
         '   1: Cleaning UV-Ozone · Solvent 2 → (empty), samples 1–3\n'
         '   only one of the two passes proposed it'
     )
@@ -626,7 +624,7 @@ def test_a_reading_by_all_or_by_a_value_names_its_samples(catalog):
     assert lines[2].endswith('Substrate temperature [°C] = 115 (samples 8–13)')
 
 
-def test_interpret_instruction_applies_nothing_uncertain_or_unreadable(synthetic_xlsx):
+def test_interpret_instruction_applies_nothing_disputed_or_unreadable(synthetic_xlsx):
     def differing(text, catalog):
         return resolve(
             text,
@@ -636,7 +634,7 @@ def test_interpret_instruction_applies_nothing_uncertain_or_unreadable(synthetic
 
     result = interpret_instruction(SAID, synthetic_xlsx, differing)
     assert result.ready == {}
-    assert result.preview.startswith(f'? uncertain: "{SAID}"')
+    assert result.preview.startswith(f'? disputed: "{SAID}"')
     assert '⚠' not in result.preview  # the quote covers the instruction
 
     def unreadable(text, catalog):
@@ -689,7 +687,7 @@ def test_one_subbatchs_samples_are_not_all(two_subbatches):
     one = next(s.subbatch for s in two_subbatches.samples if s.row == 9)  # noqa: PLR2004
     labels = [s.label for s in two_subbatches.samples if s.subbatch == one]
     a = answer(edit(rows={'samples': labels, 'subbatch': one}))
-    assert isinstance(ask(two_subbatches, a, answer(edit())).unresolved[0], Uncertain)
+    assert isinstance(ask(two_subbatches, a, answer(edit())).unresolved[0], Disputed)
 
 
 def test_all_with_an_anchor_keeps_the_samples_the_other_pass_named(synthetic_xlsx):
