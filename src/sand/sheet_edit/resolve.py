@@ -37,13 +37,14 @@ from sand.sheet_edit.edits import (
 from sand.sheet_edit.ground import Refusal, resolve_rows, typed_value
 from sand.sheet_edit.numbers import value
 from sand.sheet_edit.render import table
+from sand.sheet_edit.workbook import SAMPLE_HEADER, SUBBATCH_HEADER, info_column
 
 # recorded with every proposal (changelog, status); bump on any change to
 # the prompts below or to the table in render.py, which the model reads
 PROMPT_VERSION = 'v7'
 # the job's cache keeps proposals after `agree`: bump the second part on
 # a change to how two opinions agree, so agreed answers are asked again
-CACHE_VERSION = f'{PROMPT_VERSION}+agree-3'
+CACHE_VERSION = f'{PROMPT_VERSION}+agree-4'
 
 # (system prompt, user text, JSON schema) -> the model's answer, as text.
 # The schema is for the provider's structured output; the answer is still
@@ -438,12 +439,13 @@ def _first_per_anchor(edits: list[Edit]) -> dict[tuple[str, str], Edit]:
     return pointed
 
 
-def _rows_agreement_key(rows: RowSpec, catalog: Catalog) -> RowsAgreementKey:
+def _rows_agreement_key(rows: RowSpec, catalog: Catalog) -> RowsAgreementKey:  # noqa: PLR0911
     """Samples listed, a range and 'all' are the same rows when they name
     the same samples ("samples 1 to 13" is every sample when there is no
     6); the sheet decides, through the one row resolver. 'where' stays
     what it is: the rows holding a value are another reading than the
-    samples that hold it now."""
+    samples that hold it now. Except on the samples' own labels: "where
+    Subbatch = 2" is subbatch 2, whatever the notes change."""
     if isinstance(rows, Samples):
         try:
             return frozenset(resolve_rows(rows, catalog)[0])
@@ -456,7 +458,25 @@ def _rows_agreement_key(rows: RowSpec, catalog: Catalog) -> RowsAgreementKey:
             return ('range', rows.first, rows.last, rows.subbatch)
     if rows == 'all':
         return frozenset(resolve_rows(rows, catalog)[0])
+    if _on_labels(rows.where, catalog):
+        try:
+            return frozenset(resolve_rows(rows, catalog)[0])
+        except Refusal:  # no sample holds it
+            pass
     return ('where', rows.where, None if rows.equals is None else rows.equals.strip())
+
+
+def _on_labels(column_id: str, catalog: Catalog) -> bool:
+    """The column the catalog reads the sample or subbatch labels from, in
+    the leading Experiment Info: a numbered step may have its own
+    'Sample' value column."""
+    column = catalog.column(column_id)
+    if column is None or column.column.section.position is not None:
+        return False
+    return column.column.index in {
+        info_column(catalog.structure.columns, header)
+        for header in (SAMPLE_HEADER, SUBBATCH_HEADER)
+    }
 
 
 def _quote(said: str) -> str:

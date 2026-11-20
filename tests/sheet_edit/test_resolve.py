@@ -751,3 +751,32 @@ def test_each_pass_keeps_its_reading_when_pointers_differ(catalog):
     item = only(ask(catalog, answer(dmso, ipa), answer(edit())), Disputed)
     assert [r.anchor.equals for r in item.first] == ['DMSO', 'IPA']
     assert [r.anchor for r in item.second] == [None]
+
+
+def test_a_where_on_the_subbatch_is_those_samples(two_subbatches):
+    subbatch = next(
+        c.id for c in two_subbatches.columns if c.column.header == 'Subbatch'
+    )
+    one = next(s.subbatch for s in two_subbatches.samples if s.row == 9)  # noqa: PLR2004
+    listed = edit(rows={'first': '1', 'last': '6', 'subbatch': one})
+    where = edit(rows={'where': subbatch, 'equals': one})
+    assert len(ask(two_subbatches, answer(listed), answer(where)).edits) == 1
+    # a value column holding it on the same samples is still another reading
+    variation = edit(rows={'where': VARIATION, 'equals': None})
+    assert ask(two_subbatches, answer(listed), answer(variation)).edits == []
+
+
+def test_a_subbatch_column_of_a_numbered_step_is_a_value_column(two_subbatches):
+    info = next(c for c in two_subbatches.columns if c.column.header == 'Subbatch')
+    section = dataclasses.replace(info.column.section, position=2)
+    moved = dataclasses.replace(
+        info, column=dataclasses.replace(info.column, section=section)
+    )
+    catalog = dataclasses.replace(
+        two_subbatches,
+        columns=tuple(moved if c is info else c for c in two_subbatches.columns),
+    )
+    one = next(s.subbatch for s in catalog.samples if s.row == 9)  # noqa: PLR2004
+    listed = edit(rows={'first': '1', 'last': '6', 'subbatch': one})
+    where = edit(rows={'where': info.id, 'equals': one})
+    assert ask(catalog, answer(listed), answer(where)).edits == []
