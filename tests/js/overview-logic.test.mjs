@@ -121,6 +121,13 @@ test("without a material the step type is the headline; a lone name is just the 
   assert.equal(card.headline, "Cleaning UV-Ozone");
   assert.equal(card.material, null);
   assert.deepEqual(texts(card), ["Acetone  600 s", "IPA · Ethanol · UV-Ozone 1200 s"]);
+  // an edited name that labels its line carries its old name
+  const solvent = param("Solvent 1", one("proponal"), { family: cleaning });
+  const edited = stepCard(step(1, "Cleaning UV-Ozone", [solvent, num("Time 1", "900", "s", cleaning)]),
+    [{ column_id: solvent.column_id, row: 3, old: "Iso-proponal", new: "proponal", by_formula: false }]);
+  assert.equal(edited.lines[0].label, "proponal");
+  assert.equal(edited.lines[0].labelChanged, "Iso-proponal");
+  assert.equal(card.lines[0].labelChanged, undefined);
 });
 
 test("the step's own word and the material's own line need no label; the lab's short words", () => {
