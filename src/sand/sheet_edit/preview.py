@@ -9,12 +9,13 @@ next to each line. One instruction's whole outcome reads as
        · read from 'four thousand'
     ✗ not applied: "speed 4100"
        Rotation speed [rpm] (2: Spin Coating): '4100' is not in your words; you said 4000
-    ? not found: "anneal at 120"
+    not found: "anneal at 120"
     ⚠ no update in: "time 40"
 
 The first character says what to do: nothing (fine, or a · to glance at),
-? (confirm one by one), ✗ or ⚠ (rephrase), = (nothing to change);
-"disputed" (the two passes read it differently: rephrase).
+? (confirm one by one), ✗ or ⚠ (rephrase), = (nothing to change).
+An unclear part starts with what it is: "ambiguous", "disputed" or
+"not found" (rephrase).
 """
 
 from collections.abc import Iterable
@@ -153,9 +154,7 @@ def _texts(catalog: Catalog) -> set[str]:
 
 def _unresolved_lines(item: Unresolved, catalog: Catalog) -> list[str]:
     if isinstance(item, Ambiguous):
-        columns = [catalog.column(c) for c in item.candidates]
-        names = [_where(c) if c else cid for c, cid in zip(columns, item.candidates)]
-        return [f'? ambiguous: "{item.said}"', f'{INDENT}{" or ".join(names)}?']
+        return [f'ambiguous: "{item.said}"', *_indented(_choices(item, catalog))]
     if isinstance(item, Disputed):
         return [f'disputed: "{item.said}"', *_disputed_lines(item, catalog)]
     if isinstance(item, Unreadable):
@@ -165,7 +164,17 @@ def _unresolved_lines(item: Unresolved, catalog: Catalog) -> list[str]:
             '? sand could not propose an edit for this note. '
             'Try again, or write the note more clear.'
         ]
-    return [f'? not found: "{item.said}"']
+    return [f'not found: "{item.said}"']
+
+
+def _choices(item: Ambiguous, catalog: Catalog) -> list[str]:
+    """'which column?' and a line per candidate; naming the step helps
+    only when they are in different steps."""
+    columns = [catalog.column(c) for c in item.candidates]
+    steps = {c.column.section for c in columns if c}
+    head = 'which column? (name the step)' if len(steps) > 1 else 'which column?'
+    names = [_where(c) if c else cid for c, cid in zip(columns, item.candidates)]
+    return [head, *(f'- {name}' for name in names)]
 
 
 def _disputed_lines(item: Disputed, catalog: Catalog) -> list[str]:
@@ -183,11 +192,7 @@ def _disputed_lines(item: Disputed, catalog: Catalog) -> list[str]:
             shown = [parts[id(thing)][0], *(parts[id(thing)][i] for i in differ)]
             return [', '.join(p for p in shown if p)]
         if isinstance(thing, Ambiguous):
-            columns = [catalog.column(c) for c in thing.candidates]
-            names = [
-                _where(c) if c else cid for c, cid in zip(columns, thing.candidates)
-            ]
-            return [f'{n}, or' for n in names[:-1]] + [f'{names[-1]}?']
+            return _choices(thing, catalog)
         return [f'not found: "{thing.said}"']
 
     out = []

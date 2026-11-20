@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from sand.sheet_edit.catalog import Catalog
 from sand.sheet_edit.coverage import quote_words
 from sand.sheet_edit.edits import (
+    Ambiguous,
     Disputed,
     Edit,
     ProposedEdits,
@@ -44,7 +45,7 @@ from sand.sheet_edit.workbook import SAMPLE_HEADER, SUBBATCH_HEADER, info_column
 PROMPT_VERSION = 'v7'
 # the job's cache keeps proposals after `agree`: bump the second part on
 # a change to how two opinions agree, so agreed answers are asked again
-CACHE_VERSION = f'{PROMPT_VERSION}+agree-4'
+CACHE_VERSION = f'{PROMPT_VERSION}+agree-5'
 
 # (system prompt, user text, JSON schema) -> the model's answer, as text.
 # The schema is for the provider's structured output; the answer is still
@@ -323,23 +324,18 @@ def _overlap(one: str, other: str) -> bool:
 
 
 def _once(items: list) -> list:
-    """The same unresolved item from both passes, or twice, is one."""
-    seen: set = set()
-    kept = []
+    """The same unresolved item from both passes, or twice, is one; so is
+    "ambiguous" on the same words, with the candidates of each."""
+    kept: dict = {}
     for item in items:
-        key = (
-            id(item)  # edits are deduplicated by _readings already
-            if isinstance(item, Edit)
-            else (
-                item.reason,
-                _quote(item.said),
-                frozenset(getattr(item, 'candidates', ())),
-            )
-        )
-        if key not in seen:
-            seen.add(key)
-            kept.append(item)
-    return kept
+        # edits are deduplicated by _readings already
+        key = id(item) if isinstance(item, Edit) else (item.reason, _quote(item.said))
+        if key in kept and isinstance(item, Ambiguous):
+            known = kept[key].candidates
+            more = [c for c in item.candidates if c not in known]
+            kept[key] = kept[key].model_copy(update={'candidates': [*known, *more]})
+        kept.setdefault(key, item)
+    return list(kept.values())
 
 
 # the rows of an edit, as compared between the two opinions: the sheet

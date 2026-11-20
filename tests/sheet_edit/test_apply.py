@@ -113,7 +113,7 @@ def test_one_instruction_is_interpreted_and_nothing_written(synthetic_xlsx):
     assert result.preview == (
         '2: Spin Coating · Rotation speed [rpm]: 3000 → 4000, all 12 samples\n'
         '   from "speed 4000"\n'
-        '? not found: "anneal"'
+        'not found: "anneal"'
     )
     assert len(result.ready) == 1
     (ready,) = result.ready.values()
@@ -135,7 +135,7 @@ def test_a_misquoted_edit_is_refused_and_shown_once(synthetic_xlsx):
 
 def test_a_misquoted_unresolved_item_keeps_its_line(synthetic_xlsx):
     result = interpret_instruction('speed 4000 and annael', synthetic_xlsx, FakeLLM())
-    assert result.preview.endswith('? not found: "anneal"\n⚠ misquoted: "anneal"')
+    assert result.preview.endswith('not found: "anneal"\n⚠ misquoted: "anneal"')
 
 
 def test_two_edits_of_one_instruction_may_not_write_the_same_cell(synthetic_xlsx):

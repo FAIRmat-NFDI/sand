@@ -141,7 +141,7 @@ def test_the_whole_outcome_of_one_instruction(catalog):
         '2: Spin Coating · Rotation speed [rpm]: 3000 → 4000, all 12 samples',
         '   from "speed four thousand"',
         "   · '4000': read from 'four thousand'",
-        '? not found: "anneal at 120"',
+        'not found: "anneal at 120"',
     ]
 
 
@@ -296,12 +296,19 @@ def test_an_anchored_edit_reads_like_any_other(catalog):
 def test_unresolved_items(catalog):
     item = Ambiguous(reason='ambiguous', candidates=[TIME, ANNEAL_TIME], said='time 40')
     assert lines(catalog, unresolved=[item]) == [
-        '? ambiguous: "time 40"',
-        '   2: Spin Coating · Rotation time [s] or 2: Spin Coating · Annealing time '
-        '[min]?',
+        'ambiguous: "time 40"',
+        '   which column?',
+        '   - 2: Spin Coating · Rotation time [s]',
+        '   - 2: Spin Coating · Annealing time [min]',
     ]
     item = Ambiguous(reason='ambiguous', candidates=['C999'], said='time 40')
-    assert lines(catalog, unresolved=[item])[1] == '   C999?'
+    assert lines(catalog, unresolved=[item])[2] == '   - C999'
+
+
+def test_candidates_in_other_steps_ask_for_the_step(catalog):
+    other = next(c for c in catalog.columns if c.column.section.position == 3)  # noqa: PLR2004
+    item = Ambiguous(reason='ambiguous', candidates=[TIME, other.id], said='time 40')
+    assert lines(catalog, unresolved=[item])[1] == '   which column? (name the step)'
 
 
 def test_what_nothing_used_comes_last(catalog):
