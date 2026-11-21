@@ -274,15 +274,8 @@ async function deleteInput(item, experiment, button) {
 
 // --- edit mode: the report under an input --------------------------------------
 
-// the cells of an edit row: column, old → new, samples. A report of an
-// older job has only the line: one cell across the three.
+// the cells of an edit row: column, old → new, samples
 function renderEditCells(edit) {
-  if (edit.column === undefined) {
-    const line = document.createElement("span");
-    line.className = "report-line";
-    line.textContent = edit.line;
-    return [line];
-  }
   const column = document.createElement("span");
   column.className = "report-column";
   column.textContent = edit.column;
@@ -395,7 +388,7 @@ function renderReport(report, wait, locked) {
   const rejected = new Set(report.rejected || []);
   let step;
   for (const edit of report.ready || []) {
-    if (edit.column !== undefined && edit.step !== step) {
+    if (edit.step !== step) {
       step = edit.step;
       const heading = document.createElement("div");
       heading.className = "report-step";
@@ -565,7 +558,7 @@ function renderInputs(experiment, items) {
     li.dataset.entryId = item.entry_id;
     // a report of other words (revised since) is not this update's
     const report = reports[item.entry_id];
-    const reported = report && (report.text === undefined || report.text === item.text);
+    const reported = report && report.text === item.text;
     const waits = outdated.has(item.entry_id) || (fresh !== null && !fresh.has(item.entry_id));
 
     const meta = document.createElement("div");
