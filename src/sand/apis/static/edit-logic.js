@@ -5,10 +5,6 @@ export function describeEditPhase(status) {
   switch (status.phase) {
     case "starting":
       return "Starting...";
-    case "collecting":
-      return "Collecting the updates...";
-    case "replaying":
-      return "Checking the earlier updates...";
     case "interpreting": {
       // counted over the updates the model is asked about: the earlier
       // ones were replayed from their saved answers
@@ -56,7 +52,7 @@ export function outdatedEntries(items, reports) {
   const outdated = new Set();
   let stale = false;
   for (const report of ordered) {
-    if (texts && report.text !== undefined && texts.get(report.entry_id) !== report.text) stale = true;
+    if (texts && texts.get(report.entry_id) !== report.text) stale = true;
     if (stale) outdated.add(report.entry_id);
     if (changesBelow(report)) stale = true;
   }
@@ -88,7 +84,7 @@ export function unchangedAbove(items, status, decided = new Set()) {
   for (const [i, item] of items.entries()) {
     const report = ordered[i];
     if (!report || report.entry_id !== item.entry_id) break;
-    if (report.text !== undefined && report.text !== item.text) break;
+    if (report.text !== item.text) break;
     // a decision is not read again (its report shows it): what comes
     // after it is
     kept.add(item.entry_id);
@@ -119,7 +115,7 @@ export function checkedKeys(reports) {
 // an input one of whose edits is confirmed and not held: by the report
 // of its words, else by the inputs list (`applied`, from the file)
 export function inputApplied(item, report) {
-  if (report && (report.text === undefined || report.text === item.text)) {
+  if (report && report.text === item.text) {
     return written(report).length > 0;
   }
   return Boolean(item.applied);
@@ -148,7 +144,7 @@ export function rewriteWarning(action, items, reports, entryId) {
 // `outdated`: its report is read again before it is decided.
 export function inputState(item, report, jobRunning, canConfirm, outdated = false) {
   if (!item.text) return null;
-  const reported = report && (report.text === undefined || report.text === item.text);
+  const reported = report && report.text === item.text;
   if (!reported) {
     if (item.applied) return { state: "applied", label: "Applied" };
     if (!canConfirm) return null;
@@ -323,44 +319,14 @@ export function writtenCount(status) {
 // What the sheet holds now, as rows of a table grouped by step: the
 // job's own fold of its changelog (status.written: the last value of
 // each cell, overlapping edits split by the samples each value is left
-// on), in sheet order. A status of an older job has none: then the
-// written edits of its reports, grouped by step in the sheet's order
-// (steps are numbered "1: Cleaning UV-Ozone"), within a step in the
-// order written; a report of an older job has only the line. `first`
-// marks the first row of a step.
+// on), in sheet order. `first` marks the first row of a step.
 export function writtenEdits(status) {
-  const rows = Array.isArray(status.written)
-    ? status.written.map((row) => ({ ...row }))
-    : writtenFromReports(status);
+  const rows = status.written.map((row) => ({ ...row }));
   let step = {}; // equal to no step, not even an undefined one
   for (const row of rows) {
     row.first = row.step !== step;
     step = row.step;
   }
-  return rows;
-}
-
-function writtenFromReports(status) {
-  const rows = [];
-  for (const report of status.inputs || []) {
-    if (report.refused) continue;
-    const keys = new Set(written(report));
-    for (const edit of report.ready || []) {
-      if (!keys.has(edit.key)) continue;
-      rows.push(edit.column === undefined
-        ? { line: edit.line }
-        : { step: edit.step, column: edit.column, value: edit.new, samples: edit.samples });
-    }
-  }
-  // numbered steps by number; the rest after them, by name, so the same
-  // name makes one group; ties keep the written order (sort is stable)
-  const number = (row) => parseInt(row.step, 10);
-  rows.sort((a, b) => {
-    const [x, y] = [number(a), number(b)];
-    if (Number.isNaN(x) !== Number.isNaN(y)) return Number.isNaN(x) ? 1 : -1;
-    if (!Number.isNaN(x)) return x - y;
-    return (a.step || "").localeCompare(b.step || "");
-  });
   return rows;
 }
 

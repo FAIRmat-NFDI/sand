@@ -182,8 +182,7 @@ async def test_two_confirm_alls_at_once_confirm_once(voice):
 
 
 async def test_confirming_an_input_again_drops_its_lost_confirmations(voice):
-    # k0 and k5 were n1's edits before an earlier input changed; n2's
-    # stays; k8, made before confirmations named their input, is left out
+    # k0 and k5 were n1's edits before an earlier input changed; n2's stays
     put_status(
         voice,
         inputs=[
@@ -202,22 +201,11 @@ async def test_confirming_an_input_again_drops_its_lost_confirmations(voice):
             'k0': {**record, 'input': 'n1'},
             'k5': {**record, 'input': 'n1'},
             'k9': {**record, 'input': 'n2'},
-            'k8': record,
         }
     ).encode()
 
     assert (await confirm(voice, ['k1', 'k2'])).status_code == HTTPStatus.OK
     assert sorted(confirmations(voice)) == ['k1', 'k2', 'k9']
-
-
-async def test_a_report_that_names_no_input_is_read_again_first(voice):
-    put_status(voice, inputs=[{'input': 1, 'ready': READY, 'confirmed': []}])
-
-    response = await confirm(voice, ['k1'])
-
-    assert response.status_code == HTTPStatus.CONFLICT
-    assert 'read the updates again' in response.json()['detail']
-    assert CONFIRMATIONS_FILE not in voice.writer.files
 
 
 async def test_by_falls_back_to_the_user_id(voice):
@@ -343,7 +331,9 @@ async def test_the_status_shows_a_confirmation_as_waiting_for_the_next_run(voice
 
 async def test_a_confirmation_the_job_applied_is_not_since(voice):
     put_status(
-        voice, 'completed', inputs=[{'input': 1, 'ready': READY, 'confirmed': ['k1']}]
+        voice,
+        'completed',
+        inputs=[{'input': 1, 'entry_id': 'n1', 'ready': READY, 'confirmed': ['k1']}],
     )
     voice.writer.files[CONFIRMATIONS_FILE] = json.dumps(
         {

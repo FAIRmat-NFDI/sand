@@ -136,8 +136,8 @@ def upload(synthetic_xlsx, monkeypatch):
 
 def job(upload, job_id='job-1') -> StoreInput:
     """As the workflow builds it from `collect_edit_inputs`: the
-    confirmations file as it is now. A StoreInput without a status, so
-    the store takes it as well."""
+    confirmations file as it is now, and the job's status. A StoreInput,
+    so the store takes it as well."""
     raw = upload.writer.files.get(CONFIRMATIONS_FILE)
     return StoreInput(
         upload_id='u1',
@@ -146,8 +146,14 @@ def job(upload, job_id='job-1') -> StoreInput:
         llm_model_name=MODEL,
         texts=[i.text for i in upload.inputs],
         confirmations={} if raw is None else json.loads(raw),
+        rejections=[],
         input_ids=[i.entry_id for i in upload.inputs],
+        status=job_status(job_id),
     )
+
+
+def job_status(job_id: str) -> dict:
+    return {'job_id': job_id, 'started_at': STARTED, 'model': MODEL, 'inputs': []}
 
 
 def prepare(upload, number, job_id='job-1', snapshot=None) -> PrepareInput:
@@ -166,9 +172,11 @@ def apply(upload, number, answers, job_id='job-1', snapshot=None) -> ApplyInput:
 
 
 def replay(upload, job_id='job-1') -> ReplayInput:
+    collected = job(upload, job_id)
     return ReplayInput(
-        **job(upload, job_id).model_dump(),
+        **collected.model_dump(),
         entry_ids=[i.entry_id for i in upload.inputs],
+        store_status=collected.status,
     )
 
 
@@ -337,7 +345,8 @@ async def test_apply_caches_the_agreed_proposal_and_reports_the_edit(upload):
         'samples': 'samples 1–3',
     }
 
-    assert upload.writer.written == [JOB_CACHE]  # the job's own, not the shared
+    # the job's own cache, not the shared, with the status
+    assert upload.writer.written == [JOB_CACHE, STATUS_FILE]
     data = cache_file(upload)
     assert (data['model'], data['prompt_version']) == (MODEL, CACHE_VERSION)
     (entry,) = data['proposals'].values()
@@ -349,7 +358,8 @@ async def test_apply_caches_the_agreed_proposal_and_reports_the_edit(upload):
     assert prepared == {'cached': True, 'prompts': []}
     again = await activities.agree_cache_and_apply_input(apply(upload, 1, []))
     assert again == {**report, 'from_cache': True}
-    assert upload.writer.written == [JOB_CACHE]  # not rewritten
+    # the cache is not rewritten; the status is, with the report
+    assert upload.writer.written == [JOB_CACHE, STATUS_FILE, STATUS_FILE]
 
 
 async def test_the_report_counts_refused_and_unchanged_edits(upload):
@@ -512,7 +522,11 @@ async def test_a_rejection_reads_again_the_inputs_that_named_its_value(upload):
     # the next job replays all three: no input needs the model
     again = rejecting(job(upload, 'job-4'), [key_1])
     replayed = await activities.replay_cached_inputs(
-        ReplayInput(**again.model_dump(), entry_ids=['e1', 'e2', 'e3'])
+        ReplayInput(
+            **again.model_dump(),
+            entry_ids=['e1', 'e2', 'e3'],
+            store_status=again.status,
+        )
     )
     assert replayed['replayed'] == 3  # noqa: PLR2004
     assert replayed['reports'][0]['rejected'] == [key_1]
@@ -576,11 +590,10 @@ async def test_replay_applies_the_leading_cached_inputs_in_one_go(upload):
     second = await activities.agree_cache_and_apply_input(
         apply(upload, 2, [answer()] * 2)
     )
-    written = list(upload.writer.written)
     replayed = await activities.replay_cached_inputs(replay(upload))
     assert replayed['replayed'] == 2  # noqa: PLR2004
     assert replayed['reports'][1] == {**second, 'from_cache': True}
-    assert upload.writer.written == written  # the replay writes nothing
+    assert 'done' in replayed  # every input cached: the sheet is stored too
 
 
 async def test_replay_writes_the_confirmed_edits_and_stops_where_the_sheet_is_new(
@@ -602,7 +615,11 @@ async def test_replay_writes_the_confirmed_edits_and_stops_where_the_sheet_is_ne
     del upload.writer.files[CONFIRMATIONS_FILE]
     rejected = rejecting(job(upload), [key])
     replayed = await activities.replay_cached_inputs(
-        ReplayInput(**rejected.model_dump(), entry_ids=['e1', 'e2'])
+        ReplayInput(
+            **rejected.model_dump(),
+            entry_ids=['e1', 'e2'],
+            store_status=rejected.status,
+        )
     )
     assert replayed['replayed'] == 1
 
@@ -890,6 +907,7 @@ async def test_a_job_that_asked_nothing_deletes_nothing(upload):
     # Confirm all: every answer cached, no file of its own
     await answer_both(upload)
     await activities.store_final_sheet_and_changelog(job(upload))
+    upload.writer.files[STATUS_FILE] = json.dumps(job_status('job-2')).encode()
     before = upload.writer.requests
 
     await activities.store_final_sheet_and_changelog(job(upload, job_id='job-2'))
@@ -898,10 +916,7 @@ async def test_a_job_that_asked_nothing_deletes_nothing(upload):
 
 
 def ending(upload, job_id='job-1') -> StoreInput:
-    status = {'job_id': job_id, 'started_at': STARTED, 'model': MODEL, 'inputs': []}
-    return StoreInput(
-        **job(upload, job_id).model_dump(exclude={'status'}), status=status
-    )
+    return job(upload, job_id)
 
 
 async def test_the_end_is_checked_once_nomad_stored_it(upload, monkeypatch):
@@ -1019,6 +1034,8 @@ async def test_a_failed_check_stores_nothing(upload, monkeypatch):
 
 async def test_status_is_written_where_the_gui_polls(upload):
     await activities.write_edit_status(
-        WriteStatusInput(upload_id='u1', user_id='user', status={'phase': 'collecting'})
+        WriteStatusInput(
+            upload_id='u1', user_id='user', status={'phase': 'interpreting'}
+        )
     )
-    assert json.loads(upload.writer.files[STATUS_FILE]) == {'phase': 'collecting'}
+    assert json.loads(upload.writer.files[STATUS_FILE]) == {'phase': 'interpreting'}

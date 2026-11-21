@@ -102,9 +102,9 @@ class LlmCache:
         job's own chain). An older answer is what putting things back
         finds again; past a few the sheet has moved on."""
         newest: dict[str, list[CacheKey]] = {}
-        # an answer saved before `seq` goes by its place, as in `lookup`
-        order = {k: (a.seq, i) for i, (k, a) in enumerate(self.answers.items())}
-        for key in sorted(self.answers, key=order.__getitem__, reverse=True):
+        for key in sorted(
+            self.answers, key=lambda k: self.answers[k].seq, reverse=True
+        ):
             newest.setdefault(key[0], []).append(key)
         kept = {k for keys in newest.values() for k in keys[:per_words]} | keep
         cache = LlmCache()
@@ -140,14 +140,21 @@ def load_llm_cache(
         unreadable = any(isinstance(u, Unreadable) for u in proposal.unresolved)
         if not isinstance(got_by, str) or (unreadable and got_by != job):
             continue
-        seq = entry.get('seq', 0)
-        answer = Answer(
-            proposal,
+        old_read, reads, seq = (
             _old_read(entry, proposal),
-            from_json(entry['reads']) if 'reads' in entry else None,
-            seq if isinstance(seq, int) and not isinstance(seq, bool) else 0,
+            from_json(entry.get('reads')),
+            entry.get('seq'),
         )
-        cache.add((text_hash, state_hash), answer, got_by)
+        if (
+            old_read is None
+            or reads is None
+            or not isinstance(seq, int)
+            or isinstance(seq, bool)
+        ):
+            continue
+        cache.add(
+            (text_hash, state_hash), Answer(proposal, old_read, reads, seq), got_by
+        )
     return cache
 
 
@@ -163,21 +170,19 @@ def llm_cache_json(cache: LlmCache, model: str, prompt_version: str) -> dict:
 
 
 def _entry_json(answer: Answer, job: str) -> dict:
-    entry = {'proposal': answer.proposal.model_dump(mode='json'), 'job': job}
-    if answer.old_read is not None:
-        entry['old_read'] = [list(found) for found in answer.old_read]
-    if answer.reads is not None:
-        entry['reads'] = to_json(answer.reads)
-    if answer.seq:
-        entry['seq'] = answer.seq
-    return entry
+    return {
+        'proposal': answer.proposal.model_dump(mode='json'),
+        'job': job,
+        'old_read': [list(found) for found in answer.old_read],
+        'reads': to_json(answer.reads),
+        'seq': answer.seq,
+    }
 
 
 def _old_read(
     entry: dict, proposal: ProposedEdits
 ) -> tuple[tuple[str, ...], ...] | None:
-    """One list of messages per edit, or None (not stored, or malformed:
-    the answer is then used without an `old` check off its own sheet)."""
+    """One list of messages per edit, or None when malformed."""
     found = entry.get('old_read')
     if (
         isinstance(found, list)
@@ -208,9 +213,7 @@ def read_confirmations(raw: bytes | None) -> dict:
 
 def load_confirmations(data: dict) -> dict[str, Confirmation]:
     """By confirmation key, from the file's JSON (`read_confirmations`).
-    Raises ValueError on a malformed entry, for the same reason. A record
-    made before confirmations named their input is left out: its edit
-    waits to be confirmed again."""
+    Raises ValueError on a malformed entry, for the same reason."""
     confirmations = {}
     for key, entry in data.items():
         try:
@@ -220,10 +223,7 @@ def load_confirmations(data: dict) -> dict[str, Confirmation]:
             when = datetime.datetime.fromisoformat(at)
         except (KeyError, TypeError, ValueError) as why:
             raise ValueError(f'confirmation {key!r} is malformed: {entry!r}') from why
-        # absent, not null: an old writer left it out
-        if 'input' not in entry:
-            continue
-        entry_id = entry['input']
+        entry_id = entry.get('input')
         if not isinstance(entry_id, str):
             raise ValueError(f'confirmation {key!r} is malformed: {entry!r}')
         confirmations[key] = Confirmation(

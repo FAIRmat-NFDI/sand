@@ -1473,10 +1473,6 @@ body {
   border-top: 1px solid #eceef2;
 }
 
-.report-line {
-  grid-column: 1 / 5;
-}
-
 .report-column {
   grid-column: 1;
   font-weight: 600;
@@ -1524,10 +1520,6 @@ body {
 @container (max-width: 500px) {
   .input-report {
     grid-template-columns: auto 1fr auto;
-  }
-
-  .report-line {
-    grid-column: 1 / 3;
   }
 
   .report-change {

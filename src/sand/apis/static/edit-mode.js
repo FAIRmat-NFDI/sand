@@ -237,21 +237,14 @@ function renderWritten(rows) {
   for (const row of rows) {
     const tr = document.createElement("tr");
     if (row.first) tr.className = "written-first";
-    if (row.line) {
+    for (const [field, text] of [
+      ["step", row.first ? row.step : ""], ["column", row.column], ["old", row.old ?? ""],
+      ["value", row.value], ["samples", row.samples],
+    ]) {
       const td = document.createElement("td");
-      td.colSpan = 5;
-      td.textContent = row.line;
+      td.className = "written-" + field;
+      td.textContent = text;
       tr.append(td);
-    } else {
-      for (const [field, text] of [
-        ["step", row.first ? row.step : ""], ["column", row.column], ["old", row.old ?? ""],
-        ["value", row.value], ["samples", row.samples],
-      ]) {
-        const td = document.createElement("td");
-        td.className = "written-" + field;
-        td.textContent = text;
-        tr.append(td);
-      }
     }
     writtenBody.append(tr);
   }

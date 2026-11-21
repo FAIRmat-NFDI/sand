@@ -55,11 +55,10 @@ class Answer:
     it are cheap and always rerun."""
 
     proposal: ProposedEdits
-    # each edit's `old` checked on the sheet read (`ground.read_old`);
-    # None: not saved
-    old_read: tuple[tuple[str, ...], ...] | None = None
-    reads: Reads | None = None  # None: holds on its own sheet only
-    seq: int = 0  # a newer answer has a larger one
+    # each edit's `old` checked on the sheet read (`ground.read_old`)
+    old_read: tuple[tuple[str, ...], ...]
+    reads: Reads
+    seq: int  # a newer answer has a larger one
 
 
 # The sheet is part of the key because the LLM reads its catalog: "the
@@ -92,9 +91,7 @@ def lookup(
         return (words, sheet_hash), exact
     for key in _newest_first(cache, words):
         answer = cache[key]
-        if answer.reads is not None and holds(
-            answer.reads, text, answer.proposal, catalog
-        ):
+        if holds(answer.reads, text, answer.proposal, catalog):
             return key, answer
     return None
 
@@ -256,7 +253,7 @@ def apply_all(  # noqa: PLR0913
             found = key, cache[key]
         key, answer = found
         # read on this sheet: `old` is checked live
-        old = None if key[1] == digest else _off_sheet(answer)
+        old = None if key[1] == digest else answer.old_read
         interpretation = interpret_instruction(
             text, preview, _answering(answer), old, catalog, owner=owner
         )
@@ -340,25 +337,12 @@ def _previewed(  # noqa: PLR0913, PLR0917
 
 
 def _newest_first(cache: Cache, words: str) -> list[CacheKey]:
-    """The answers to these words; an answer saved before `seq` existed
-    goes by its place in the cache."""
-    keys = [(i, k) for i, k in enumerate(cache) if k[0] == words]
-    return [
-        k
-        for _, k in sorted(keys, key=lambda ik: (cache[ik[1]].seq, ik[0]), reverse=True)
-    ]
+    keys = [k for k in cache if k[0] == words]
+    return sorted(keys, key=lambda k: cache[k].seq, reverse=True)
 
 
 def _answering(answer: Answer) -> Resolve:
     return lambda _text, _catalog: answer.proposal
-
-
-def _off_sheet(answer: Answer) -> tuple[tuple[str, ...], ...]:
-    """The saved `old` check, for the answer on another sheet; none saved:
-    no `old` check there."""
-    if answer.old_read is not None:
-        return answer.old_read
-    return tuple(() for _ in answer.proposal.edits)
 
 
 def _key(owner: str, text: str, edit: Grounded, catalog: Catalog) -> str:

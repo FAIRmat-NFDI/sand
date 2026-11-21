@@ -29,7 +29,6 @@ const REPORT = {
 
 test("the phase as the user reads it", () => {
   assert.equal(describeEditPhase({ phase: "starting" }), "Starting...");
-  assert.equal(describeEditPhase({ phase: "collecting" }), "Collecting the updates...");
   assert.equal(
     describeEditPhase({ phase: "interpreting", inputs_done: 0, inputs_total: 3 }),
     "Reading update 1 of 3...");
@@ -37,7 +36,6 @@ test("the phase as the user reads it", () => {
     describeEditPhase({ phase: "interpreting", inputs_done: 3, inputs_total: 3 }),
     "Reading update 3 of 3...");
   assert.equal(describeEditPhase({ phase: "interpreting" }), "Reading update 1 of ?...");
-  assert.equal(describeEditPhase({ phase: "replaying" }), "Checking the earlier updates...");
   // three replayed, two read: the count is over the two
   assert.equal(
     describeEditPhase({ phase: "interpreting", inputs_done: 3, inputs_total: 5, inputs_replayed: 3 }),
@@ -340,40 +338,6 @@ test("the table is the job's own fold of its changelog when it has one", () => {
   assert.equal(writtenCount(status), 1);
   assert.equal(writtenCount({ inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] }), 0);
   assert.equal(writtenCount({ inputs: [{ ...REPORT, confirmed: ["k1"], refused: "a formula error" }] }), 0);
-});
-
-test("without the fold, the written edits of the reports grouped by step", () => {
-  assert.deepEqual(writtenEdits({ inputs: [REPORT] }), []);
-  assert.deepEqual(
-    writtenEdits({ inputs: [{ ...REPORT, confirmed: ["k1"] }] }),
-    [{ step: "2: Spin Coating", column: "Rotation speed [rpm]", value: "4000", samples: "samples 1–3", first: true }]);
-  // confirmed since the run: not written yet; refused: not written
-  assert.deepEqual(writtenEdits({ inputs: [{ ...REPORT, confirmed: ["k1"], confirmed_since: ["k1"] }] }), []);
-  assert.deepEqual(writtenEdits({ inputs: [{ ...REPORT, confirmed: ["k1"], refused: "a formula error" }] }), []);
-  // a report of an older job has only the line
-  const old = { ...REPORT, confirmed: ["k1"], ready: [{ key: "k1", line: "the line" }] };
-  assert.deepEqual(writtenEdits({ inputs: [old] }), [{ line: "the line", first: true }]);
-  // grouped by step in the sheet's order, the written order within a step
-  const edit = (key, step, column) => ({ ...REPORT.ready[0], key, step, column });
-  const rows = writtenEdits({ inputs: [
-    { ...REPORT, confirmed: ["a", "b"], ready: [edit("a", "2: Spin Coating", "Speed"), edit("b", "1: Cleaning", "Time 1")] },
-    { ...REPORT, entry_id: "n2", confirmed: ["c"], ready: [edit("c", "2: Spin Coating", "Volume")] },
-  ] });
-  assert.deepEqual(rows.map((r) => [r.step, r.column, r.first]), [
-    ["1: Cleaning", "Time 1", true],
-    ["2: Spin Coating", "Speed", true],
-    ["2: Spin Coating", "Volume", false],
-  ]);
-  // "10:" after "2:"; unnumbered steps after the numbered, one group per name
-  const mixed = writtenEdits({ inputs: [{ ...REPORT, confirmed: ["a", "b", "c", "d"], ready: [
-    edit("a", "Notes", "Remark"), edit("b", "10: Anneal", "Time"), edit("c", "2: Spin", "Speed"), edit("d", "Notes", "Operator"),
-  ] }] });
-  assert.deepEqual(mixed.map((r) => [r.step, r.column, r.first]), [
-    ["2: Spin", "Speed", true],
-    ["10: Anneal", "Time", true],
-    ["Notes", "Remark", true],
-    ["Notes", "Operator", false],
-  ]);
 });
 
 test("the download name comes from the server when it says one", () => {

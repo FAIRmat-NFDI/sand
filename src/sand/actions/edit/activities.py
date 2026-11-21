@@ -115,7 +115,7 @@ async def replay_cached_inputs(data: ReplayInput) -> dict:
         files.cache.answers,
         cached_only=True,
         rejected=frozenset(data.rejections),
-        ids=data.input_ids or None,
+        ids=data.input_ids,
     )
     confirmed = set(files.confirmations)
     rejected = set(data.rejections)
@@ -125,7 +125,7 @@ async def replay_cached_inputs(data: ReplayInput) -> dict:
         if number > data.after
     ]
     replayed = {'replayed': len(steps), 'reports': reports}
-    if data.store_status and len(steps) == len(data.texts):
+    if len(steps) == len(data.texts):
         # nothing left to ask: the sheet built here is the final one,
         # stored at once (#202)
         earlier = data.store_status.get('inputs', [])[: data.after]
@@ -219,15 +219,12 @@ async def _write_input(files: '_Files', data: ApplyInput, report: dict) -> None:
             files.cache.of_job(data.job_id), data.llm_model_name, CACHE_VERSION
         )
         outputs.append((job_cache_file(data.job_id), _json(own), JSON_TYPE))
-    if data.status:
-        status = {
-            **data.status,
-            'inputs': [*data.status.get('inputs', []), report],
-            'updated_at': datetime.now(timezone.utc).isoformat(),
-        }
-        outputs.append((STATUS_FILE, _json(status), JSON_TYPE))
-    if not outputs:
-        return
+    status = {
+        **data.status,
+        'inputs': [*data.status.get('inputs', []), report],
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+    }
+    outputs.append((STATUS_FILE, _json(status), JSON_TYPE))
     voice = common.voice_service()
     async with voice.build_client(common.user_token(data.user_id)) as client:
         await voice.writer.upload_raw_files(
@@ -263,8 +260,8 @@ async def store_final_sheet_and_changelog(data: StoreInput) -> dict:
 async def _store(
     data: JobInput, files: '_Files', steps: list[Step], status: dict
 ) -> dict:
-    """The final sheet of `steps`, its changelog, the shared cache and,
-    unless `status` is empty, it as completed: in one request."""
+    """The final sheet of `steps`, its changelog, the shared cache and
+    `status` as completed: in one request."""
     from sand.sheet_edit.catalog import build
     from sand.sheet_edit.changelog import (
         CheckFailed,
@@ -301,20 +298,19 @@ async def _store(
         (FINAL_FILE, final, XLSX_CONTENT_TYPE),
         (CHANGELOG_FILE, to_json(log).encode(), JSON_TYPE),
     ]
-    if status:
-        completed = {
-            **status,
-            'updated_at': datetime.now(timezone.utc).isoformat(),
-            'phase': 'completed',
-            **done,
-        }
-        outputs.append((STATUS_FILE, _json(completed), JSON_TYPE))
+    completed = {
+        **status,
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+        'phase': 'completed',
+        **done,
+    }
+    outputs.append((STATUS_FILE, _json(completed), JSON_TYPE))
     voice = common.voice_service()
     async with voice.build_client(common.user_token(data.user_id)) as client:
         writer = voice.writer
         # a retry after "completed" landed: a newer job may own the sheet
         # and the status now, and must not be overwritten
-        if status and not _ours(
+        if not _ours(
             await writer.read_json(client, data.upload_id, STATUS_FILE), status
         ):
             return done
@@ -358,31 +354,25 @@ def _ours(current: dict | None, status: dict) -> bool:
         return True
     if current.get('job_id') != 'starting':
         return False
-    try:
-        reserved = datetime.fromisoformat(current['updated_at'])
-        started = datetime.fromisoformat(status['started_at'])
-    except (KeyError, TypeError, ValueError):
-        # a status of a job started before `started_at`: as before
-        return True
-    return reserved <= started
+    reserved = datetime.fromisoformat(current['updated_at'])
+    return reserved <= datetime.fromisoformat(status['started_at'])
 
 
 async def _check_stored(
     writer, client, data: JobInput, final: bytes, status: dict
 ) -> None:
-    """Raises (Temporal retries) unless the final sheet and, with a
-    `status`, the completed status are this job's. A newer job's status
+    """Raises (Temporal retries) unless the final sheet and the completed
+    status are this job's. A newer job's status
     there means this one's was stored and the lock taken over; the job's
     own reservation still there means it was not."""
     stored = await writer.read_raw_file(client, data.upload_id, FINAL_FILE)
-    if status:
-        current = await writer.read_json(client, data.upload_id, STATUS_FILE)
-        if not _ours(current, status):
-            return
-        if (current or {}).get('job_id') != data.job_id or current.get(
-            'phase'
-        ) != 'completed':
-            raise ApplicationError('NOMAD did not store the completed status')
+    current = await writer.read_json(client, data.upload_id, STATUS_FILE)
+    if not _ours(current, status):
+        return
+    if (current or {}).get('job_id') != data.job_id or current.get(
+        'phase'
+    ) != 'completed':
+        raise ApplicationError('NOMAD did not store the completed status')
     if stored is None or sha256(stored) != sha256(final):
         raise ApplicationError('NOMAD did not store the final sheet')
 
@@ -529,7 +519,7 @@ def _apply_inputs_from_cache(
         set(files.confirmations),
         files.cache.answers,
         rejected=frozenset(data.rejections),
-        ids=data.input_ids[: len(texts)] or None,
+        ids=data.input_ids[: len(texts)],
     )
 
 

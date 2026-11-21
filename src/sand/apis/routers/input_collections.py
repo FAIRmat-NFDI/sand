@@ -752,7 +752,7 @@ async def _edit_status(
 
 
 async def _confirmations(client, voice: VoiceElnService, upload_id: str) -> dict | None:
-    """The confirmations file as loaded (old records left out), as JSON;
+    """The confirmations file as loaded, as JSON;
     None when it is damaged: the confirm endpoint says so."""
     raw = await voice.writer.read_raw_file(client, upload_id, CONFIRMATIONS_FILE)
     try:
@@ -905,9 +905,8 @@ def _with_confirmations(
             continue
         written = report.get('confirmed', [])
         keys = [edit['key'] for edit in report.get('ready', [])]
-        entry_id = report.get('entry_id')
-        if confirmed is None or not entry_id:
-            # a report from before reports named their input is read again
+        entry_id = report['entry_id']
+        if confirmed is None:
             report.update(
                 confirmed_since=[],
                 unconfirmed_since=[],
@@ -915,7 +914,7 @@ def _with_confirmations(
                 rejected_since=[],
                 unrejected_since=[],
                 decide_again=0,
-                rejected=_rejected(report, keys, rejected) if entry_id else [],
+                rejected=_rejected(report, keys, rejected),
             )
             continue
         # two inputs of the same words on the same sheet share a key: a
@@ -938,11 +937,8 @@ def _with_confirmations(
         # keep sharing it, and the second would wait for a decision
         # the server refuses
         # a rejection made or taken back since the run changes the preview
-        # the inputs after it were read on: they wait for the next run. A
-        # report from before reports carried it knew none
-        known = report.get('rejected')
-        if not isinstance(known, list):
-            known = []
+        # the inputs after it were read on: they wait for the next run
+        known = report.get('rejected', [])
         # a key the run knew as rejected and confirmed since: the inputs
         # after it were read without the edit
         flipped = [key for key in known if key in since]
@@ -982,8 +978,7 @@ def _rejected(report: dict, keys: list[str], rejected: dict | None) -> list[str]
     """The report's rejected keys; the run's own list while the file is
     damaged."""
     if rejected is None:
-        known = report.get('rejected')
-        return [k for k in known if k in keys] if isinstance(known, list) else []
+        return [k for k in report.get('rejected', []) if k in keys]
     return [k for k in keys if k in rejected]
 
 
@@ -1183,13 +1178,6 @@ async def _decidable(  # noqa: PLR0913
         raise HTTPException(
             status_code=422,
             detail=f'not a ready edit of the last job: {", ".join(unknown)}',
-        )
-    if any(not reports[key].get('entry_id') for key in keys):
-        # a report from before reports named their input
-        raise HTTPException(
-            status_code=409,
-            detail='the last run does not name its updates; '
-            f'read the updates again, then {verb}',
         )
     # a decision is on the words the report read, and on the sheet the
     # inputs above leave: not on a report the next run reads anew
