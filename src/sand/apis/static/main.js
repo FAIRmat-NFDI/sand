@@ -8,7 +8,9 @@ import {
 } from "./experiments.js";
 import { initFeedback, showFeedback } from "./feedback.js";
 import { initInputs, showInputs } from "./inputs.js";
-import { clearLiveTranscript, initLiveToggle } from "./live-transcript.js";
+import {
+  clearLiveTranscript, initLiveToggle, loadKeyterms, setKeyterms,
+} from "./live-transcript.js";
 import { initNotes } from "./notes.js";
 import { initOverview, showOverview } from "./overview.js";
 import { initRecord } from "./record.js";
@@ -96,6 +98,7 @@ onExperimentSelected(async (experiment) => {
   showFeedback(experiment);
   showInputs(experiment);
   clearLiveTranscript();
+  setKeyterms([]);
   if (!experiment) {
     showSheet(null, null);
     showOverview(null);
@@ -122,6 +125,9 @@ onExperimentSelected(async (experiment) => {
   showSheet(experiment, view);
   showOverview(view);
   showEdit(experiment, view);
+  if (view === null) return;
+  const terms = await loadKeyterms(experiment);
+  if (generation === selectionGeneration) setKeyterms(terms);
 });
 
 document.getElementById("login-btn").addEventListener("click", login);

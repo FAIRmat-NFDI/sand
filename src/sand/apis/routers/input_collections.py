@@ -6,7 +6,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Form, HTTPException, Request, Response, UploadFile
 
-from sand import feedback
+from sand import feedback, keyterms
 from sand.apis.deps import get_bearer_token
 from sand.models.input_collections import (
     ConfirmEditsRequest,
@@ -380,6 +380,29 @@ async def sheet_view(
         'sha256': sha256(sheet),
         **built,
     }
+
+
+@router.get('/input-collections/{upload_id}/keyterms')
+async def sheet_keyterms(upload_id: str, request: Request) -> dict:
+    """The uploaded sheet's words for the live transcript. The page asks
+    once per opened sheet: edits written later do not change them."""
+    voice = _voice_service(request)
+    token = get_bearer_token(request)
+
+    try:
+        async with voice.build_client(token) as client:
+            original = await voice.writer.read_raw_file(
+                client, upload_id, ORIGINAL_FILE, wait=False
+            )
+    except NomadAPIError as exc:
+        raise _http_error(exc) from exc
+
+    if original is None:
+        raise HTTPException(status_code=404, detail='this sheet was not uploaded here')
+    built = await asyncio.to_thread(
+        lambda: keyterms.sheet_keyterms(catalog.build(original))
+    )
+    return {'keyterms': built}
 
 
 def _current_sheet(

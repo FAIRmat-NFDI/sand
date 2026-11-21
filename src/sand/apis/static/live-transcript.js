@@ -2,6 +2,9 @@
 // sand's Deepgram relay in parallel with the local accumulation; if the
 // relay is off or fails, recording works unchanged.
 
+import { experimentUrl } from "./api.js";
+import { liveTranscriptUrl } from "./live-transcript-logic.js";
+
 // One object per relay connection: handlers close over it, so a socket
 // that outlives its recording (draining finals) can never touch the next
 // recording's state. Two separate things:
@@ -12,6 +15,8 @@
 //   discarded one is closed without flushing.
 // Audio chunks go to their recording's own connection (sendLiveChunk).
 let liveConn = null;
+// the open sheet's words, read once when it is opened
+let keyterms = [];
 // Gets the text of the running recording whenever it grows, the words
 // not yet final included.
 let textHandler = () => {};
@@ -24,10 +29,20 @@ const liveTranscriptEl = document.getElementById("live-transcript");
 const liveFinalEl = document.getElementById("live-final");
 const liveInterimEl = document.getElementById("live-interim");
 
-function liveTranscriptUrl() {
-  const url = new URL("api/live-transcript", window.location.href);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return url.toString();
+export function setKeyterms(terms) {
+  keyterms = terms;
+}
+
+// Best-effort like the transcript itself: without them it still works.
+export async function loadKeyterms(experiment) {
+  try {
+    const res = await fetch(experimentUrl(experiment, "keyterms"));
+    if (!res.ok) return [];
+    return (await res.json()).keyterms;
+  } catch (err) {
+    console.warn("Could not read the sheet's key terms:", err);
+    return [];
+  }
 }
 
 // Clears the text a finished recording left in the panel, when something
@@ -51,7 +66,7 @@ export function startLiveTranscript() {
   clearLivePanel();
   let ws;
   try {
-    ws = new WebSocket(liveTranscriptUrl());
+    ws = new WebSocket(liveTranscriptUrl(window.location.href, keyterms));
   } catch (err) {
     return null;
   }
