@@ -35,7 +35,14 @@ from sand.sheet_edit.edits import (
     proposed_edits_model,
     proposed_edits_schema,
 )
-from sand.sheet_edit.ground import Refusal, in_words, resolve_rows, typed_value
+from sand.sheet_edit.ground import (
+    Refusal,
+    as_written,
+    in_words,
+    resolve_rows,
+    same_value,
+    typed_value,
+)
 from sand.sheet_edit.numbers import value
 from sand.sheet_edit.render import table
 from sand.sheet_edit.workbook import SAMPLE_HEADER, SUBBATCH_HEADER, info_column
@@ -209,21 +216,38 @@ def read_answer(answer: object, instruction: str, catalog: Catalog) -> Opinion:
         return Unreadable(reason='unreadable', detail=detail, said=instruction)
     # back to the plain models: the narrowed ones only exist to validate
     proposal = ProposedEdits.model_validate(narrowed.model_dump())
-    edits = [_without_restated_old(e) for e in proposal.edits]
+    edits = [_without_restated_old(e, catalog) for e in proposal.edits]
     return proposal.model_copy(update={'edits': edits})
 
 
-def _without_restated_old(edit: Edit) -> Edit:
+def _without_restated_old(edit: Edit, catalog: Catalog) -> Edit:
     """An anchor on the column being written, by a value the user did not
-    say, is the model pointing at the cells by the old value it read in
-    the table ("solute 1 name is NiO2" through Solute 1 name = NiOx): it
-    selects nothing, and the old value has its own check."""
+    say, can be the model pointing at the cells by the old value it read
+    in the table ("solute 1 name is NiO2" through Solute 1 name = NiOx):
+    then it selects nothing, and the old value has its own check. Dropped
+    only when that is proven: it equals `old`, and every row to change
+    holds it. Otherwise ("the nickel oxide ones", rows of mixed values)
+    its check is the only one that tells rows outside it are written."""
     anchor = edit.anchor
     if (
-        anchor
-        and anchor.column == edit.target
-        and not in_words(anchor.equals, edit.said)
+        not anchor
+        or anchor.column != edit.target
+        or in_words(anchor.equals, edit.said)
+        or edit.old is None
+        or not same_value(anchor.equals, edit.old)
     ):
+        return edit
+    target = catalog.column(edit.target)
+    try:
+        rows, _ = resolve_rows(edit.rows, catalog)
+    except Refusal:
+        return edit
+    if target is None or not rows:
+        return edit
+    held = {r: g.value for g in target.groups for r in g.rows}
+    new = as_written(edit, target)
+    to_change = [r for r in rows if not same_value(new, held.get(r))]
+    if all(same_value(anchor.equals, held.get(r)) for r in to_change):
         return edit.model_copy(update={'anchor': None})
     return edit
 
