@@ -22,19 +22,22 @@ EDIT = Edit(
     target='C025', rows='all', anchor=None, old='3000', new='4000', said='speed 4000'
 )
 PROPOSAL = ProposedEdits(edits=[EDIT], unresolved=[])
-ANSWER = Answer(PROPOSAL)
+READS = Reads(
+    None, 'columns', (('DMF', (('C013', 3), ('C013', 4))),), (), (('C014', 5),)
+)
+ANSWER = Answer(PROPOSAL, ((),), READS, 1)
 UNREADABLE = Answer(
     ProposedEdits(
         edits=[],
         unresolved=[
             Unreadable(reason='unreadable', detail='no answer', said='speed 4000')
         ],
-    )
+    ),
+    (),
+    READS,
+    2,
 )
 KEY = cache_key('speed 4000', b'sheet')
-READS = Reads(
-    None, 'columns', (('DMF', (('C013', 3), ('C013', 4))),), (), (('C014', 5),)
-)
 WHEN = datetime.datetime(2026, 10, 28, 12, 16, 5, tzinfo=datetime.UTC)
 
 
@@ -57,10 +60,6 @@ def test_what_was_saved_on_its_sheet_travels_with_its_answer():
     cache.add(KEY, saved, 'job-1')
     cache.add(cache_key('other', b'sheet'), ANSWER, 'job-1')
     data = llm_cache_json(cache, MODEL, 'v1')
-    # an answer saved without them stays as small as before
-    other = data['proposals'][':'.join(cache_key('other', b'sheet'))]
-    assert set(other) == {'proposal', 'job'}
-
     loaded = load_llm_cache(json.loads(json.dumps(data)), MODEL, 'v1', job='job-1')
     assert loaded.answers[KEY] == saved
     # merged and published with the job's entries
@@ -69,16 +68,26 @@ def test_what_was_saved_on_its_sheet_travels_with_its_answer():
     assert merged.answers == loaded.answers
 
 
-@pytest.mark.parametrize('stored', [None, 'x', [], [['a'], ['b']], [[1]]])
-def test_an_answer_without_a_usable_old_check_still_loads(stored):
+@pytest.mark.parametrize(
+    ('field', 'stored'),
+    [
+        ('old_read', None),
+        ('old_read', 'x'),
+        ('old_read', []),
+        ('old_read', [['a'], ['b']]),
+        ('old_read', [[1]]),
+        ('seq', None),
+        ('seq', 'x'),
+        ('seq', True),
+    ],
+)
+def test_an_answer_with_a_malformed_field_is_dropped(field, stored):
     cache = LlmCache()
     cache.add(KEY, ANSWER, 'job-1')
     data = llm_cache_json(cache, MODEL, 'v1')
-    if stored is not None:
-        data['proposals'][f'{KEY[0]}:{KEY[1]}']['old_read'] = stored
+    data['proposals'][f'{KEY[0]}:{KEY[1]}'][field] = stored
 
-    loaded = load_llm_cache(data, MODEL, 'v1', job='job-1')
-    assert loaded.answers == {KEY: ANSWER}
+    assert load_llm_cache(data, MODEL, 'v1', job='job-1').answers == {}
 
 
 @pytest.mark.parametrize(
@@ -92,21 +101,20 @@ def test_an_answer_without_a_usable_old_check_still_loads(stored):
         {**to_json(READS), 'structure': 5},
     ],
 )
-def test_a_malformed_read_set_makes_an_answer_for_its_own_sheet_only(reads):
+def test_an_answer_with_a_malformed_read_set_is_dropped(reads):
     cache = LlmCache()
-    cache.add(KEY, Answer(PROPOSAL, seq='x'), 'job-1')
+    cache.add(KEY, ANSWER, 'job-1')
     data = llm_cache_json(cache, MODEL, 'v1')
     data['proposals'][f'{KEY[0]}:{KEY[1]}']['reads'] = reads
 
-    loaded = load_llm_cache(data, MODEL, 'v1', job='job-1')
-    assert loaded.answers == {KEY: ANSWER}
+    assert load_llm_cache(data, MODEL, 'v1', job='job-1').answers == {}
 
 
 def test_the_shared_cache_keeps_the_newest_answers_and_the_jobs_chain():
     cache = LlmCache()
     keys = [cache_key('speed 4000', f'sheet {n}'.encode()) for n in range(12)]
     for seq, key in enumerate(keys, 1):
-        cache.add(key, Answer(PROPOSAL, seq=seq), 'job-1')
+        cache.add(key, Answer(PROPOSAL, ((),), READS, seq), 'job-1')
     cache.add(cache_key('other', b'sheet'), ANSWER, 'job-1')
 
     kept = cache.trimmed({keys[0]}, per_words=3)
@@ -176,9 +184,6 @@ def test_confirmations_round_trip():
         'k2': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00', 'input': 'n2'}
     }
     assert load_confirmations(data) == confirmations
-    # a record made before confirmations named their input is left out
-    old = {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00'}}
-    assert load_confirmations({**data, **old}) == confirmations
     assert read_confirmations(json.dumps(data).encode()) == data
     assert read_confirmations(None) == {}
 
@@ -201,17 +206,10 @@ def test_a_damaged_confirmations_file_is_refused_not_empty(raw):
         {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05', 'input': 'n1'}},  # no tz
         {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00', 'input': 3}},
         {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00', 'input': None}},
+        {'k1': {'by': 'tester', 'at': '2026-10-28T12:16:05+00:00'}},  # no input
         {'k1': {'by': 3, 'at': '2026-10-28T12:16:05+00:00'}},
     ],
 )
 def test_a_malformed_confirmation_is_refused(data):
     with pytest.raises(ValueError):
         load_confirmations(data)
-
-
-def test_answers_saved_before_seq_keep_the_newest_by_their_place():
-    cache = LlmCache()
-    keys = [cache_key('speed 4000', f'sheet {n}'.encode()) for n in range(5)]
-    for key in keys:
-        cache.add(key, ANSWER, 'job-1')
-    assert set(cache.trimmed(set(), per_words=2).answers) == set(keys[-2:])

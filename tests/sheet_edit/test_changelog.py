@@ -548,13 +548,14 @@ def test_an_edit_confirmed_past_a_check_says_so(synthetic_xlsx):
     assert checks == {(f'{said}; you said 4000',)}
     assert from_json(to_json(log)) == log
     assert f'   past a check: {said}' in render(log)
-    # a log written before checks existed reads as one without them
+    # an entry without its checks is no changelog
     data = json.loads(to_json(log))
     data.pop('digest')
     for entry in data['entries']:
         del entry['checks']
     data['digest'] = _digest(data)
-    assert {e.checks for e in from_json(json.dumps(data)).entries} == {()}
+    with pytest.raises(CheckFailed):
+        from_json(json.dumps(data))
 
 
 def test_two_edits_of_the_same_words_keep_their_own_checks(synthetic_xlsx):

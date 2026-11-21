@@ -1,4 +1,4 @@
-from sand.sheet_edit.apply import Answer, apply_all, interpret_instruction
+from sand.sheet_edit.apply import apply_all, interpret_instruction
 from sand.sheet_edit.catalog import build
 from sand.sheet_edit.edits import Anchor, Edit, NotFound, ProposedEdits, Range, Samples
 from sand.sheet_edit.ground import Refused, read_old
@@ -433,10 +433,6 @@ def test_a_reused_answer_is_not_checked_against_a_value_written_above(
     live = interpret_instruction(faster, steps[1].preview, resolve)
     [ready] = live.ready.values()
     assert "holds '4000'" in ready.checks[0]
-    # an answer saved without its reads holds on its own sheet only
-    old = {key: Answer(answer.proposal) for key, answer in cache.items()}
-    decide(synthetic_xlsx, inputs, speed, cache=old, llm=resolve)
-    assert faster in llm.calls[3:]
 
 
 def test_a_misreading_stays_checked_off_its_sheet(synthetic_xlsx):

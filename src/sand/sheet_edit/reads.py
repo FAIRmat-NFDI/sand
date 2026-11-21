@@ -74,8 +74,7 @@ def to_json(reads: Reads) -> dict:
 
 
 def from_json(data) -> Reads | None:
-    """None for anything malformed: the answer then holds on its own
-    sheet only."""
+    """None for anything malformed: the cache drops the answer."""
     try:
         whole, structure = data['whole'], data['structure']
         if not (whole is None or isinstance(whole, str)) or not isinstance(

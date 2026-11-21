@@ -182,8 +182,7 @@ async def test_two_confirm_alls_at_once_confirm_once(voice):
 
 
 async def test_confirming_an_input_again_drops_its_lost_confirmations(voice):
-    # k0 and k5 were n1's edits before an earlier input changed; n2's
-    # stays; k8, made before confirmations named their input, is left out
+    # k0 and k5 were n1's edits before an earlier input changed; n2's stays
     put_status(
         voice,
         inputs=[
@@ -202,7 +201,6 @@ async def test_confirming_an_input_again_drops_its_lost_confirmations(voice):
             'k0': {**record, 'input': 'n1'},
             'k5': {**record, 'input': 'n1'},
             'k9': {**record, 'input': 'n2'},
-            'k8': record,
         }
     ).encode()
 

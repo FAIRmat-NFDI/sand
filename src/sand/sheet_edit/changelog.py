@@ -290,9 +290,8 @@ def from_json(text: str) -> Changelog:
 
 
 def _entry(data: dict) -> Entry:
-    """A log written before checks existed has none."""
     known = {f.name: data[f.name] for f in fields(Entry) if f.name != 'checks'}
-    checks = data.get('checks', [])
+    checks = data['checks']
     if not isinstance(checks, list):
         raise ValueError('checks must be a list')
     return Entry(**known, checks=tuple(checks))
