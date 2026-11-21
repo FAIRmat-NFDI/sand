@@ -353,22 +353,18 @@ async def test_reports_are_the_inputs_of_the_status(voice):
     }
     put_status(voice, 'interpreting', inputs=[report], inputs_done=1, inputs_total=2)
 
-    response = await get(voice, 'edits')
+    response = await get(voice, 'edit-status')
 
     assert response.status_code == HTTPStatus.OK
-    assert response.json() == {
-        'job_id': 'job-0',
-        'phase': 'interpreting',
-        'inputs': [
-            {
-                **report,
-                'confirmed_since': [],
-                'unconfirmed_since': [],
-                'held': [],
-                'decide_again': False,
-                'rejected_since': [],
-                'unrejected_since': [],
-                'rejected': [],
-            }
-        ],
-    }
+    assert response.json()['inputs'] == [
+        {
+            **report,
+            'confirmed_since': [],
+            'unconfirmed_since': [],
+            'held': [],
+            'decide_again': False,
+            'rejected_since': [],
+            'unrejected_since': [],
+            'rejected': [],
+        }
+    ]

@@ -187,7 +187,7 @@ async def test_a_lost_decision_is_told_with_the_update(voice):
 async def edits(voice) -> list[dict]:
     async with api(voice) as client:
         response = await client.get(
-            f'/api/input-collections/{UPLOAD}/edits',
+            f'/api/input-collections/{UPLOAD}/edit-status',
             params={'collection_entry_id': COLLECTION},
         )
     return response.json()['inputs']
