@@ -20,7 +20,7 @@ order, each interpreted against the sheet the earlier ones left.
             only what it touches); with all of them, the sheet stored there
     activity store_final_sheet_and_changelog ──▶ changelog checked; the sheet,
         changelog, cache and status "completed" {final, changed, changes,
-        changelog, written} stored in one request
+        written} stored in one request
     on ANY failure: status "failed" {error}, then re-raise
 
 A model answer the child cannot get (its error message) is one input's

@@ -305,7 +305,7 @@ async def test_prepare_gives_the_two_prompts_for_the_original_sheet(
     upload, synthetic_xlsx
 ):
     prepared = await activities.prepare_input(prepare(upload, 1))
-    assert prepared['cached'] is False
+    assert prepared['prompts'] != []
     a, b = prepared['prompts']
     assert a['system'] == system_prompt(second_opinion=False)
     assert b['system'] == system_prompt(second_opinion=True)
@@ -355,7 +355,7 @@ async def test_apply_caches_the_agreed_proposal_and_reports_the_edit(upload):
 
     # the same words on the same sheet: nothing to ask
     prepared = await activities.prepare_input(prepare(upload, 1))
-    assert prepared == {'cached': True, 'prompts': []}
+    assert prepared == {'prompts': []}
     again = await activities.agree_cache_and_apply_input(apply(upload, 1, []))
     assert again == {**report, 'from_cache': True}
     # the cache is not rewritten; the status is, with the report
@@ -398,15 +398,15 @@ async def test_an_answer_the_child_could_not_get_is_this_inputs_problem(upload):
         '? sand could not propose an edit for this note. '
         'Try again, or write the note more clear.'
     )
-    assert (await activities.prepare_input(prepare(upload, 1)))['cached'] is True
+    assert (await activities.prepare_input(prepare(upload, 1)))['prompts'] == []
     # the next job asks again: an unreadable answer is never published
     await activities.agree_cache_and_apply_input(apply(upload, 2, [answer()] * 2))
     await activities.store_final_sheet_and_changelog(job(upload))
     (published,) = cache_file(upload, CACHE_FILE)['proposals'].values()
     assert published['proposal']['unresolved'] == []  # input 2 only
     assert (await activities.prepare_input(prepare(upload, 1, 'job-2')))[
-        'cached'
-    ] is False
+        'prompts'
+    ] != []
 
 
 async def test_the_old_value_is_checked_where_the_model_read_it(upload):
@@ -452,8 +452,8 @@ async def test_two_jobs_on_one_upload_cannot_lose_each_others_answers(upload):
     # job a goes on: its own answer for input 1 is still there, and what b
     # published serves it for input 2
     assert (await activities.prepare_input(prepare(upload, 2, job_id=a)))[
-        'cached'
-    ] is True
+        'prompts'
+    ] == []
     report = await activities.agree_cache_and_apply_input(
         apply(upload, 2, [], job_id=a)
     )
@@ -465,8 +465,8 @@ async def test_two_jobs_on_one_upload_cannot_lose_each_others_answers(upload):
 
     # the next job starts from everything both published
     assert (await activities.prepare_input(prepare(upload, 2, job_id='job-c')))[
-        'cached'
-    ] is True
+        'prompts'
+    ] == []
 
 
 def speed_edit(first, last, new):
@@ -503,7 +503,7 @@ async def test_a_rejection_reads_again_the_inputs_that_named_its_value(upload):
     await confirm(upload, key_1)
     for number in (2, 3):
         prepared = await activities.prepare_input(prepare(upload, number, 'job-2'))
-        assert prepared == {'cached': True, 'prompts': []}
+        assert prepared == {'prompts': []}
     del upload.writer.files[CONFIRMATIONS_FILE]
 
     # input 1 rejected: the 3000 inputs 2 and 3 named now sits on samples
@@ -551,10 +551,7 @@ async def test_an_answer_that_still_holds_is_not_asked_again(upload):
     )
     await confirm(upload, first['ready'][0]['key'])
 
-    assert await activities.prepare_input(prepare(upload, 2)) == {
-        'cached': True,
-        'prompts': [],
-    }
+    assert await activities.prepare_input(prepare(upload, 2)) == {'prompts': []}
     report = await activities.agree_cache_and_apply_input(apply(upload, 2, []))
     assert len(report['ready']) == 1
     assert len(cache_file(upload)['proposals']) == 2  # noqa: PLR2004
@@ -677,10 +674,9 @@ async def test_a_confirmation_made_during_the_job_waits_for_the_next_run(upload)
     )
     assert second['cells_written'] == 0
     assert (await activities.prepare_input(prepare(upload, 2, snapshot=collected))) == {
-        'cached': True,
-        'prompts': [],
+        'prompts': []
     }
-    assert prepared['cached'] is False
+    assert prepared['prompts'] != []
     assert (await activities.store_final_sheet_and_changelog(collected))[
         'changed'
     ] is False
@@ -690,7 +686,7 @@ async def test_a_confirmation_made_during_the_job_waits_for_the_next_run(upload)
     assert (await activities.agree_cache_and_apply_input(apply(upload, 1, [])))[
         'cells_written'
     ] == 3  # noqa: PLR2004
-    assert (await activities.prepare_input(prepare(upload, 2)))['cached'] is True
+    assert (await activities.prepare_input(prepare(upload, 2)))['prompts'] == []
 
 
 async def test_a_writer_refusal_is_reported_not_raised(upload, monkeypatch):
@@ -736,14 +732,13 @@ async def test_store_final_sheet_and_changelog_stores_the_final_sheet_with_its_c
     done = await activities.store_final_sheet_and_changelog(job(upload))
     final = upload.writer.files[FINAL_FILE]
     assert done['final'] == sha256(final)
-    # the log beside the sheet is the one the status renders
+    # the log beside the sheet is of that sheet
     stored = changelog.from_json(upload.writer.files[CHANGELOG_FILE].decode())
     assert stored.final == sha256(final)
-    assert changelog.render(stored) == done['changelog']
     assert done['changed'] is True
     assert done['changes'] == SAMPLES_1_TO_3  # input 2 is not confirmed
     assert done['stale_confirmations'] == 0
-    assert 'confirmed by tester, 2026-10-28 12:16 UTC' in done['changelog']
+    assert 'confirmed by tester, 2026-10-28 12:16 UTC' in changelog.render(stored)
     # what the sheet holds now, for the table: the confirmed edit only
     ready = report['ready'][0]
     assert done['written'] == [
@@ -755,7 +750,7 @@ async def test_store_final_sheet_and_changelog_stores_the_final_sheet_with_its_c
             'samples': 'samples 1–3',
         }
     ]
-    assert f'original  sha256 {sha256(synthetic_xlsx)}' in done['changelog']
+    assert f'original  sha256 {sha256(synthetic_xlsx)}' in changelog.render(stored)
     assert final != synthetic_xlsx
 
 

@@ -117,10 +117,9 @@ async def replay_cached_inputs(data: ReplayInput) -> dict:
         rejected=frozenset(data.rejections),
         ids=data.input_ids,
     )
-    confirmed = set(files.confirmations)
     rejected = set(data.rejections)
     reports = [
-        _report(number, entry_id, step, confirmed, rejected, from_cache=True)
+        _report(number, entry_id, step, rejected, from_cache=True)
         for number, (entry_id, step) in enumerate(zip(data.entry_ids, steps), 1)
         if number > data.after
     ]
@@ -146,9 +145,8 @@ async def prepare_input(data: PrepareInput) -> dict:
     steps = _apply_inputs_from_cache(files, data.texts[: data.number - 1], data)
     catalog = build(_sheet_before(files, steps))
     if not _to_read(files, data, steps, catalog):
-        return {'cached': True, 'prompts': []}
+        return {'prompts': []}
     return {
-        'cached': False,
         'prompts': [
             {'system': p.system, 'text': p.text, 'schema': p.schema}
             for p in prompts(_text(data), catalog)
@@ -199,7 +197,6 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
         data.number,
         data.entry_id,
         step,
-        set(files.confirmations),
         set(data.rejections),
         from_cache=not data.answers,
     )
@@ -267,7 +264,6 @@ async def _store(
         CheckFailed,
         changelog,
         check,
-        render,
         to_json,
         written_now,
     )
@@ -289,7 +285,6 @@ async def _store(
         'changed': final != files.original,
         'changes': len(log.entries),
         'stale_confirmations': len(set(files.confirmations) - ready),
-        'changelog': render(log),
         # the final sheet's catalog names the samples: an edit of the
         # Sample column is in it, a step's catalog is of the sheet before
         'written': written_now(log, build(final)),
@@ -545,11 +540,10 @@ def _never_asked(text: str, catalog: Catalog) -> ProposedEdits:
     )
 
 
-def _report(  # noqa: PLR0913
+def _report(
     number: int,
     entry_id: str,
     step: Step,
-    confirmed: set[str],
     rejected: set[str],
     *,
     from_cache: bool,

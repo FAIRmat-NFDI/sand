@@ -32,7 +32,6 @@ from sand.sheet_edit.catalog import (
     sample_ranges,
 )
 from sand.sheet_edit.edits import (
-    Confidence,
     Edit,
     ProposedEdits,
     Range,
@@ -91,13 +90,6 @@ class Grounded:
     @property
     def status(self) -> str:
         return 'noop' if not self.rows else 'ok'
-
-    @property
-    def confidence(self) -> Confidence:
-        """low: a check or a doubt; medium: notes; high: neither."""
-        if self.checks or self.doubts:
-            return 'low'
-        return 'medium' if self.notes else 'high'
 
 
 @dataclass(frozen=True)
