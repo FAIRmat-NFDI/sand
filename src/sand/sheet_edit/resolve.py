@@ -35,7 +35,7 @@ from sand.sheet_edit.edits import (
     proposed_edits_model,
     proposed_edits_schema,
 )
-from sand.sheet_edit.ground import Refusal, resolve_rows, typed_value
+from sand.sheet_edit.ground import Refusal, in_words, resolve_rows, typed_value
 from sand.sheet_edit.numbers import value
 from sand.sheet_edit.render import table
 from sand.sheet_edit.workbook import SAMPLE_HEADER, SUBBATCH_HEADER, info_column
@@ -45,7 +45,7 @@ from sand.sheet_edit.workbook import SAMPLE_HEADER, SUBBATCH_HEADER, info_column
 PROMPT_VERSION = 'v7'
 # the job's cache keeps proposals after `agree`: bump the second part on
 # a change to how two opinions agree, so agreed answers are asked again
-CACHE_VERSION = f'{PROMPT_VERSION}+agree-6'
+CACHE_VERSION = f'{PROMPT_VERSION}+agree-7'
 
 # (system prompt, user text, JSON schema) -> the model's answer, as text.
 # The schema is for the provider's structured output; the answer is still
@@ -208,7 +208,24 @@ def read_answer(answer: object, instruction: str, catalog: Catalog) -> Opinion:
         detail = str(why).partition('\n')[0] or type(why).__name__
         return Unreadable(reason='unreadable', detail=detail, said=instruction)
     # back to the plain models: the narrowed ones only exist to validate
-    return ProposedEdits.model_validate(narrowed.model_dump())
+    proposal = ProposedEdits.model_validate(narrowed.model_dump())
+    edits = [_without_restated_old(e) for e in proposal.edits]
+    return proposal.model_copy(update={'edits': edits})
+
+
+def _without_restated_old(edit: Edit) -> Edit:
+    """An anchor on the column being written, by a value the user did not
+    say, is the model pointing at the cells by the old value it read in
+    the table ("solute 1 name is NiO2" through Solute 1 name = NiOx): it
+    selects nothing, and the old value has its own check."""
+    anchor = edit.anchor
+    if (
+        anchor
+        and anchor.column == edit.target
+        and not in_words(anchor.equals, edit.said)
+    ):
+        return edit.model_copy(update={'anchor': None})
+    return edit
 
 
 def agree(opinions: Sequence[Opinion], catalog: Catalog) -> ProposedEdits:

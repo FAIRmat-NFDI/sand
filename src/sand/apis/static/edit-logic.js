@@ -254,9 +254,14 @@ export function previewNotes(report) {
   for (const edit of ready) {
     if (edit.unchanged) shown.add(`   · ${edit.unchanged}, nothing to change`);
   }
-  return (report.preview || "").split("\n")
-    .filter((line) => line && !shown.has(line) && !/^\s+from "/.test(line)
-      && !line.startsWith("⚠ no update in:"));
+  // a ready edit's checks show as its "Check:" lines (renderReport)
+  let underReady = false;
+  return (report.preview || "").split("\n").filter((line) => {
+    if (!line.startsWith(" ")) underReady = shown.has(line);
+    return line && !shown.has(line) && !/^\s+from "/.test(line)
+      && !line.startsWith("⚠ no update in:")
+      && !(underReady && /^\s+⚠ check: /.test(line));
+  });
 }
 
 const UNCLEAR = /^(ambiguous|disputed|not found): /;
