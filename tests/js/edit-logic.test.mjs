@@ -527,3 +527,15 @@ test("the kept notes hold for the started workflow only; the reservation reads n
   assert.equal(other.kept.size, 0);
   assert.deepEqual(freshReports({ job_id: "w1" }, false, { kept, job: "w1" }), { fresh: null, kept: new Set() });
 });
+
+test("a ready edit's checks are not shown twice: renderReport shows them", () => {
+  const line = REPORT.ready[0].line;
+  const report = {
+    ...REPORT,
+    preview: [line, "   · new term: NiO2", "   ⚠ check: you did not say 'NiOx'",
+      "= 2: Spin Coating · Rotation time [s]", "   ⚠ check: of a no-op"].join("\n"),
+  };
+  assert.deepEqual(previewNotes(report), [
+    "   · new term: NiO2", "= 2: Spin Coating · Rotation time [s]", "   ⚠ check: of a no-op",
+  ]);
+});

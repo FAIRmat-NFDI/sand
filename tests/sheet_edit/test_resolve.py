@@ -561,6 +561,35 @@ def test_a_broad_ambiguous_quote_over_two_clauses_is_not_merged(catalog):
     ]
 
 
+def test_an_anchor_on_the_written_column_by_the_old_value_is_dropped(catalog):
+    # "solvent 2 is DMSO", pointed through Solvent 2 = IPA: the table's old value
+    said = 'solvent 2 is DMSO for samples 1 to 3'
+    pointed = edit(
+        target=SOLVENT_2,
+        old='IPA',
+        new='DMSO',
+        said=said,
+        anchor={'column': SOLVENT_2, 'equals': 'IPA'},
+    )
+    assert ask(catalog, answer(pointed)).edits[0].anchor is None
+    # said by the user, it picks the cells: kept
+    named = {**pointed, 'said': 'the IPA of samples 1 to 3 to DMSO'}
+    assert ask(catalog, answer(named)).edits[0].anchor is not None
+    # rows of mixed values: the anchor's check is the only one that tells
+    # rows outside it are written, kept ("the hot ones" read as 120)
+    mixed = edit(
+        target='C055',  # substrate temperature: 120 on samples 1–5, 7; 115 on 8–13
+        old=None,
+        new='118',
+        said='the hot ones to 118',
+        anchor={'column': 'C055', 'equals': '120'},
+    )
+    assert ask(catalog, answer(mixed)).edits[0].anchor is not None
+    # an anchor that is not `old`: kept
+    other = {**pointed, 'anchor': {'column': SOLVENT_2, 'equals': 'Ethanol'}}
+    assert ask(catalog, answer(other)).edits[0].anchor is not None
+
+
 # --- answers that cannot be read ---------------------------------------------------
 
 
