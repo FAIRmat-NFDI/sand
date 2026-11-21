@@ -26,10 +26,9 @@ order, each interpreted against the sheet the earlier ones left.
 A model answer the child cannot get (its error message) is one input's
 problem: that input is shown as unreadable and the job goes on. An
 activity or child that fails outright fails the job. The browser's only
-bridge to all of this is the status file in the upload; a rerun after a
-confirmation costs model calls only for inputs whose text or sheet
-changed (see session.py), and the cached inputs between those are
-replayed from the cache in one activity instead of two each.
+bridge to all of this is the status file in the upload. A rerun costs
+model calls only for inputs whose cached answers no longer hold
+(apply.py `lookup`); the cached ones are replayed in one activity.
 """
 
 import asyncio
@@ -72,7 +71,7 @@ HEARTBEAT = timedelta(minutes=5)
 @workflow.defn
 class EditSheetWorkflow:
     @workflow.run
-    async def run(self, data: EditInput) -> dict:  # noqa: PLR0912, PLR0915
+    async def run(self, data: EditInput) -> dict:  # noqa: PLR0915
         job_id = workflow.info().workflow_id
         reports: list[dict] = []  # one per finished input, in order
         # when the status was last written; the API's reservation is
@@ -113,10 +112,7 @@ class EditSheetWorkflow:
 
         try:
             # the reservation says "starting" until the first note is read
-            # or the job is done: a write less, the lock as before
-            quiet = workflow.patched('one-step-when-cached')
-            if not quiet:
-                await status({'phase': 'collecting'})
+            # or the job is done
             collected = await workflow.execute_activity(
                 collect_edit_inputs,
                 data,
@@ -130,8 +126,7 @@ class EditSheetWorkflow:
                 llm_model_name=collected['llm_model_name'],
                 texts=collected['texts'],
                 confirmations=collected['confirmations'],
-                # absent from a job collected before rejections existed
-                rejections=collected.get('rejections', []),
+                rejections=collected['rejections'],
                 input_ids=collected['input_entry_ids'],
             )
             total = len(job.texts)
@@ -139,19 +134,12 @@ class EditSheetWorkflow:
                 raise ApplicationError(
                     'inputs and entry ids differ', non_retryable=True
                 )
-            # a job started before the replay activity existed keeps its
-            # old activity sequence (Temporal replays its history on a
-            # worker restart; a new activity there is a non-determinism)
-            replay_known = workflow.patched('replay-cached')
-            replay = {'replayed': 0, 'reports': []}
-            if replay_known and total:
-                replay = await self._replay_cached(
-                    job,
-                    collected['input_entry_ids'],
-                    # every input cached: the replay stores the sheet too
-                    status_of({'model': job.llm_model_name}) if quiet else {},
-                    None if quiet else status,
-                )
+            # every input cached: the replay stores the sheet too
+            replay = await self._replay_cached(
+                job,
+                collected['input_entry_ids'],
+                status_of({'model': job.llm_model_name}),
+            )
             replayed = replay['replayed']
             reports.extend(replay['reports'])
             if 'done' in replay:
@@ -162,13 +150,8 @@ class EditSheetWorkflow:
                 'inputs_replayed': replayed,
                 'model': job.llm_model_name,
             }
-            if not replay_known or replayed < total:
-                await status({**progress, 'inputs_done': replayed})
+            await status({**progress, 'inputs_done': replayed})
 
-            # each input's report goes with its cache file, one write; a job
-            # started before writes a status before and after each input
-            per_note = workflow.patched('one-write-per-note')
-            after_read = workflow.patched('replay-after-read')
             for number, entry_id in enumerate(collected['input_entry_ids'], 1):
                 if number <= replayed:
                     continue
@@ -183,10 +166,9 @@ class EditSheetWorkflow:
                         f'input {number}: {len(prepared["prompts"])} prompts, not 2',
                         non_retryable=True,
                     )
-                # a snapshot between the activities: the API's staleness
-                # guard must not open while one input is being worked on
-                before = {**progress, 'inputs_done': number - 1}
-                await (heartbeat(before) if per_note else status(before))
+                # the API's staleness guard must not open while one input
+                # is being worked on
+                await heartbeat({**progress, 'inputs_done': number - 1})
                 # the two opinions at once; none when the proposal is cached
                 answers = await asyncio.gather(
                     *(
@@ -196,6 +178,7 @@ class EditSheetWorkflow:
                         for name, prompt in zip(('a', 'b'), prepared['prompts'])
                     )
                 )
+                # the report goes with its cache file and the status, one write
                 report = await workflow.execute_activity(
                     agree_cache_and_apply_input,
                     ApplyInput(
@@ -203,26 +186,20 @@ class EditSheetWorkflow:
                         number=number,
                         entry_id=entry_id,
                         answers=list(answers),
-                        status=status_of({**progress, 'inputs_done': number})
-                        if per_note
-                        else {},
+                        status=status_of({**progress, 'inputs_done': number}),
                     ),
                     start_to_close_timeout=timedelta(minutes=5),
                     retry_policy=RetryPolicy(maximum_attempts=3),
                 )
                 reports.append(report)
-                if per_note:
-                    last_written[0] = workflow.now()
-                else:
-                    await status({**progress, 'inputs_done': number})
-                if after_read and number < total:
+                last_written[0] = workflow.now()
+                if number < total:
                     # the inputs after it whose answers still hold: one step,
                     # and with all of them the sheet stored too
                     more = await self._replay_cached(
                         job,
                         collected['input_entry_ids'],
                         status_of({'model': job.llm_model_name}),
-                        None,
                         after=number,
                     )
                     reports.extend(more['reports'])
@@ -230,24 +207,16 @@ class EditSheetWorkflow:
                     if 'done' in more:
                         return {'job_id': job_id, 'inputs': reports, **more['done']}
 
-            writing = {'phase': 'writing-sheet', 'model': job.llm_model_name}
-            await (heartbeat(writing) if per_note else status(writing))
-            # the completed status goes with the final sheet, in one write;
-            # a job started before writes it after (its history's order)
-            together = workflow.patched('one-write-at-the-end')
+            await heartbeat({'phase': 'writing-sheet', 'model': job.llm_model_name})
+            # the completed status goes with the final sheet, in one write
             done = await workflow.execute_activity(
                 store_final_sheet_and_changelog,
                 StoreInput(
-                    **job.model_dump(),
-                    status=status_of({'model': job.llm_model_name}) if together else {},
+                    **job.model_dump(), status=status_of({'model': job.llm_model_name})
                 ),
                 start_to_close_timeout=timedelta(minutes=15),
                 retry_policy=RetryPolicy(maximum_attempts=3),
             )
-            if not together:
-                await status(
-                    {'phase': 'completed', 'model': job.llm_model_name, **done}
-                )
             return {'job_id': job_id, 'inputs': reports, **done}
         except Exception as exc:
             # make the failure visible to the poll, then re-raise so Temporal
@@ -260,21 +229,12 @@ class EditSheetWorkflow:
 
     @staticmethod
     async def _replay_cached(
-        job: JobInput, entry_ids: list[str], store_status: dict, status, after=0
+        job: JobInput, entry_ids: list[str], store_status: dict, after=0
     ) -> dict:
-        """The leading cached inputs; with every input cached and a
-        `store_status`, the final sheet stored too (`done`). `status`
-        writes the "replaying" status; None: not written. The first
-        `after` inputs are reported already: only the ones after them are."""
+        """The leading cached inputs; with every input cached, the final
+        sheet stored too with `store_status` (`done`). The first `after`
+        inputs are reported already: only the ones after them are."""
         total = len(job.texts)
-        if status:
-            await status(
-                {
-                    'phase': 'replaying',
-                    'inputs_total': total,
-                    'model': job.llm_model_name,
-                }
-            )
         replay = await workflow.execute_activity(
             replay_cached_inputs,
             ReplayInput(

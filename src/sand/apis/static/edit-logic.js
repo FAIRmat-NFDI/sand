@@ -5,10 +5,6 @@ export function describeEditPhase(status) {
   switch (status.phase) {
     case "starting":
       return "Starting...";
-    case "collecting":
-      return "Collecting the updates...";
-    case "replaying":
-      return "Checking the earlier updates...";
     case "interpreting": {
       // counted over the updates the model is asked about: the earlier
       // ones were replayed from their saved answers

@@ -20,27 +20,22 @@ class JobInput(BaseModel):
     llm_model_name: str
     texts: list[str]
     confirmations: dict[str, dict]  # the file's JSON, by confirmation key
-    # the edits decided without a confirmation (rejections.json's keys);
-    # a job started before rejections existed has none
-    rejections: list[str] = []
-    # one per text: a decision is its input's (apply.py); none in a job
-    # started before they were passed
-    input_ids: list[str] = []
+    rejections: list[str]  # the edits decided without a confirmation
+    input_ids: list[str]  # one per text: a decision is its input's (apply.py)
 
 
 class StoreInput(JobInput):
     """The job, and its status without the store's results: written as
-    completed with the final sheet, in one request. Empty in a job
-    started before (its workflow writes the status itself)."""
+    completed with the final sheet, in one request."""
 
-    status: dict = {}
+    status: dict
 
 
 class ReplayInput(JobInput):
     entry_ids: list[str]  # one per text, for the reports
     # with every input cached, the replay stores the final sheet itself,
-    # with this status as completed (StoreInput); empty: it never does
-    store_status: dict = {}
+    # with this status as completed (StoreInput)
+    store_status: dict
     # the inputs the job has reports of already: only the ones after
     # them are reported (their reports are in `store_status`)
     after: int = Field(default=0, ge=0)
@@ -61,9 +56,8 @@ class ApplyInput(PrepareInput):
     entry_id: str
     answers: list[LlmAnswer]  # empty when the proposal came from the cache
     # the job's status after this input, without its report: written with
-    # the report and the job's own cache file in one request; empty in a
-    # job started before (its workflow writes the status itself)
-    status: dict = {}
+    # the report and the job's own cache file in one request
+    status: dict
 
 
 class WriteStatusInput(BaseModel):

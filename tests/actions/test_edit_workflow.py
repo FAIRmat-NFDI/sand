@@ -3,18 +3,17 @@ that record what they got, the LLM child echoes its payload back."""
 
 import asyncio
 import json
-import pathlib
 import uuid
 from dataclasses import dataclass, field
 from datetime import timedelta
 
 import pytest
 from temporalio import activity, workflow
-from temporalio.client import WorkflowFailureError, WorkflowHistory
+from temporalio.client import WorkflowFailureError
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import WorkflowEnvironment
-from temporalio.worker import Replayer, Worker
+from temporalio.worker import Worker
 
 from sand.actions.common import LLM_TASK_QUEUE, error_message
 from sand.actions.edit.models import (
@@ -83,6 +82,7 @@ class Stubs:
                         'input': 'n1',
                     }
                 },
+                'rejections': [],
                 'llm_model_name': MODEL,
             }
 
@@ -376,7 +376,8 @@ async def test_prepare_must_give_two_prompts_or_none():
 async def test_no_inputs_is_a_finished_job_with_nothing_to_do():
     stubs = Stubs([])
     result = await run(stubs)
-    assert stubs.of('replay') == stubs.of('prepare') == []
+    # the replay of no inputs stores the sheet: nothing is asked
+    assert stubs.of('prepare') == stubs.of('store_final_sheet_and_changelog') == []
     assert result['inputs'] == []
     assert stubs.of('status')[-1]['phase'] == 'completed'
 
@@ -390,18 +391,3 @@ async def test_a_failing_activity_fails_the_job_and_says_so_in_the_status():
     assert last['phase'] == 'failed'
     assert last['error'] == 'apply broke'
     assert stubs.of('store_final_sheet_and_changelog') == []
-
-
-async def test_a_job_started_before_the_replay_keeps_its_old_activity_sequence():
-    # the history of a job the version before replay_cached_inputs ran
-    # (two inputs, the first cached): the worker takes it over after a
-    # restart, so the new code must make the same decisions for it
-    history = (
-        pathlib.Path(__file__).parent / 'fixtures' / 'edit_history_before_replay.json'
-    ).read_text()
-    replayer = Replayer(
-        workflows=[EditSheetWorkflow], data_converter=pydantic_data_converter
-    )
-    await replayer.replay_workflow(
-        WorkflowHistory.from_json('job-before-replay', history)
-    )

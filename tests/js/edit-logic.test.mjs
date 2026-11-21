@@ -29,7 +29,6 @@ const REPORT = {
 
 test("the phase as the user reads it", () => {
   assert.equal(describeEditPhase({ phase: "starting" }), "Starting...");
-  assert.equal(describeEditPhase({ phase: "collecting" }), "Collecting the updates...");
   assert.equal(
     describeEditPhase({ phase: "interpreting", inputs_done: 0, inputs_total: 3 }),
     "Reading update 1 of 3...");
@@ -37,7 +36,6 @@ test("the phase as the user reads it", () => {
     describeEditPhase({ phase: "interpreting", inputs_done: 3, inputs_total: 3 }),
     "Reading update 3 of 3...");
   assert.equal(describeEditPhase({ phase: "interpreting" }), "Reading update 1 of ?...");
-  assert.equal(describeEditPhase({ phase: "replaying" }), "Checking the earlier updates...");
   // three replayed, two read: the count is over the two
   assert.equal(
     describeEditPhase({ phase: "interpreting", inputs_done: 3, inputs_total: 5, inputs_replayed: 3 }),

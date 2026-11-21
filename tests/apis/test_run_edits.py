@@ -101,7 +101,7 @@ async def test_start_reserves_the_status_and_starts_the_action(voice, starter):
     assert datetime.fromisoformat(reserved['updated_at']).tzinfo is not None
 
 
-@pytest.mark.parametrize('phase', ['starting', 'collecting', 'interpreting'])
+@pytest.mark.parametrize('phase', ['starting', 'interpreting'])
 async def test_a_running_job_refuses_a_second_start(voice, starter, phase):
     put_status(voice, phase)
 
