@@ -766,10 +766,10 @@ async def _decision_file(  # noqa: PLR0913
     client,
     voice: VoiceElnService,
     upload_id: str,
+    *,
     name: str,
     what: str,
     parse,
-    *,
     strict: bool,
 ):
     raw = await voice.writer.read_raw_file(client, upload_id, name)
@@ -790,9 +790,9 @@ async def _confirmations(
         client,
         voice,
         upload_id,
-        CONFIRMATIONS_FILE,
-        'confirmations',
-        lambda raw: load_confirmations(read_confirmations(raw)),
+        name=CONFIRMATIONS_FILE,
+        what='confirmations',
+        parse=lambda raw: load_confirmations(read_confirmations(raw)),
         strict=strict,
     )
 
@@ -804,9 +804,9 @@ async def _rejections(
         client,
         voice,
         upload_id,
-        REJECTIONS_FILE,
-        'rejections',
-        read_rejections,
+        name=REJECTIONS_FILE,
+        what='rejections',
+        parse=read_rejections,
         strict=strict,
     )
 
@@ -819,9 +819,9 @@ async def _checkpoint(
         client,
         voice,
         upload_id,
-        CHECKPOINT_FILE,
-        'checkpoint',
-        read_checkpoint,
+        name=CHECKPOINT_FILE,
+        what='checkpoint',
+        parse=read_checkpoint,
         strict=strict,
     )
     return locked or set()
