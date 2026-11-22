@@ -250,13 +250,14 @@ export function previewNotes(report) {
   for (const edit of ready) {
     if (edit.unchanged) shown.add(`   · ${edit.unchanged}, nothing to change`);
   }
-  // a ready edit's checks show as its "Check:" lines (renderReport)
+  // a ready edit's checks show as its "Check:" lines (renderReport); its
+  // "new term" mark is too much detail here
   let underReady = false;
   return (report.preview || "").split("\n").filter((line) => {
     if (!line.startsWith(" ")) underReady = shown.has(line);
     return line && !shown.has(line) && !/^\s+from "/.test(line)
       && !line.startsWith("⚠ no update in:")
-      && !(underReady && /^\s+⚠ check: /.test(line));
+      && !(underReady && /^\s+(⚠ check|· new term): /.test(line));
   });
 }
 
