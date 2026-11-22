@@ -139,6 +139,13 @@ def _job_running(status: dict | None) -> bool:
     return age.total_seconds() < STALE_JOB_S
 
 
+def _not_while_running(status: dict | None, then: str) -> None:
+    if _job_running(status):
+        raise HTTPException(
+            status_code=409, detail=f'the updates are being read; {then}'
+        )
+
+
 def _reservation(collection_entry_id: str, phase: str, **fields) -> dict:
     """A status written by the API: visible to any check until the
     workflow's first own snapshot replaces it."""
@@ -155,6 +162,11 @@ async def _me(client) -> dict:
     me = await client.get('/users/me')
     check_response(me, step='whoami')
     return me.json()
+
+
+def _name(me: dict) -> str:
+    """Who a decision or report is by."""
+    return me.get('username') or me.get('name') or me['user_id']
 
 
 async def _user_id(client) -> str:
@@ -655,18 +667,13 @@ async def start_edit_async(
         try:
             async with voice.build_client(token) as client:
                 status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
-                if _job_running(status):
-                    raise HTTPException(
-                        status_code=409,
-                        detail='an edit job is already running on this sheet; '
-                        'wait for it to finish',
-                    )
+                _not_while_running(status, 'wait for it to finish')
                 original = await voice.writer.read_raw_file(
                     client, upload_id, ORIGINAL_FILE
                 )
                 if original is None:
                     raise HTTPException(
-                        status_code=422,
+                        status_code=404,
                         detail='no sheet was uploaded here',
                     )
                 inputs = await voice.collect_inputs(
@@ -751,75 +758,80 @@ async def _edit_status(
     return _with_confirmations(status, confirmed, rejected)
 
 
-async def _confirmations(client, voice: VoiceElnService, upload_id: str) -> dict | None:
-    """The confirmations file as loaded, as JSON;
-    None when it is damaged: the confirm endpoint says so."""
-    raw = await voice.writer.read_raw_file(client, upload_id, CONFIRMATIONS_FILE)
+# The decision files. A damaged one is never overwritten: what changes
+# them refuses on it (strict), what only shows them reads it as none.
+
+
+async def _decision_file(  # noqa: PLR0913
+    client,
+    voice: VoiceElnService,
+    upload_id: str,
+    name: str,
+    what: str,
+    parse,
+    *,
+    strict: bool,
+):
+    raw = await voice.writer.read_raw_file(client, upload_id, name)
     try:
-        return confirmations_json(load_confirmations(read_confirmations(raw)))
-    except ValueError:
-        return None
-
-
-async def _rejections(client, voice: VoiceElnService, upload_id: str) -> dict | None:
-    """The rejections file; None when it is damaged (the reject endpoint
-    refuses on it): it then shows as no rejections, and as none changed
-    since the last run."""
-    raw = await voice.writer.read_raw_file(client, upload_id, REJECTIONS_FILE)
-    try:
-        return read_rejections(raw)
-    except ValueError:
-        return None
-
-
-async def _loaded_rejections(client, voice: VoiceElnService, upload_id: str) -> dict:
-    raw = await voice.writer.read_raw_file(client, upload_id, REJECTIONS_FILE)
-    try:
-        return read_rejections(raw)
+        return parse(raw)
     except ValueError as why:
+        if not strict:
+            return None
         raise HTTPException(
-            status_code=409, detail=f'rejections file damaged: {why}'
+            status_code=409, detail=f'{what} file damaged: {why}'
         ) from why
 
 
-async def _checkpoint(client, voice: VoiceElnService, upload_id: str) -> set[str]:
-    """The inputs behind the last Confirm all; a damaged file is none here
-    (a listing), the endpoints that change inputs refuse on it."""
-    raw = await voice.writer.read_raw_file(client, upload_id, CHECKPOINT_FILE)
-    try:
-        return read_checkpoint(raw)
-    except ValueError:
-        return set()
+async def _confirmations(
+    client, voice: VoiceElnService, upload_id: str, *, strict: bool = False
+) -> dict[str, Confirmation] | None:
+    return await _decision_file(
+        client,
+        voice,
+        upload_id,
+        CONFIRMATIONS_FILE,
+        'confirmations',
+        lambda raw: load_confirmations(read_confirmations(raw)),
+        strict=strict,
+    )
 
 
-async def _loaded_checkpoint(
-    client, voice: VoiceElnService, upload_id: str
+async def _rejections(
+    client, voice: VoiceElnService, upload_id: str, *, strict: bool = False
+) -> dict | None:
+    return await _decision_file(
+        client,
+        voice,
+        upload_id,
+        REJECTIONS_FILE,
+        'rejections',
+        read_rejections,
+        strict=strict,
+    )
+
+
+async def _checkpoint(
+    client, voice: VoiceElnService, upload_id: str, *, strict: bool = False
 ) -> set[str]:
-    raw = await voice.writer.read_raw_file(client, upload_id, CHECKPOINT_FILE)
-    try:
-        return read_checkpoint(raw)
-    except ValueError as why:
-        raise HTTPException(
-            status_code=409, detail=f'checkpoint file damaged: {why}'
-        ) from why
+    """The inputs behind the last Confirm all."""
+    locked = await _decision_file(
+        client,
+        voice,
+        upload_id,
+        CHECKPOINT_FILE,
+        'checkpoint',
+        read_checkpoint,
+        strict=strict,
+    )
+    return locked or set()
 
 
 async def _unlocked(
     client, voice: VoiceElnService, upload_id: str, entry_id: str
 ) -> None:
-    if entry_id in await _loaded_checkpoint(client, voice, upload_id):
+    if entry_id in await _checkpoint(client, voice, upload_id, strict=True):
         raise HTTPException(status_code=409, detail=LOCKED)
-
-
-async def _loaded_confirmations(client, voice: VoiceElnService, upload_id: str) -> dict:
-    raw = await voice.writer.read_raw_file(client, upload_id, CONFIRMATIONS_FILE)
-    try:
-        return load_confirmations(read_confirmations(raw))
-    except ValueError as why:
-        # a damaged audit file is never overwritten; this needs a look
-        raise HTTPException(
-            status_code=409, detail=f'confirmations file damaged: {why}'
-        ) from why
 
 
 async def _applied_inputs(
@@ -830,10 +842,8 @@ async def _applied_inputs(
     matching nothing once the job read it again. None without this
     collection's status: the upload's sheet is not its. A damaged file
     is read as none here (a listing); the confirm endpoint refuses on it."""
-    raw = await voice.writer.read_raw_file(client, upload_id, CONFIRMATIONS_FILE)
-    try:
-        confirmed = load_confirmations(read_confirmations(raw))
-    except ValueError:
+    confirmed = await _confirmations(client, voice, upload_id)
+    if confirmed is None:
         return set()
     status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
     if status is None or status.get('collection_entry_id') != collection_entry_id:
@@ -841,15 +851,31 @@ async def _applied_inputs(
     # an input a running job has not reported yet counts by its record
     # a held key is not in the sheet (finding T)
     ready = {
-        report.get('entry_id'): {edit['key'] for edit in report.get('ready', [])}
-        - set(report.get('held', []))
+        report['entry_id']: _ready_keys(report) - set(report.get('held', []))
         for report in status.get('inputs', [])
-        if isinstance(report, dict)
     }
+    return {c.input for c in _still_matching(confirmed, ready).values()}
+
+
+def _ready_keys(report: dict) -> set[str]:
+    return {edit['key'] for edit in report.get('ready', [])}
+
+
+def _still_matching(decisions: dict, ready: dict[str, set[str]]) -> dict:
+    """The decisions that are still one of their input's edits (`ready`:
+    the keys by input); an earlier input revised or deleted leaves one
+    matching nothing once read again. An input `ready` has not keeps its
+    own."""
+
+    def owner(decision) -> str | None:
+        if isinstance(decision, Confirmation):
+            return decision.input
+        return decision.get('input')
+
     return {
-        c.input
-        for key, c in confirmed.items()
-        if c.input not in ready or key in ready[c.input]
+        key: d
+        for key, d in decisions.items()
+        if owner(d) not in ready or key in ready[owner(d)]
     }
 
 
@@ -876,8 +902,8 @@ async def _drop_decisions(
     changed back must not count as decided again. The next job reads it
     (and every later input, whose sheet before changed) anew. Both files
     are read before either is written: a damaged one changes nothing."""
-    confirmed = await _loaded_confirmations(client, voice, upload_id)
-    rejected = await _loaded_rejections(client, voice, upload_id)
+    confirmed = await _confirmations(client, voice, upload_id, strict=True)
+    rejected = await _rejections(client, voice, upload_id, strict=True)
     kept = {key: c for key, c in confirmed.items() if c.input != entry_id}
     if len(kept) < len(confirmed):
         await voice.writer.write_json(
@@ -919,11 +945,7 @@ def _with_confirmations(
             continue
         # two inputs of the same words on the same sheet share a key: a
         # confirmation is its own input's
-        mine = {
-            key
-            for key, c in confirmed.items()
-            if isinstance(c, dict) and c.get('input') == entry_id
-        }
+        mine = {key for key, c in confirmed.items() if c.input == entry_id}
         # held: confirmed, waiting for the inputs above; no job writes it
         # before they are decided, so it is not "since"
         held = [key for key in report.get('held', []) if key in mine]
@@ -1092,11 +1114,7 @@ async def _decidable(  # noqa: PLR0913
     edit of: a key to confirm must be one, of an input whose words are
     the ones the report read, once every input is read."""
     status = await _edit_status(client, voice, upload_id, collection_entry_id)
-    if _job_running(status):
-        raise HTTPException(
-            status_code=409,
-            detail=f'the updates are being read; {verb} when it has finished',
-        )
+    _not_while_running(status, f'{verb} when it has finished')
     if status.get('phase') != 'completed':
         # a failed job's or start's reports are shown, not decided on
         raise HTTPException(
@@ -1183,11 +1201,10 @@ async def confirm_edits(
                     status_code=409,
                     detail='the edits changed since they were shown; look at them again',
                 )
-            confirmed = await _loaded_confirmations(client, voice, upload_id)
+            confirmed = await _confirmations(client, voice, upload_id, strict=True)
             # a damaged file stops it: what is rejected is not known
-            rejected = await _loaded_rejections(client, voice, upload_id)
-            me = await _me(client)
-            by = me.get('username') or me.get('name') or me['user_id']
+            rejected = await _rejections(client, voice, upload_id, strict=True)
+            by = _name(await _me(client))
             now = datetime.now(timezone.utc)
             for key in body.keys:
                 confirmed.setdefault(
@@ -1197,16 +1214,9 @@ async def confirm_edits(
             # an input confirmed again: its confirmations that match none
             # of its edits (an earlier input changed) are done with
             ready = {
-                reports[key].get('entry_id'): {
-                    edit['key'] for edit in reports[key].get('ready', [])
-                }
-                for key in body.keys
+                reports[key]['entry_id']: _ready_keys(reports[key]) for key in body.keys
             }
-            confirmed = {
-                key: c
-                for key, c in confirmed.items()
-                if c.input not in ready or key in ready[c.input]
-            }
+            confirmed = _still_matching(confirmed, ready)
             await _write_with_checkpoint(
                 client,
                 voice,
@@ -1236,7 +1246,7 @@ async def _write_with_checkpoint(  # noqa: PLR0913
     """Confirm all: the confirmations and the inputs it covered (every
     reported one, skipped ones too: #208), locked from now on; one
     request, so neither is stored without the other."""
-    covered = await _loaded_checkpoint(client, voice, upload_id)
+    covered = await _checkpoint(client, voice, upload_id, strict=True)
     covered |= {
         r['entry_id']
         for r in status.get('inputs', [])
@@ -1287,21 +1297,15 @@ async def _drop_lost_rejections(
 ) -> None:
     """After a confirm: the rejections of the inputs decided that match
     none of their edits, as the confirmations are."""
-    kept = {
-        key: r
-        for key, r in rejected.items()
-        if r['input'] not in ready or key in ready[r['input']]
-    }
+    kept = _still_matching(rejected, ready)
     if len(kept) < len(rejected):
         await voice.writer.write_json(client, upload_id, REJECTIONS_FILE, kept)
 
 
 async def _idle(client, voice: VoiceElnService, upload_id: str) -> None:
     """Decisions are taken back between runs: a running job reads them."""
-    if _job_running(await voice.writer.read_json(client, upload_id, STATUS_FILE)):
-        raise HTTPException(
-            status_code=409, detail='the updates are being read; wait for it'
-        )
+    status = await voice.writer.read_json(client, upload_id, STATUS_FILE)
+    _not_while_running(status, 'wait for it')
 
 
 @router.post('/input-collections/{upload_id}/edits/round', response_model=RoundResponse)
@@ -1331,8 +1335,8 @@ async def decide_round(
     try:
         async with _upload_lock(upload_id), voice.build_client(token) as client:
             await _idle(client, voice, upload_id)
-            locked = await _loaded_checkpoint(client, voice, upload_id)
-            rejected = await _loaded_rejections(client, voice, upload_id)
+            locked = await _checkpoint(client, voice, upload_id, strict=True)
+            rejected = await _rejections(client, voice, upload_id, strict=True)
             status = await _edit_status(client, voice, upload_id, collection_entry_id)
             # a key two inputs share is the first one's, as on confirm
             reports: dict = {}
@@ -1345,7 +1349,7 @@ async def decide_round(
                     status_code=422,
                     detail=f'not a ready edit of the last run: {", ".join(not_ready)}',
                 )
-            confirmed = await _loaded_confirmations(client, voice, upload_id)
+            confirmed = await _confirmations(client, voice, upload_id, strict=True)
             written = sorted(set(keys) & set(confirmed))
             if written:
                 raise HTTPException(
@@ -1361,8 +1365,7 @@ async def decide_round(
             ]
             if any(i in locked for i in inputs):
                 raise HTTPException(status_code=409, detail=LOCKED)
-            me = await _me(client)
-            by = me.get('username') or me.get('name') or me['user_id']
+            by = _name(await _me(client))
             at = datetime.now(timezone.utc).isoformat()
             for key in dict.fromkeys(body.restore):
                 del rejected[key]
@@ -1389,16 +1392,8 @@ async def decide_round(
 def _matching(rejected: dict, status: dict) -> dict:
     """The rejections still of an edit of their input in the last run; an
     input the run did not report keeps its own."""
-    ready = {
-        report['entry_id']: {edit['key'] for edit in report.get('ready', [])}
-        for report in status.get('inputs', [])
-        if isinstance(report, dict) and report.get('entry_id')
-    }
-    return {
-        key: r
-        for key, r in rejected.items()
-        if r.get('input') not in ready or key in ready[r['input']]
-    }
+    ready = {r['entry_id']: _ready_keys(r) for r in status.get('inputs', [])}
+    return _still_matching(rejected, ready)
 
 
 @router.post('/input-collections/{upload_id}/edits/reset', status_code=204)
@@ -1421,9 +1416,9 @@ async def reset_decisions(
             await _idle(client, voice, upload_id)
             # damaged files are refused, not wiped: they need a look. All
             # are read before any is changed: one damaged changes nothing
-            await _loaded_confirmations(client, voice, upload_id)
-            rejected = await _loaded_rejections(client, voice, upload_id)
-            await _loaded_checkpoint(client, voice, upload_id)
+            await _confirmations(client, voice, upload_id, strict=True)
+            rejected = await _rejections(client, voice, upload_id, strict=True)
+            await _checkpoint(client, voice, upload_id, strict=True)
             # a file only when it is there (an empty one too): each
             # request is a NOMAD run. The checkpoint goes last: a reset
             # that fails on the way leaves the inputs locked
@@ -1506,10 +1501,7 @@ async def download_final_sheet(
                     detail="another sheet's job wrote this upload's sheet; "
                     'run the job again',
                 )
-            if status is not None and _job_running(status):
-                raise HTTPException(
-                    status_code=409, detail='an edit job is running; wait for it'
-                )
+            _not_while_running(status, 'wait for it')
             final = (
                 await voice.writer.read_raw_file(client, upload_id, FINAL_FILE)
                 if status is not None
@@ -1627,7 +1619,7 @@ async def send_feedback(
                 }
             report = feedback.report(
                 at=at,
-                by=me.get('username') or me.get('name') or me['user_id'],
+                by=_name(me),
                 what_wrong=body.what_wrong,
                 expected=body.expected,
                 page=body.page,

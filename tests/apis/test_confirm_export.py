@@ -451,7 +451,7 @@ async def test_no_download_while_a_job_runs(voice, synthetic_xlsx, phase):
     response = await get(voice, 'final-sheet')
 
     assert response.status_code == HTTPStatus.CONFLICT
-    assert response.json()['detail'] == 'an edit job is running; wait for it'
+    assert response.json()['detail'] == 'the updates are being read; wait for it'
 
 
 async def test_no_download_after_a_failed_job(voice, synthetic_xlsx):
@@ -514,7 +514,7 @@ async def test_no_download_while_a_first_job_is_reserved(voice, synthetic_xlsx):
     response = await get(voice, 'final-sheet')
 
     assert response.status_code == HTTPStatus.CONFLICT
-    assert response.json()['detail'] == 'an edit job is running; wait for it'
+    assert response.json()['detail'] == 'the updates are being read; wait for it'
 
 
 async def test_another_collections_job_is_refused(voice, synthetic_xlsx):

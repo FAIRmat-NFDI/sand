@@ -108,7 +108,7 @@ async def test_a_running_job_refuses_a_second_start(voice, starter, phase):
     response = await start(voice)
 
     assert response.status_code == HTTPStatus.CONFLICT
-    assert 'already running' in response.json()['detail']
+    assert 'being read' in response.json()['detail']
     assert starter.started == []
     assert status_file(voice)['phase'] == phase  # untouched
 
@@ -168,7 +168,7 @@ async def test_no_uploaded_sheet(voice, starter):
 
     response = await start(voice)
 
-    assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert response.status_code == HTTPStatus.NOT_FOUND
     assert response.json()['detail'] == 'no sheet was uploaded here'
     assert starter.started == []
     assert STATUS_FILE not in voice.writer.files
