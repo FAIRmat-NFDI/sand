@@ -134,7 +134,7 @@ function wordsOf(param) {
 }
 
 // the lab's word for a temperature, wherever one is named
-export function shortName(name) {
+function shortName(name) {
   return String(name).replace(/\btemperature\b/gi, "T");
 }
 

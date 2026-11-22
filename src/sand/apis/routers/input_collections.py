@@ -1018,17 +1018,6 @@ def _since_last_run(report: dict) -> bool:
     )
 
 
-def _withdrawn(status: dict) -> bool:
-    """Whether a confirmation the stored sheet was written with is gone,
-    or may be: a rejection taken back changes the sheet the inputs after
-    it were confirmed on (finding R)."""
-    return any(
-        report.get('unconfirmed_since') or report.get('unrejected_since')
-        for report in status.get('inputs', [])
-        if isinstance(report, dict)
-    )
-
-
 def _not_settled(status: dict, texts: dict[str, str]) -> str | None:
     """Why the reports are not what the next run reads, or None: every
     input read in its words, nothing decided or changed since the last
@@ -1065,31 +1054,6 @@ def _not_final(status: dict, texts: dict[str, str]) -> str | None:
     return None
 
 
-_WITHDRAWN = (
-    'an update written into the sheet was revised or deleted, or a '
-    'rejection taken back; the sheet is being written again'
-)
-
-
-async def _completed_status(
-    client, voice: VoiceElnService, upload_id: str, collection_entry_id: str
-) -> dict:
-    """The status of the last job, which must have completed: what the
-    final sheet and the changelog are checked against."""
-    status = await _edit_status(client, voice, upload_id, collection_entry_id)
-    if _job_running(status):
-        raise HTTPException(
-            status_code=409, detail='an edit job is running; wait for it'
-        )
-    if status.get('phase') != 'completed':
-        raise HTTPException(
-            status_code=409, detail='the last edit job did not complete; run it again'
-        )
-    if _withdrawn(status):
-        raise HTTPException(status_code=409, detail=_WITHDRAWN)
-    return status
-
-
 async def _read_edit_status(
     voice: VoiceElnService, token: str, upload_id: str, collection_entry_id: str
 ) -> dict:
@@ -1113,28 +1077,6 @@ async def edit_status(
         upload_id,
         collection_entry_id,
     )
-
-
-@router.get('/input-collections/{upload_id}/edits')
-async def edit_reports(
-    upload_id: str,
-    request: Request,
-    collection_entry_id: str,
-) -> dict:
-    """What the job made of each input, in input order: text, preview,
-    the edits ready to confirm (with their keys), what was written or
-    refused. Partial while the phase is not completed."""
-    status = await _read_edit_status(
-        _voice_service(request),
-        get_bearer_token(request),
-        upload_id,
-        collection_entry_id,
-    )
-    return {
-        'job_id': status.get('job_id'),
-        'phase': status.get('phase'),
-        'inputs': status.get('inputs', []),
-    }
 
 
 async def _decidable(  # noqa: PLR0913
@@ -1168,12 +1110,6 @@ async def _decidable(  # noqa: PLR0913
         for edit in report.get('ready', []):
             reports.setdefault(edit['key'], report)
     unknown = sorted(set(keys) - set(reports))
-    if unknown and _job_running(status):
-        # the running job's reports replace the old ones as it goes
-        raise HTTPException(
-            status_code=409,
-            detail=f'an edit job is running; {verb} when it has finished',
-        )
     if unknown:
         raise HTTPException(
             status_code=422,
@@ -1639,48 +1575,6 @@ def _attachment(filename: str) -> str:
         for c in filename
     )
     return f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quote(filename, safe="")}'
-
-
-@router.get('/input-collections/{upload_id}/changelog')
-async def read_changelog(
-    upload_id: str,
-    request: Request,
-    collection_entry_id: str,
-    format: str = 'text',  # noqa: A002
-) -> Response:
-    """What the final sheet changed against the original, cell by cell,
-    with who confirmed each edit and when: rendered text, or the stored
-    JSON (`format=json`). Only an intact log of the last job is served."""
-    voice = _voice_service(request)
-    token = get_bearer_token(request)
-
-    if format not in ('text', 'json'):
-        raise HTTPException(status_code=400, detail='format is text or json')
-    try:
-        async with voice.build_client(token) as client:
-            status = await _completed_status(
-                client, voice, upload_id, collection_entry_id
-            )
-            raw = await voice.writer.read_raw_file(client, upload_id, CHANGELOG_FILE)
-    except NomadAPIError as exc:
-        raise _http_error(exc) from exc
-
-    if raw is None:
-        raise HTTPException(status_code=404, detail='no changelog stored')
-    try:
-        log = changelog.from_json(raw.decode())
-    except (UnicodeDecodeError, changelog.CheckFailed) as why:
-        raise HTTPException(
-            status_code=409, detail=f'changelog damaged: {why}'
-        ) from why
-    if log.final != status.get('final'):
-        raise HTTPException(
-            status_code=409,
-            detail="the stored changelog is not the last job's; run the job again",
-        )
-    if format == 'json':
-        return Response(content=raw, media_type='application/json')
-    return Response(content=changelog.render(log), media_type='text/plain')
 
 
 @router.post(

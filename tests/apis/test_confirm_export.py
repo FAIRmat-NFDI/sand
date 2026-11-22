@@ -1,5 +1,4 @@
-"""Confirm all, downloading the final sheet, reading the changelog,
-against a fake NOMAD."""
+"""Confirm all and downloading the final sheet, against a fake NOMAD."""
 
 import asyncio
 import json
@@ -323,10 +322,9 @@ async def test_the_status_shows_a_confirmation_as_waiting_for_the_next_run(voice
     put_status(voice, 'completed')
     await confirm(voice, ['k1', 'k2'])
 
-    for path in ('edit-status', 'edits'):
-        [report] = (await get(voice, path)).json()['inputs']
-        assert report['confirmed'] == ['k1', 'k2']
-        assert report['confirmed_since'] == ['k1', 'k2']
+    [report] = (await get(voice, 'edit-status')).json()['inputs']
+    assert report['confirmed'] == ['k1', 'k2']
+    assert report['confirmed_since'] == ['k1', 'k2']
 
 
 async def test_a_confirmation_the_job_applied_is_not_since(voice):
@@ -342,7 +340,7 @@ async def test_a_confirmation_the_job_applied_is_not_since(voice):
         }
     ).encode()
 
-    [report] = (await get(voice, 'edits')).json()['inputs']
+    [report] = (await get(voice, 'edit-status')).json()['inputs']
 
     assert report['confirmed'] == ['k1']
     assert report['confirmed_since'] == []  # k9 is nobody's ready edit
@@ -352,7 +350,7 @@ async def test_a_damaged_confirmations_file_does_not_break_the_status(voice):
     put_status(voice, 'completed')
     voice.writer.files[CONFIRMATIONS_FILE] = b'not json'
 
-    response = await get(voice, 'edits')
+    response = await get(voice, 'edit-status')
 
     assert response.status_code == HTTPStatus.OK
     assert response.json()['inputs'][0]['confirmed_since'] == []
@@ -381,13 +379,9 @@ async def test_no_download_after_a_written_update_was_withdrawn(voice, synthetic
     put_final(voice, synthetic_xlsx)
     voice.writer.files[CONFIRMATIONS_FILE] = b'{}'
 
-    for path, said in (
-        ('final-sheet', 'being written again'),
-        ('changelog', 'revised or deleted'),
-    ):
-        response = await get(voice, path)
-        assert response.status_code == HTTPStatus.CONFLICT, path
-        assert said in response.json()['detail']
+    response = await get(voice, 'final-sheet')
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert 'being written again' in response.json()['detail']
 
 
 async def test_no_download_after_a_rejection_was_taken_back(voice, synthetic_xlsx):
@@ -398,13 +392,9 @@ async def test_no_download_after_a_rejection_was_taken_back(voice, synthetic_xls
         {'k2': {'by': 'user', 'at': '2026-10-28T12:16:05+00:00', 'input': 'n1'}}
     ).encode()
 
-    for path, said in (
-        ('final-sheet', 'being written again'),
-        ('changelog', 'rejection taken back'),
-    ):
-        response = await get(voice, path)
-        assert response.status_code == HTTPStatus.CONFLICT, path
-        assert said in response.json()['detail']
+    response = await get(voice, 'final-sheet')
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert 'being written again' in response.json()['detail']
 
 
 async def test_no_download_while_an_edit_waits_for_a_decision(voice, synthetic_xlsx):
@@ -595,74 +585,6 @@ async def test_no_original_without_a_sheet(voice):
 
     assert response.status_code == HTTPStatus.NOT_FOUND
     assert 'no sheet was uploaded' in response.json()['detail']
-
-
-# --- changelog --------------------------------------------------------------------
-
-
-async def test_changelog_as_text_and_as_json(voice, synthetic_xlsx):
-    put_final(voice, synthetic_xlsx)
-
-    text = await get(voice, 'changelog')
-    assert text.status_code == HTTPStatus.OK, text.text
-    assert text.headers['content-type'].startswith('text/plain')
-    assert f'original  sha256 {sha256(synthetic_xlsx)}' in text.text
-
-    as_json = await get(voice, 'changelog', format='json')
-    assert as_json.status_code == HTTPStatus.OK
-    assert as_json.content == voice.writer.files[CHANGELOG_FILE]
-    assert changelog.from_json(as_json.text).final == sha256(synthetic_xlsx)
-
-
-async def test_changelog_formats(voice, synthetic_xlsx):
-    put_final(voice, synthetic_xlsx)
-
-    assert (await get(voice, 'changelog', format='xml')).status_code == (
-        HTTPStatus.BAD_REQUEST
-    )
-
-
-async def test_a_damaged_changelog_is_not_served(voice, synthetic_xlsx):
-    put_final(voice, synthetic_xlsx)
-    damaged = voice.writer.files[CHANGELOG_FILE].replace(b'"entries"', b'"entry"')
-    voice.writer.files[CHANGELOG_FILE] = damaged
-
-    response = await get(voice, 'changelog')
-
-    assert response.status_code == HTTPStatus.CONFLICT
-    assert response.json()['detail'].startswith('changelog damaged')
-
-
-async def test_a_changelog_of_another_job_is_not_served(voice, synthetic_xlsx):
-    put_final(voice, synthetic_xlsx)
-    put_status(voice, final='0' * 64)
-
-    response = await get(voice, 'changelog')
-
-    assert response.status_code == HTTPStatus.CONFLICT
-    assert "not the last job's" in response.json()['detail']
-
-
-@pytest.mark.parametrize('phase', ['interpreting', 'failed'])
-async def test_no_changelog_while_running_or_after_failure(
-    voice, synthetic_xlsx, phase
-):
-    put_final(voice, synthetic_xlsx, phase=phase)
-
-    response = await get(voice, 'changelog')
-
-    assert response.status_code == HTTPStatus.CONFLICT
-    assert response.json()['detail'] in (
-        'an edit job is running; wait for it',
-        'the last edit job did not complete; run it again',
-    )
-
-
-async def test_no_changelog_stored(voice, synthetic_xlsx):
-    put_final(voice, synthetic_xlsx)
-    del voice.writer.files[CHANGELOG_FILE]
-
-    assert (await get(voice, 'changelog')).status_code == HTTPStatus.NOT_FOUND
 
 
 async def test_no_download_while_a_recording_is_transcribed(voice, synthetic_xlsx):

@@ -3,7 +3,12 @@ import io
 from openpyxl import Workbook
 from synthetic_sheet import SECTIONS
 
-from sand.sheet_edit.workbook import read_structure
+from sand.sheet_edit.workbook import first_sheet, sheet_structure
+
+
+def read_structure(xlsx: bytes):
+    return sheet_structure(first_sheet(xlsx))
+
 
 REAL_KIT_COLUMNS = 155
 REAL_KIT_SAMPLES = 42

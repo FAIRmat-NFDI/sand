@@ -86,7 +86,7 @@ def put_confirmed(voice, *keys):
 async def report(voice):
     async with api(voice) as client:
         response = await client.get(
-            f'/api/input-collections/{UPLOAD}/edits',
+            f'/api/input-collections/{UPLOAD}/edit-status',
             params={'collection_entry_id': COLLECTION},
         )
     [only] = response.json()['inputs']
@@ -211,7 +211,7 @@ async def test_a_rejection_holds_for_every_input_with_its_key(voice):
 
     async with api(voice) as client:
         response = await client.get(
-            f'/api/input-collections/{UPLOAD}/edits',
+            f'/api/input-collections/{UPLOAD}/edit-status',
             params={'collection_entry_id': COLLECTION},
         )
     assert [r['rejected'] for r in response.json()['inputs']] == [['k1'], ['k1']]

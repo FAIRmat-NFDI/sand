@@ -18,8 +18,8 @@ plus a changelog.
   edits. Every edit is shown and must be confirmed before it is written.
   An update the sheet cannot take (unknown sample, unknown column, a
   value of the wrong kind) is refused with the reason; sand never guesses.
-- **Download** the edited sheet, or the original as it was uploaded, and
-  read the changelog of what changed and why.
+- **Download** the edited sheet, or the original as it was uploaded; the
+  changelog of what changed and why is stored beside them in the upload.
 - **Voice mode**: start and stop recordings by voice, for work where the
   hands are not free (e.g. in a glove box).
 
@@ -213,7 +213,7 @@ same browser; sand warns when the login is about to end.
    waiting for the updates above", and is written once they are decided.
 5. **Download** the edited sheet (the original is a download too, under
    the file name it was uploaded with). The Edits card lists every edit
-   written; the changelog, folded below it, holds every cell changed, the
+   written; the changelog in the upload holds every cell changed, the
    update it came from and who confirmed it.
 
 **Read again** appears when a reading failed (for example when the LLM

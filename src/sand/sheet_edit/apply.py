@@ -35,7 +35,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
 from sand.sheet_edit.catalog import Catalog, build
-from sand.sheet_edit.coverage import Coverage, coverage
+from sand.sheet_edit.coverage import coverage
 from sand.sheet_edit.edits import ProposedEdits
 from sand.sheet_edit.ground import Grounded, Refused, column_name, ground, read_old
 from sand.sheet_edit.preview import edit_summary, preview
@@ -103,7 +103,6 @@ class Interpretation:
     catalog: Catalog  # of the sheet it was given
     proposal: ProposedEdits
     results: tuple[Grounded | Refused, ...]  # one per proposed edit, in order
-    coverage: Coverage
     preview: str  # what the user reads
     ready: dict[str, Grounded]  # edits that may be written, by confirmation key
 
@@ -177,7 +176,7 @@ def interpret_instruction(  # noqa: PLR0913
         found, misquoted=tuple(m for m in found.misquoted if m not in quoted)
     )
     shown = preview(results, proposal.unresolved, shown_coverage, catalog)
-    return Interpretation(catalog, proposal, tuple(results), found, shown, ready)
+    return Interpretation(catalog, proposal, tuple(results), shown, ready)
 
 
 def _without_overlaps(

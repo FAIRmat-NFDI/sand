@@ -68,16 +68,6 @@ body {
   box-shadow: 0 4px 8px rgba(42,76,223,0.3);
 }
 
-.btn-secondary {
-  background: #008A67;
-  color: #fff;
-  box-shadow: 0 2px 4px rgba(0,138,103,0.3);
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background: #00533e;
-}
-
 .btn-outlined {
   background: transparent;
   color: #2A4CDF;
@@ -97,15 +87,6 @@ body {
 
 .btn-text:hover {
   background: rgba(255,255,255,0.1);
-}
-
-.btn-danger {
-  background: #d32f2f;
-  color: #fff;
-}
-
-.btn-danger:hover:not(:disabled) {
-  background: #b71c1c;
 }
 
 /* Material icon in button */
@@ -849,14 +830,6 @@ body {
 
 .unsent-recording .controls {
   margin: 8px 0 0;
-}
-
-/* Result title */
-.results-title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #333;
-  margin-bottom: 8px;
 }
 
 /* Sections: Record, Note and Apply on the left, the Inputs timeline

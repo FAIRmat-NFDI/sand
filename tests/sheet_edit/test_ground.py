@@ -29,6 +29,13 @@ VOLUME_3 = 'C034'  # 3: Spin Coating, Solvent 1 volume [uL], 50
 ALL_ROWS = tuple(range(3, 15))  # samples 1-5, 7-13
 
 
+def confidence(result) -> str:
+    """low: a check or a doubt; medium: notes; high: neither."""
+    if result.checks or result.doubts:
+        return 'low'
+    return 'medium' if result.notes else 'high'
+
+
 @pytest.fixture(scope='module')
 def catalog(synthetic_xlsx):
     return build(synthetic_xlsx)
@@ -309,7 +316,7 @@ def test_a_subbatch_the_edit_names_but_the_words_do_not_is_a_doubt(two_subbatche
     )
     assert result.rows == (9,)
     assert result.doubts == ('subbatch 1: not named in your words',)
-    assert result.confidence == 'low'
+    assert confidence(result) == 'low'
 
 
 def test_an_unknown_subbatch_is_refused(two_subbatches):
@@ -446,7 +453,7 @@ def test_a_range_the_user_did_not_name_is_a_doubt(catalog):
     )
     assert result.rows == (3, 4, 5)
     assert result.doubts == ('samples 1 to 3: not named in your words',)
-    assert result.confidence == 'low'
+    assert confidence(result) == 'low'
 
 
 def test_a_named_sample_the_edit_leaves_out_is_checked(catalog):
@@ -711,7 +718,7 @@ def test_rows_holding_different_values_take_one_edit(catalog):
         )
         assert isinstance(result, Grounded), old
         assert result.rows == ALL_ROWS
-        assert (result.confidence, result.notes) == ('high', ())
+        assert (confidence(result), result.notes) == ('high', ())
     # a value none of them holds: the model read another line
     why = checked(
         ground(
@@ -906,7 +913,7 @@ def ipa(target, equals='IPA', said='time of the IPA 300'):
 def test_an_anchor_reaches_its_own_number(catalog):
     result = ground(ipa(CLEAN_TIME_2), catalog)  # Solvent 2 -> Time 2
     assert result.rows == ALL_ROWS
-    assert result.confidence == 'high'
+    assert confidence(result) == 'high'
     why = checked(ground(ipa(CLEAN_TIME_1), catalog))  # Solvent 2 -> Time 1
     assert why == 'Solvent 2 is number 2, Time 1 [s] is number 1'
 
@@ -938,7 +945,7 @@ def test_an_anchor_the_table_holds_for_the_one_said_is_checked(catalog):
     # value in, and the edit would be the IPA step's
     result = ground(ipa(CLEAN_TIME_2, said='time of the DMSO 300'), catalog)
     assert checked(result) == "Solvent 2 (1: Cleaning UV-Ozone): you did not say 'IPA'"
-    assert result.confidence == 'low'
+    assert confidence(result) == 'low'
 
 
 def test_an_anchor_in_other_case_or_spacing_is_the_one_said(catalog):
@@ -963,7 +970,7 @@ def test_a_spoken_number_is_a_note(catalog):
     assert result.notes == (
         "Rotation speed [rpm] (2: Spin Coating): '4000': read from 'four thousand'",
     )
-    assert result.confidence == 'medium'
+    assert confidence(result) == 'medium'
 
 
 def test_no_number_in_the_words_is_a_doubt(catalog):
@@ -972,19 +979,19 @@ def test_no_number_in_the_words_is_a_doubt(catalog):
     assert result.doubts == (
         "Rotation speed [rpm] (2: Spin Coating): '4000' not found in your words",
     )
-    assert result.confidence == 'low'
+    assert confidence(result) == 'low'
 
 
 def test_numbers_of_the_column_name_are_not_values(catalog):
     # the 2 of 'spin coating 2' and the 1 of 'solvent 1'
-    assert ground(edit(said='spin coating 2 speed 4000'), catalog).confidence == 'high'
+    assert confidence(ground(edit(said='spin coating 2 speed 4000'), catalog)) == 'high'
     assert (
-        ground(edit(said='step 2 set the speed to 4000'), catalog).confidence == 'high'
+        confidence(ground(edit(said='step 2 set the speed to 4000'), catalog)) == 'high'
     )
     result = ground(
         edit(VOLUME_3, old='50', new='100', said='step 3 solvent 1 volume 100'), catalog
     )
-    assert (result.confidence, result.value) == ('high', 100)
+    assert (confidence(result), result.value) == ('high', 100)
     why = checked(
         ground(
             edit(VOLUME_3, old='50', new='1', said='step 3 solvent 1 volume 100'),
@@ -1006,7 +1013,7 @@ def test_a_value_with_a_unit_is_never_an_index(catalog):
         ),
         catalog,
     )
-    assert (result.confidence, result.value) == ('high', 2)
+    assert (confidence(result), result.value) == ('high', 2)
 
 
 def test_text_matches_across_spaces_and_hyphens(catalog):
@@ -1015,7 +1022,7 @@ def test_text_matches_across_spaces_and_hyphens(catalog):
         edit(material, old='Me-4PACz', new='2PACz', said='material name to 2 PACz'),
         catalog,
     )
-    assert result.confidence == 'high'
+    assert confidence(result) == 'high'
 
 
 def test_text_is_looked_for_as_written(catalog):
@@ -1025,7 +1032,7 @@ def test_text_is_looked_for_as_written(catalog):
         ),
         catalog,
     )
-    assert (result.confidence, result.value) == ('high', 'IPA')
+    assert (confidence(result), result.value) == ('high', 'IPA')
     result = ground(
         edit(
             CLEAN_SOLVENT_1,
@@ -1046,12 +1053,12 @@ def test_text_is_not_compared_as_a_number(catalog):
         ('variation of sample 1 15 minutes', 'low'),
         ('variation of sample 1 15 MIN', 'high'),
     )
-    for said, confidence in cases:
+    for said, sure in cases:
         result = ground(
             edit(VARIATION, rows=samples('1'), old='10min', new='15min', said=said),
             catalog,
         )
-        assert result.confidence == confidence, said
+        assert confidence(result) == sure, said
 
 
 def test_yes_is_a_true_word(synthetic_xlsx):
@@ -1064,9 +1071,9 @@ def test_yes_is_a_true_word(synthetic_xlsx):
     catalog = build(edited(synthetic_xlsx, change))
     notes = 'C009'
     result = ground(edit(notes, old='FALSE', new='YES', said='flag yes'), catalog)
-    assert (result.value, result.confidence) == (True, 'high')
+    assert (result.value, confidence(result)) == (True, 'high')
     result = ground(edit(notes, old='FALSE', new='YES', said='flag no'), catalog)
-    assert result.confidence == 'low'
+    assert confidence(result) == 'low'
 
 
 def test_the_tables_empty_marker_is_not_a_value(catalog):
@@ -1083,9 +1090,9 @@ def test_the_tables_empty_marker_is_not_a_value(catalog):
 def test_clearing_needs_a_clearing_word(catalog):
     tool = 'C019'  # Tool/GB name, 'box1'
     result = ground(edit(tool, old='box1', new='', said='clear the tool name'), catalog)
-    assert (result.value, result.confidence) == (None, 'high')
+    assert (result.value, confidence(result)) == (None, 'high')
     result = ground(edit(tool, old='box1', new='', said='the tool name'), catalog)
-    assert result.confidence == 'low'
+    assert confidence(result) == 'low'
 
 
 # --- T type and U unit ------------------------------------------------------------
@@ -1194,11 +1201,11 @@ def test_dates_keep_the_sheets_form(catalog):
         edit(DATE, old='20250101', new='20250202', said='date 2nd of February 2025'),
         catalog,
     )
-    assert result.confidence == 'low'
+    assert confidence(result) == 'low'
     assert result.value == int('20250202')
 
 
-# --- confidence -------------------------------------------------------------------
+# --- how sure: a check or doubt, notes, or neither -------------------------------------------------------------------
 
 
 def test_confidence_levels(catalog):
@@ -1211,7 +1218,7 @@ def test_confidence_levels(catalog):
     low = ground(
         edit(rows=between('1', '3'), said='speed 4000 for the first three'), catalog
     )
-    assert (high.confidence, medium.confidence, low.confidence) == (
+    assert (confidence(high), confidence(medium), confidence(low)) == (
         'high',
         'medium',
         'low',
