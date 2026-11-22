@@ -15,6 +15,7 @@ from sand.sheet_edit.edits import (
     ProposedEdits,
     Range,
     Unreadable,
+    Where,
     proposed_edits_schema,
 )
 from sand.sheet_edit.preview import preview
@@ -883,12 +884,9 @@ def test_a_where_on_the_subbatch_is_those_samples(two_subbatches):
     listed = edit(rows={'first': '1', 'last': '6', 'subbatch': one})
     where = edit(rows={'where': subbatch, 'equals': one})
     assert len(ask(two_subbatches, answer(listed), answer(where)).edits) == 1
-    # a value column holding it on the same samples is still another reading
-    variation = edit(rows={'where': VARIATION, 'equals': None})
-    assert ask(two_subbatches, answer(listed), answer(variation)).edits == []
 
 
-def test_a_subbatch_column_of_a_numbered_step_is_a_value_column(two_subbatches):
+def test_a_where_on_a_value_column_agrees_by_its_samples(two_subbatches):
     info = next(c for c in two_subbatches.columns if c.column.header == 'Subbatch')
     section = dataclasses.replace(info.column.section, position=2)
     moved = dataclasses.replace(
@@ -899,6 +897,55 @@ def test_a_subbatch_column_of_a_numbered_step_is_a_value_column(two_subbatches):
         columns=tuple(moved if c is info else c for c in two_subbatches.columns),
     )
     one = next(s.subbatch for s in catalog.samples if s.row == 9)  # noqa: PLR2004
-    listed = edit(rows={'first': '1', 'last': '6', 'subbatch': one})
-    where = edit(rows={'where': info.id, 'equals': one})
-    assert ask(catalog, answer(listed), answer(where)).edits == []
+    said = 'speed 4000 for the first six samples'
+    listed = edit(rows={'first': '1', 'last': '6', 'subbatch': one}, said=said)
+    where = edit(rows={'where': info.id, 'equals': one}, said=said)
+    # the same samples on this sheet: agreed; the value of the where is not
+    # in the words, the samples named are kept
+    (agreed,) = ask(catalog, answer(listed), answer(where)).edits
+    assert agreed.rows == Range(first='1', last='6', subbatch=one)
+
+
+def test_a_where_the_user_said_is_kept_when_both_name_the_same_samples(catalog):
+    # Solvent 2 is IPA on every sample: "where solvent 2 is IPA" and "all"
+    # write the same cells today; the rule is kept, so that it picks other
+    # samples once a note above changes Solvent 2
+    said = 'time 2 to 700 for the samples where solvent 2 is IPA'
+    where = {'where': SOLVENT_2, 'equals': 'IPA'}
+    for a, b in (('all', where), (where, 'all')):
+        (agreed,) = ask(
+            catalog,
+            answer(edit(target=TIME_2, rows=a, old='600', new='700', said=said)),
+            answer(edit(target=TIME_2, rows=b, old='600', new='700', said=said)),
+            instruction=said,
+        ).edits
+        assert agreed.rows == Where(where=SOLVENT_2, equals='IPA')
+
+
+def test_an_empty_where_said_as_empty_is_kept(catalog):
+    # Solvent 1 volume of step 2 is empty on every sample
+    said = 'time 2 to 700 where the solvent 1 volume of step 2 is empty'
+    empty = {'where': 'C021', 'equals': None}
+    (agreed,) = ask(
+        catalog,
+        answer(edit(target=TIME_2, rows='all', old='600', new='700', said=said)),
+        answer(edit(target=TIME_2, rows=empty, old='600', new='700', said=said)),
+        instruction=said,
+    ).edits
+    assert agreed.rows == Where(where='C021', equals=None)
+
+
+def test_two_conditions_on_the_same_samples_today_are_two_readings(catalog):
+    # Solvent 1 is Acetone and Solvent 2 is IPA on every sample: the same
+    # rows now, other rows once a note changes either
+    said = 'time 2 to 700 for the samples where the solvent is IPA'
+    one = {'where': 'C010', 'equals': 'Acetone'}
+    two = {'where': SOLVENT_2, 'equals': 'IPA'}
+    proposal = ask(
+        catalog,
+        answer(edit(target=TIME_2, rows=one, old='600', new='700', said=said)),
+        answer(edit(target=TIME_2, rows=two, old='600', new='700', said=said)),
+        instruction=said,
+    )
+    assert proposal.edits == []
+    only(proposal, Disputed)
