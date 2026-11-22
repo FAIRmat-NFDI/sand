@@ -17,6 +17,7 @@ ground.py are the safety net.
 """
 
 import json
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
@@ -284,9 +285,11 @@ def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdi
         both = [*group, *by_b[key]]
         pointed = _first_per_anchor(both)
         olds = _first_per_said_old(both)
-        # the same write pointed at through different cells, or with two
-        # old values heard: each is a reading
-        differ = next((d for d in (pointed, olds) if len(d) > 1), {})
+        # the same write pointed at through different cells, with two old
+        # values heard, or by two conditions that pick the same samples
+        # only today: each is a reading
+        conditions = _first_per_where(both)
+        differ = next((d for d in (pointed, olds, conditions) if len(d) > 1), {})
         # the passes (and repeats) may cut the quote differently: a hedge
         # on words around any of these quotes counts
         hedged = any(_overlap(h, q) for h in hedges for q in _quotes(both))
@@ -501,16 +504,7 @@ def _named(edit: Edit, both: list[Edit]) -> Edit:
     it picks other samples once a note above changes that column, which
     the samples it holds today would not. Else samples named win over
     'all', or ground finds 'all' against the samples the user named."""
-    said = next(
-        (
-            e
-            for e in both
-            if isinstance(e.rows, Where)
-            and e.rows.equals is not None
-            and in_words(e.rows.equals, e.said)
-        ),
-        None,
-    )
+    said = next((e for e in both if _where_said(e)), None)
     if said is not None:
         return edit.model_copy(update={'rows': said.rows})
     if isinstance(edit.rows, Where) or edit.rows == 'all':
@@ -521,6 +515,29 @@ def _named(edit: Edit, both: list[Edit]) -> Edit:
         if named is not None:
             return edit.model_copy(update={'rows': named.rows})
     return edit
+
+
+def _where_said(edit: Edit) -> bool:
+    """A 'where' in the user's words: its value ("where solvent 2 is
+    IPA"), or an empty one said as empty ("where the notes are empty")."""
+    rows = edit.rows
+    if not isinstance(rows, Where):
+        return False
+    if rows.equals is None or not rows.equals.strip():
+        return _EMPTY_SAID.search(edit.said) is not None
+    return in_words(rows.equals, edit.said)
+
+
+def _first_per_where(edits: list[Edit]) -> dict[tuple, Edit]:
+    found: dict[tuple, Edit] = {}
+    for edit in edits:
+        if isinstance(edit.rows, Where):
+            equals = (edit.rows.equals or '').strip().casefold()
+            found.setdefault((edit.rows.where, equals), edit)
+    return found
+
+
+_EMPTY_SAID = re.compile(r'\b(empty|blank|nothing|none)\b', re.I)
 
 
 def _first_per_said_old(edits: list[Edit]) -> dict[str, Edit]:

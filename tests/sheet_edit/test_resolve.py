@@ -874,3 +874,32 @@ def test_a_where_the_user_said_is_kept_when_both_name_the_same_samples(catalog):
             instruction=said,
         ).edits
         assert agreed.rows == Where(where=SOLVENT_2, equals='IPA')
+
+
+def test_an_empty_where_said_as_empty_is_kept(catalog):
+    # Solvent 1 volume of step 2 is empty on every sample
+    said = 'time 2 to 700 where the solvent 1 volume of step 2 is empty'
+    empty = {'where': 'C021', 'equals': None}
+    (agreed,) = ask(
+        catalog,
+        answer(edit(target=TIME_2, rows='all', old='600', new='700', said=said)),
+        answer(edit(target=TIME_2, rows=empty, old='600', new='700', said=said)),
+        instruction=said,
+    ).edits
+    assert agreed.rows == Where(where='C021', equals=None)
+
+
+def test_two_conditions_on_the_same_samples_today_are_two_readings(catalog):
+    # Solvent 1 is Acetone and Solvent 2 is IPA on every sample: the same
+    # rows now, other rows once a note changes either
+    said = 'time 2 to 700 for the samples where the solvent is IPA'
+    one = {'where': 'C010', 'equals': 'Acetone'}
+    two = {'where': SOLVENT_2, 'equals': 'IPA'}
+    proposal = ask(
+        catalog,
+        answer(edit(target=TIME_2, rows=one, old='600', new='700', said=said)),
+        answer(edit(target=TIME_2, rows=two, old='600', new='700', said=said)),
+        instruction=said,
+    )
+    assert proposal.edits == []
+    only(proposal, Disputed)
