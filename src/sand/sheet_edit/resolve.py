@@ -224,17 +224,43 @@ def read_answer(answer: object, instruction: str, catalog: Catalog) -> Opinion:
 
 
 def _in_sheet_spelling(edit: Edit, catalog: Catalog) -> Edit:
-    """Text the sheet already holds in another case is written as the
-    sheet holds it: "acetone" where a cell says "Acetone". Only when the
-    sheet has one such spelling; a number is left as said."""
+    """Text the column, or its numbered siblings in the step (Solvent 1,
+    2, 3), already holds in another case is written that way: "acetone"
+    where Solvent 1 says "Acetone". Only one such spelling, and not from
+    the cells being written: "Acetone" to "ACETONE" is the edit itself.
+    Not the whole sheet: "CO" in a gas column is no "Co" dopant. Left as
+    said: numbers, one letter, the samples' labels."""
     new = edit.new.strip()
-    if not new or value(new) is not None:
+    target = catalog.column(edit.target)
+    if (
+        target is None
+        or len(new) < 2  # noqa: PLR2004
+        or value(new) is not None
+        or _on_labels(edit.target, catalog)
+    ):
         return edit
+    try:
+        written, _ = resolve_rows(edit.rows, catalog)
+    except Refusal:
+        written = ()
+
+    def sibling(c) -> bool:
+        return (
+            c.id == target.id
+            or target.family is not None
+            and c.family is not None
+            and c.family.group == target.family.group
+            and c.column.section == target.column.section
+        )
+
     spellings = {
         g.value.strip()
         for c in catalog.columns
+        if sibling(c)
         for g in c.groups
-        if isinstance(g.value, str) and g.value.strip().casefold() == new.casefold()
+        if isinstance(g.value, str)
+        and g.value.strip().casefold() == new.casefold()
+        and (c.id != target.id or set(g.rows) - set(written))
     }
     if len(spellings) == 1 and new not in spellings:
         return edit.model_copy(update={'new': spellings.pop()})

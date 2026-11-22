@@ -36,6 +36,7 @@ SPEED, ANNEAL_TIME, SOLVENT_2, VARIATION, TIME_2 = (
     'C007',
     'C014',
 )
+CLEAN_SOLVENT_1 = 'C010'  # 1: Cleaning UV-Ozone, Acetone on every sample
 SUBSTRATE_TEMP = 'C055'  # 5: CSS, 120 on samples 1-7, 115 on 8-13
 SAID = 'speed 4000 for samples 1 to 3'
 NOTHING = Coverage((), ())
@@ -334,6 +335,18 @@ def test_text_the_sheet_holds_is_written_as_the_sheet_spells_it(catalog):
     )
     (agreed,) = ask(catalog, a, b).edits
     assert agreed.new == 'Acetone'
+
+
+def test_a_case_only_correction_and_other_steps_keep_the_words(catalog):
+    # Solvent 1 holds "Acetone" on every sample: writing "ACETONE" there is
+    # the edit, not a spelling to copy
+    capitals = edit(
+        target=CLEAN_SOLVENT_1, old='Acetone', new='ACETONE', said='solvent 1 ACETONE'
+    )
+    assert read_answer(answer(capitals), SAID, catalog).edits[0].new == 'ACETONE'
+    # a column of another step is no sibling: its spelling is not taken
+    spin = edit(target=SPEED, new='acetone', said='speed acetone')
+    assert read_answer(answer(spin), SAID, catalog).edits[0].new == 'acetone'
     # a number is left as said
     assert read_answer(answer(edit(new='4000')), SAID, catalog).edits[0].new == '4000'
 
