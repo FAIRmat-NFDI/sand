@@ -17,6 +17,7 @@ ground.py are the safety net.
 """
 
 import json
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
@@ -224,12 +225,13 @@ def read_answer(answer: object, instruction: str, catalog: Catalog) -> Opinion:
 
 
 def _in_sheet_spelling(edit: Edit, catalog: Catalog) -> Edit:
-    """Text the column, or its numbered siblings in the step (Solvent 1,
-    2, 3), already holds in another case is written that way: "acetone"
-    where Solvent 1 says "Acetone". Only one such spelling, and not from
-    the cells being written: "Acetone" to "ACETONE" is the edit itself.
-    Not the whole sheet: "CO" in a gas column is no "Co" dopant. Left as
-    said: numbers, one letter, the samples' labels."""
+    """Text the column, or the same field of its numbered siblings in the
+    step (Solvent 1, 2, 3; not Solute 1 type for Solute 1 name), already
+    holds in another case is written that way: "acetone" where Solvent 1
+    says "Acetone". Only one such spelling. A cell being written that
+    holds the word makes it a case correction ("Acetone" to "ACETONE"):
+    kept as said. Not the whole sheet: "CO" in a gas column is no "Co"
+    dopant. Left as said: numbers, one letter, the samples' labels."""
     new = edit.new.strip()
     target = catalog.column(edit.target)
     if (
@@ -244,6 +246,12 @@ def _in_sheet_spelling(edit: Edit, catalog: Catalog) -> Edit:
     except Refusal:
         written = ()
 
+    def same(text) -> bool:
+        return isinstance(text, str) and text.strip().casefold() == new.casefold()
+
+    if any(same(g.value) for g in target.groups if set(g.rows) & set(written)):
+        return edit
+
     def sibling(c) -> bool:
         return (
             c.id == target.id
@@ -251,6 +259,7 @@ def _in_sheet_spelling(edit: Edit, catalog: Catalog) -> Edit:
             and c.family is not None
             and c.family.group == target.family.group
             and c.column.section == target.column.section
+            and _field(c) == _field(target)
         )
 
     spellings = {
@@ -258,13 +267,18 @@ def _in_sheet_spelling(edit: Edit, catalog: Catalog) -> Edit:
         for c in catalog.columns
         if sibling(c)
         for g in c.groups
-        if isinstance(g.value, str)
-        and g.value.strip().casefold() == new.casefold()
-        and (c.id != target.id or set(g.rows) - set(written))
+        if same(g.value)
     }
     if len(spellings) == 1 and new not in spellings:
         return edit.model_copy(update={'new': spellings.pop()})
     return edit
+
+
+def _field(column) -> str:
+    """The header without the family's number: 'Solute 2 name' and
+    'Solute 1 name' are 'solute name', 'Solute 1 type' is not."""
+    number = rf'(?<!\d){column.family.index}(?!\d)'
+    return ' '.join(re.sub(number, ' ', column.column.header).split()).casefold()
 
 
 def _without_restated_old(edit: Edit, catalog: Catalog) -> Edit:

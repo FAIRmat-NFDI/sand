@@ -21,6 +21,7 @@ from sand.sheet_edit.preview import preview
 from sand.sheet_edit.render import table
 from sand.sheet_edit.resolve import (
     PROMPT_VERSION,
+    _field,
     agree,
     prompts,
     read_answer,
@@ -337,6 +338,17 @@ def test_text_the_sheet_holds_is_written_as_the_sheet_spells_it(catalog):
     assert agreed.new == 'Acetone'
 
 
+def test_the_spelling_comes_from_the_same_field_of_the_numbered_siblings(catalog):
+    # "Material name 2" holds "PbI2": "Material name 1" is the same field
+    material = edit(target='C045', old=None, new='pbi2', said='material 1 pbi2')
+    assert read_answer(answer(material), SAID, catalog).edits[0].new == 'PbI2'
+    # "Solute 1 type" is another field than a name of the same solute
+    columns = {c.id: c for c in catalog.columns}
+    assert _field(columns['C022']) == 'solute type'
+    assert _field(columns['C045']) == _field(columns['C048']) == 'material name'
+    assert _field(columns['C010']) == _field(columns['C013']) == 'solvent'
+
+
 def test_a_case_only_correction_and_other_steps_keep_the_words(catalog):
     # Solvent 1 holds "Acetone" on every sample: writing "ACETONE" there is
     # the edit, not a spelling to copy
@@ -344,6 +356,9 @@ def test_a_case_only_correction_and_other_steps_keep_the_words(catalog):
         target=CLEAN_SOLVENT_1, old='Acetone', new='ACETONE', said='solvent 1 ACETONE'
     )
     assert read_answer(answer(capitals), SAID, catalog).edits[0].new == 'ACETONE'
+    # on some samples only, the others still "Acetone": still the correction
+    one = {**capitals, 'rows': {'samples': ['1'], 'subbatch': None}}
+    assert read_answer(answer(one), SAID, catalog).edits[0].new == 'ACETONE'
     # a column of another step is no sibling: its spelling is not taken
     spin = edit(target=SPEED, new='acetone', said='speed acetone')
     assert read_answer(answer(spin), SAID, catalog).edits[0].new == 'acetone'
