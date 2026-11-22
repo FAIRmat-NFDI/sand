@@ -17,6 +17,7 @@ ground.py are the safety net.
 """
 
 import json
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
@@ -52,7 +53,7 @@ from sand.sheet_edit.workbook import SAMPLE_HEADER, SUBBATCH_HEADER, info_column
 PROMPT_VERSION = 'v7'
 # the job's cache keeps proposals after `agree`: bump the second part on
 # a change to how two opinions agree, so agreed answers are asked again
-CACHE_VERSION = f'{PROMPT_VERSION}+agree-7'
+CACHE_VERSION = f'{PROMPT_VERSION}+agree-8'
 
 # (system prompt, user text, JSON schema) -> the model's answer, as text.
 # The schema is for the provider's structured output; the answer is still
@@ -216,8 +217,68 @@ def read_answer(answer: object, instruction: str, catalog: Catalog) -> Opinion:
         return Unreadable(reason='unreadable', detail=detail, said=instruction)
     # back to the plain models: the narrowed ones only exist to validate
     proposal = ProposedEdits.model_validate(narrowed.model_dump())
-    edits = [_without_restated_old(e, catalog) for e in proposal.edits]
+    edits = [
+        _in_sheet_spelling(_without_restated_old(e, catalog), catalog)
+        for e in proposal.edits
+    ]
     return proposal.model_copy(update={'edits': edits})
+
+
+def _in_sheet_spelling(edit: Edit, catalog: Catalog) -> Edit:
+    """Text the column, or the same field of its numbered siblings in the
+    step (Solvent 1, 2, 3; not Solute 1 type for Solute 1 name), already
+    holds in another case is written that way: "acetone" where Solvent 1
+    says "Acetone". Only one such spelling. A cell being written that
+    holds the word makes it a case correction ("Acetone" to "ACETONE"):
+    kept as said. Not the whole sheet: "CO" in a gas column is no "Co"
+    dopant. Left as said: numbers, one letter, the samples' labels."""
+    new = edit.new.strip()
+    target = catalog.column(edit.target)
+    if (
+        target is None
+        or len(new) < 2  # noqa: PLR2004
+        or value(new) is not None
+        or _on_labels(edit.target, catalog)
+    ):
+        return edit
+    try:
+        written, _ = resolve_rows(edit.rows, catalog)
+    except Refusal:
+        written = ()
+
+    def same(text) -> bool:
+        return isinstance(text, str) and text.strip().casefold() == new.casefold()
+
+    if any(same(g.value) for g in target.groups if set(g.rows) & set(written)):
+        return edit
+
+    def sibling(c) -> bool:
+        return (
+            c.id == target.id
+            or target.family is not None
+            and c.family is not None
+            and c.family.group == target.family.group
+            and c.column.section == target.column.section
+            and _field(c) == _field(target)
+        )
+
+    spellings = {
+        g.value.strip()
+        for c in catalog.columns
+        if sibling(c)
+        for g in c.groups
+        if same(g.value)
+    }
+    if len(spellings) == 1 and new not in spellings:
+        return edit.model_copy(update={'new': spellings.pop()})
+    return edit
+
+
+def _field(column) -> str:
+    """The header without the family's number: 'Solute 2 name' and
+    'Solute 1 name' are 'solute name', 'Solute 1 type' is not."""
+    number = rf'(?<!\d){column.family.index}(?!\d)'
+    return ' '.join(re.sub(number, ' ', column.column.header).split()).casefold()
 
 
 def _without_restated_old(edit: Edit, catalog: Catalog) -> Edit:
@@ -449,8 +510,8 @@ def _agreement_key(edit: Edit, catalog: Catalog) -> AgreementKey:
     edit; the anchor, which only points: an anchor of either pass is
     kept for ground to check, two different ones disagree. The value is
     compared as it would be written ('200 second' into a [s] column is
-    200, like '200'); text as written: material names are case-sensitive
-    (PbI2, Me-4PACz)."""
+    200, like '200'); text ignoring case ("acetone" is "Acetone"), pass
+    A's spelling written, or the sheet's (`_in_sheet_spelling`)."""
     return (
         edit.target,
         _rows_agreement_key(edit.rows, catalog),
@@ -466,6 +527,8 @@ def _value_agreement_key(edit: Edit, catalog: Catalog) -> tuple:
     written, problems = typed_value(edit, column)
     if problems:  # ground refuses it: the words are all there is
         return ('said', new, (edit.unit or '').strip())
+    if isinstance(written, str):
+        written = written.casefold()
     return ('written', type(written).__name__, written)
 
 
