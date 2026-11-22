@@ -9,7 +9,7 @@
 // The job's status file is polled, and selecting an experiment resumes
 // an unfinished job's polling (reload-proof).
 
-import { errorDetail, experimentUrl } from "./api.js";
+import { errorDetail, experimentUrl, postJson } from "./api.js";
 import {
   changedEntries, checkedKeys, confirmAllLabel, confirmQuestion, decisionCount, describeEditPhase, downloadBlock,
   downloadFilename, editSummary, failedReadKey, inputsToRead, lostUnticks, pendingKeys, readKey, recomputeDue, recomputeLabel,
@@ -39,10 +39,8 @@ const downloadFinalBtn = document.getElementById("download-final-btn");
 const downloadOriginalBtn = document.getElementById("download-original-btn");
 
 const POLL_MS = 3000;
-// confirmations made one after the other go into one write
-const WRITE_DELAY_MS = 2000;
-// changes made one after the other (updates said, unticks) go into one recompute
-const READ_DELAY_MS = 2000;
+// changes made one after the other (updates said, unticks) go into one job
+const SETTLE_MS = 2000;
 let pollTimer = null;
 let pollGeneration = 0;
 let current = null; // the experiment the card shows
@@ -69,8 +67,9 @@ let headerFor = null;
 let reportsShown = {}; // the last status's reports, by entry id
 let readFor = null; // readKey of the inputs the last job was started for
 let wroteFor = null; // unwrittenKey the last write was started for
-let writeTimer = null; // {timer, experiment}: the write about to start
-let readTimer = null; // {timer, experiment}: the recompute about to start
+// {timer, experiment, what, writes}: the job about to start by itself,
+// "write" or "recompute"; `writes`: decisions wait to be written either way
+let dueTimer = null;
 let roundFailedFor = null; // the round body (JSON) whose send failed
 // a job found failed before the inputs list arrived: its readKey is the
 // list's, whatever it turns out to be (no restart on a reload)
@@ -110,36 +109,54 @@ function later(experiment, generation) {
   pollTimer = setTimeout(() => poll(experiment, generation), POLL_MS);
 }
 
-function cancelRead() {
-  if (!readTimer) return;
-  clearTimeout(readTimer.timer);
-  readTimer = null;
+function cancelDue(experiment = null) {
+  if (!dueTimer || (experiment && dueTimer.experiment.entry_id !== experiment.entry_id)) return;
+  clearTimeout(dueTimer.timer);
+  dueTimer = null;
 }
 
-// a change (an update added, revised or deleted, an untick) starts a
-// recompute by itself, so a proposal shows while one is still speaking;
-// each change waits READ_DELAY_MS again. A change during a job waits
-// for it: the job's end settles again
-function recomputeSoon(experiment) {
-  cancelRead();
-  const items = shownItems();
-  if (!stillShown(experiment) || !items || running || sendingRound) return;
+// The job a change starts by itself: a recompute for a round or updates
+// no job read (it writes the decisions too), else a write of decisions
+// made and not written (a Confirm all whose job did not start: a
+// reload). Null for nothing new: a failed job or round is not started
+// again for the same reason (Read again does).
+function dueJob(experiment) {
+  if (!stillShown(experiment) || running || sendingRound || confirming === experiment.entry_id) return null;
+  const unwritten = lastStatus ? unwrittenKey(lastStatus) : "";
+  // a run that left nothing unwritten: the same decision made again later
+  // is a new one
+  if (!unwritten) wroteFor = null;
+  const writes = Boolean(unwritten) && unwritten !== wroteFor;
+  const items = itemsOf(experiment);
   const round = roundSize() ? JSON.stringify(roundBody()) : "";
-  if (!recomputeDue(changesToApply(), readKey(items), round, { read: readFor, round: roundFailedFor })) return;
-  const timer = setTimeout(() => {
-    readTimer = null;
-    if (stillShown(experiment) && !running && confirming !== experiment.entry_id) recompute(experiment);
-  }, READ_DELAY_MS);
-  readTimer = { timer, experiment };
+  if (items && recomputeDue(changesToApply(), readKey(items), round, { read: readFor, round: roundFailedFor })) {
+    return { what: "recompute", writes };
+  }
+  return writes ? { what: "write", writes } : null;
 }
 
-// the write waits for no one: leaving the experiment starts it now
-function flushWrite() {
-  if (!writeTimer) return;
-  clearTimeout(writeTimer.timer);
-  const { experiment } = writeTimer;
-  writeTimer = null;
-  startJob(experiment);
+// each change waits SETTLE_MS again, so a proposal shows while one is
+// still speaking; a change during a job waits for it: its end settles again
+function startSoon(experiment) {
+  cancelDue();
+  const due = dueJob(experiment);
+  if (!due) return;
+  const timer = setTimeout(() => {
+    dueTimer = null;
+    if (!stillShown(experiment) || running || confirming === experiment.entry_id) return;
+    if (due.what === "write") startJob(experiment);
+    else recompute(experiment);
+  }, SETTLE_MS);
+  dueTimer = { timer, experiment, ...due };
+}
+
+// leaving the experiment: decisions are written now, a recompute waits
+// until it is shown again (its status settles then)
+function leaveDue() {
+  if (!dueTimer) return;
+  const { experiment, writes } = dueTimer;
+  cancelDue();
+  if (writes) startJob(experiment);
 }
 
 function idle() {
@@ -165,10 +182,8 @@ function updateProgress() {
     setOverviewUpdates(null);
     return;
   }
-  const updates = inputsSeen && inputsSeen.entryId === current.entry_id
-    ? inputsSeen.items.length
-    : null;
-  setOverviewUpdates(updates);
+  const items = itemsOf(current);
+  setOverviewUpdates(items ? items.length : null);
 }
 
 // the round's changes and the updates no job read in these words: what
@@ -202,9 +217,13 @@ function showActions(status, jobRunning = false) {
   confirmAllLabelEl.textContent = confirmAllLabel(keys.length, keys.filter((key) => marked.has(key)).length) + "...";
 }
 
-// the shown experiment's inputs list, null before it arrived
+// the experiment's inputs list, null before it arrived
+function itemsOf(experiment) {
+  return experiment && inputsSeen && inputsSeen.entryId === experiment.entry_id ? inputsSeen.items : null;
+}
+
 function shownItems() {
-  return current && inputsSeen && inputsSeen.entryId === current.entry_id ? inputsSeen.items : null;
+  return itemsOf(current);
 }
 
 // Reset all: shown with a decision to take back, used between runs (the
@@ -289,7 +308,7 @@ async function poll(experiment, generation) {
     updateProgress();
     setReports({}, false, true, null, marks);
     showActions(null);
-    settle(experiment, null);
+    settle(experiment);
     return;
   }
   const status = await res.json().catch(() => null);
@@ -332,7 +351,7 @@ async function poll(experiment, generation) {
     updateProgress();
     // the job wrote a sheet the header has not been read for yet
     if (status.final && status.final !== headerFor) refreshSheet(experiment, status.final);
-    settle(experiment, status);
+    settle(experiment);
     return;
   }
   if (status.phase === "failed") {
@@ -340,12 +359,11 @@ async function poll(experiment, generation) {
     editedReady = false;
     idle();
     // not started again for these inputs by itself (Read again does)
-    const items = inputsSeen && inputsSeen.entryId === experiment.entry_id ? inputsSeen.items : null;
-    readFor = failedReadKey(readFor, items) || FAILED_BEFORE_INPUTS;
+    readFor = failedReadKey(readFor, itemsOf(experiment)) || FAILED_BEFORE_INPUTS;
     showError("Reading the updates failed: " + (status.error || "unknown error"));
     readAgainBtn.hidden = false;
     // an update added while it ran, already listed: recomputed all the same
-    recomputeSoon(experiment);
+    startSoon(experiment);
     return;
   }
   readAgainBtn.hidden = true;
@@ -354,26 +372,13 @@ async function poll(experiment, generation) {
   later(experiment, generation);
 }
 
-// After a status settled: write what was confirmed since the last run
-// and not written yet (a Confirm all whose job did not start: a reload),
-// else recompute the changes. Nothing twice for the same reason.
-function settle(experiment, status) {
+// after a status settled, or the inputs arrived: what waits, and the
+// job that is due
+function settle(experiment) {
   if (!stillShown(experiment) || running || confirming === experiment.entry_id) return;
-  if (inputsSeen && inputsSeen.entryId === experiment.entry_id) waitingNote(inputsSeen.items);
-  const unwritten = status ? unwrittenKey(status) : "";
-  // a run that left nothing unwritten: the same decision made again later
-  // is a new one
-  if (!unwritten) wroteFor = null;
-  if (unwritten) {
-    if (unwritten === wroteFor || writeTimer) return;
-    const timer = setTimeout(() => {
-      writeTimer = null;
-      if (stillShown(experiment) && !running) startJob(experiment);
-    }, WRITE_DELAY_MS);
-    writeTimer = { timer, experiment };
-    return;
-  }
-  recomputeSoon(experiment);
+  const items = itemsOf(experiment);
+  if (items) waitingNote(items);
+  startSoon(experiment);
 }
 
 // the inputs list as just loaded (inputs.js): a new or revised update
@@ -386,7 +391,7 @@ function inputsLoaded(experiment, items) {
   // a revised or deleted update holds back the ones after it
   if (!running) showActions(lastStatus);
   if (lastStatus && !running) gateDownload(downloadBlock(lastStatus, items));
-  if (statusKnown) settle(experiment, lastStatus);
+  if (statusKnown) settle(experiment);
 }
 
 // no job starts while an input has no text (the server refuses): the
@@ -401,18 +406,8 @@ function waitingNote(items) {
   }
 }
 
-// "" once posted, else why not
-async function post(experiment, path, body) {
-  try {
-    const res = await fetch(experimentUrl(experiment, path), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    return res.ok ? "" : await errorDetail(res);
-  } catch (err) {
-    return "Network error: " + err.message;
-  }
+function post(experiment, path, body) {
+  return postJson(experimentUrl(experiment, path), body);
 }
 
 // Confirm all's confirmation of every ticked edit, then the job that
@@ -423,10 +418,7 @@ async function confirmEdits(experiment, keys) {
   // already due goes with this one
   confirmAllBtn.disabled = true;
   confirming = experiment.entry_id;
-  if (writeTimer && writeTimer.experiment.entry_id === experiment.entry_id) {
-    clearTimeout(writeTimer.timer);
-    writeTimer = null;
-  }
+  cancelDue(experiment);
   let why;
   try {
     why = await post(experiment, "edits/confirm", { keys });
@@ -513,9 +505,7 @@ async function resetDecisions(experiment) {
 // (`view` from GET .../sheet-view), or none.
 export function showEdit(experiment, view) {
   stopPolling();
-  flushWrite();
-  // read when the experiment is shown again (its status settles then)
-  cancelRead();
+  leaveDue();
   current = experiment;
   roundFor(experiment ? experiment.entry_id : null);
   roundSent = null;
@@ -582,11 +572,12 @@ function readAgain() {
 // changed (null: all of them)
 async function startJob(experiment, decided = new Set()) {
   let start = 0; // this start's number, when it shows its experiment
-  // any job reads the new updates too
-  if (readTimer && readTimer.experiment.entry_id === experiment.entry_id) cancelRead();
+  // any job reads the new updates and writes the decisions too
+  cancelDue(experiment);
+  const items = itemsOf(experiment);
   if (stillShown(experiment)) {
     running = true;
-    if (inputsSeen && inputsSeen.entryId === experiment.entry_id) readFor = readKey(inputsSeen.items);
+    if (items) readFor = readKey(items);
     wroteFor = lastStatus ? unwrittenKey(lastStatus) : null;
     confirmAllBtn.hidden = true;
     readAgainBtn.hidden = true;
@@ -594,7 +585,6 @@ async function startJob(experiment, decided = new Set()) {
     busy("Starting...");
     gateDownload(blockShown);
     confirmAllBtn.hidden = recomputeBtn.hidden = true;
-    const items = inputsSeen && inputsSeen.entryId === experiment.entry_id ? inputsSeen.items : null;
     // the latest status: a failed run's knows only what it reported
     const notes = decided ? unchangedAbove(items, decisionStatus || lastStatus, decided) : new Set();
     start = ++starts;
@@ -693,7 +683,7 @@ export function initEdit() {
   onRoundChange(() => {
     if (current && statusKnown && !running && !sendingRound) {
       showActions(lastStatus);
-      recomputeSoon(current);
+      startSoon(current);
     }
   });
   // a round not sent yet lives in this page only

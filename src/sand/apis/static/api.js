@@ -91,6 +91,20 @@ export function login() {
   window.open(nomadGuiUrl, "_blank");
 }
 
+// "" once the server took it, else why not
+export async function postJson(url, body) {
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return res.ok ? "" : await errorDetail(res);
+  } catch (err) {
+    return "Network error: " + err.message;
+  }
+}
+
 export async function errorDetail(res) {
   const body = await res.json().catch(() => null);
   if (!body || body.detail == null) return res.statusText;
