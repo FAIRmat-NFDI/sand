@@ -9,7 +9,7 @@
 // by itself, then Confirm all (edit-mode.js). An input behind the last Confirm all
 // is locked until Reset all.
 
-import { errorDetail, experimentUrl } from "./api.js";
+import { errorDetail, experimentUrl, postJson } from "./api.js";
 import {
   inputState, outdatedEntries, previewNotes, problemLines, problemShort, resetNote, rewriteWarning,
 } from "./edit-logic.js";
@@ -101,22 +101,9 @@ function beginLabelEdit(labelBtn, item, experiment) {
     clearError();
     saving = true;
     editor.disabled = true;
-    try {
-      const res = await fetch(inputUrl(experiment, item, "label"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label }),
-      });
-      if (!res.ok) {
-        showError("Could not change the label: " + await errorDetail(res));
-        finish(false);
-        return;
-      }
-      finish(true);
-    } catch (err) {
-      showError("Network error: " + err.message);
-      finish(false);
-    }
+    const why = await postJson(inputUrl(experiment, item, "label"), { label });
+    if (why) showError("Could not change the label: " + why);
+    finish(!why);
   };
   editor.addEventListener("keydown", (e) => {
     if (e.key === "Enter") commit();
@@ -225,26 +212,17 @@ async function saveRevision() {
     return;
   }
   clearError();
-  try {
-    const res = await fetch(inputUrl(experiment, item, "text"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-    if (!res.ok) {
-      showError("Could not save the revision: " + await errorDetail(res));
-      return;
-    }
-    // the save can outlive its editor (cancelled or another tile opened
-    // meanwhile): only close the editor it came from
-    if (revising?.editor === editor) endRevision(true);
-    // the server returns once NOMAD reprocessed the entry
-    startInputsRefresh(experiment);
-  } catch (err) {
-    showError("Network error: " + err.message);
-  } finally {
-    saveBtn.disabled = false;
+  const why = await postJson(inputUrl(experiment, item, "text"), { text });
+  saveBtn.disabled = false;
+  if (why) {
+    showError("Could not save the revision: " + why);
+    return;
   }
+  // the save can outlive its editor (cancelled or another tile opened
+  // meanwhile): only close the editor it came from
+  if (revising?.editor === editor) endRevision(true);
+  // the server returns once NOMAD reprocessed the entry
+  startInputsRefresh(experiment);
 }
 
 // --- delete ----------------------------------------------------------------
