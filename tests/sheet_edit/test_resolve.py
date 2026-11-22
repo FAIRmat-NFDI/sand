@@ -313,11 +313,29 @@ def test_the_preview_shows_a_conversion_only(synthetic_xlsx, said, new, unit, sh
     assert written.value == (120 if unit == 'min' else 200)
 
 
-def test_the_value_is_compared_as_written(catalog):
-    a = answer(edit(target=SOLVENT_2, old='IPA', new='dmso', said='solvent 2 dmso'))
-    b = answer(edit(target=SOLVENT_2, old='IPA', new='DMSO', said='solvent 2 dmso'))
-    item = only(ask(catalog, a, b), Disputed)
-    assert [r.new for r in item.edits()] == ['dmso', 'DMSO']
+def test_text_agrees_ignoring_case(catalog):
+    def solvent(new):
+        return answer(edit(target=SOLVENT_2, old='IPA', new=new, said='solvent 2 dmso'))
+
+    # a term the sheet does not hold: pass A's spelling is written
+    (agreed,) = ask(catalog, solvent('dmso'), solvent('DMSO')).edits
+    assert agreed.new == 'dmso'
+    # another word is still a disagreement
+    only(ask(catalog, solvent('dmso'), solvent('DMF')), Disputed)
+
+
+def test_text_the_sheet_holds_is_written_as_the_sheet_spells_it(catalog):
+    # "Acetone" is in Solvent 1; the passes said it in two other cases
+    a = answer(
+        edit(target=SOLVENT_2, old='IPA', new='acetone', said='solvent 2 acetone')
+    )
+    b = answer(
+        edit(target=SOLVENT_2, old='IPA', new='ACETONE', said='solvent 2 acetone')
+    )
+    (agreed,) = ask(catalog, a, b).edits
+    assert agreed.new == 'Acetone'
+    # a number is left as said
+    assert read_answer(answer(edit(new='4000')), SAID, catalog).edits[0].new == '4000'
 
 
 def test_a_range_and_the_same_samples_listed_agree(catalog):

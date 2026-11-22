@@ -52,7 +52,7 @@ from sand.sheet_edit.workbook import SAMPLE_HEADER, SUBBATCH_HEADER, info_column
 PROMPT_VERSION = 'v7'
 # the job's cache keeps proposals after `agree`: bump the second part on
 # a change to how two opinions agree, so agreed answers are asked again
-CACHE_VERSION = f'{PROMPT_VERSION}+agree-7'
+CACHE_VERSION = f'{PROMPT_VERSION}+agree-8'
 
 # (system prompt, user text, JSON schema) -> the model's answer, as text.
 # The schema is for the provider's structured output; the answer is still
@@ -216,8 +216,29 @@ def read_answer(answer: object, instruction: str, catalog: Catalog) -> Opinion:
         return Unreadable(reason='unreadable', detail=detail, said=instruction)
     # back to the plain models: the narrowed ones only exist to validate
     proposal = ProposedEdits.model_validate(narrowed.model_dump())
-    edits = [_without_restated_old(e, catalog) for e in proposal.edits]
+    edits = [
+        _in_sheet_spelling(_without_restated_old(e, catalog), catalog)
+        for e in proposal.edits
+    ]
     return proposal.model_copy(update={'edits': edits})
+
+
+def _in_sheet_spelling(edit: Edit, catalog: Catalog) -> Edit:
+    """Text the sheet already holds in another case is written as the
+    sheet holds it: "acetone" where a cell says "Acetone". Only when the
+    sheet has one such spelling; a number is left as said."""
+    new = edit.new.strip()
+    if not new or value(new) is not None:
+        return edit
+    spellings = {
+        g.value.strip()
+        for c in catalog.columns
+        for g in c.groups
+        if isinstance(g.value, str) and g.value.strip().casefold() == new.casefold()
+    }
+    if len(spellings) == 1 and new not in spellings:
+        return edit.model_copy(update={'new': spellings.pop()})
+    return edit
 
 
 def _without_restated_old(edit: Edit, catalog: Catalog) -> Edit:
@@ -449,8 +470,8 @@ def _agreement_key(edit: Edit, catalog: Catalog) -> AgreementKey:
     edit; the anchor, which only points: an anchor of either pass is
     kept for ground to check, two different ones disagree. The value is
     compared as it would be written ('200 second' into a [s] column is
-    200, like '200'); text as written: material names are case-sensitive
-    (PbI2, Me-4PACz)."""
+    200, like '200'); text ignoring case ("acetone" is "Acetone"), pass
+    A's spelling written, or the sheet's (`_in_sheet_spelling`)."""
     return (
         edit.target,
         _rows_agreement_key(edit.rows, catalog),
@@ -466,6 +487,8 @@ def _value_agreement_key(edit: Edit, catalog: Catalog) -> tuple:
     written, problems = typed_value(edit, column)
     if problems:  # ground refuses it: the words are all there is
         return ('said', new, (edit.unit or '').strip())
+    if isinstance(written, str):
+        written = written.casefold()
     return ('written', type(written).__name__, written)
 
 
