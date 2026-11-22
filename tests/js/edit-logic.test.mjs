@@ -276,10 +276,8 @@ test("the lines of an unclear part or a refused edit are problems, a ready edit'
     "   too long",
     "? sand could not propose an edit for this note. Try again, or write the note more clear.",
     "disputed: \"speed up\"",
-    "   - Reading 1:",
-    "       2: Spin Coating · Rotation speed [rpm] → 3000",
-    "   - Reading 2:",
-    "       no edit",
+    "   - Reading 1: 2: Spin Coating · Rotation speed [rpm] → 3000",
+    "   - Reading 2: no edit",
   ].join("\n");
   assert.deepEqual([...problemLines({ preview })], preview.split("\n").slice(2));
   assert.equal(problemLines({}).size, 0);
