@@ -32,6 +32,7 @@ from sand.sheet_edit.edits import (
     Samples,
     Unreadable,
     Unresolved,
+    Where,
     proposed_edits_model,
     proposed_edits_schema,
 )
@@ -45,14 +46,13 @@ from sand.sheet_edit.ground import (
 )
 from sand.sheet_edit.numbers import value
 from sand.sheet_edit.render import table
-from sand.sheet_edit.workbook import SAMPLE_HEADER, SUBBATCH_HEADER, info_column
 
 # recorded with every proposal (changelog, status); bump on any change to
 # the prompts below or to the table in render.py, which the model reads
 PROMPT_VERSION = 'v7'
 # the job's cache keeps proposals after `agree`: bump the second part on
 # a change to how two opinions agree, so agreed answers are asked again
-CACHE_VERSION = f'{PROMPT_VERSION}+agree-7'
+CACHE_VERSION = f'{PROMPT_VERSION}+agree-9'
 
 # (system prompt, user text, JSON schema) -> the model's answer, as text.
 # The schema is for the provider's structured output; the answer is still
@@ -496,13 +496,31 @@ def _kept(edit: Edit, pointed: dict, olds: dict) -> Edit:
 
 
 def _named(edit: Edit, both: list[Edit]) -> Edit:
-    """Samples named agree with 'all' when they are every sample; the
-    named ones are kept, else ground finds 'all' against the samples the
-    user named."""
-    if edit.rows != 'all':
-        return edit
-    named = next((e for e in both if e.rows != 'all'), None)
-    return edit if named is None else edit.model_copy(update={'rows': named.rows})
+    """The rows two agreeing readings name the way the user did. A
+    'where' whose value the user said ("where solvent 2 is IPA") wins:
+    it picks other samples once a note above changes that column, which
+    the samples it holds today would not. Else samples named win over
+    'all', or ground finds 'all' against the samples the user named."""
+    said = next(
+        (
+            e
+            for e in both
+            if isinstance(e.rows, Where)
+            and e.rows.equals is not None
+            and in_words(e.rows.equals, e.said)
+        ),
+        None,
+    )
+    if said is not None:
+        return edit.model_copy(update={'rows': said.rows})
+    if isinstance(edit.rows, Where) or edit.rows == 'all':
+        named = next(
+            (e for e in both if e.rows != 'all' and not isinstance(e.rows, Where)),
+            None,
+        )
+        if named is not None:
+            return edit.model_copy(update={'rows': named.rows})
+    return edit
 
 
 def _first_per_said_old(edits: list[Edit]) -> dict[str, Edit]:
@@ -531,12 +549,13 @@ def _first_per_anchor(edits: list[Edit]) -> dict[tuple[str, str], Edit]:
 
 
 def _rows_agreement_key(rows: RowSpec, catalog: Catalog) -> RowsAgreementKey:  # noqa: PLR0911
-    """Samples listed, a range and 'all' are the same rows when they name
-    the same samples ("samples 1 to 13" is every sample when there is no
-    6); the sheet decides, through the one row resolver. 'where' stays
-    what it is: the rows holding a value are another reading than the
-    samples that hold it now. Except on the samples' own labels: "where
-    Subbatch = 2" is subbatch 2, whatever the notes change."""
+    """Samples listed, a range, 'all' and 'where' are the same rows when
+    they name the same samples on the sheet the passes read ("samples 1
+    to 13" is every sample when there is no 6); the sheet decides,
+    through the one row resolver. A 'where' that may pick other samples
+    once a note above changes the column is kept by `_named`, so the
+    agreed edit follows the rule. A 'where' no sample holds stays what
+    it is."""
     if isinstance(rows, Samples):
         try:
             return frozenset(resolve_rows(rows, catalog)[0])
@@ -549,25 +568,14 @@ def _rows_agreement_key(rows: RowSpec, catalog: Catalog) -> RowsAgreementKey:  #
             return ('range', rows.first, rows.last, rows.subbatch)
     if rows == 'all':
         return frozenset(resolve_rows(rows, catalog)[0])
-    if _on_labels(rows.where, catalog):
-        try:
-            return frozenset(resolve_rows(rows, catalog)[0])
-        except Refusal:  # no sample holds it
-            pass
-    return ('where', rows.where, None if rows.equals is None else rows.equals.strip())
-
-
-def _on_labels(column_id: str, catalog: Catalog) -> bool:
-    """The column the catalog reads the sample or subbatch labels from, in
-    the leading Experiment Info: a numbered step may have its own
-    'Sample' value column."""
-    column = catalog.column(column_id)
-    if column is None or column.column.section.position is not None:
-        return False
-    return column.column.index in {
-        info_column(catalog.structure.columns, header)
-        for header in (SAMPLE_HEADER, SUBBATCH_HEADER)
-    }
+    try:
+        return frozenset(resolve_rows(rows, catalog)[0])
+    except Refusal:  # no sample holds it
+        return (
+            'where',
+            rows.where,
+            None if rows.equals is None else rows.equals.strip(),
+        )
 
 
 def _quote(said: str) -> str:
