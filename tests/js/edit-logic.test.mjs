@@ -205,6 +205,9 @@ test("the state chip of an input", () => {
   // a report of other words is not this update's
   assert.equal(label({ ...note, text: "speed 4500" }, REPORT, true), "Reading...");
   assert.equal(label({ ...note, applied: true }, undefined), "Applied");
+  // revised after it was applied, and now asked: read again
+  assert.equal(label({ ...note, applied: true }, undefined, true), "Reading...");
+  assert.equal(label({ ...note, applied: true }, undefined, true, true, false), "Applied");
   assert.equal(label(note, REPORT), "1 edit to confirm");
   assert.equal(label(note, { ...REPORT, ready: [...REPORT.ready, { ...REPORT.ready[0], key: "k2" }] }),
     "2 edits to confirm");

@@ -149,11 +149,11 @@ export function inputState(item, report, jobRunning, canConfirm, outdated = fals
   const reported = report && report.text === item.text;
   const reading = jobRunning && asked;
   if (!reported) {
+    // before `applied`: a revised applied note keeps it until reported
+    if (reading) return { state: "reading", label: "Reading..." };
     if (item.applied) return { state: "applied", label: "Applied" };
     if (!canConfirm) return null;
-    return reading
-      ? { state: "reading", label: "Reading..." }
-      : { state: "waiting", label: "Waiting to be read" };
+    return { state: "waiting", label: "Waiting to be read" };
   }
   if (reading) return { state: "reading", label: "Reading..." };
   if (report.refused) return { state: "refused", label: "Not written" };
