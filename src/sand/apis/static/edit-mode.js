@@ -262,15 +262,7 @@ function renderWritten(rows) {
     ]) {
       const td = document.createElement("td");
       td.className = "written-" + field;
-      if (field === "old" && text) {
-        // the value only, not the whole cell, is struck out
-        const struck = document.createElement("span");
-        struck.className = "struck";
-        struck.textContent = text;
-        td.append(struck);
-      } else {
-        td.textContent = text;
-      }
+      td.textContent = text;
       tr.append(td);
     }
     writtenBody.append(tr);
