@@ -801,6 +801,16 @@ def test_a_value_the_column_cannot_hold_is_refused_not_disputed(synthetic_xlsx):
     four = edit(rows={'samples': ['2'], 'subbatch': None}, said=said)
     proposal = ask(build(synthetic_xlsx), answer(four), answer(fast), instruction=said)
     only(proposal, Disputed)
+    # a pass unsure between that column and a text one, which takes "fast":
+    # still two readings
+    either = {**hedge, 'candidates': [SPEED, SOLVENT_2]}
+    proposal = ask(
+        build(synthetic_xlsx),
+        answer(unresolved=[either]),
+        answer(fast),
+        instruction=said,
+    )
+    only(proposal, Disputed)
 
 
 def test_interpret_instruction_applies_nothing_disputed_or_unreadable(synthetic_xlsx):
