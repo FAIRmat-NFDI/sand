@@ -4,7 +4,7 @@ import { test } from "node:test";
 import {
   confirmAllLabel, describeEditPhase, downloadBlock, downloadFilename, editSummary, inputApplied, inputState,
   changedEntries, checkedKeys, confirmQuestion, decisionCount, lostUnticks, recomputeLabel, inputsToRead, outdatedEntries, pendingKeys, previewNotes, problemLines, problemShort, readKey,
-  failedReadKey, recomputeDue, reportsByEntry, resetNote, roundSnapshot, rewriteWarning, settledBlock,
+  failedReadKey, recomputeDue, reportsByEntry, resetNote, roundSnapshot, rewriteWarning, settledBlock, withRound,
   freshReports, unchangedAbove, unwrittenKey, writtenCount, writtenEdits,
 } from "../../src/sand/apis/static/edit-logic.js";
 
@@ -72,6 +72,24 @@ test("a round marks the updates it changed", () => {
   }
   assert.deepEqual([...changedEntries(before, before)], []);
   assert.deepEqual([...changedEntries(null, before)], []);
+});
+
+test("the user's own untick or restore is no change of the round", () => {
+  const status = { inputs: [REPORT] };
+  const untick = { reject: [{ key: "k1", reason: "wrong" }], restore: [] };
+  const unticked = { inputs: [{ ...REPORT, rejected: ["k1"] }] };
+  // without the round: the untick itself looks like a change
+  assert.deepEqual([...changedEntries(roundSnapshot(status), roundSnapshot(unticked))], ["n1"]);
+  const before = roundSnapshot(withRound(status, untick));
+  assert.deepEqual([...changedEntries(before, roundSnapshot(unticked))], []);
+  // ticked back: open again before the reread
+  const restore = { reject: [], restore: ["k1"] };
+  assert.deepEqual(
+    [...changedEntries(roundSnapshot(withRound(unticked, restore)), roundSnapshot(status))], []);
+  // what sand changed is still marked
+  const other = { inputs: [{ ...REPORT, rejected: ["k1"], ready: [...REPORT.ready, { key: "k2", line: "x" }] }] };
+  assert.deepEqual([...changedEntries(before, roundSnapshot(other))], ["n1"]);
+  assert.equal(withRound(status, null), status);
 });
 
 test("Confirm all waits for every update read and nothing decided since", () => {

@@ -14,7 +14,7 @@ import {
   changedEntries, checkedKeys, confirmAllLabel, confirmQuestion, decisionCount, describeEditPhase, downloadBlock,
   downloadFilename, editSummary, failedReadKey, inputsToRead, lostUnticks, pendingKeys, readKey, recomputeDue, recomputeLabel,
   reportsByEntry,
-  freshReports, roundSnapshot, settledBlock, unchangedAbove, unwrittenKey, writtenEdits,
+  freshReports, roundSnapshot, settledBlock, unchangedAbove, unwrittenKey, withRound, writtenEdits,
 } from "./edit-logic.js";
 import { requireExperiment, showSheet } from "./experiments.js";
 import { setOverviewUpdates, showOverview } from "./overview.js";
@@ -442,29 +442,29 @@ async function confirmEdits(experiment, keys) {
 async function recompute(experiment) {
   if (running || sendingRound || recomputeBtn.disabled) return;
   clearError();
-  const before = lastStatus ? roundSnapshot(lastStatus) : null;
+  const round = roundSize() ? roundBody() : null;
+  const before = lastStatus ? roundSnapshot(withRound(lastStatus, round)) : null;
   const sent = sentUnticks();
   const decided = roundEntries();
-  if (roundSize()) {
-    const body = roundBody();
+  if (round) {
     // ticks made while it is on its way stay for the next round; the
     // button stays off until then
     sendingRound = true;
     recomputeBtn.disabled = true;
     let why;
     try {
-      why = await post(experiment, "edits/round", body);
+      why = await post(experiment, "edits/round", round);
     } finally {
       sendingRound = false;
     }
     if (why) {
-      roundFailedFor = JSON.stringify(body);
+      roundFailedFor = JSON.stringify(round);
       showError("Could not apply the round: " + why);
       if (stillShown(experiment)) startPolling(experiment);
       return;
     }
     roundFailedFor = null;
-    clearSent(body, experiment.entry_id);
+    clearSent(round, experiment.entry_id);
   }
   roundSent = { entryId: experiment.entry_id, before, sent };
   marks = NO_MARKS;

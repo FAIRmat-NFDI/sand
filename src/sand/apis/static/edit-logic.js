@@ -396,6 +396,28 @@ export function roundSnapshot(status) {
   return shown;
 }
 
+// the status as the round leaves it before anything is read again: its
+// unticks rejected, its restores open. Compared with after the round, a
+// note's change is then what sand did, not the user's own untick (#238)
+export function withRound(status, round) {
+  if (!round) return status;
+  const reject = new Set(round.reject.map((r) => r.key));
+  const restore = new Set(round.restore);
+  return {
+    ...status,
+    inputs: (status.inputs || []).map((report) => {
+      const keys = new Set((report.ready || []).map((edit) => edit.key));
+      return {
+        ...report,
+        rejected: [
+          ...(report.rejected || []).filter((key) => !restore.has(key)),
+          ...[...reject].filter((key) => keys.has(key)),
+        ],
+      };
+    }),
+  };
+}
+
 // the updates (entry ids) shown differently than in `before`
 export function changedEntries(before, after) {
   if (!before) return new Set();
