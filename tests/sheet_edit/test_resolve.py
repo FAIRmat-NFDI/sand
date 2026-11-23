@@ -765,6 +765,54 @@ def test_a_reading_by_all_or_by_a_value_names_its_samples(catalog):
     assert lines[4].endswith('Substrate temperature [°C] = 115 (samples 8–13)')
 
 
+def test_a_value_the_column_cannot_hold_is_refused_not_disputed(synthetic_xlsx):
+    # pass A: the column, unsure of the value; pass B: "fast" as the value
+    said = 'step 2 spin coating, rotation speed fast for sample 2'
+    hedge = {'reason': 'ambiguous', 'candidates': [SPEED], 'said': said}
+    fast = edit(rows={'samples': ['2'], 'subbatch': None}, new='fast', said=said)
+
+    def call(text, catalog):
+        return resolve(
+            text, catalog, FakeCall(answer(unresolved=[hedge]), answer(fast))
+        )
+
+    result = interpret_instruction(said, synthetic_xlsx, call)
+    assert result.ready == {}
+    assert result.preview == (
+        f'✗ not applied: "{said}"\n'
+        "   Rotation speed [rpm] (2: Spin Coating) holds numbers; 'fast' is not a number"
+    )
+    # two such parts: each is refused with its reason
+    five = f'{said}; later rotation speed fast for sample 5'
+    hedges = [hedge, {**hedge, 'said': 'later rotation speed fast for sample 5'}]
+    again = {
+        **fast,
+        'rows': {'samples': ['5'], 'subbatch': None},
+        'said': hedges[1]['said'],
+    }
+    proposal = ask(
+        build(synthetic_xlsx),
+        answer(unresolved=hedges),
+        answer(fast, again),
+        instruction=five,
+    )
+    assert [e.rows.samples for e in proposal.edits] == [['2'], ['5']]
+    # a pass with an edit the column can hold: still two readings
+    four = edit(rows={'samples': ['2'], 'subbatch': None}, said=said)
+    proposal = ask(build(synthetic_xlsx), answer(four), answer(fast), instruction=said)
+    only(proposal, Disputed)
+    # a pass unsure between that column and a text one, which takes "fast":
+    # still two readings
+    either = {**hedge, 'candidates': [SPEED, SOLVENT_2]}
+    proposal = ask(
+        build(synthetic_xlsx),
+        answer(unresolved=[either]),
+        answer(fast),
+        instruction=said,
+    )
+    only(proposal, Disputed)
+
+
 def test_interpret_instruction_applies_nothing_disputed_or_unreadable(synthetic_xlsx):
     def differing(text, catalog):
         return resolve(

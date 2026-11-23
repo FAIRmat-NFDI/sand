@@ -54,7 +54,7 @@ from sand.sheet_edit.workbook import SAMPLE_HEADER, SUBBATCH_HEADER, info_column
 PROMPT_VERSION = 'v7'
 # the job's cache keeps proposals after `agree`: bump the second part on
 # a change to how two opinions agree, so agreed answers are asked again
-CACHE_VERSION = f'{PROMPT_VERSION}+agree-9'
+CACHE_VERSION = f'{PROMPT_VERSION}+agree-11'
 
 # (system prompt, user text, JSON schema) -> the model's answer, as text.
 # The schema is for the provider's structured output; the answer is still
@@ -366,18 +366,23 @@ def _agreed(a: ProposedEdits, b: ProposedEdits, catalog: Catalog) -> ProposedEdi
     for key, group in by_b.items():
         if key not in by_a:
             doubts += [(1, r, _quotes(group)) for r in _readings(group)]
-    unresolved = _disputes(doubts, a.unresolved, b.unresolved)
-    return ProposedEdits(edits=edits, unresolved=unresolved)
+    unresolved, refused = _disputes(doubts, a.unresolved, b.unresolved, catalog)
+    return ProposedEdits(edits=[*edits, *refused], unresolved=unresolved)
 
 
 def _disputes(
     doubts: list[tuple[int, Edit, set[str]]],
     a: list[Unresolved],
     b: list[Unresolved],
-) -> list[Unresolved]:
+    catalog: Catalog,
+) -> tuple[list[Unresolved], list[Edit]]:
     """The edits not agreed on and the passes' unresolved items, grouped
     by overlapping words: a group with an edit is one Disputed, what each
-    pass made of the words side by side; the other items are kept once."""
+    pass made of the words side by side; the other items are kept once.
+    A group whose every reading fails the value check ("fast" into
+    Rotation speed) gives its edits instead, which ground refuses with
+    the reason: nothing is written either way, and the reason says more
+    than two readings."""
     pieces = [
         *doubts,
         *(
@@ -401,8 +406,18 @@ def _disputes(
             del groups[i]
     disputed: list[Unresolved] = []
     kept: list[Unresolved] = []
+    refused: list[Edit] = []
     for group in groups:
-        if any(isinstance(p, Edit) for _, p, _ in group):
+        edits = [p for _, p, _ in group if isinstance(p, Edit)]
+        if edits and _all_wrong_kind(edits, [p for _, p, _ in group], catalog):
+            # both passes' edits of these words: the same one is shown once
+            seen = set()
+            for e in edits:
+                key = (e.target, e.new.strip().casefold())
+                if key not in seen:
+                    seen.add(key)
+                    refused.append(e)
+        elif edits:
             first, second = ([p for s, p, _ in group if s == side] for side in (0, 1))
             disputed.append(
                 Disputed(
@@ -414,7 +429,26 @@ def _disputes(
             )
         else:
             kept += _once([p for _, p, _ in group])
-    return [*disputed, *kept]
+    return [*disputed, *kept], refused
+
+
+def _all_wrong_kind(
+    edits: list[Edit], items: list[Edit | Unresolved], catalog: Catalog
+) -> bool:
+    """Whether every reading fails the value check: each edit in its own
+    column, and each value in every column an ambiguous item names. A
+    text column among those may take "fast": that stays two readings."""
+    columns = {c for u in items if isinstance(u, Ambiguous) for c in u.candidates}
+    tried = [
+        *edits,
+        *(e.model_copy(update={'target': c}) for e in edits for c in columns),
+    ]
+    return all(_wrong_kind(e, catalog) for e in tried)
+
+
+def _wrong_kind(edit: Edit, catalog: Catalog) -> bool:
+    target = catalog.column(edit.target)
+    return target is not None and bool(typed_value(edit, target)[1])
 
 
 def _quotes(edits: list[Edit]) -> set[str]:

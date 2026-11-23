@@ -30,6 +30,7 @@ from sand.sheet_edit.ground import (
     in_words,
     resolve_rows,
     same_value,
+    typed_value,
     value_numbers,
     value_problems,
     word_pattern,
@@ -123,7 +124,10 @@ def _whole(text: str, proposal: ProposedEdits, catalog: Catalog) -> bool:
         if edit.anchor and not in_words(edit.anchor.equals, edit.said):
             return True
         problems, _, doubts = value_problems(edit, target, anchor, catalog)
-        if problems or doubts:
+        # a value the column cannot hold stands for a reading the passes
+        # did not agree on (resolve._disputes): asked again elsewhere, as an
+        # empty column takes "fast" as text
+        if problems or doubts or typed_value(edit, target)[1]:
             return True
     return False
 
