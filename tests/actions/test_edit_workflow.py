@@ -267,7 +267,7 @@ async def test_status_shows_progress_then_the_result():
     assert done['job_id'] == statuses[0]['job_id']
 
 
-async def test_a_slow_model_adds_no_write():
+async def test_a_slow_model_adds_no_heartbeat():
     """Each input's own writes keep the status fresh: the heartbeat is
     for a slow prepare (its retries), not for the model."""
     stubs = Stubs(['SLOW speed 4000', 'SLOW clear solvent 2'])

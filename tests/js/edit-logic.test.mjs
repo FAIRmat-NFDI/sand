@@ -240,8 +240,10 @@ test("the state chip of an input", () => {
   assert.equal(outdated(REPORT), "Waiting to be read");
   assert.equal(outdated({ ...REPORT, confirmed: ["k1"] }), "Waiting to be read");
   assert.equal(outdated(REPORT, true), "Reading...");
-  // the job has not asked the model about it: its last state stays
-  assert.equal(outdated(REPORT, true, false), "1 edit to confirm");
+  // the job has not asked the model about it (yet): no spinner
+  assert.equal(outdated(REPORT, true, false), "Waiting to be read");
+  // asked: read again, whatever it was
+  assert.equal(label(note, { ...REPORT, refused: "a formula error" }, true), "Reading...");
   // the writer refused a confirmed edit: said first, whatever is undecided
   assert.equal(label(note, { ...REPORT, refused: "a formula error" }, false, true), "Not written");
 });

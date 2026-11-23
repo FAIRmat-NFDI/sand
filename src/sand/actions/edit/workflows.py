@@ -9,7 +9,8 @@ order, each interpreted against the sheet the earlier ones left.
     status "interpreting r/n"
       per input k > r, IN ORDER (input k reads the sheet after k-1):
         activity prepare_input(k) ──▶ cached, or the two prompts
-        (a status only if the last is older than HEARTBEAT)
+        to ask: a status "asking k" (the page's spinner); cached: a
+        status only if the last is older than HEARTBEAT
         two child ExtractionWorkflows IN PARALLEL (the two opinions)
         activity agree_cache_and_apply_input(k, answers)
             ──▶ the user's preview, edits ready to confirm, confirmed ones

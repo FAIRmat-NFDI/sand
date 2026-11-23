@@ -155,9 +155,10 @@ export function inputState(item, report, jobRunning, canConfirm, outdated = fals
       ? { state: "reading", label: "Reading..." }
       : { state: "waiting", label: "Waiting to be read" };
   }
-  if (report.refused) return { state: "refused", label: "Not written" };
   if (reading) return { state: "reading", label: "Reading..." };
-  if (outdated && !jobRunning) return { state: "waiting", label: "Waiting to be read" };
+  if (report.refused) return { state: "refused", label: "Not written" };
+  // its count may change once read again
+  if (outdated) return { state: "waiting", label: "Waiting to be read" };
   const pending = pendingKeys([report]).length;
   if (pending) {
     const label = pending === 1 ? "1 edit to confirm" : pending + " edits to confirm";
