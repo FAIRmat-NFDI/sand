@@ -174,9 +174,10 @@ def _choices(item: Ambiguous, catalog: Catalog) -> list[str]:
 
 
 def _disputed_lines(item: Disputed, catalog: Catalog) -> list[str]:
-    """'- Reading 1:' and '- Reading 2:', one per pass, each with what
-    it read on the lines under it. An edit shows where and what, and of
-    the rest only what tells the edits apart."""
+    """'- Reading 1: …' and '- Reading 2: …', one per pass: what it read
+    on the same line, or on the lines under it when it is more than one.
+    An edit shows where and what, and of the rest only what tells the
+    edits apart."""
     edits = item.edits()
     parts = {id(e): _reading_parts(e, catalog) for e in edits}
     differ = [
@@ -194,7 +195,11 @@ def _disputed_lines(item: Disputed, catalog: Catalog) -> list[str]:
     out = []
     for number, side in enumerate((item.first, item.second), 1):
         read = [line for thing in side for line in lines(thing)] or ['no edit']
-        out += [f'{INDENT}- Reading {number}:', *(f'{INDENT}    {r}' for r in read)]
+        # an ambiguous pass's choices are a list: under the label, even one
+        if len(read) == 1 and not any(isinstance(t, Ambiguous) for t in side):
+            out.append(f'{INDENT}- Reading {number}: {read[0]}')
+        else:
+            out += [f'{INDENT}- Reading {number}:', *(f'{INDENT}    {r}' for r in read)]
     return out
 
 

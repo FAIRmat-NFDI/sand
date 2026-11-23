@@ -276,10 +276,8 @@ test("the lines of an unclear part or a refused edit are problems, a ready edit'
     "   too long",
     "? sand could not propose an edit for this note. Try again, or write the note more clear.",
     "disputed: \"speed up\"",
-    "   - Reading 1:",
-    "       2: Spin Coating · Rotation speed [rpm] → 3000",
-    "   - Reading 2:",
-    "       no edit",
+    "   - Reading 1: 2: Spin Coating · Rotation speed [rpm] → 3000",
+    "   - Reading 2: no edit",
   ].join("\n");
   assert.deepEqual([...problemLines({ preview })], preview.split("\n").slice(2));
   assert.equal(problemLines({}).size, 0);
@@ -492,7 +490,7 @@ test("the kept notes hold for the started workflow only; the reservation reads n
   assert.deepEqual(freshReports({ job_id: "w1" }, false, { kept, job: "w1" }), { fresh: null, kept: new Set() });
 });
 
-test("a ready edit's checks are not shown twice: renderReport shows them", () => {
+test("a ready edit's checks are not shown twice, its new term not at all", () => {
   const line = REPORT.ready[0].line;
   const report = {
     ...REPORT,
@@ -500,6 +498,6 @@ test("a ready edit's checks are not shown twice: renderReport shows them", () =>
       "= 2: Spin Coating · Rotation time [s]", "   ⚠ check: of a no-op"].join("\n"),
   };
   assert.deepEqual(previewNotes(report), [
-    "   · new term: NiO2", "= 2: Spin Coating · Rotation time [s]", "   ⚠ check: of a no-op",
+    "= 2: Spin Coating · Rotation time [s]", "   ⚠ check: of a no-op",
   ]);
 });

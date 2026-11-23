@@ -1586,9 +1586,11 @@ body {
   border-radius: 2px;
 }
 
+/* a note's lines sit close: one explanation, not a list of paragraphs */
 .report-note {
   grid-column: 1 / -1;
-  margin: 4px 0;
+  margin: 1px 0;
+  line-height: 1.35;
   /* the preview's indents show which line belongs to which */
   white-space: pre-wrap;
   font-size: 0.82rem;
