@@ -447,25 +447,24 @@ async function recompute(experiment) {
   const sent = sentUnticks();
   const decided = roundEntries();
   if (round) {
-    const body = round;
     // ticks made while it is on its way stay for the next round; the
     // button stays off until then
     sendingRound = true;
     recomputeBtn.disabled = true;
     let why;
     try {
-      why = await post(experiment, "edits/round", body);
+      why = await post(experiment, "edits/round", round);
     } finally {
       sendingRound = false;
     }
     if (why) {
-      roundFailedFor = JSON.stringify(body);
+      roundFailedFor = JSON.stringify(round);
       showError("Could not apply the round: " + why);
       if (stillShown(experiment)) startPolling(experiment);
       return;
     }
     roundFailedFor = null;
-    clearSent(body, experiment.entry_id);
+    clearSent(round, experiment.entry_id);
   }
   roundSent = { entryId: experiment.entry_id, before, sent };
   marks = NO_MARKS;
