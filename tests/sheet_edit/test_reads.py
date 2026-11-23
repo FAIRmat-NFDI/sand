@@ -238,3 +238,16 @@ def test_a_column_chosen_because_its_sibling_was_empty(synthetic_xlsx):
     read_on = written(synthetic_xlsx, (SOLVENT_2, range(3, 15), None))
     now = written(read_on, (SOLVENT_2, (3,), 'IPA'))
     assert check(read_on, said, proposal, now) is False
+
+
+def test_a_value_the_column_cannot_hold_holds_on_its_own_sheet_only(synthetic_xlsx):
+    # the passes did not agree on it (resolve._disputes); an empty column
+    # takes "fast" as text, so it is asked again there
+    said = 'rotation speed fast for sample 2'
+    fast = one(edit(SPEED, Samples(samples=['2'], subbatch=None), None, 'fast', said))
+    first, *others = [s.row for s in build(synthetic_xlsx).samples]
+    # sample 2 empty on both: only sample 1's number makes a number column
+    numbers = written(synthetic_xlsx, (SPEED, others, None))
+    empty = written(numbers, (SPEED, [first], None))
+    assert build(numbers).column(SPEED).type != build(empty).column(SPEED).type
+    assert not check(numbers, said, fast, empty)

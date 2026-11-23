@@ -406,12 +406,17 @@ def _disputes(
             del groups[i]
     disputed: list[Unresolved] = []
     kept: list[Unresolved] = []
-    refused: dict[tuple[str, str], Edit] = {}
+    refused: list[Edit] = []
     for group in groups:
         edits = [p for _, p, _ in group if isinstance(p, Edit)]
         if edits and all(_wrong_kind(e, catalog) for e in edits):
+            # both passes' edits of these words: the same one is shown once
+            seen = set()
             for e in edits:
-                refused.setdefault((e.target, e.new.strip().casefold()), e)
+                key = (e.target, e.new.strip().casefold())
+                if key not in seen:
+                    seen.add(key)
+                    refused.append(e)
         elif edits:
             first, second = ([p for s, p, _ in group if s == side] for side in (0, 1))
             disputed.append(
@@ -424,7 +429,7 @@ def _disputes(
             )
         else:
             kept += _once([p for _, p, _ in group])
-    return [*disputed, *kept], list(refused.values())
+    return [*disputed, *kept], refused
 
 
 def _wrong_kind(edit: Edit, catalog: Catalog) -> bool:
