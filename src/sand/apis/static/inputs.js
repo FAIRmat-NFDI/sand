@@ -32,6 +32,8 @@ const EDITS_ONLY_KEY = "sand.inputs.editsOnly";
 // {changed: Set of entry ids, lost: {entry id: [lines]}}
 let reports = {};
 let jobRunning = false;
+// the input the running job asks the model about (status.asking)
+let asking = null;
 let fresh = null;
 let decidable = false;
 let marks = { changed: new Set(), lost: {} };
@@ -455,9 +457,11 @@ function renderReport(report, wait, locked) {
 // `canDecide`: false, nothing to decide (no sheet). `reported`: the
 // entry ids the running job reported already. `roundMarks`: what the
 // last round changed (see `marks`).
-export function setReports(byEntry, running, canDecide, reported = null, roundMarks = null) {
+export function setReports(byEntry, running, canDecide, reported = null, roundMarks = null,
+  askingEntry = null) {
   reports = byEntry;
   jobRunning = running;
+  asking = running ? askingEntry : null;
   fresh = running ? reported || new Set() : null;
   decidable = canDecide;
   if (roundMarks) marks = roundMarks;
@@ -580,7 +584,7 @@ function renderInputs(experiment, items) {
       badge.title = "Confirmed with Confirm all: Reset all to change it";
       meta.append(badge);
     }
-    const state = inputState(item, report, jobRunning, decidable, waits);
+    const state = inputState(item, report, jobRunning, decidable, waits, asking === item.entry_id);
     if (state) {
       const chip = document.createElement("span");
       chip.className = "input-state is-" + state.state;

@@ -346,7 +346,7 @@ async function poll(experiment, generation) {
     };
     roundSent = null;
   }
-  setReports(reportsShown, running, true, fresh, marks);
+  setReports(reportsShown, running, true, fresh, marks, status.asking ?? null);
   decisionStatus = status;
   // while a job runs, the buttons stay, closed, for the last run's edits
   showActions(running ? { ...status, inputs: Object.values(reportsShown) } : status, running);

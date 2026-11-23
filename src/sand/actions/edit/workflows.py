@@ -166,9 +166,16 @@ class EditSheetWorkflow:
                         f'input {number}: {len(prepared["prompts"])} prompts, not 2',
                         non_retryable=True,
                     )
-                # the API's staleness guard must not open while one input
-                # is being worked on
-                await heartbeat({**progress, 'inputs_done': number - 1})
+                if prepared['prompts']:
+                    # the page's "Reading..." goes on this input only: one
+                    # whose answer is reused is not read by the model (#217)
+                    await status(
+                        {**progress, 'inputs_done': number - 1, 'asking': entry_id}
+                    )
+                else:
+                    # the API's staleness guard must not open while one
+                    # input is being worked on
+                    await heartbeat({**progress, 'inputs_done': number - 1})
                 # the two opinions at once; none when the proposal is cached
                 answers = await asyncio.gather(
                     *(
