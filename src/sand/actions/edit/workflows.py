@@ -9,7 +9,8 @@ order, each interpreted against the sheet the earlier ones left.
     status "interpreting r/n"
       per input k > r, IN ORDER (input k reads the sheet after k-1):
         activity prepare_input(k) ──▶ cached, or the two prompts
-        (a status only if the last is older than HEARTBEAT)
+        to ask: a status "asking k" (the page's spinner); cached: a
+        status only if the last is older than HEARTBEAT
         two child ExtractionWorkflows IN PARALLEL (the two opinions)
         activity agree_cache_and_apply_input(k, answers)
             ──▶ the user's preview, edits ready to confirm, confirmed ones
@@ -166,9 +167,16 @@ class EditSheetWorkflow:
                         f'input {number}: {len(prepared["prompts"])} prompts, not 2',
                         non_retryable=True,
                     )
-                # the API's staleness guard must not open while one input
-                # is being worked on
-                await heartbeat({**progress, 'inputs_done': number - 1})
+                if prepared['prompts']:
+                    # the page's "Reading..." goes on this input only: one
+                    # whose answer is reused is not read by the model (#217)
+                    await status(
+                        {**progress, 'inputs_done': number - 1, 'asking': entry_id}
+                    )
+                else:
+                    # the API's staleness guard must not open while one
+                    # input is being worked on
+                    await heartbeat({**progress, 'inputs_done': number - 1})
                 # the two opinions at once; none when the proposal is cached
                 answers = await asyncio.gather(
                     *(

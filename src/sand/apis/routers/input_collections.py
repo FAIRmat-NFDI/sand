@@ -747,7 +747,7 @@ async def _edit_status(
         # whose start never reached Temporal): the page would wait on
         # it forever, so it is reported as the failure it is
         status = {
-            **status,
+            **{k: v for k, v in status.items() if k != 'asking'},
             'phase': 'failed',
             'stale': True,
             'error': 'the job stopped: no progress for '

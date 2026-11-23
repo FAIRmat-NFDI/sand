@@ -191,17 +191,20 @@ async def test_each_input_in_order_two_opinions_each_then_the_sheet():
     result = await run(stubs)
 
     # no "collecting" or "replaying" status: the reservation stands; each
-    # input's status goes with its apply (one write), none before it
+    # input's status goes with its apply (one write), and one before the
+    # model is asked, for the page's spinner
     assert [name for name, _ in stubs.calls] == [
         'collect',
         'replay',
         'status',
         'prepare',
+        'status',
         'apply',
         'status',
         # what follows input 1 is not cached: nothing replayed
         'replay',
         'prepare',
+        'status',
         'apply',
         'status',
         'store_final_sheet_and_changelog',
@@ -247,12 +250,13 @@ async def test_status_shows_progress_then_the_result():
     await run(stubs)
     statuses = stubs.of('status')
     # "writing-sheet" only as a heartbeat: the last status is fresh
-    assert [s['phase'] for s in statuses] == [*['interpreting'] * 3, 'completed']
-    # before the first input, then after each
-    assert [s.get('inputs_done') for s in statuses[:3]] == [0, 1, 2]
-    assert all(s['inputs_total'] == 2 for s in statuses[:3])  # noqa: PLR2004
-    assert all(s['inputs_replayed'] == 0 for s in statuses[:3])
-    assert [len(s['inputs']) for s in statuses] == [0, 1, 2, 2]
+    assert [s['phase'] for s in statuses] == [*['interpreting'] * 5, 'completed']
+    # before the first input, then before each model call and after each
+    assert [s.get('inputs_done') for s in statuses[:5]] == [0, 0, 1, 1, 2]
+    assert [s.get('asking') for s in statuses] == [None, 'e1', None, 'e2', None, None]
+    assert all(s['inputs_total'] == 2 for s in statuses[:5])  # noqa: PLR2004
+    assert all(s['inputs_replayed'] == 0 for s in statuses[:5])
+    assert [len(s['inputs']) for s in statuses] == [0, 0, 1, 1, 2, 2]
     done = statuses[-1]
     assert done['collection_entry_id'] == 'c1'
     assert done['model'] == MODEL
@@ -263,17 +267,21 @@ async def test_status_shows_progress_then_the_result():
     assert done['job_id'] == statuses[0]['job_id']
 
 
-async def test_a_slow_model_adds_no_write():
-    """Each input's own write keeps the status fresh: the heartbeat is
+async def test_a_slow_model_adds_no_heartbeat():
+    """Each input's own writes keep the status fresh: the heartbeat is
     for a slow prepare (its retries), not for the model."""
     stubs = Stubs(['SLOW speed 4000', 'SLOW clear solvent 2'])
     await run(stubs)
-    phases = [(s['phase'], s.get('inputs_done')) for s in stubs.of('status')]
+    phases = [
+        (s['phase'], s.get('inputs_done'), s.get('asking')) for s in stubs.of('status')
+    ]
     assert phases == [
-        ('interpreting', 0),
-        ('interpreting', 1),
-        ('interpreting', 2),
-        ('completed', None),
+        ('interpreting', 0, None),
+        ('interpreting', 0, 'e1'),
+        ('interpreting', 1, None),
+        ('interpreting', 1, 'e2'),
+        ('interpreting', 2, None),
+        ('completed', None, None),
     ]
 
 
@@ -293,9 +301,11 @@ async def test_the_leading_cached_inputs_are_replayed_in_one_go():
     assert [r['input'] for r in result['inputs']] == [1, 2, 3]
     assert [r['from_cache'] for r in result['inputs'][:2]] == [True, True]
     interpreting = [s for s in stubs.of('status') if s['phase'] == 'interpreting']
-    assert [s['inputs_done'] for s in interpreting] == [2, 3]
+    # the replayed inputs 1 and 2 get no "asking"; input 3 does
+    assert [s['inputs_done'] for s in interpreting] == [2, 2, 3]
+    assert [s.get('asking') for s in interpreting] == [None, 'e3', None]
     assert all(s['inputs_replayed'] == 2 for s in interpreting)  # noqa: PLR2004
-    assert [len(s['inputs']) for s in interpreting] == [2, 3]
+    assert [len(s['inputs']) for s in interpreting] == [2, 2, 3]
 
 
 async def test_everything_cached_is_replayed_then_written():

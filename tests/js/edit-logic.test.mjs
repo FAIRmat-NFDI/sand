@@ -194,15 +194,20 @@ test("revising or deleting a written update warns, naming the written ones after
 
 test("the state chip of an input", () => {
   const note = { entry_id: "n1", text: REPORT.text };
-  const label = (item, report, running = false, canConfirm = true) =>
-    inputState(item, report, running, canConfirm)?.label ?? null;
+  const label = (item, report, running = false, canConfirm = true, asked = running) =>
+    inputState(item, report, running, canConfirm, false, asked)?.label ?? null;
   assert.equal(label({ ...note, text: null }, undefined), null);
   assert.equal(label(note, undefined, false, false), null);
   assert.equal(label(note, undefined), "Waiting to be read");
   assert.equal(label(note, undefined, true), "Reading...");
+  // the job reads another one, or reuses this one's answer: no spinner
+  assert.equal(label(note, undefined, true, true, false), "Waiting to be read");
   // a report of other words is not this update's
   assert.equal(label({ ...note, text: "speed 4500" }, REPORT, true), "Reading...");
   assert.equal(label({ ...note, applied: true }, undefined), "Applied");
+  // revised after it was applied, and now asked: read again
+  assert.equal(label({ ...note, applied: true }, undefined, true), "Reading...");
+  assert.equal(label({ ...note, applied: true }, undefined, true, true, false), "Applied");
   assert.equal(label(note, REPORT), "1 edit to confirm");
   assert.equal(label(note, { ...REPORT, ready: [...REPORT.ready, { ...REPORT.ready[0], key: "k2" }] }),
     "2 edits to confirm");
@@ -233,10 +238,15 @@ test("the state chip of an input", () => {
   assert.equal(label(note, { ...REPORT, ready: [], unresolved: 1, not_applied: 1 }), "Unclear");
   assert.equal(inputState(note, REPORT, false, true).state, "ready");
   // read again first: below a change above
-  const outdated = (report, running = false) => inputState(note, report, running, true, true).label;
+  const outdated = (report, running = false, asked = running) =>
+    inputState(note, report, running, true, true, asked).label;
   assert.equal(outdated(REPORT), "Waiting to be read");
   assert.equal(outdated({ ...REPORT, confirmed: ["k1"] }), "Waiting to be read");
   assert.equal(outdated(REPORT, true), "Reading...");
+  // the job has not asked the model about it (yet): no spinner
+  assert.equal(outdated(REPORT, true, false), "Waiting to be read");
+  // asked: read again, whatever it was
+  assert.equal(label(note, { ...REPORT, refused: "a formula error" }, true), "Reading...");
   // the writer refused a confirmed edit: said first, whatever is undecided
   assert.equal(label(note, { ...REPORT, refused: "a formula error" }, false, true), "Not written");
 });

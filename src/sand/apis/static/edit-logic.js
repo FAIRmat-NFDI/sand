@@ -141,23 +141,24 @@ export function rewriteWarning(action, items, reports, entryId) {
 // what the job made of it, or where the job is with it. Null while it
 // has no text (the body says "transcribing...") and when no job is at
 // work on this page.
-// `outdated`: its report is read again before it is decided.
-export function inputState(item, report, jobRunning, canConfirm, outdated = false) {
+// `outdated`: its report is read again before it is decided. `asked`:
+// the running job is asking the model about it; the others it reaches
+// keep their last state (a reused answer is no reading, #217).
+export function inputState(item, report, jobRunning, canConfirm, outdated = false, asked = false) {
   if (!item.text) return null;
   const reported = report && report.text === item.text;
+  const reading = jobRunning && asked;
   if (!reported) {
+    // before `applied`: a revised applied note keeps it until reported
+    if (reading) return { state: "reading", label: "Reading..." };
     if (item.applied) return { state: "applied", label: "Applied" };
     if (!canConfirm) return null;
-    return jobRunning
-      ? { state: "reading", label: "Reading..." }
-      : { state: "waiting", label: "Waiting to be read" };
+    return { state: "waiting", label: "Waiting to be read" };
   }
+  if (reading) return { state: "reading", label: "Reading..." };
   if (report.refused) return { state: "refused", label: "Not written" };
-  if (outdated) {
-    return jobRunning
-      ? { state: "reading", label: "Reading..." }
-      : { state: "waiting", label: "Waiting to be read" };
-  }
+  // its count may change once read again
+  if (outdated) return { state: "waiting", label: "Waiting to be read" };
   const pending = pendingKeys([report]).length;
   if (pending) {
     const label = pending === 1 ? "1 edit to confirm" : pending + " edits to confirm";
