@@ -677,7 +677,22 @@ body {
 .value-old {
   color: #9aa0a6;
   font-weight: 400;
-  text-decoration: line-through;
+}
+
+/* struck out with a slanted line, bottom left to top right: an old value.
+   Drawn as a background, so each wrapped line of it gets its own */
+.value-old,
+.written-old .struck {
+  padding: 0 2px;
+  background: linear-gradient(
+    to bottom right,
+    transparent calc(50% - 0.7px),
+    currentColor calc(50% - 0.7px),
+    currentColor calc(50% + 0.7px),
+    transparent calc(50% + 0.7px)
+  );
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .value-arrow {
@@ -1842,11 +1857,9 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* what the uploaded sheet held, struck out */
+/* what the uploaded sheet held, struck out (.struck) */
 .written-table .written-old {
   color: #9aa0a6;
-  text-decoration: line-through;
-  text-decoration-color: #9aa0a6;
   font-variant-numeric: tabular-nums;
 }
 
