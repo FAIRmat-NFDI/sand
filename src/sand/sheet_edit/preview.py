@@ -195,7 +195,8 @@ def _disputed_lines(item: Disputed, catalog: Catalog) -> list[str]:
     out = []
     for number, side in enumerate((item.first, item.second), 1):
         read = [line for thing in side for line in lines(thing)] or ['no edit']
-        if len(read) == 1:
+        # an ambiguous pass's choices are a list: under the label, even one
+        if len(read) == 1 and not any(isinstance(t, Ambiguous) for t in side):
             out.append(f'{INDENT}- Reading {number}: {read[0]}')
         else:
             out += [f'{INDENT}- Reading {number}:', *(f'{INDENT}    {r}' for r in read)]

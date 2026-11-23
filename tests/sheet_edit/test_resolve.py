@@ -726,6 +726,15 @@ def test_a_hedge_on_words_around_an_edit_is_that_passs_reading(catalog):
         '       - 2: Spin Coating · Annealing time [min]\n'
         '       - 2: Spin Coating · Rotation speed [rpm]'
     )
+    # one choice is still a list: under its label
+    one = {**hedge, 'candidates': [ANNEAL_TIME]}
+    proposal = ask(catalog, answer(edit(said=said)), answer(unresolved=[one]))
+    assert preview([], proposal.unresolved, NOTHING, catalog) == (
+        f'disputed: "{longer}"\n'
+        '   - Reading 1: 2: Spin Coating · Rotation speed [rpm] → 4000\n'
+        '   - Reading 2:\n'
+        '       - 2: Spin Coating · Annealing time [min]'
+    )
 
 
 def test_a_reading_shows_subbatch_anchor_and_an_empty_where(two_subbatches):
