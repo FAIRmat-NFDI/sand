@@ -91,6 +91,21 @@ def test_an_empty_step_is_marked(view):
     assert (empty['material'], empty['layer']) == (None, None)
 
 
+def test_the_columns_without_a_value_are_named(view):
+    spin = step(view, 2)
+    assert set(spin['unfilled'][0]) == {'column_id', 'header', 'name', 'unit', 'type'}
+    unfilled = [c['header'] for c in spin['unfilled']]
+    assert 'Solvent 1 volume [uL]' in unfilled
+    assert not set(unfilled) & {p['header'] for p in spin['params']}
+    # an empty step has every column of its own
+    empty = step(view, 7)
+    assert empty['unfilled'] and 'Rotation speed [rpm]' in {
+        c['header'] for c in empty['unfilled']
+    }
+    # Experiment Info: the empty Notes, never an identity column
+    assert [c['header'] for c in view['info']['unfilled']] == ['Notes']
+
+
 def test_a_step_varies_when_a_parameter_does(view):
     css = step(view, 5)
     assert css['varies']
