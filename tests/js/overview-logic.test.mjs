@@ -425,7 +425,7 @@ test("a row the sheet lost its label for is named by its row", () => {
 test("the summary line", () => {
   const view = {
     steps: [{ position: 1, varies: false }, { position: 5, varies: true }, { position: 7, varies: false }],
-    warnings: ["Sample 22 is missing", "Step 7 (Spin Coating) is empty"],
+    warnings: ["an edit job is writing the sheet; this is the uploaded sheet", "another note"],
     changed: [{ column_id: "C1", row: 3 }, { column_id: "C1", row: 4 }],
   };
   assert.equal(overviewSummary(view), "3 steps · step 5 varies · 2 to check · 2 cells edited");

@@ -1,4 +1,4 @@
-"""The sheet view: fields, steps, variations, warnings and changed cells
+"""The sheet view: fields, steps, variations and changed cells
 read from the synthetic sheet (and the real one when it is there)."""
 
 import pytest
@@ -85,11 +85,10 @@ def test_steps_in_sheet_order_with_their_filled_parameters(view):
     ]
 
 
-def test_an_empty_step_is_marked_and_warned(view):
+def test_an_empty_step_is_marked(view):
     empty = step(view, 7)
     assert empty['empty'] and empty['params'] == []
     assert (empty['material'], empty['layer']) == (None, None)
-    assert 'Step 7 (Spin Coating) is empty' in view['warnings']
 
 
 def test_a_step_varies_when_a_parameter_does(view):
@@ -118,26 +117,24 @@ def test_variations_are_the_columns_with_more_than_one_value(view):
     ]
 
 
-def test_a_gap_in_the_sample_numbers_is_warned(view):
-    assert view['warnings'] == ['Sample 6 is missing', 'Step 7 (Spin Coating) is empty']
-
-
-def test_several_gaps_and_a_label_used_twice(synthetic_xlsx):
+def test_the_sheet_is_not_checked(synthetic_xlsx, view):
+    # no sample 6, an empty step 7: how lab sheets are, nothing to remind
+    assert view['warnings'] == []
     sample = letter('Experiment Info', 'Sample')
+    speed = letter('2: Spin Coating', 'Rotation speed [rpm]')
+    material = letter('2: Spin Coating', 'Material name')
 
-    def change(ws):
-        ws[f'{sample}4'] = 1  # sample 2 becomes a second sample 1
-        ws[f'{sample}5'] = 30  # sample 3 becomes 30: 8 to 29 are missing too
+    def odd(ws):
+        ws[f'{sample}4'] = 1  # sample 1 twice
+        ws[f'{sample}5'] = None  # a row without a sample
+        ws[f'{speed}3'] = '3000'  # a number typed as text
+        for i, row in enumerate(range(3, 15)):
+            ws[f'{material}{row}'] = f'PbBr{i + 2}'  # a drag-fill
 
-    view = sheet_view(build(edited(synthetic_xlsx, change)))
-    # a label used twice makes the subbatch part of every sample's name
-    assert view['warnings'][:2] == [
-        'Samples 2–3, 6, 14–29 of subbatch 0 are missing',
-        'Sample 1 of subbatch 0 appears twice',
-    ]
+    assert sheet_view(build(edited(synthetic_xlsx, odd)))['warnings'] == []
 
 
-def test_the_subbatch_is_named_when_labels_repeat(synthetic_xlsx):
+def test_the_subbatches(synthetic_xlsx):
     sample = letter('Experiment Info', 'Sample')
     subbatch = letter('Experiment Info', 'Subbatch')
 
@@ -149,18 +146,6 @@ def test_the_subbatch_is_named_when_labels_repeat(synthetic_xlsx):
 
     view = sheet_view(build(edited(synthetic_xlsx, change)))
     assert view['info']['subbatches'] == ['0', '1']
-    assert view['warnings'][:2] == [
-        'Sample 6 of subbatch 0 is missing',
-        'Samples 3, 6 of subbatch 1 are missing',
-    ]
-
-
-def test_a_row_without_a_sample_number(synthetic_xlsx):
-    sample = letter('Experiment Info', 'Sample')
-    view = sheet_view(
-        build(edited(synthetic_xlsx, lambda ws: ws.__setitem__(f'{sample}4', None)))
-    )
-    assert view['warnings'][0] == 'Row 4 has no Sample value'
 
 
 def test_values_that_differ_only_by_spaces_are_one(synthetic_xlsx):
@@ -178,47 +163,13 @@ def test_values_that_differ_only_by_spaces_are_one(synthetic_xlsx):
     assert [v['header'] for v in view['variations']] == ['Variation', TEMPERATURE]
 
 
-def test_a_number_typed_as_text_is_one_value_but_warned(synthetic_xlsx):
+def test_a_number_typed_as_text_is_one_value(synthetic_xlsx):
     speed = letter('2: Spin Coating', 'Rotation speed [rpm]')
     view = sheet_view(
         build(edited(synthetic_xlsx, lambda ws: ws.__setitem__(f'{speed}3', '3000')))
     )
     rpm = param(step(view, 2), 'Rotation speed [rpm]')
     assert (rpm['type'], [v['value'] for v in rpm['values']]) == ('mixed', ['3000'])
-    assert (
-        'Rotation speed [rpm] in 2: Spin Coating mixes numbers and text'
-        in view['warnings']
-    )
-
-
-def test_a_name_that_counts_up_row_by_row_is_warned(synthetic_xlsx):
-    """PbBr2, PbBr3, ... down a name column is Excel's drag-fill, not
-    fourteen solutes."""
-    material = letter('2: Spin Coating', 'Material name')
-
-    def drag_fill(ws):
-        for i, row in enumerate(range(3, 15)):
-            ws[f'{material}{row}'] = f'PbBr{i + 2}'
-
-    view = sheet_view(build(edited(synthetic_xlsx, drag_fill)))
-    assert (
-        'Material name in 2: Spin Coating counts up from PbBr2 to PbBr13: '
-        'an Excel drag-fill?'
-    ) in view['warnings']
-    # numbers that do not grow by one, or several prefixes, are no drag-fill
-    view = sheet_view(
-        build(
-            edited(
-                synthetic_xlsx,
-                lambda ws: [
-                    ws.__setitem__(f'{material}3', 'PbBr2'),
-                    ws.__setitem__(f'{material}4', 'PbBr5'),
-                    ws.__setitem__(f'{material}5', 'PbBr6'),
-                ],
-            )
-        )
-    )
-    assert not [w for w in view['warnings'] if 'counts up' in w]
 
 
 def test_a_varying_material_is_no_headline(synthetic_xlsx):
@@ -238,19 +189,7 @@ def test_prefixed_sample_labels(synthetic_xlsx):
             ws[f'{sample}{r}'] = f's_{ws[f"{sample}{r}"].value}'
 
     view = sheet_view(build(edited(synthetic_xlsx, prefixed)))
-    assert view['warnings'][0] == 'Sample s_6 is missing'
     assert view['variations'][0]['values'][0]['samples'] == 'samples s_1–s_3'
-
-
-def test_labels_that_are_not_numbers_have_no_gaps(synthetic_xlsx):
-    sample = letter('Experiment Info', 'Sample')
-
-    def lettered(ws):
-        for r in range(3, 15):
-            ws[f'{sample}{r}'] = 'ABCDEFGHIJKL'[r - 3]
-
-    view = sheet_view(build(edited(synthetic_xlsx, lettered)))
-    assert view['warnings'] == ['Step 7 (Spin Coating) is empty']
 
 
 def test_a_parameter_empty_on_some_samples_varies(synthetic_xlsx):

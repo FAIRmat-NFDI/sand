@@ -106,7 +106,7 @@ async def test_the_uploaded_sheet_before_any_edit(voice, synthetic_xlsx):
     assert body['info']['samples'] == len(ROWS)
     assert [s['position'] for s in body['steps']][:3] == [1, 2, 3]
     assert body['changed'] == []
-    assert body['warnings'] == ['Sample 6 is missing', 'Step 7 (Spin Coating) is empty']
+    assert body['warnings'] == []
     # the page polls this: never held up by NOMAD processing the upload
     assert not any(waited for _, waited in voice.writer.reads)
     # no final sheet: the changelog is not looked for
@@ -124,7 +124,7 @@ async def test_the_edited_sheet_when_the_files_hold_together(voice, synthetic_xl
     assert [(c['row'], c['old'], c['new']) for c in body['changed']] == [
         (r, '3000', '4000') for r in ROWS
     ]
-    assert body['warnings'] == ['Sample 6 is missing', 'Step 7 (Spin Coating) is empty']
+    assert body['warnings'] == []
     assert {name for name, _ in voice.writer.reads} == {
         ORIGINAL_FILE,
         FINAL_FILE,
@@ -227,7 +227,7 @@ async def test_this_collections_completed_job_is_shown(voice, synthetic_xlsx):
     body = (await get_view(voice)).json()
 
     assert body['source'] == 'edited'
-    assert body['warnings'] == ['Sample 6 is missing', 'Step 7 (Spin Coating) is empty']
+    assert body['warnings'] == []
 
 
 async def test_no_sheet(voice):
