@@ -1,6 +1,7 @@
 """The sheet as the page shows it: what holds for every sample, the
-steps with their filled parameters, what varies, what looks off, and
-what the confirmed edits changed.
+steps with their filled parameters, what varies, and what the
+confirmed edits changed. No checks of the sheet: a missing sample or an
+empty step is how lab sheets are.
 
 Everything is read from the catalog; nothing is assumed about the
 columns beyond the Experiment Info identity columns. Values are the
@@ -9,15 +10,10 @@ by that text: 3000 and 3000.0 are one value, '8 times' and '8 times '
 are one value too.
 """
 
-import re
-from collections import Counter
-
 from sand.sheet_edit.catalog import (
     Catalog,
     ColumnInfo,
     column_id,
-    numbered,
-    sample_ranges,
 )
 from sand.sheet_edit.changelog import Changelog, Entry
 from sand.sheet_edit.preview import samples_text
@@ -49,7 +45,7 @@ def sheet_view(catalog: Catalog, log: Changelog | None = None) -> dict:
                 'samples'}]}]}],
      'variations': [{'column_id', 'step', 'header', 'name', 'unit', 'type',
                      'values': [...]}],
-     'warnings': ['Sample 22 is missing', 'Step 7 (Spin Coating) is empty'],
+     'warnings': [],  # the API's notes on which sheet this is
      'changed': [{'column_id', 'step', 'header', 'row', 'sample', 'old', 'new',
                   'by_formula'}]}
 
@@ -63,7 +59,6 @@ def sheet_view(catalog: Catalog, log: Changelog | None = None) -> dict:
     info: list[dict] = []
     steps: list[dict] = []
     variations: list[dict] = []
-    warnings: list[str] = []
     for section in catalog.structure.sections:
         columns = [c for c in catalog.columns if c.column.section == section]
         values = {c.id: _values(c, catalog) for c in columns}
@@ -76,26 +71,11 @@ def sheet_view(catalog: Catalog, log: Changelog | None = None) -> dict:
                 and values[c.id][0]['value'] is not None
             ]
         else:
-            step = _step(section, columns, values)
-            steps.append(step)
-            if step['empty']:
-                warnings.append(_empty_step(section))
+            steps.append(_step(section, columns, values))
         variations += [
             {**_column(c), 'step': section.label, 'values': values[c.id]}
             for c in columns
             if c.column.header not in _IDENTITY and len(values[c.id]) > 1
-        ]
-        # grouping by text hides a number typed as text; the type says so
-        warnings += [
-            f'{c.column.header} in {section.label} mixes numbers and text'
-            for c in columns
-            if c.type == 'mixed'
-        ]
-        warnings += [
-            f'{c.column.header} in {section.label} counts up from '
-            f'{run[0]} to {run[1]}: an Excel drag-fill?'
-            for c in columns
-            if c.column.header not in _IDENTITY and (run := _counts_up(values[c.id]))
         ]
     return {
         'sheet': catalog.structure.sheet_name,
@@ -111,7 +91,7 @@ def sheet_view(catalog: Catalog, log: Changelog | None = None) -> dict:
         },
         'steps': steps,
         'variations': variations,
-        'warnings': [*_sample_warnings(catalog), *warnings],
+        'warnings': [],
         'changed': _changed(log, catalog) if log else [],
     }
 
@@ -141,27 +121,6 @@ def _values(c: ColumnInfo, catalog: Catalog) -> list[dict]:
         }
         for text, rows in merged.items()
     ]
-
-
-_COUNTED = re.compile(r'^(.*\D)(\d+)$')
-_COUNT_FROM = 3  # distinct values before a column is said to count up
-
-
-def _counts_up(values: list[dict]) -> tuple[str, str] | None:
-    """The first and last value when a text column's values are one
-    prefix with a number that grows by one row by row (PbBr2, PbBr3,
-    ...): what Excel's drag-fill makes of a name. None otherwise."""
-    if len(values) < _COUNT_FROM or any(v['value'] is None for v in values):
-        return None
-    ordered = sorted(values, key=lambda v: v['rows'][0])
-    parsed = [_COUNTED.match(v['value']) for v in ordered]
-    if not all(parsed):
-        return None
-    prefixes = {m.group(1) for m in parsed}
-    numbers = [int(m.group(2)) for m in parsed]
-    if len(prefixes) > 1 or any(b != a + 1 for a, b in zip(numbers, numbers[1:])):
-        return None
-    return ordered[0]['value'], ordered[-1]['value']
 
 
 def _step(section: Section, columns: list[ColumnInfo], values: dict) -> dict:
@@ -194,51 +153,6 @@ def _one_value(params: list[dict], key: str) -> str | None:
         if norm_key(p['header']) == key and len(p['values']) == 1:
             return p['values'][0]['value']
     return None
-
-
-def _empty_step(section: Section) -> str:
-    return f'Step {section.position} ({section.step_type}) is empty'
-
-
-def _sample_warnings(catalog: Catalog) -> list[str]:
-    """Gaps in the sample numbers, labels used twice, rows without one.
-    The subbatch is named only when the sheet needs it to tell samples
-    apart, as the catalog names samples."""
-
-    def where(subbatch: str | None) -> str:
-        if catalog.needs_subbatch and subbatch is not None:
-            return f' of subbatch {subbatch}'
-        return ''
-
-    warnings = [
-        f'Row {s.row} has no {SAMPLE_HEADER} value'
-        for s in catalog.samples
-        if s.label is None
-    ]
-    numbers: dict[tuple[str | None, str], list[int]] = {}
-    for s in catalog.samples:
-        parts = numbered(s.label) if s.label is not None else None
-        if parts is not None:
-            numbers.setdefault((s.subbatch, parts[0]), []).append(parts[1])
-    for (subbatch, prefix), found in numbers.items():
-        present = set(found)
-        missing = [
-            f'{prefix}{n}'
-            for n in range(min(found), max(found) + 1)
-            if n not in present
-        ]
-        if len(missing) == 1:
-            warnings.append(f'Sample {missing[0]}{where(subbatch)} is missing')
-        elif missing:
-            warnings.append(
-                f'Samples {sample_ranges(missing)}{where(subbatch)} are missing'
-            )
-    counts = Counter((s.subbatch, s.label) for s in catalog.samples if s.label)
-    for (subbatch, label), n in counts.items():
-        if n > 1:
-            times = {2: 'twice'}.get(n, f'{n} times')
-            warnings.append(f'Sample {label}{where(subbatch)} appears {times}')
-    return warnings
 
 
 def _changed(log: Changelog, catalog: Catalog) -> list[dict]:
