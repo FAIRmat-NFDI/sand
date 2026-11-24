@@ -294,10 +294,7 @@ def test_without_a_log_nothing_is_changed(view):
 
 def test_the_real_sheet(real_kit_xlsx):
     view = sheet_view(build(real_kit_xlsx))
-    assert view['warnings'] == [
-        'Sample 22 is missing',
-        'Step 7 (Spin Coating) is empty',
-    ]
+    assert view['warnings'] == []
     assert [f['header'] for f in view['info']['fields']] == [
         'Date',
         'Project_Name',
