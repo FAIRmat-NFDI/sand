@@ -116,19 +116,22 @@
       </section>
 
       <section class="card lab-only lab-step" id="lab-step" aria-label="The step you are working on">
-        <div class="lab-step-head">
-          <div>
-            <p class="sheet-kicker" id="lab-sheet"></p>
-            <h2 class="lab-step-title" id="lab-step-title"></h2>
-            <p class="lab-step-sub" id="lab-step-sub"></p>
-          </div>
-          <button class="btn btn-outlined" id="lab-exit-btn" type="button">
+        <p class="lab-kicker"><span id="lab-step-place"></span><span class="lab-sheet" id="lab-sheet"></span></p>
+        <h2 class="lab-step-title" id="lab-step-title"></h2>
+        <p class="lab-step-sub" id="lab-step-sub"></p>
+        <div class="lab-step-rows" id="lab-step-rows"></div>
+        <div class="lab-step-unfilled" id="lab-step-unfilled" hidden>
+          <h3>Not filled yet</h3>
+          <div class="lab-chips" id="lab-step-chips"></div>
+        </div>
+        <div class="lab-step-buttons">
+          <button class="btn btn-outlined btn-small" id="lab-prev-btn" type="button" aria-label="Previous step">‹ Prev</button>
+          <button class="btn btn-outlined btn-small" id="lab-next-btn" type="button" aria-label="Next step">Next ›</button>
+          <button class="btn btn-quiet btn-small lab-exit" id="lab-exit-btn" type="button">
             <span class="material-icons">close_fullscreen</span>
             Full view
           </button>
         </div>
-        <div class="lab-step-rows" id="lab-step-rows"></div>
-        <p class="lab-step-unfilled" id="lab-step-unfilled" hidden></p>
       </section>
 
       <p class="error-banner error-text" id="session-warning" role="alert"></p>
@@ -158,7 +161,8 @@
           </div>
           <p class="status-text record-status" id="status"></p>
           <p class="lab-only lab-idle">Not recording</p>
-          <ol class="lab-only lab-notes" id="lab-notes" aria-label="The notes so far"></ol>
+          <p class="lab-only lab-label">You are saying</p>
+          <ol class="lab-only lab-notes" id="lab-notes" aria-label="Said before"></ol>
           <p class="live-transcript" id="live-transcript" aria-live="polite" hidden>
             <span id="live-final"></span>
             <span id="live-interim" class="interim"></span>
@@ -246,18 +250,6 @@
           </div>
         </section>
       </div>
-
-      <nav class="lab-only lab-nav" aria-label="Steps of the sheet">
-        <button class="btn btn-outlined" id="lab-prev-btn" type="button">
-          <span class="material-icons">chevron_left</span>
-          Previous step
-        </button>
-        <span class="lab-step-place" id="lab-step-place"></span>
-        <button class="btn btn-outlined" id="lab-next-btn" type="button">
-          Next step
-          <span class="material-icons">chevron_right</span>
-        </button>
-      </nav>
     </div>
   </div>
 

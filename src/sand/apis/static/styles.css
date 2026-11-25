@@ -1951,176 +1951,231 @@ body.lab-mode .section-apply {
   display: none;
 }
 
-/* The lab view fills the window and never scrolls as a whole: nobody
-   can scroll with the hands in the box. The step panel and the notes
-   scroll inside; the live transcript and the step buttons stay in view. */
+/* The lab view fills the window and nothing scrolls: nobody can scroll
+   with the hands in the box. The step on the left, the speaking on the
+   right; a warning takes a row of its own above them. */
 body.lab-mode .container {
-  display: flex;
-  flex-direction: column;
+  max-width: none;
   height: 100vh;
-  padding: 12px 16px 84px; /* the step buttons are fixed at the bottom */
+  padding: 14px;
 }
 
 /* the page sets display on #app-content itself */
 body.lab-mode #app-content {
-  display: flex !important;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
+  display: grid !important;
+  grid-template-columns: minmax(0, 44fr) minmax(0, 56fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  column-gap: 14px;
+  height: 100%;
 }
+
+body.lab-mode .error-banner { grid-column: 1 / -1; }
+body.lab-mode #session-warning { grid-row: 1; }
+body.lab-mode #error { grid-row: 2; }
+body.lab-mode .lab-step { grid-area: 3 / 1; }
+body.lab-mode .workspace { grid-area: 3 / 2; display: flex; align-items: stretch; min-height: 0; }
 
 body.lab-mode .card {
-  padding: 16px 24px;
-  margin-bottom: 12px;
-}
-
-body.lab-mode .lab-step {
-  flex: 0 1 auto;
-  max-height: 52%;
-  overflow-y: auto;
-}
-
-body.lab-mode .workspace {
-  display: flex;
-  align-items: stretch;
-  flex: 1;
-  min-height: 0;
-}
-
-body.lab-mode .workspace .card {
+  border-radius: 10px;
+  padding: clamp(14px, 1.8vw, 28px);
   margin-bottom: 0;
 }
 
-.lab-step-head {
+/* --- the step: every column of it, always all in view --- */
+
+.lab-step {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  color: #14181f;
+}
+
+.lab-kicker {
+  font-size: clamp(13px, 1.1vw, 17px);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #2A4CDF;
+}
+
+.lab-sheet {
+  color: #5b6472;
+  font-weight: 400;
+}
+
+.lab-sheet:not(:empty)::before {
+  content: " · ";
 }
 
 .lab-step-title {
-  font-size: 1.6rem;
-  font-weight: 600;
-  color: #1f2430;
+  font-size: clamp(28px, 3.2vw, 52px);
+  font-weight: 700;
+  line-height: 1.1;
+  margin-top: 2px;
 }
 
 .lab-step-sub {
-  font-size: 1.1rem;
-  color: #6b7079;
+  font-size: clamp(16px, 1.5vw, 24px);
+  color: #5b6472;
+  margin-top: 2px;
+  min-height: 1.3em;
 }
 
-/* a step has up to 24 columns: several across, each name over its value's line */
+/* The rows share the height that is left: few columns are large, many
+   are small and in two columns (lab.js sets --cols, --per and
+   --row-font from the room a row gets). */
 .lab-step-rows {
+  flex: 1;
+  min-height: 0;
+  margin-top: clamp(8px, 1.4vh, 16px);
+  border-top: 2px solid #14181f;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 6px 32px;
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid #eef0f3;
-  font-size: 1.05rem;
-  line-height: 1.4;
+  grid-auto-flow: column;
+  column-gap: clamp(16px, 2vw, 32px);
+  grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--per, 1), minmax(0, 1fr));
   font-variant-numeric: tabular-nums;
 }
 
 .lab-row {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: baseline;
-  gap: 16px;
-  border-bottom: 1px solid #f3f4f6;
-  padding-bottom: 4px;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  border-bottom: 1px solid #e3e6eb;
+  font-size: var(--row-font, 24px);
 }
 
 .lab-row-name {
-  color: #6b7079;
+  min-width: 0;
+  font-size: 0.74em;
+  color: #5b6472;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .lab-row-value {
-  color: #1f2430;
-  font-weight: 600;
+  flex: none;
+  max-width: 62%;
+  font-weight: 700;
   text-align: right;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* a value too long for one line of its row (a note) takes two */
+.lab-rows-wrap .lab-row-value {
+  white-space: normal;
+  line-height: 1.1;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* an empty step: the room goes to the columns to fill */
+.lab-step-rows[hidden] + .lab-step-unfilled {
+  flex: 1;
 }
 
 .lab-step-unfilled {
-  margin-top: 14px;
-  font-size: 0.95rem;
-  line-height: 1.6;
-  color: #6b7079;
+  margin-top: clamp(6px, 1.2vh, 14px);
+  font-size: var(--chip-font, 1.2vw);
 }
 
-.lab-unfilled-label {
-  margin-right: 10px;
+.lab-step-unfilled h3,
+.lab-label,
+.lab-notes::before {
+  font-size: clamp(11px, 0.95vw, 14px);
   font-weight: 600;
-  color: #1f2430;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #5b6472;
 }
 
-.lab-nav {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+.lab-step-unfilled h3 {
+  margin-bottom: 0.3em;
+}
+
+.lab-chips {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.3em 0.4em;
+}
+
+.lab-chip {
+  border: 1.5px dashed #aab2bf;
+  border-radius: 999px;
+  padding: 0.05em 0.7em;
+  color: #3c4452;
+  white-space: nowrap;
+}
+
+.lab-step-buttons {
+  display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 8px 24px;
-  background: #fff;
-  box-shadow: 0 -1px 3px rgba(0,0,0,0.14);
+  gap: 8px;
+  margin-top: clamp(8px, 1.4vh, 16px);
 }
 
-.lab-nav .btn {
-  font-size: 1rem;
-  padding: 12px 24px;
+.lab-exit {
+  margin-left: auto;
 }
 
-.lab-step-place {
-  color: #6b7079;
-}
+/* --- the speaking: whether it records, what is being said, what was said --- */
 
-/* the Record card in the lab view: whether it records, the notes so far,
-   and what is being said, read from the glove box */
 body.lab-mode #record-label,
 body.lab-mode #audio-entry,
 body.lab-mode .record-footer,
+body.lab-mode .record-header .section-title,
 body.lab-mode .section-record.is-recording .lab-idle,
-/* the status line below says it, with the time */
+/* the bars below say both */
+body.lab-mode .voice-listening,
 body.lab-mode .voice-recording {
   display: none;
 }
 
-/* the Record button beside the title row; the notes take what is left */
+/* the two buttons in one row, the notes at the bottom */
 body.lab-mode .section-record {
   flex: 1;
   min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto;
-  column-gap: 12px;
+  grid-template-rows: auto auto auto auto auto auto minmax(0, 1fr) auto;
+  column-gap: 8px;
+  color: #14181f;
 }
 
 body.lab-mode .section-record > * { grid-column: 1 / -1; }
-body.lab-mode .record-header { grid-area: 1 / 1; margin-bottom: 0; }
+body.lab-mode .record-header { grid-area: 1 / 1; margin-bottom: 0; justify-content: flex-end; }
 body.lab-mode .record-main { grid-area: 1 / 2; margin: 0; }
 body.lab-mode .voice-checks { grid-row: 2; }
 body.lab-mode .record-status { grid-row: 3; }
 body.lab-mode .lab-idle { grid-row: 4; }
-body.lab-mode .lab-notes { grid-row: 5; }
+body.lab-mode .lab-label { grid-row: 5; }
 body.lab-mode .live-transcript { grid-row: 6; }
-body.lab-mode #unsent-recordings { grid-row: 7; }
+body.lab-mode .lab-notes { grid-row: 7; align-self: end; }
+body.lab-mode #unsent-recordings { grid-row: 8; }
 
 .lab-idle,
 body.lab-mode .is-recording .record-status {
-  margin-top: 8px;
-  padding: 8px 14px;
-  border-radius: 4px;
-  font-size: 1.4rem;
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  margin-top: 10px;
+  padding: clamp(8px, 1.3vh, 16px) clamp(14px, 1.6vw, 24px);
+  border-radius: 8px;
+  font-size: clamp(20px, 2.1vw, 34px);
+  font-weight: 700;
 }
 
 .lab-idle {
-  background: #eceff1;
-  color: #546e7a;
+  background: #e6e9ee;
+  color: #55606e;
 }
 
 body.lab-mode .is-recording .record-status {
@@ -2128,58 +2183,110 @@ body.lab-mode .is-recording .record-status {
   color: #fff;
 }
 
+.lab-idle::before,
 body.lab-mode .is-recording .record-status::before {
   content: "";
-  display: inline-block;
+  flex: none;
   width: 0.6em;
   height: 0.6em;
-  margin-right: 0.5em;
   border-radius: 50%;
   background: currentColor;
+}
+
+body.lab-mode .is-recording .record-status::before {
   animation: voice-blink 1.2s ease-in-out infinite;
 }
 
+/* with voice mode on, what to say */
+.lab-idle::after,
+body.lab-mode .is-recording .record-status::after {
+  margin-left: auto;
+  font-size: 0.6em;
+  font-weight: 400;
+}
+
+.section-record:has(.voice-listening) .lab-idle::after {
+  content: "say \201Chey sand start recording\201D";
+}
+
+body.lab-mode .section-record:has(.voice-recording) .record-status::after {
+  content: "say \201Chey sand stop recording\201D";
+}
+
+.lab-label {
+  margin-top: clamp(12px, 2.2vh, 26px);
+}
+
+/* three lines at rest, four at most: a long note shows its last words
+   (lab.js keeps it scrolled to the end). Shown also before the relay
+   answers: the room is kept. */
+body.lab-mode .live-transcript,
+body.lab-mode .live-transcript[hidden] {
+  display: block !important;
+  margin: 6px 0 0;
+  padding: 0;
+  background: none;
+  border: none;
+  font-size: clamp(30px, 3.5vw, 58px);
+  font-weight: 600;
+  line-height: 1.22;
+  min-height: 3.66em;
+  max-height: 4.88em;
+  overflow: hidden;
+  color: #14181f;
+}
+
+body.lab-mode .live-transcript .interim {
+  color: #8a93a1;
+  font-style: normal;
+  font-weight: 400;
+}
+
+body.lab-mode .section-record:not(.is-recording) #live-final:empty::before {
+  content: "Nothing is being recorded.";
+  color: #b3bac5;
+  font-weight: 400;
+}
+
+/* said before: the newest first, what does not fit is left out */
 .lab-notes {
   list-style: none;
-  min-height: 0;
-  overflow-y: auto;
+  max-height: 100%;
+  overflow: hidden;
   margin-top: 12px;
-  font-size: 1.05rem;
-  line-height: 1.5;
-  color: #1f2430;
+  border-top: 1px solid #e3e6eb;
+  padding-top: 8px;
+  font-size: clamp(14px, 1.25vw, 20px);
+  line-height: 1.35;
+  color: #2b323d;
 }
 
 .lab-notes:empty {
   display: none;
 }
 
+.lab-notes::before {
+  content: "Said before";
+  display: block;
+}
+
 .lab-note {
   display: flex;
-  gap: 12px;
-  padding: 6px 0;
-  border-bottom: 1px solid #f3f4f6;
+  gap: 14px;
+  padding: 5px 0;
+}
+
+.lab-note:nth-child(n+3) {
+  color: #6f7885;
 }
 
 .lab-note-time {
   flex: none;
-  color: #6b7079;
+  color: #5b6472;
   font-variant-numeric: tabular-nums;
 }
 
 .lab-note-pending .lab-note-text {
   color: #6b7079;
   font-style: italic;
-}
-
-/* two lines at rest, four at most: a long note shows its last words
-   (lab.js keeps it scrolled to the end) */
-body.lab-mode .live-transcript {
-  margin: 12px 0 0;
-  padding: 12px 20px;
-  font-size: 2.2rem;
-  line-height: 1.3;
-  min-height: calc(2.6em + 24px);
-  max-height: calc(5.2em + 24px);
-  overflow-y: auto;
-  color: #1f2430;
 }
