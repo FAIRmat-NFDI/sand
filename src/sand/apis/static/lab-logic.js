@@ -56,6 +56,19 @@ export function labPages(view) {
   return [infoPage(view), ...(view.steps || []).map(stepPage)];
 }
 
+// The notes so far as the lab view lists them, the oldest first: what
+// was said, or where a recording's transcription stands.
+export function labNotes(items) {
+  return [...items]
+    .sort((a, b) => (Date.parse(a.datetime) || 0) - (Date.parse(b.datetime) || 0))
+    .map((item) => ({
+      id: item.entry_id,
+      datetime: item.datetime || null,
+      text: item.text || (item.status === "FAILED" ? "transcription failed" : "transcribing..."),
+      pending: !item.text,
+    }));
+}
+
 // the page to show after a refresh of the sheet: the same step, or the
 // first when the sheet no longer has it
 export function pageIndex(pages, position) {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { labPages, pageIndex } from "../../src/sand/apis/static/lab-logic.js";
+import { labNotes, labPages, pageIndex } from "../../src/sand/apis/static/lab-logic.js";
 
 const ALL = [3, 4, 5];
 
@@ -94,4 +94,17 @@ test("a refresh keeps the step, a sheet without it starts at the first page", ()
   assert.equal(pageIndex(pages, 2), 2);
   assert.equal(pageIndex(pages, 7), 0);
   assert.equal(pageIndex(pages, undefined), 0);
+});
+
+test("the notes so far, the oldest first", () => {
+  const notes = labNotes([
+    { entry_id: "b", kind: "audio", datetime: "2026-11-25T10:05:00+00:00", text: null, status: "RUNNING" },
+    { entry_id: "a", kind: "note", datetime: "2026-11-25T10:01:00+00:00", text: "speed 3000 for all samples" },
+    { entry_id: "c", kind: "audio", datetime: "2026-11-25T10:07:00+00:00", text: "", status: "FAILED" },
+  ]);
+  assert.deepEqual(notes, [
+    { id: "a", datetime: "2026-11-25T10:01:00+00:00", text: "speed 3000 for all samples", pending: false },
+    { id: "b", datetime: "2026-11-25T10:05:00+00:00", text: "transcribing...", pending: true },
+    { id: "c", datetime: "2026-11-25T10:07:00+00:00", text: "transcription failed", pending: true },
+  ]);
 });
