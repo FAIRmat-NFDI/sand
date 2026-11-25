@@ -18,7 +18,7 @@ import {
 } from "./edit-logic.js";
 import { requireExperiment, showSheet } from "./experiments.js";
 import { setOverviewUpdates, showOverview } from "./overview.js";
-import { reloadInputs, setInputsListener, setReports } from "./inputs.js";
+import { addInputsListener, reloadInputs, setReports } from "./inputs.js";
 import { showLab } from "./lab.js";
 import {
   anyRound, clearRound, clearSent, onRoundChange, roundBody, roundEntries, roundFor, roundSize, sentUnticks,
@@ -672,7 +672,7 @@ export async function fetchSheetView(experiment) {
 }
 
 export function initEdit() {
-  setInputsListener(inputsLoaded);
+  addInputsListener(inputsLoaded);
   readAgainBtn.addEventListener("click", readAgain);
   // the card's experiment, not the selection: they differ while a newly
   // selected experiment's summary is loading

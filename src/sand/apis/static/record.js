@@ -23,6 +23,7 @@ const statusEl = document.getElementById("status");
 const labelInput = document.getElementById("record-label");
 const audioEntryEl = document.getElementById("audio-entry");
 const unsentEl = document.getElementById("unsent-recordings");
+const sectionEl = recordBtn.closest(".section-record");
 
 // Keep in sync with MAX_UPLOAD_BYTES in apis/routers/input_collections.py.
 const MAX_UPLOAD_SIZE = 25 * 1024 * 1024;
@@ -199,6 +200,7 @@ export async function startRecording(stillWanted = () => true) {
   recordBtn.classList.remove("btn-primary");
   recordBtn.classList.add("btn-recording");
   uploadBtn.disabled = true;
+  sectionEl.classList.add("is-recording"); // the lab view's indicator
   startTimer();
   return "started";
 }
@@ -217,6 +219,7 @@ export function stopRecording(byVoice = false) {
     stopLiveTranscript();
   }
   discardBtn.hidden = true;
+  sectionEl.classList.remove("is-recording");
   stopTimer();
   recordBtn.innerHTML = '<span class="material-icons">mic</span> Record';
   recordBtn.classList.remove("btn-recording");

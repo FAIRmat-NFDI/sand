@@ -1942,6 +1942,7 @@ body {
 /* --- Lab view: one step and the Record card, for work at the glove box --- */
 
 body:not(.lab-mode) .lab-only,
+body.lab-mode .app-bar,
 body.lab-mode .sheet-header,
 body.lab-mode .sheet-overview,
 body.lab-mode .section-note,
@@ -1950,15 +1951,44 @@ body.lab-mode .section-apply {
   display: none;
 }
 
-body.lab-mode .workspace {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto;
-  grid-template-areas: "record";
+/* The lab view fills the window and never scrolls as a whole: nobody
+   can scroll with the hands in the box. The step panel and the notes
+   scroll inside; the live transcript and the step buttons stay in view. */
+body.lab-mode .container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 12px 16px 84px; /* the step buttons are fixed at the bottom */
 }
 
-/* room for the step buttons, which stay at the bottom of the window */
-body.lab-mode .container {
-  padding-bottom: 96px;
+/* the page sets display on #app-content itself */
+body.lab-mode #app-content {
+  display: flex !important;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+body.lab-mode .card {
+  padding: 16px 24px;
+  margin-bottom: 12px;
+}
+
+body.lab-mode .lab-step {
+  flex: 0 1 auto;
+  max-height: 52%;
+  overflow-y: auto;
+}
+
+body.lab-mode .workspace {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
+}
+
+body.lab-mode .workspace .card {
+  margin-bottom: 0;
 }
 
 .lab-step-head {
@@ -2034,16 +2064,122 @@ body.lab-mode .container {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  padding: 12px 24px;
+  padding: 8px 24px;
   background: #fff;
   box-shadow: 0 -1px 3px rgba(0,0,0,0.14);
 }
 
 .lab-nav .btn {
   font-size: 1rem;
-  padding: 14px 24px;
+  padding: 12px 24px;
 }
 
 .lab-step-place {
   color: #6b7079;
+}
+
+/* the Record card in the lab view: whether it records, the notes so far,
+   and what is being said, read from the glove box */
+body.lab-mode #record-label,
+body.lab-mode #audio-entry,
+body.lab-mode .record-footer,
+body.lab-mode .section-record.is-recording .lab-idle,
+/* the status line below says it, with the time */
+body.lab-mode .voice-recording {
+  display: none;
+}
+
+/* the Record button beside the title row; the notes take what is left */
+body.lab-mode .section-record {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto;
+  column-gap: 12px;
+}
+
+body.lab-mode .section-record > * { grid-column: 1 / -1; }
+body.lab-mode .record-header { grid-area: 1 / 1; margin-bottom: 0; }
+body.lab-mode .record-main { grid-area: 1 / 2; margin: 0; }
+body.lab-mode .voice-checks { grid-row: 2; }
+body.lab-mode .record-status { grid-row: 3; }
+body.lab-mode .lab-idle { grid-row: 4; }
+body.lab-mode .lab-notes { grid-row: 5; }
+body.lab-mode .live-transcript { grid-row: 6; }
+body.lab-mode #unsent-recordings { grid-row: 7; }
+
+.lab-idle,
+body.lab-mode .is-recording .record-status {
+  margin-top: 8px;
+  padding: 8px 14px;
+  border-radius: 4px;
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+.lab-idle {
+  background: #eceff1;
+  color: #546e7a;
+}
+
+body.lab-mode .is-recording .record-status {
+  background: #d32f2f;
+  color: #fff;
+}
+
+body.lab-mode .is-recording .record-status::before {
+  content: "";
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  margin-right: 0.5em;
+  border-radius: 50%;
+  background: currentColor;
+  animation: voice-blink 1.2s ease-in-out infinite;
+}
+
+.lab-notes {
+  list-style: none;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: 12px;
+  font-size: 1.05rem;
+  line-height: 1.5;
+  color: #1f2430;
+}
+
+.lab-notes:empty {
+  display: none;
+}
+
+.lab-note {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.lab-note-time {
+  flex: none;
+  color: #6b7079;
+  font-variant-numeric: tabular-nums;
+}
+
+.lab-note-pending .lab-note-text {
+  color: #6b7079;
+  font-style: italic;
+}
+
+/* two lines at rest, four at most: a long note shows its last words
+   (lab.js keeps it scrolled to the end) */
+body.lab-mode .live-transcript {
+  margin: 12px 0 0;
+  padding: 12px 20px;
+  font-size: 2.2rem;
+  line-height: 1.3;
+  min-height: calc(2.6em + 24px);
+  max-height: calc(5.2em + 24px);
+  overflow-y: auto;
+  color: #1f2430;
 }

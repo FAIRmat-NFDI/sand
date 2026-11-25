@@ -37,7 +37,7 @@ let asking = null;
 let fresh = null;
 let decidable = false;
 let marks = { changed: new Set(), lost: {} };
-let onInputsLoaded = null; // (experiment, items) after every load
+const inputsListeners = []; // each gets (experiment, items) after every load
 // the last rendered list, re-rendered when the reports change; a change
 // that arrives while an editor is open renders when the editor closes
 let shown = null;
@@ -468,8 +468,8 @@ export function setReports(byEntry, running, canDecide, reported = null, roundMa
   renderIfIdle();
 }
 
-export function setInputsListener(fn) {
-  onInputsLoaded = fn;
+export function addInputsListener(fn) {
+  inputsListeners.push(fn);
 }
 
 // an open editor is left alone (its field would be wiped); the render
@@ -668,7 +668,7 @@ async function loadInputs(experiment, generation) {
     return;
   }
   renderInputs(experiment, data.inputs);
-  if (onInputsLoaded) onInputsLoaded(experiment, data.inputs);
+  for (const listener of inputsListeners) listener(experiment, data.inputs);
   // keep refreshing while any audio still has no text and no failure
   if (data.inputs.some((i) => i.kind === "audio" && !i.text && i.status !== "FAILED")) {
     inputsRefreshTimer = setTimeout(() => loadInputs(experiment, generation), 5000);
