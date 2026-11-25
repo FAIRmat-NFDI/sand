@@ -226,13 +226,13 @@ read there as well.
 
 Optional.
 
-1. Open a sheet and click **Voice mode on**.
+1. Open a sheet and click **Turn voice mode on**.
 2. sand checks the sheet, the login, the recognizer and the microphone.
    When asked, say **"hey sand"** within 10 seconds; otherwise voice mode
    stays off and you can click again.
 3. **Listening** is shown: voice mode is on.
 
-Voice mode stays on until you click **Voice mode off** or leave or reload
+Voice mode stays on until you click **Turn voice mode off** or leave or reload
 the page. It does not turn itself off after some time, so turn it off when
 the work is done. After a reload it is always off.
 
