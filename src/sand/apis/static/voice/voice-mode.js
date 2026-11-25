@@ -48,6 +48,8 @@ function render() {
   } else if (state === "on" && isRecording()) {
     text = "Recording";
     look += " voice-recording";
+    // the checks passed and are read: their room is the transcript's now
+    checksEl.hidden = true;
   } else if (state === "on") {
     text = "Listening";
     look += " voice-listening";

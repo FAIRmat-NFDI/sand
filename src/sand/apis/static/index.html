@@ -116,7 +116,13 @@
       </section>
 
       <section class="card lab-only lab-step" id="lab-step" aria-label="The step you are working on">
-        <p class="lab-kicker"><span id="lab-step-place"></span><span class="lab-sheet" id="lab-sheet"></span></p>
+        <div class="lab-step-top">
+          <p class="lab-kicker"><span id="lab-step-place"></span><span class="lab-sheet" id="lab-sheet"></span></p>
+          <button class="btn btn-quiet btn-small" id="lab-exit-btn" type="button">
+            <span class="material-icons">close_fullscreen</span>
+            Full view
+          </button>
+        </div>
         <h2 class="lab-step-title" id="lab-step-title"></h2>
         <p class="lab-step-sub" id="lab-step-sub"></p>
         <div class="lab-step-rows" id="lab-step-rows"></div>
@@ -127,10 +133,6 @@
         <div class="lab-step-buttons">
           <button class="btn btn-outlined btn-small" id="lab-prev-btn" type="button" aria-label="Previous step">‹ Prev</button>
           <button class="btn btn-outlined btn-small" id="lab-next-btn" type="button" aria-label="Next step">Next ›</button>
-          <button class="btn btn-quiet btn-small lab-exit" id="lab-exit-btn" type="button">
-            <span class="material-icons">close_fullscreen</span>
-            Full view
-          </button>
         </div>
       </section>
 

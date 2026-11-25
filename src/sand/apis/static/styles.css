@@ -1991,6 +1991,19 @@ body.lab-mode .card {
   color: #14181f;
 }
 
+.lab-step-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* in the panel's corner, clear of the step's name */
+.lab-step-top .btn {
+  flex: none;
+  margin: -6px -8px 0 0;
+}
+
 .lab-kicker {
   font-size: clamp(13px, 1.1vw, 17px);
   font-weight: 700;
@@ -2122,10 +2135,6 @@ body.lab-mode .card {
   margin-top: clamp(8px, 1.4vh, 16px);
 }
 
-.lab-exit {
-  margin-left: auto;
-}
-
 /* --- the speaking: whether it records, what is being said, what was said --- */
 
 body.lab-mode #record-label,
@@ -2166,10 +2175,11 @@ body.lab-mode .is-recording .record-status {
   display: flex;
   align-items: center;
   gap: 0.6em;
-  margin-top: 10px;
-  padding: clamp(8px, 1.3vh, 16px) clamp(14px, 1.6vw, 24px);
-  border-radius: 8px;
-  font-size: clamp(20px, 2.1vw, 34px);
+  margin-top: 8px;
+  padding: 5px 14px;
+  border-radius: 6px;
+  /* a slim line: the room is the transcript's */
+  font-size: clamp(14px, 1.25vw, 19px);
   font-weight: 700;
 }
 
@@ -2201,7 +2211,7 @@ body.lab-mode .is-recording .record-status::before {
 .lab-idle::after,
 body.lab-mode .is-recording .record-status::after {
   margin-left: auto;
-  font-size: 0.6em;
+  font-size: 0.85em;
   font-weight: 400;
 }
 
@@ -2214,7 +2224,7 @@ body.lab-mode .section-record:has(.voice-recording) .record-status::after {
 }
 
 .lab-label {
-  margin-top: clamp(12px, 2.2vh, 26px);
+  margin-top: clamp(8px, 1.6vh, 18px);
 }
 
 /* three lines at rest, four at most: a long note shows its last words
