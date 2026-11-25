@@ -19,6 +19,7 @@ import {
 import { requireExperiment, showSheet } from "./experiments.js";
 import { setOverviewUpdates, showOverview } from "./overview.js";
 import { reloadInputs, setInputsListener, setReports } from "./inputs.js";
+import { showLab } from "./lab.js";
 import {
   anyRound, clearRound, clearSent, onRoundChange, roundBody, roundEntries, roundFor, roundSize, sentUnticks,
 } from "./round.js";
@@ -555,6 +556,7 @@ async function refreshSheet(experiment, final) {
   if (!view || !stillShown(experiment)) return;
   showSheet(experiment, view);
   showOverview(view);
+  showLab(experiment, view);
 }
 
 // the fallback after a failed job: the same inputs, read once more
