@@ -38,11 +38,13 @@ def sheet_view(catalog: Catalog, log: Changelog | None = None) -> dict:
     {'sheet': 'Experiment Data',
      'info': {'samples': 42, 'subbatches': ['0'],
               'rows': [{'row', 'label', 'subbatch'}],
-              'fields': [{'column_id', 'header', 'name', 'unit', 'type', 'value'}]},
+              'fields': [{'column_id', 'header', 'name', 'unit', 'type', 'value'}],
+              'unfilled': [{'column_id', 'header', 'name', 'unit', 'type'}]},
      'steps': [{'position', 'step_type', 'label', 'material', 'layer', 'empty',
                 'varies', 'params': [{'column_id', 'header', 'name', 'unit',
                 'type', 'family', 'formula', 'values': [{'value', 'rows',
-                'samples'}]}]}],
+                'samples'}]}],
+                'unfilled': [{'column_id', 'header', 'name', 'unit', 'type'}]}],
      'variations': [{'column_id', 'step', 'header', 'name', 'unit', 'type',
                      'values': [...]}],
      'warnings': [],  # the API's notes on which sheet this is
@@ -50,13 +52,15 @@ def sheet_view(catalog: Catalog, log: Changelog | None = None) -> dict:
                   'by_formula'}]}
 
     A field is an Experiment Info column with one value on every sample;
-    a param is a step column with a value on some sample; a variation is
+    a param is a step column with a value on some sample; `unfilled` are
+    the columns with no value on any sample, in sheet order; a variation is
     any column (identity columns aside) with more than one value, an
     empty cell counting as one. `changed` is per cell, the value before
     the first confirmed edit against the one the last left; a cell edited
     back to its old value is not listed.
     """
     info: list[dict] = []
+    info_unfilled: list[dict] = []
     steps: list[dict] = []
     variations: list[dict] = []
     for section in catalog.structure.sections:
@@ -69,6 +73,11 @@ def sheet_view(catalog: Catalog, log: Changelog | None = None) -> dict:
                 if c.column.header not in _IDENTITY
                 and len(values[c.id]) == 1
                 and values[c.id][0]['value'] is not None
+            ]
+            info_unfilled += [
+                _column(c)
+                for c in columns
+                if c.column.header not in _IDENTITY and _no_value(values[c.id])
             ]
         else:
             steps.append(_step(section, columns, values))
@@ -88,6 +97,7 @@ def sheet_view(catalog: Catalog, log: Changelog | None = None) -> dict:
                 for s in catalog.samples
             ],
             'fields': info,
+            'unfilled': info_unfilled,
         },
         'steps': steps,
         'variations': variations,
@@ -134,7 +144,7 @@ def _step(section: Section, columns: list[ColumnInfo], values: dict) -> dict:
             'values': values[c.id],
         }
         for c in columns
-        if any(v['value'] is not None for v in values[c.id])
+        if not _no_value(values[c.id])
     ]
     return {
         'position': section.position,
@@ -145,7 +155,12 @@ def _step(section: Section, columns: list[ColumnInfo], values: dict) -> dict:
         'empty': not params,
         'varies': any(len(p['values']) > 1 for p in params),
         'params': params,
+        'unfilled': [_column(c) for c in columns if _no_value(values[c.id])],
     }
+
+
+def _no_value(values: list[dict]) -> bool:
+    return all(v['value'] is None for v in values)
 
 
 def _one_value(params: list[dict], key: str) -> str | None:
