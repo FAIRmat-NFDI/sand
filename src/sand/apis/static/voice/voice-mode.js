@@ -51,7 +51,8 @@ function render() {
     // the checks passed and are read: their room is the transcript's now
     checksEl.hidden = true;
   } else if (state === "on") {
-    text = "Listening";
+    // "Listening" alone reads as if the words were being kept
+    text = "Listening, not recording";
     look += " voice-listening";
   }
   // only on a change: a screen reader reads a status out on every write
