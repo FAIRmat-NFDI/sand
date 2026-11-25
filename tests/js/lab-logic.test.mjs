@@ -52,7 +52,7 @@ const VIEW = {
 test("the Experiment Info is step 0, before the steps", () => {
   const pages = labPages(VIEW);
   assert.deepEqual(pages.map((p) => p.position), [0, 1, 2]);
-  assert.deepEqual(pages.map((p) => p.title), ["Experiment Info", "Spin Coating", "Annealing"]);
+  assert.deepEqual(pages.map((p) => p.title), ["Experiment Info", "1. Spin Coating", "2. Annealing"]);
 });
 
 test("the Experiment Info page: fields and what varies, in sheet order", () => {
