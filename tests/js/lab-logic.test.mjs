@@ -108,3 +108,9 @@ test("the notes so far, the oldest first", () => {
     { id: "c", datetime: "2026-11-25T10:07:00+00:00", text: "transcription failed", pending: true },
   ]);
 });
+
+test("a counted column still says that some samples are empty", () => {
+  const notes = param("C031", "Notes", [["a", [3]], ["b", [4]], ["c", [5]], ["d", [6]], [null, [7]]]);
+  const view = { ...VIEW, steps: [{ ...VIEW.steps[0], params: [notes] }] };
+  assert.deepEqual(labPages(view)[1].rows, [{ name: "Notes", value: "4 different values · some empty" }]);
+});

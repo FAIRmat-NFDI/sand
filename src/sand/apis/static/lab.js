@@ -4,6 +4,7 @@
 // hidden (styles.css, body.lab-mode). The user picks the step before
 // the hands go in.
 
+import { selectedExperiment } from "./experiments.js";
 import { addInputsListener } from "./inputs.js";
 import { labNotes, labPages, pageIndex } from "./lab-logic.js";
 import { clearLiveTranscript } from "./live-transcript.js";
@@ -34,6 +35,9 @@ function el(tag, className, text) {
 }
 
 function setLab(on) {
+  // read now: the sheet may have been renamed since its view was shown
+  const sheet = selectedExperiment();
+  if (on && sheet) sheetEl.textContent = sheet.name || sheet.upload_id;
   document.body.classList.toggle("lab-mode", on);
   if (on) {
     window.scrollTo(0, 0);
@@ -102,7 +106,6 @@ export function showLab(experiment, view) {
   shownSheet = experiment.entry_id;
   pages = labPages(view);
   index = pageIndex(pages, position);
-  sheetEl.textContent = experiment.name || experiment.upload_id;
   render();
 }
 
