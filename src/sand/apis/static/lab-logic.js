@@ -39,6 +39,7 @@ function infoPage(view) {
   const samples = info.samples ?? 0;
   return {
     position: 0,
+    label: INFO,
     title: INFO,
     sub: [samples + (samples === 1 ? " sample" : " samples")],
     rows: inSheetOrder([...fields, ...varying]).map(row),
@@ -49,6 +50,7 @@ function infoPage(view) {
 function stepPage(step) {
   return {
     position: step.position,
+    label: step.label,
     title: step.step_type || step.label,
     sub: [step.material, step.layer].filter(Boolean),
     rows: step.params.map(row),

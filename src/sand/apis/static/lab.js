@@ -119,6 +119,14 @@ function render() {
   fit();
 }
 
+// The shown step as the sheet labels it ("2: Spin Coating"), "" outside
+// the lab view. A recording made here gets it as its label: what is
+// said is about this step.
+export function labStepLabel() {
+  if (!document.body.classList.contains("lab-mode")) return "";
+  return pages[index]?.label || "";
+}
+
 function go(delta) {
   index = Math.min(Math.max(index + delta, 0), pages.length - 1);
   render();

@@ -4,6 +4,7 @@
 import { experimentUrl, sessionState } from "./api.js";
 import { lockExperimentSelect, requireExperiment } from "./experiments.js";
 import { reportNewInput } from "./inputs.js";
+import { labStepLabel } from "./lab.js";
 import {
   clearLivePanel,
   clearLiveTranscript,
@@ -104,6 +105,9 @@ export async function startRecording(stillWanted = () => true) {
   const recorder = new MediaRecorder(stream);
   mediaRecorder = recorder;
   // what became of this recording, known only after the upload
+  // the step shown when the recording starts: Next may be clicked before
+  // the stop
+  recorder.stepLabel = labStepLabel();
   recorder.outcome = new Promise((resolve) => {
     recorder.resolveOutcome = resolve;
   });
@@ -148,7 +152,7 @@ export async function startRecording(stillWanted = () => true) {
     // the toggle state at stop time decides whether the live text is
     // stored; either way the panel keeps showing it
     const storeLive = storeLiveChosen();
-    const label = labelInput.value.trim();
+    const label = recorder.stepLabel || labelInput.value.trim();
     statusEl.textContent = "Finishing transcript...";
     finalizing += 1;
     renderUnsent();
