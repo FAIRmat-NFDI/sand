@@ -2258,14 +2258,14 @@ body.lab-mode .section-record:not(.is-recording) #live-final:empty::before {
   font-weight: 400;
 }
 
-/* said before: the newest first, what does not fit is left out */
+/* the speaking history: the newest first, the older ones by scrolling
+   inside it (before or after the work in the box) */
 .lab-notes {
   list-style: none;
   max-height: 100%;
-  overflow: hidden;
+  overflow-y: auto;
   margin-top: 12px;
   border-top: 1px solid #e3e6eb;
-  padding-top: 8px;
   font-size: clamp(14px, 1.25vw, 20px);
   line-height: 1.35;
   color: #2b323d;
@@ -2275,9 +2275,14 @@ body.lab-mode .section-record:not(.is-recording) #live-final:empty::before {
   display: none;
 }
 
+/* the heading stays while the notes scroll under it */
 .lab-notes::before {
-  content: "Said before";
+  content: "Speaking history";
   display: block;
+  position: sticky;
+  top: 0;
+  padding: 8px 0 4px;
+  background: #fff;
 }
 
 .lab-note {

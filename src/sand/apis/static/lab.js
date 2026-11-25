@@ -81,7 +81,7 @@ function noteTime(datetime) {
   return parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-// What was said before in normal font, the newest first, under the live
+// The speaking history in normal font, the newest first, under the live
 // transcript. A note that got its text is no longer the big live text:
 // it would be shown twice.
 function showNotes(experiment, items) {
