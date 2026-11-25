@@ -1938,3 +1938,112 @@ body {
   padding: 2px 0;
   font-size: 0.9rem;
 }
+
+/* --- Lab view: one step and the Record card, for work at the glove box --- */
+
+body:not(.lab-mode) .lab-only,
+body.lab-mode .sheet-header,
+body.lab-mode .sheet-overview,
+body.lab-mode .section-note,
+body.lab-mode .section-inputs,
+body.lab-mode .section-apply {
+  display: none;
+}
+
+body.lab-mode .workspace {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto;
+  grid-template-areas: "record";
+}
+
+/* room for the step buttons, which stay at the bottom of the window */
+body.lab-mode .container {
+  padding-bottom: 96px;
+}
+
+.lab-step-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.lab-step-title {
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: #1f2430;
+}
+
+.lab-step-sub {
+  font-size: 1.1rem;
+  color: #6b7079;
+}
+
+/* a step has up to 24 columns: several across, each name over its value's line */
+.lab-step-rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 6px 32px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #eef0f3;
+  font-size: 1.05rem;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+.lab-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  border-bottom: 1px solid #f3f4f6;
+  padding-bottom: 4px;
+}
+
+.lab-row-name {
+  color: #6b7079;
+}
+
+.lab-row-value {
+  color: #1f2430;
+  font-weight: 600;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.lab-step-unfilled {
+  margin-top: 14px;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: #6b7079;
+}
+
+.lab-unfilled-label {
+  margin-right: 10px;
+  font-weight: 600;
+  color: #1f2430;
+}
+
+.lab-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  background: #fff;
+  box-shadow: 0 -1px 3px rgba(0,0,0,0.14);
+}
+
+.lab-nav .btn {
+  font-size: 1rem;
+  padding: 14px 24px;
+}
+
+.lab-step-place {
+  color: #6b7079;
+}

@@ -8,6 +8,7 @@ import {
 } from "./experiments.js";
 import { initFeedback, showFeedback } from "./feedback.js";
 import { initInputs, showInputs } from "./inputs.js";
+import { initLab, showLab } from "./lab.js";
 import { clearLiveTranscript, initLiveToggle } from "./live-transcript.js";
 import { initNotes } from "./notes.js";
 import { initOverview, showOverview } from "./overview.js";
@@ -70,6 +71,7 @@ initNotes();
 initInputs();
 initEdit();
 initOverview();
+initLab();
 initLiveToggle();
 initVoiceMode();
 
@@ -99,11 +101,13 @@ onExperimentSelected(async (experiment) => {
   if (!experiment) {
     showSheet(null, null);
     showOverview(null);
+    showLab(null, null);
     showEdit(null, null);
     return;
   }
   showSheet(experiment); // the name now, the rest when the view is read
   showOverview(null);
+  showLab(experiment);
   let view;
   try {
     view = await fetchSheetView(experiment);
@@ -115,12 +119,14 @@ onExperimentSelected(async (experiment) => {
     if (generation !== selectionGeneration) return;
     showError("Could not read the sheet: " + err.message);
     showSheet(experiment); // unknown whether there is a sheet: no claim
+    showLab(experiment);
     showEdit(null, null);
     return;
   }
   if (generation !== selectionGeneration) return;
   showSheet(experiment, view);
   showOverview(view);
+  showLab(experiment, view);
   showEdit(experiment, view);
 });
 
