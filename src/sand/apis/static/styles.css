@@ -2128,9 +2128,11 @@ body.lab-mode .card {
   white-space: nowrap;
 }
 
+/* Prev at the left edge, Next at the right */
 .lab-step-buttons {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   margin-top: clamp(8px, 1.4vh, 16px);
 }
