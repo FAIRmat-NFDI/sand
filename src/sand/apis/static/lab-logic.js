@@ -51,7 +51,8 @@ function stepPage(step) {
   return {
     position: step.position,
     label: step.label,
-    title: step.step_type || step.label,
+    // "2. Spin Coating": the number says which of the spin coatings
+    title: step.step_type ? step.position + ". " + step.step_type : step.label,
     sub: [step.material, step.layer].filter(Boolean),
     rows: step.params.map(row),
     unfilled: (step.unfilled || []).map((c) => c.header),
