@@ -95,3 +95,9 @@ test("a refresh keeps the step, a sheet without it starts at the first page", ()
   assert.equal(pageIndex(pages, 7), 0);
   assert.equal(pageIndex(pages, undefined), 0);
 });
+
+test("a counted column still says that some samples are empty", () => {
+  const notes = param("C031", "Notes", [["a", [3]], ["b", [4]], ["c", [5]], ["d", [6]], [null, [7]]]);
+  const view = { ...VIEW, steps: [{ ...VIEW.steps[0], params: [notes] }] };
+  assert.deepEqual(labPages(view)[1].rows, [{ name: "Notes", value: "4 different values · some empty" }]);
+});

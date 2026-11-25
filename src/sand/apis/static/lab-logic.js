@@ -5,6 +5,8 @@
 
 import { valueCell } from "./overview-logic.js";
 
+const SOME_EMPTY = " · some empty"; // as valueCell ends a partly filled column
+
 const SHOWN_TEXTS = 3; // more different texts than this are counted, not listed
 const INFO = "Experiment Info";
 
@@ -13,7 +15,9 @@ const INFO = "Experiment Info";
 function valueOf(column) {
   const texts = column.values.filter((v) => v.value !== null);
   const cell = valueCell(column);
-  if (texts.length > SHOWN_TEXTS && cell.includes(" / ")) return texts.length + " different values";
+  if (texts.length > SHOWN_TEXTS && cell.includes(" / ")) {
+    return texts.length + " different values" + (cell.endsWith(SOME_EMPTY) ? SOME_EMPTY : "");
+  }
   return cell;
 }
 
