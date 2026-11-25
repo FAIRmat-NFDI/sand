@@ -2217,6 +2217,26 @@ body.lab-mode .is-recording .record-status::after {
   font-weight: 400;
 }
 
+/* voice mode on: green and blinking as in the full view, so that it is
+   seen from the box that sand hears the command */
+.lab-idle-voice,
+.section-record:has(.voice-listening) .lab-idle-off {
+  display: none;
+}
+
+.section-record:has(.voice-listening) .lab-idle-voice {
+  display: inline;
+}
+
+.section-record:has(.voice-listening) .lab-idle {
+  background: #e0f2f1;
+  color: #00695c;
+}
+
+.section-record:has(.voice-listening) .lab-idle::before {
+  animation: voice-blink 1.2s ease-in-out infinite;
+}
+
 .section-record:has(.voice-listening) .lab-idle::after {
   content: "say \201Chey sand start recording\201D";
 }
