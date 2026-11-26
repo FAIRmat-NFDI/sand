@@ -2081,10 +2081,13 @@ body.lab-mode .card {
   text-overflow: ellipsis;
 }
 
-/* a value too long for one line of its row (a note) takes two */
+/* a name or a value too long for one line of its row takes two: the
+   user says the name as written, a cut one cannot be read */
+.lab-rows-wrap .lab-row-name,
 .lab-rows-wrap .lab-row-value {
   white-space: normal;
-  line-height: 1.1;
+  overflow-wrap: anywhere;
+  line-height: 1.05;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -2122,10 +2125,12 @@ body.lab-mode .card {
 
 .lab-chip {
   border: 1.5px dashed #aab2bf;
-  border-radius: 999px;
+  border-radius: 1em;
   padding: 0.05em 0.7em;
   color: #3c4452;
-  white-space: nowrap;
+  /* a header wider than the panel wraps inside its chip */
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 /* Prev at the left edge, Next at the right */
