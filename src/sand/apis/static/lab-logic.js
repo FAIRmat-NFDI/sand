@@ -85,6 +85,13 @@ export function labNotes(items) {
     }));
 }
 
+// The notes recorded while this step was shown: by their label (see
+// labStepLabel), whatever step they speak of. A note made in the full
+// view has no step and is in no step's history.
+export function notesOfStep(items, label) {
+  return items.filter((item) => (item.label || "") === label);
+}
+
 // the page to show after a refresh of the sheet: the same step, or the
 // first when the sheet no longer has it
 export function pageIndex(pages, position) {
