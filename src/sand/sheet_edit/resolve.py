@@ -106,8 +106,11 @@ and goes into "said_old"; "old" stays what the table shows.
 spin coating). A step number, or a material or value only one of those \
 steps holds, picks the step; the step type alone ("spin coating" when \
 several steps are spin coatings) does not. A line "Working on step:" before \
-the instruction names the step on the user's screen: a parameter with no \
-step said is that step's, and the user's own words still win ("in step 3"). \
+the instruction names the step on the user's screen. It counts ONLY when \
+the user's words pick no step: then the parameter is that step's. When the \
+words pick a step (a number, "in step 3", or a material or value only one \
+step holds), ignore the line and use the step the words pick, even when \
+it is another one. \
 If nothing picks one, answer "ambiguous" with every step's column; with \
 several such columns in the step worked on, with those. Never put the change into several \
 steps to cover them, unless the user asked for every step ("in all spin \
@@ -148,8 +151,11 @@ a guess.
 - A parameter that several steps have (each spin coating has a rotation \
 speed) needs the user to say which step: a step number, or a material or \
 type only one of those steps has. A "Working on step:" line before the \
-instruction says which step is on the user's screen: it is the step meant \
-when the user says none, and a step the user does say counts instead. \
+instruction says which step is on the user's screen. Use it only if the \
+instruction itself points to no step: the parameter then belongs to that \
+step. If the instruction points to a step (its number, or a material or \
+value found in one step only), that step is the one, and the line is not \
+used, also when the two differ. \
 Without either the answer is "ambiguous", listing that column of every \
 such step (only the columns of the step worked on, when it has several); spreading the change over several \
 steps is not an answer, except when the user says every step ("all spin \
