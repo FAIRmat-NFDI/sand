@@ -2304,7 +2304,7 @@ body.lab-mode .section-record:not(.is-recording) #live-final:empty::before {
 
 /* the heading stays while the notes scroll under it */
 .lab-notes::before {
-  content: "Speaking history";
+  content: "Speaking history of this step";
   display: block;
   position: sticky;
   top: 0;
