@@ -22,6 +22,9 @@ class JobInput(BaseModel):
     confirmations: dict[str, dict]  # the file's JSON, by confirmation key
     rejections: list[str]  # the edits decided without a confirmation
     input_ids: list[str]  # one per text: a decision is its input's (apply.py)
+    # one per text: the note's label, a step of the sheet when the note
+    # was made on it in the lab view (resolve.known_step)
+    labels: list[str]
 
 
 class StoreInput(JobInput):

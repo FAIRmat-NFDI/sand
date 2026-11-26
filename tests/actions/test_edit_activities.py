@@ -148,6 +148,7 @@ def job(upload, job_id='job-1') -> StoreInput:
         confirmations={} if raw is None else json.loads(raw),
         rejections=[],
         input_ids=[i.entry_id for i in upload.inputs],
+        labels=[i.label for i in upload.inputs],
         status=job_status(job_id),
     )
 
@@ -268,6 +269,7 @@ async def test_collect_gives_the_inputs_in_order_the_confirmations_and_the_model
     assert result == {
         'texts': [SAID, 'clear solvent 2 of sample 1'],
         'input_entry_ids': ['e1', 'e2'],
+        'labels': ['', ''],
         'confirmations': {},
         'rejections': [],
         'llm_model_name': MODEL,

@@ -28,7 +28,7 @@ import datetime
 import json
 from dataclasses import dataclass, field
 
-from sand.sheet_edit.apply import Answer, Cache, CacheKey
+from sand.sheet_edit.apply import Answer, Cache, CacheKey, words_key
 from sand.sheet_edit.changelog import Confirmation
 from sand.sheet_edit.edits import ProposedEdits, Unreadable
 from sand.sheet_edit.reads import from_json, to_json
@@ -59,9 +59,9 @@ def is_job_cache_file(name: str) -> bool:
     return name != shared and name.startswith('llm_cache.') and name.endswith('.json')
 
 
-def cache_key(text: str, state: bytes) -> CacheKey:
+def cache_key(text: str, state: bytes, step: str = '') -> CacheKey:
     """The key `apply_all` looks proposals up by."""
-    return (sha256(text.encode()), sha256(state))
+    return (words_key(text, step), sha256(state))
 
 
 @dataclass
