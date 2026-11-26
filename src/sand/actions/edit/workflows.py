@@ -129,6 +129,7 @@ class EditSheetWorkflow:
                 confirmations=collected['confirmations'],
                 rejections=collected['rejections'],
                 input_ids=collected['input_entry_ids'],
+                labels=collected['labels'],
             )
             total = len(job.texts)
             if len(collected['input_entry_ids']) != total:

@@ -51,7 +51,7 @@ from sand.sheet_edit.workbook import SAMPLE_HEADER, SUBBATCH_HEADER, info_column
 
 # recorded with every proposal (changelog, status); bump on any change to
 # the prompts below or to the table in render.py, which the model reads
-PROMPT_VERSION = 'v7'
+PROMPT_VERSION = 'v8'
 # the job's cache keeps proposals after `agree`: bump the second part on
 # a change to how two opinions agree, so agreed answers are asked again
 CACHE_VERSION = f'{PROMPT_VERSION}+agree-11'
@@ -105,8 +105,11 @@ and goes into "said_old"; "old" stays what the table shows.
 - The same parameter is often in several steps (a rotation speed in every \
 spin coating). A step number, or a material or value only one of those \
 steps holds, picks the step; the step type alone ("spin coating" when \
-several steps are spin coatings) does not. If nothing picks one, answer \
-"ambiguous" with every step's column. Never put the change into several \
+several steps are spin coatings) does not. A line "Working on step:" before \
+the instruction names the step on the user's screen: a parameter with no \
+step said is that step's, and the user's own words still win ("in step 3"). \
+If nothing picks one, answer "ambiguous" with every step's column; with \
+several such columns in the step worked on, with those. Never put the change into several \
 steps to cover them, unless the user asked for every step ("in all spin \
 coatings"). When only one step has the parameter, no step needs naming.
 - If what the user points at is not in the table, answer "not_found".
@@ -144,8 +147,11 @@ cell and is the "said_old"; "old" is still the table's value.
 a guess.
 - A parameter that several steps have (each spin coating has a rotation \
 speed) needs the user to say which step: a step number, or a material or \
-type only one of those steps has. Without it the answer is "ambiguous", \
-listing that column of every such step; spreading the change over several \
+type only one of those steps has. A "Working on step:" line before the \
+instruction says which step is on the user's screen: it is the step meant \
+when the user says none, and a step the user does say counts instead. \
+Without either the answer is "ambiguous", listing that column of every \
+such step (only the columns of the step worked on, when it has several); spreading the change over several \
 steps is not an answer, except when the user says every step ("all spin \
 coatings"). A parameter only one step has needs no step.
 - Nothing in the table matches? Then "not_found".
@@ -159,10 +165,23 @@ def system_prompt(second_opinion: bool) -> str:
     return f'{_TASK}\n\n{_RULES_B if second_opinion else _RULES_A}'
 
 
-def user_text(instruction: str, catalog: Catalog, second_opinion: bool) -> str:
+def known_step(label: str, catalog: Catalog) -> str:
+    """The label when it is one of the sheet's steps as the table names
+    them ("2: Spin Coating"), else '': a note's label is free text, and
+    only the lab view sets it to the step on the screen."""
+    return label if label in {c.column.section.label for c in catalog.columns} else ''
+
+
+def user_text(
+    instruction: str, catalog: Catalog, second_opinion: bool, step: str = ''
+) -> str:
     """The first pass reads the table in sheet order, the second opinion
-    the steps last to first."""
-    return f'{table(catalog, reverse=second_opinion)}\nInstruction: {instruction}'
+    the steps last to first. `step`: the step the note was made on
+    (`known_step`), the one thing the model gets beside the words."""
+    working = f'Working on step: {step}\n' if step else ''
+    return (
+        f'{table(catalog, reverse=second_opinion)}\n{working}Instruction: {instruction}'
+    )
 
 
 @dataclass(frozen=True)
@@ -179,13 +198,13 @@ class Prompt:
 Opinion = ProposedEdits | Unreadable
 
 
-def prompts(instruction: str, catalog: Catalog) -> list[Prompt]:
+def prompts(instruction: str, catalog: Catalog, step: str = '') -> list[Prompt]:
     """The two passes' prompts, the first opinion first."""
     schema = proposed_edits_schema(catalog)
     return [
         Prompt(
             system=system_prompt(second_opinion),
-            text=user_text(instruction, catalog, second_opinion),
+            text=user_text(instruction, catalog, second_opinion, step),
             schema=schema,
             second_opinion=second_opinion,
         )

@@ -40,12 +40,19 @@ from sand.sheet_edit.edits import ProposedEdits
 from sand.sheet_edit.ground import Grounded, Refused, column_name, ground, read_old
 from sand.sheet_edit.preview import edit_summary, preview
 from sand.sheet_edit.reads import Reads, holds, reads_of
+from sand.sheet_edit.resolve import known_step
 from sand.sheet_edit.workbook import CellChange, sha256
 from sand.sheet_edit.write import Write, WriteRefused, write_cells
 
 # the LLM call: the instruction and the catalog of the sheet it is about
 Resolve = Callable[[str, Catalog], ProposedEdits]
-CacheKey = tuple[str, str]  # (sha256 of the words, sha256 of the sheet read)
+CacheKey = tuple[str, str]  # (`words_key`, sha256 of the sheet read)
+
+
+def words_key(text: str, step: str = '') -> str:
+    """The words' part of a cache key. The step the note was made on is
+    in it: the same words on two steps are two questions."""
+    return sha256(f'{text}\0{step}'.encode() if step else text.encode())
 
 
 @dataclass(frozen=True)
@@ -81,11 +88,11 @@ def next_seq(cache: Cache) -> int:
 
 
 def lookup(
-    cache: Cache, text: str, sheet_hash: str, catalog: Catalog
+    cache: Cache, text: str, sheet_hash: str, catalog: Catalog, step: str = ''
 ) -> tuple[CacheKey, Answer] | None:
-    """The answer for these words on this sheet: the one read on it, else
-    the newest whose reads hold here."""
-    words = sha256(text.encode())
+    """The answer for these words (said on `step`) on this sheet: the one
+    read on it, else the newest whose reads hold here."""
+    words = words_key(text, step)
     exact = cache.get((words, sheet_hash))
     if exact is not None:
         return (words, sheet_hash), exact
@@ -225,6 +232,7 @@ def apply_all(  # noqa: PLR0913
     cached_only: bool = False,
     rejected: frozenset[str] = frozenset(),
     ids: Sequence[str] | None = None,
+    steps_of: Sequence[str] | None = None,
 ) -> list[Step]:
     """Every input in order, each against the sheet the earlier ones
     left; the confirmed edits of each are written and verified. The last
@@ -234,7 +242,10 @@ def apply_all(  # noqa: PLR0913
     `cached_only` stops before the first input with no answer here (the
     inputs after it would read a sheet it may change). `rejected` are
     the keys decided without a confirmation; `ids` the inputs' own (their
-    entry ids), so two inputs showing the same edit are decided apart."""
+    entry ids), so two inputs showing the same edit are decided apart.
+    `steps_of` are the inputs' labels: one that is a step of the sheet is
+    the step the note was made on. It is in the cache key only: `resolve`
+    is not given it, the job asks the model itself (resolve.prompts)."""
     steps: list[Step] = []
     preview = written = original
     taken: set[str] = set()  # confirmed keys an earlier input holds
@@ -242,12 +253,13 @@ def apply_all(  # noqa: PLR0913
         owner = ids[number] if ids else ''
         digest = sha256(preview)
         catalog = build(preview)
-        found = lookup(cache, text, digest, catalog)
+        step = known_step(steps_of[number], catalog) if steps_of else ''
+        found = lookup(cache, text, digest, catalog, step)
         if found is None and cached_only:
             break
         if found is None:
             proposal = resolve(text, catalog)
-            key = (sha256(text.encode()), digest)
+            key = (words_key(text, step), digest)
             cache[key] = saved_answer(text, proposal, catalog, digest, next_seq(cache))
             found = key, cache[key]
         key, answer = found

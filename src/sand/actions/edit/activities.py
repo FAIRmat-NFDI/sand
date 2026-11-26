@@ -94,6 +94,7 @@ async def collect_edit_inputs(data: EditInput) -> dict:
     return {
         'texts': [i.text for i in inputs],
         'input_entry_ids': [i.entry_id for i in inputs],
+        'labels': [i.label for i in inputs],
         'confirmations': confirmed,
         'rejections': rejected,
         'llm_model_name': common.llm_model_name(),
@@ -116,6 +117,7 @@ async def replay_cached_inputs(data: ReplayInput) -> dict:
         cached_only=True,
         rejected=frozenset(data.rejections),
         ids=data.input_ids,
+        steps_of=data.labels,
     )
     rejected = set(data.rejections)
     reports = [
@@ -149,7 +151,7 @@ async def prepare_input(data: PrepareInput) -> dict:
     return {
         'prompts': [
             {'system': p.system, 'text': p.text, 'schema': p.schema}
-            for p in prompts(_text(data), catalog)
+            for p in prompts(_text(data), catalog, _step(data, catalog))
         ],
     }
 
@@ -185,7 +187,9 @@ async def agree_cache_and_apply_input(data: ApplyInput) -> dict:
         answer = saved_answer(
             text, agreed, catalog, sha256(state), next_seq(files.cache.answers)
         )
-        files.cache.add(cache_key(text, state), answer, data.job_id)
+        files.cache.add(
+            cache_key(text, state, _step(data, catalog)), answer, data.job_id
+        )
     elif _to_read(files, data, before, catalog):
         # the cache file was lost between prepare and apply
         raise ApplicationError(
@@ -502,6 +506,14 @@ def _text(data: PrepareInput) -> str:
     return data.texts[data.number - 1]
 
 
+def _step(data: PrepareInput, catalog: Catalog) -> str:
+    """The step the input was made on, '' when its label is none of the
+    sheet's."""
+    from sand.sheet_edit.resolve import known_step
+
+    return known_step(data.labels[data.number - 1], catalog)
+
+
 def _apply_inputs_from_cache(
     files: _Files, texts: list[str], data: JobInput
 ) -> list[Step]:
@@ -515,6 +527,7 @@ def _apply_inputs_from_cache(
         files.cache.answers,
         rejected=frozenset(data.rejections),
         ids=data.input_ids[: len(texts)],
+        steps_of=data.labels[: len(texts)],
     )
 
 
@@ -523,7 +536,16 @@ def _to_read(
 ) -> bool:
     """No answer holds on the input's sheet."""
     state = _sheet_before(files, before)
-    return lookup(files.cache.answers, _text(data), sha256(state), catalog) is None
+    return (
+        lookup(
+            files.cache.answers,
+            _text(data),
+            sha256(state),
+            catalog,
+            _step(data, catalog),
+        )
+        is None
+    )
 
 
 def _sheet_before(files: _Files, before: list[Step]) -> bytes:

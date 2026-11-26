@@ -611,3 +611,18 @@ def test_two_inputs_showing_the_same_edit_are_decided_apart(synthetic_xlsx):
     confirmed = set().union(*(keys(s) for s in first))
     steps = apply_all(synthetic_xlsx, inputs, FakeLLM(), confirmed, {}, ids=ids)
     assert [len(s.written) for s in steps] == [ALL_ROWS] * 3
+
+
+def test_the_same_words_on_two_steps_are_asked_twice(synthetic_xlsx):
+    steps = sorted({c.column.section.label for c in build(synthetic_xlsx).columns})
+    llm, cache = FakeLLM(), {}
+
+    def said_on(*labels):
+        inputs = [SPEED_SAID] * len(labels)
+        apply_all(synthetic_xlsx, inputs, llm, set(), cache, steps_of=labels)
+        return len(llm.calls)
+
+    asked = [said_on(steps[0]), said_on(steps[0]), said_on(steps[1])]
+    assert asked == [1, 1, 2]
+    # a label that is no step of the sheet is no context
+    assert [said_on('second try'), said_on('')] == [3, 3]

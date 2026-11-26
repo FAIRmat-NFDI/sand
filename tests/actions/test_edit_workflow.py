@@ -75,6 +75,7 @@ class Stubs:
             return {
                 'texts': stubs.texts,
                 'input_entry_ids': [f'e{i + 1}' for i in range(len(stubs.texts))],
+                'labels': ['' for _ in stubs.texts],
                 'confirmations': {
                     'k1': {
                         'by': 'tester',

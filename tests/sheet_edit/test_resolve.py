@@ -24,6 +24,7 @@ from sand.sheet_edit.resolve import (
     PROMPT_VERSION,
     _field,
     agree,
+    known_step,
     prompts,
     read_answer,
     resolve,
@@ -178,7 +179,7 @@ def test_the_schema_cannot_express_what_only_code_produces(catalog):
     assert 'unreadable' not in schema
     assert user_text(SAID, catalog, second_opinion=False).startswith('| ID | Step |')
     assert (
-        PROMPT_VERSION == 'v7'
+        PROMPT_VERSION == 'v8'
     )  # bumped with the rules: cached answers are asked again
 
 
@@ -1001,3 +1002,19 @@ def test_two_conditions_on_the_same_samples_today_are_two_readings(catalog):
     )
     assert proposal.edits == []
     only(proposal, Disputed)
+
+
+def test_the_step_a_note_was_made_on_is_given_before_the_instruction(catalog):
+    step = catalog.columns[-1].column.section.label
+    for prompt in prompts(SAID, catalog, step):
+        assert prompt.text.endswith(f'\nWorking on step: {step}\nInstruction: {SAID}')
+    for prompt in prompts(SAID, catalog):
+        assert 'Working on step' not in prompt.text
+
+
+def test_a_label_counts_as_a_step_only_when_the_sheet_has_it(catalog):
+    step = catalog.columns[-1].column.section.label
+    assert known_step(step, catalog) == step
+    assert known_step(step.lower(), catalog) == ''
+    assert known_step('second try', catalog) == ''
+    assert known_step('', catalog) == ''
