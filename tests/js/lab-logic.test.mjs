@@ -122,3 +122,12 @@ test("the rows in one column, in two when there are many", () => {
   assert.deepEqual(rowLayout(10), { cols: 2, per: 5 });
   assert.deepEqual(rowLayout(19), { cols: 2, per: 10 });
 });
+
+test("a page carries the sheet's label of its step, the note's label in the lab view", () => {
+  const pages = labPages({
+    info: { samples: 2, fields: [] },
+    steps: [{ position: 2, step_type: "Spin Coating", label: "2: Spin Coating", params: [] }],
+    variations: [],
+  });
+  assert.deepEqual(pages.map((p) => p.label), ["Experiment Info", "2: Spin Coating"]);
+});
