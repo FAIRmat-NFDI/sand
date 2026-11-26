@@ -7,7 +7,7 @@
 
 import { selectedExperiment } from "./experiments.js";
 import { addInputsListener } from "./inputs.js";
-import { labNotes, labPages, pageIndex, rowLayout } from "./lab-logic.js";
+import { labNotes, labPages, notesOfStep, pageIndex, rowLayout } from "./lab-logic.js";
 import { clearLiveTranscript } from "./live-transcript.js";
 
 const enterBtn = document.getElementById("lab-btn");
@@ -28,6 +28,7 @@ let pages = [];
 let index = 0;
 let shownSheet = null; // entry id of the sheet the pages are of
 let transcribed = 0; // notes with their text, at the last load
+let inputs = []; // the sheet's notes, at the last load
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -81,17 +82,23 @@ function noteTime(datetime) {
   return parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-// The speaking history in normal font, the newest first, under the live
-// transcript. A note that got its text is no longer the big live text:
-// it would be shown twice.
-function showNotes(experiment, items) {
-  const notes = labNotes(items);
+// The shown step's speaking history in normal font, the newest first,
+// under the live transcript.
+function renderNotes() {
+  const notes = labNotes(notesOfStep(inputs, pages[index]?.label || ""));
   notesEl.replaceChildren(...notes.map((note) => {
     const li = el("li", note.pending ? "lab-note lab-note-pending" : "lab-note");
     li.append(el("span", "lab-note-time", noteTime(note.datetime)), el("span", "lab-note-text", note.text));
     return li;
   }));
-  const now = notes.filter((n) => !n.pending).length;
+}
+
+// A note that got its text is no longer the big live text: it would be
+// shown twice.
+function showNotes(experiment, items) {
+  inputs = items;
+  renderNotes();
+  const now = items.filter((item) => item.text).length;
   if (now > transcribed && document.body.classList.contains("lab-mode")) clearLiveTranscript();
   transcribed = now;
 }
@@ -116,6 +123,7 @@ function render() {
   prevBtn.disabled = index === 0;
   nextBtn.disabled = index === pages.length - 1;
   placeEl.textContent = "Step " + page.position + " of " + pages[pages.length - 1].position;
+  renderNotes();
   fit();
 }
 

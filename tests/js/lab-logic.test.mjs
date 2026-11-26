@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { labNotes, labPages, pageIndex, rowLayout } from "../../src/sand/apis/static/lab-logic.js";
+import { labNotes, labPages, notesOfStep, pageIndex, rowLayout } from "../../src/sand/apis/static/lab-logic.js";
 
 const ALL = [3, 4, 5];
 
@@ -130,4 +130,15 @@ test("a page carries the sheet's label of its step, the note's label in the lab 
     variations: [],
   });
   assert.deepEqual(pages.map((p) => p.label), ["Experiment Info", "2: Spin Coating"]);
+});
+
+test("a step's history is the notes recorded while it was shown, whatever they speak of", () => {
+  const items = [
+    { entry_id: "a", label: "2: Spin Coating", text: "about step 3, the speed is 4000" },
+    { entry_id: "b", label: "3: Spin Coating", text: "speed 3000" },
+    { entry_id: "c", label: "", text: "typed in the full view" },
+    { entry_id: "d", text: "no label" },
+  ];
+  assert.deepEqual(notesOfStep(items, "2: Spin Coating").map((i) => i.entry_id), ["a"]);
+  assert.deepEqual(notesOfStep(items, "Experiment Info"), []);
 });
