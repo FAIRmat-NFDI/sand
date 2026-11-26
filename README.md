@@ -72,155 +72,166 @@ sample name.
 
 ## Setup
 
-sand is a **NOMAD plugin**, not a standalone app. It runs inside a NOMAD
-instance; for development, use
-[`nomad-distro-dev`](https://github.com/FAIRmat-NFDI/nomad-distro-dev).
+sand is a **NOMAD plugin**, not a standalone app: it runs inside a NOMAD
+installation and is opened from NOMAD's *Dashboards*. Below: a local
+NOMAD for trying it or developing, then what changes for an Oasis.
 
-### Requirements
+### What you need
 
-Install these plugins in the same NOMAD:
+| | What | Why |
+|---|---|---|
+| **Tools** | [git](https://git-scm.com), [uv](https://docs.astral.sh/uv/), [Docker](https://docs.docker.com/get-docker/) | NOMAD's development distribution uses them |
+| **Plugins** | [`nomad-voice-eln`](https://github.com/FAIRmat-NFDI/nomad-voice-eln) | the entry types for sheets, recordings and notes; transcription. **Private repository**: ask for access |
+| | [`nomad-llm-extraction`](https://github.com/FAIRmat-NFDI/nomad-llm-extraction), branch `enforceable-schema` | asks the LLM. Use the branch until [PR #13](https://github.com/FAIRmat-NFDI/nomad-llm-extraction/pull/13) is merged: it sends the provider a schema it can enforce |
+| | [`nomad-gui`](https://pypi.org/project/nomad-gui/) (PyPI) | NOMAD's new GUI. sand has no login of its own: you log in there |
+| **Keys** | the LLM provider's key, e.g. `GEMINI_API_KEY` | reading the updates (the edit job) |
+| | `GROQ_API_KEY` ([Groq](https://groq.com)) | transcribing recordings (Whisper) |
+| | optional: `DEEPGRAM_API_KEY` ([Deepgram](https://deepgram.com)) | the live transcript while recording; without it, there is none |
+| **sand** | branch `kit_lab` | the sheet editor described here |
 
-- [`nomad-voice-eln`](https://github.com/FAIRmat-NFDI/nomad-voice-eln)
-- [`nomad-llm-extraction`](https://github.com/FAIRmat-NFDI/nomad-llm-extraction)
-
-API keys for the services the action worker calls:
-
-- a [Groq](https://groq.com) key: transcription (Whisper)
-- the key of the LLM provider of your `llm_model_name`, e.g. a Gemini key
-- optional: a [Deepgram](https://deepgram.com) key for the live transcript
-  while recording
-
-### 1. Add sand to the distribution
-
-From the root of `nomad-distro-dev`:
+### 1. A local NOMAD with the plugins
 
 ```sh
-git submodule add https://github.com/FAIRmat-NFDI/sand.git packages/sand
-uv add packages/sand
+git clone https://github.com/FAIRmat-NFDI/nomad-distro-dev.git
+cd nomad-distro-dev
+
+git submodule add -b kit_lab https://github.com/FAIRmat-NFDI/sand.git packages/sand
+git submodule add https://github.com/FAIRmat-NFDI/nomad-voice-eln.git packages/nomad-voice-eln
+git submodule add -b enforceable-schema https://github.com/FAIRmat-NFDI/nomad-llm-extraction.git packages/nomad-llm-extraction
+
+uv add packages/sand packages/nomad-voice-eln packages/nomad-llm-extraction nomad-gui
 ```
 
-### 2. Configure `nomad.yaml`
+`uv add` installs them editable: a code change needs a restart, not a
+reinstall. The distribution's own README has the rest of its setup
+(e.g. `uv run poe setup`, which writes a first `nomad.yaml`).
 
-`uv run poe setup` (step 3) creates `nomad.yaml` if it is missing. Enable
-the entry points and set sand's options:
+### 2. `nomad.yaml`
+
+In the root of `nomad-distro-dev`. `include` is a whitelist: an entry
+point that is not listed does not load, silently. Add every other plugin
+you use as well.
 
 ```yaml
 plugins:
   entry_points:
     include:
+      # sand: the page and API, and the edit job
       - sand.apis:sand_api
       - sand.actions.edit:edit_action_entry_point
+      # the new GUI, where you log in
       - nomad_gui.apis:gui_api
+      # sheets, recordings, notes; transcription
       - nomad_voice_eln.schema_packages:schema_package_entry_point
       - nomad_voice_eln.parsers:parser_entry_point
       - nomad_voice_eln.actions.transcribe:transcribe_action_entry_point
       - nomad_voice_eln.actions.record_note:record_note_action_entry_point
+      # the LLM call the edit job makes
       - nomad_llm_extraction.actions:llm_extractor_action_entry_point
     options:
       sand.apis:sand_api:
-        llm_model_name: 'gemini/gemini-2.5-flash'  # LiteLLM notation
+        # LiteLLM's name of the model; its provider's key goes to the worker
+        llm_model_name: 'gemini/gemini-2.5-flash'
+        # this NOMAD's API, as the server reaches it
         nomad_base_url: 'http://localhost:8000/nomad-oasis/api/v1'
-        # live transcript while recording; optional, empty = off
-        # (also read from DEEPGRAM_API_KEY)
-        deepgram_api_key: '<your-deepgram-api-key>'
+        # optional, the live transcript
         deepgram_model: 'nova-3'
-        # default of the "save live transcript" toggle
-        # store_live_transcript: true
-        launch_modes: ['tab']
+        # default of the page's "save live transcript" toggle
+        store_live_transcript: false
 ```
-
-`include` is a whitelist: every other plugin you use must be listed too.
-The edit job runs on the CPU task queue of the action worker, like the
-LLM action it calls.
 
 > [!WARNING]
-> Do not commit real API keys.
+> Keep keys out of `nomad.yaml` and out of git: set them in the
+> environment of the process that uses them (step 3).
 
-### 3. Start NOMAD
+### 3. Start it
 
-From the root of `nomad-distro-dev`:
+Each in its own terminal, from the root of `nomad-distro-dev`:
 
 ```sh
-uv run poe setup
+# 1. the databases (Elasticsearch, MongoDB, Temporal)
 docker compose up -d
-uv sync
+
+# 2. NOMAD itself: the API, the GUI and sand's page
+export DEEPGRAM_API_KEY=...     # optional: the live transcript runs here
 uv run poe start
-```
 
-In a second terminal, start the action worker. Transcription and the edit
-job run there, so it needs the API keys:
-
-```sh
-export GROQ_API_KEY=<your-groq-key>       # transcription (Whisper)
-export GEMINI_API_KEY=<your-gemini-key>   # the edit job; the key of your llm_model_name's provider
+# 3. the action worker: transcription, the edit job and its LLM calls
+export GEMINI_API_KEY=...       # the key of llm_model_name's provider
+export GROQ_API_KEY=...         # transcription
 uv run poe cpuworker
 ```
 
-Plugins load at startup: after a change to `nomad.yaml`, restart both.
+All of sand's work runs as NOMAD actions on the CPU task queue, so this
+one worker does it all; without it, nothing is read or transcribed.
+Plugins load at start: after a change to `nomad.yaml` or to a plugin's
+code, restart `poe start` and `poe cpuworker`.
 
 ### 4. Open sand
 
-In the NOMAD GUI, go to *Dashboards* → sand. It opens in a new tab at
-(trailing slash needed):
+1. Log in to the new GUI: `http://localhost:8000/nomad-oasis/gui/v2/`.
+   This sets the login cookie sand uses. Keep that tab open: it renews
+   the login. (The classic GUI on port 3000 removes that cookie.)
+2. Open sand: in the GUI, *Dashboards* → **SAND**, or directly
+   `http://localhost:8000/nomad-oasis/dashboards/sand/` (with the
+   trailing slash). It opens in its own tab.
+3. Upload a sheet (see [Using it](#using-it)).
 
-```
-http://localhost:8000/nomad-oasis/dashboards/sand/
-```
+### In a NOMAD Oasis
 
-**Login:** sand has no login of its own. It uses the NOMAD GUI's, which
-renews the login token while it is open. Keep a NOMAD GUI tab open in the
-same browser; sand warns when the login is about to end.
+The same, in your Oasis distribution (e.g. one made from
+[`nomad-distro-template`](https://github.com/FAIRmat-NFDI/nomad-distro-template)):
+
+- add sand, `nomad-voice-eln`, `nomad-llm-extraction` (with the branch
+  above) and `nomad-gui` to the distribution's plugins, as git
+  dependencies;
+- the same `include` and `options` in its `nomad.yaml`, with
+  `nomad_base_url` set to the Oasis' API, e.g.
+  `https://your-oasis.example/nomad-oasis/api/v1`;
+- the keys in the environment of the **CPU action worker** (LLM, Groq)
+  and of the **app** (Deepgram), e.g. in `docker-compose.yaml`; make sure
+  the CPU action worker runs.
+
+### When something does not work
+
+| You see | Check |
+|---|---|
+| no SAND under *Dashboards*, or 404 at `/dashboards/sand/` | `sand.apis:sand_api` in `include`; NOMAD restarted; the trailing slash |
+| sand asks you to log in although you are | log in at `/gui/v2/` in the same browser, not the classic GUI |
+| an update stays "Reading..." or "Waiting to be read" | the CPU worker runs (`poe cpuworker`), and has the LLM key; the Temporal UI at `http://localhost:8080` shows a failed job and why |
+| a recording is never transcribed | `GROQ_API_KEY` on the worker; `nomad_voice_eln...transcribe_action_entry_point` in `include` |
+| no live transcript while recording | `DEEPGRAM_API_KEY` where `poe start` runs; it is optional |
+| "the sheet ..." when uploading | the sheet's form, see [The sheet](#the-sheet) |
 
 ## Using it
 
-1. **Upload the sheet**: drop the `.xlsx` on the header (or choose it),
-   give it a name, **Upload the sheet**. A refused sheet lists its
-   problems; fix the file and upload again. The header then names the
-   sheet, its date, samples and layer stack; the overview under it shows
-   the steps the way a lab notebook writes them. **Other sheets** opens
-   one uploaded earlier. The name can be changed later with the
-   pencil next to it in the header; the downloads follow it.
-2. **Record** or **write** updates. Say or type one change at a time, with
-   the step, the value and the samples it applies to. The updates appear
-   on the right in the order they were made; a transcript can be
-   corrected there.
-3. Each update is **read** as soon as it is saved. Under it the page
-   shows the edits it is ready to write, and the reason for anything it
-   could not place. A revised update is read again. Nothing is read
-   while a recording is still being transcribed; a recording whose
-   transcription failed has to be deleted first.
-4. The updates are decided **in order**, top to bottom: only the first
-   one with an undecided edit has **Confirm** and **Reject** (and
-   Confirm all for its edits); the ones after it wait. Each update shows
-   what it does on the sheet the updates above would leave if their
-   edits are confirmed: with the time at 10 s, "time 1 s" then "time
-   2 s" shows 1 → 2.
-   **Confirm** the edits that are right: they are written into the sheet
-   a moment later, and the next update's turn comes with nothing to read
-   again.
-   **Reject** a wrong one: it is never written, and the edit as proposed
-   is kept with the sheet, with what was wrong if you say so (Undo takes
-   it back). The updates after it are worked out again without it, by
-   code ("time 2 s" becomes 10 → 2); one that names a value the rejected
-   edit set ("the volume of the DMF" after the DMF note) is read again.
-   An update that has to be read again waits: it shows its earlier
-   reading, says what changed, and is read only in its turn, so a
-   decision costs at most one reading, not one per update below it. To
-   get the right edit, correct the update's text or add a new update.
-   A written update can still be revised or deleted, and a rejection
-   taken back; the page warns first. The updates after it need deciding
-   again. A confirmed update whose edit did not change waits, "Confirmed,
-   waiting for the updates above", and is written once they are decided.
-5. **Download** the edited sheet (the original is a download too, under
-   the file name it was uploaded with). The Edits card lists every edit
-   written; the changelog in the upload holds every cell changed, the
-   update it came from and who confirmed it.
+1. **Upload the sheet**: drop the `.xlsx` on the header (or **Choose a
+   file**), give it a name, upload. A refused sheet lists its problems;
+   fix the file and upload again. **Other sheets** opens one uploaded
+   earlier; the pencil next to the name renames it.
+2. **Record** or **write** updates: one change at a time, with the step,
+   the value and the samples ("step 2 spin coating, rotation speed 4000
+   for samples 1 to 3"). They appear on the right in the order they were
+   made. A transcript can be corrected there.
+3. Each update is **read** as soon as it is saved, against the sheet the
+   updates above it leave. Under it: the edits it proposes (old → new,
+   the samples), and in red what it could not place ("ambiguous",
+   "disputed", "not found", "not applied", each with why). Nothing
+   unclear is ever written. **Edits only** hides everything else.
+4. **Decide**: every proposed edit is ticked. **Untick** a wrong one and
+   say why; then **Recompute** reads the updates below it again without
+   it. **Confirm all** writes the ticked edits into a copy of the sheet;
+   those updates are then locked. **Reset all** takes every decision
+   back and the sheet back to the original; the updates' words stay.
+   **Read again** appears when a reading failed (e.g. the LLM could not
+   be reached).
+5. **Download** the edited sheet, or the original. The overview shows
+   the sheet's steps, what varies between samples, and the cells the
+   edits changed; the changelog in the upload lists every cell written,
+   the update it came from and who confirmed it.
 
-**Read again** appears when a reading failed (for example when the LLM
-could not be reached) and starts it once more.
-
-Sheets and the changelog are files of the upload in NOMAD, so they can be
-read there as well.
+**Lab view** shows one step at a time with the recorder, for work at the
+glove box.
 
 ## Voice mode
 
