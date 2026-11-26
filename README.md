@@ -86,7 +86,7 @@ NOMAD for trying it or developing, then what changes for an Oasis.
 | | [`nomad-gui`](https://pypi.org/project/nomad-gui/) (PyPI) | NOMAD's new GUI. sand has no login of its own: you log in there |
 | **Keys** | the LLM provider's key, e.g. `GEMINI_API_KEY` | reading the updates (the edit job) |
 | | `GROQ_API_KEY` ([Groq](https://groq.com)) | transcribing recordings (Whisper) |
-| | optional: `DEEPGRAM_API_KEY` ([Deepgram](https://deepgram.com)) | the live transcript while recording; without it, there is none |
+| | optional: `DEEPGRAM_API_KEY` ([Deepgram](https://deepgram.com)) | the live transcript while recording. Without it there is none, but recordings are still transcribed (Groq) after they stop |
 | **sand** | branch `kit_lab` | the sheet editor described here |
 
 ### 1. A local NOMAD with the plugins
@@ -134,7 +134,10 @@ plugins:
         llm_model_name: 'gemini/gemini-2.5-flash'
         # this NOMAD's API, as the server reaches it
         nomad_base_url: 'http://localhost:8000/nomad-oasis/api/v1'
-        # optional, the live transcript
+        # optional, the live transcript while recording (Deepgram).
+        # The key: DEEPGRAM_API_KEY where `poe start` runs (step 3), or
+        # here as deepgram_api_key: '...' (then keep this file out of git).
+        # No key = no live transcript; recordings are still transcribed.
         deepgram_model: 'nova-3'
         # default of the page's "save live transcript" toggle
         store_live_transcript: false
