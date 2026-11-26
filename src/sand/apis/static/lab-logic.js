@@ -49,7 +49,8 @@ function infoPage(view) {
 function stepPage(step) {
   return {
     position: step.position,
-    title: step.label,
+    // "2. Spin Coating": the number says which of the spin coatings
+    title: step.step_type ? step.position + ". " + step.step_type : step.label,
     sub: [step.material, step.layer].filter(Boolean),
     rows: step.params.map(row),
     unfilled: (step.unfilled || []).map((c) => c.header),
@@ -60,11 +61,20 @@ export function labPages(view) {
   return [infoPage(view), ...(view.steps || []).map(stepPage)];
 }
 
-// The notes so far as the lab view lists them, the oldest first: what
+const ONE_COLUMN = 9; // more rows than this go in two columns
+
+// How a page's rows are laid out so that all are in view: in sheet
+// order down one column, or down two.
+export function rowLayout(count) {
+  const cols = count > ONE_COLUMN ? 2 : 1;
+  return { cols, per: Math.max(1, Math.ceil(count / cols)) };
+}
+
+// The notes so far as the lab view lists them, the newest first: what
 // was said, or where a recording's transcription stands.
 export function labNotes(items) {
   return [...items]
-    .sort((a, b) => (Date.parse(a.datetime) || 0) - (Date.parse(b.datetime) || 0))
+    .sort((a, b) => (Date.parse(b.datetime) || 0) - (Date.parse(a.datetime) || 0))
     .map((item) => ({
       id: item.entry_id,
       datetime: item.datetime || null,

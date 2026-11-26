@@ -40,7 +40,8 @@ let checking = Promise.resolve(false);
 
 function render() {
   voiceBtn.disabled = state === "checking";
-  voiceBtn.lastChild.textContent = state === "on" ? " Voice mode off" : " Voice mode on";
+  // what a click does: "Voice mode off" would read as the state
+  voiceBtn.lastChild.textContent = state === "on" ? " Turn voice mode off" : " Turn voice mode on";
   let text = "";
   let look = "voice-status";
   if (state === "checking") {
@@ -48,8 +49,11 @@ function render() {
   } else if (state === "on" && isRecording()) {
     text = "Recording";
     look += " voice-recording";
+    // the checks passed and are read: their room is the transcript's now
+    checksEl.hidden = true;
   } else if (state === "on") {
-    text = "Listening";
+    // "Listening" alone reads as if the words were being kept
+    text = "Listening, not recording";
     look += " voice-listening";
   }
   // only on a change: a screen reader reads a status out on every write
@@ -204,7 +208,7 @@ async function turnOn() {
     state = "off";
     const result = document.createElement("li");
     result.className = "voice-checks-result";
-    result.textContent = "Voice mode is off. Click Voice mode on to try again.";
+    result.textContent = "Voice mode is off. Click Turn voice mode on to try again.";
     checksEl.append(result);
     render();
     return;

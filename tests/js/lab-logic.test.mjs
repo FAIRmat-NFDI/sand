@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { labNotes, labPages, pageIndex } from "../../src/sand/apis/static/lab-logic.js";
+import { labNotes, labPages, pageIndex, rowLayout } from "../../src/sand/apis/static/lab-logic.js";
 
 const ALL = [3, 4, 5];
 
@@ -31,6 +31,7 @@ const VIEW = {
   steps: [
     {
       position: 1,
+      step_type: "Spin Coating",
       label: "1: Spin Coating",
       material: "PbI2",
       layer: "Absorber",
@@ -40,7 +41,7 @@ const VIEW = {
       ],
       unfilled: [column("C027", "Spin Delay", "s"), column("C030", "Notes")],
     },
-    { position: 2, label: "2: Annealing", material: null, layer: null, params: [], unfilled: [column("C040", "Annealing time", "min")] },
+    { position: 2, step_type: "Annealing", label: "2: Annealing", material: null, layer: null, params: [], unfilled: [column("C040", "Annealing time", "min")] },
   ],
   variations: [
     { ...param("C004", "Variation", [["a", [3]], ["b", [4]], ["c", [5]], ["d", [6]]]), step: "Experiment Info" },
@@ -51,7 +52,7 @@ const VIEW = {
 test("the Experiment Info is step 0, before the steps", () => {
   const pages = labPages(VIEW);
   assert.deepEqual(pages.map((p) => p.position), [0, 1, 2]);
-  assert.deepEqual(pages.map((p) => p.title), ["Experiment Info", "1: Spin Coating", "2: Annealing"]);
+  assert.deepEqual(pages.map((p) => p.title), ["Experiment Info", "1. Spin Coating", "2. Annealing"]);
 });
 
 test("the Experiment Info page: fields and what varies, in sheet order", () => {
@@ -96,16 +97,16 @@ test("a refresh keeps the step, a sheet without it starts at the first page", ()
   assert.equal(pageIndex(pages, undefined), 0);
 });
 
-test("the notes so far, the oldest first", () => {
+test("what was said before, the newest first", () => {
   const notes = labNotes([
     { entry_id: "b", kind: "audio", datetime: "2026-11-25T10:05:00+00:00", text: null, status: "RUNNING" },
     { entry_id: "a", kind: "note", datetime: "2026-11-25T10:01:00+00:00", text: "speed 3000 for all samples" },
     { entry_id: "c", kind: "audio", datetime: "2026-11-25T10:07:00+00:00", text: "", status: "FAILED" },
   ]);
   assert.deepEqual(notes, [
-    { id: "a", datetime: "2026-11-25T10:01:00+00:00", text: "speed 3000 for all samples", pending: false },
-    { id: "b", datetime: "2026-11-25T10:05:00+00:00", text: "transcribing...", pending: true },
     { id: "c", datetime: "2026-11-25T10:07:00+00:00", text: "transcription failed", pending: true },
+    { id: "b", datetime: "2026-11-25T10:05:00+00:00", text: "transcribing...", pending: true },
+    { id: "a", datetime: "2026-11-25T10:01:00+00:00", text: "speed 3000 for all samples", pending: false },
   ]);
 });
 
@@ -113,4 +114,11 @@ test("a counted column still says that some samples are empty", () => {
   const notes = param("C031", "Notes", [["a", [3]], ["b", [4]], ["c", [5]], ["d", [6]], [null, [7]]]);
   const view = { ...VIEW, steps: [{ ...VIEW.steps[0], params: [notes] }] };
   assert.deepEqual(labPages(view)[1].rows, [{ name: "Notes", value: "4 different values · some empty" }]);
+});
+
+test("the rows in one column, in two when there are many", () => {
+  assert.deepEqual(rowLayout(0), { cols: 1, per: 1 });
+  assert.deepEqual(rowLayout(9), { cols: 1, per: 9 });
+  assert.deepEqual(rowLayout(10), { cols: 2, per: 5 });
+  assert.deepEqual(rowLayout(19), { cols: 2, per: 10 });
 });
