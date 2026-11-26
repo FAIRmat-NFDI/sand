@@ -75,6 +75,10 @@ export async function startRecording(stillWanted = () => true) {
   clearError();
   const experiment = requireExperiment();
   if (!experiment) return "no-sheet";
+  // with the sheet, before any await: another sheet may be shown by the
+  // time the microphone opens. The step at the start, not at the stop:
+  // Next may be clicked while recording.
+  const stepLabel = labStepLabel();
   // a recording lives only in memory until uploaded: do not start one
   // that cannot be saved
   if (sessionState() !== "ok") {
@@ -105,9 +109,7 @@ export async function startRecording(stillWanted = () => true) {
   const recorder = new MediaRecorder(stream);
   mediaRecorder = recorder;
   // what became of this recording, known only after the upload
-  // the step shown when the recording starts: Next may be clicked before
-  // the stop
-  recorder.stepLabel = labStepLabel();
+  recorder.stepLabel = stepLabel;
   recorder.outcome = new Promise((resolve) => {
     recorder.resolveOutcome = resolve;
   });
