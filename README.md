@@ -143,9 +143,19 @@ plugins:
         store_live_transcript: false
 ```
 
+**Where each key goes.** Only the Deepgram key can be in `nomad.yaml`;
+the others are read from the environment only, so a key for them in
+`nomad.yaml` is ignored.
+
+| Key | Read by | Where |
+|---|---|---|
+| the LLM's, e.g. `GEMINI_API_KEY` | the CPU worker (LiteLLM) | environment of `poe cpuworker` only |
+| `GROQ_API_KEY` | the CPU worker (nomad-voice-eln) | environment of `poe cpuworker` only |
+| Deepgram | the app (sand) | `deepgram_api_key` in `nomad.yaml`, else `DEEPGRAM_API_KEY` in the environment of `poe start` |
+
 > [!WARNING]
-> Keep keys out of `nomad.yaml` and out of git: set them in the
-> environment of the process that uses them (step 3).
+> Do not commit real keys. A `nomad.yaml` holding the Deepgram key stays
+> out of git.
 
 ### 3. Start it
 
